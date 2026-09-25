@@ -557,7 +557,7 @@ fn multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent() {
                 let name = agent.name.strip_prefix("demo/").unwrap();
                 assert!(output.lines().nth(rows[0] as usize).unwrap().contains(name));
                 assert_eq!(info.matches(name).count(), 1);
-                assert_eq!(rows.len(), 4);
+                assert_eq!(rows.len(), 5); // main, identity, path, Git line, title
             }
             if let Some(end) = previous_end {
                 assert_eq!(rows[0], end + 2); // Exactly one unselected, non-clickable spacer.
@@ -1052,4 +1052,108 @@ fn selecting_an_agent_keeps_its_effort_icon_tier() {
     for focus in [Focus::Agents, Focus::Queue] {
         assert_eq!(icon(&mut a, &mut q, focus), unselected, "{focus:?}");
     }
+}
+
+#[test]
+fn git_summary_line_follows_each_agents_directory_and_wraps_when_narrow() {
+    use saddle::{
+        git::{Changes, Head, Summary},
+        theme,
+    };
+    let (mut a, mut q) = fixture();
+    a.agents = [
+        ("dev", "/w/dev"),
+        ("twin", "/w/dev"),
+        ("main", "/w/main"),
+        ("odd", "/w/odd"),
+        ("gone", "/w/gone"),
+        ("new", "/w/new"),
+    ]
+    .into_iter()
+    .map(|(name, cwd)| Agent {
+        name: format!("demo/{name}"),
+        state: Some("idle".into()),
+        cwd: Some(cwd.into()),
+        ..Default::default()
+    })
+    .collect();
+    let summary =
+        |branch: &str, ahead: Option<(u64, &str)>, changes: Option<(u64, u64, u64)>, untracked| {
+            Some(Summary {
+                head: if branch.is_empty() {
+                    Head::Detached
+                } else {
+                    Head::Branch(branch.into())
+                },
+                ahead: ahead.map(|(n, base)| (n, base.into())),
+                changes: changes.map(|(added, deleted, binary)| Changes {
+                    added,
+                    deleted,
+                    binary,
+                }),
+                untracked,
+            })
+        };
+    a.git = [
+        (
+            "/w/dev",
+            summary("dev-t12", Some((2, "main")), Some((18, 4, 0)), Some(1)),
+        ),
+        (
+            "/w/main",
+            summary("main", Some((0, "origin/main")), Some((0, 0, 2)), Some(0)),
+        ),
+        ("/w/odd", summary("", None, None, None)),
+        ("/w/gone", None),
+    ]
+    .into_iter()
+    .map(|(cwd, s)| (cwd.to_string(), s))
+    .collect();
+    let (buffer, hits) = render(160, 120, &mut a, &mut q, Focus::Agents);
+    let screen = text(&buffer);
+    let row = |name: &str| hits.agents.iter().find(|(_, n)| n == name).unwrap().0;
+    let line = |y: u16| {
+        (hits.list.x + 6..hits.list.right())
+            .map(|x| buffer[(x, y)].symbol())
+            .collect::<String>()
+    };
+    // Each agent's rows read top to bottom, with spaces dropped so wrapped lines join up.
+    let info = |name: &str| {
+        let rows: Vec<_> = hits.agents.iter().filter(|(_, n)| n == name).collect();
+        rows.iter()
+            .map(|(y, _)| line(*y))
+            .collect::<String>()
+            .replace(' ', "")
+    };
+    let compact = |s: &str| s.replace(' ', "");
+    // Agents sharing a worktree show the same numbers.
+    for name in ["demo/dev", "demo/twin"] {
+        assert!(
+            info(name).contains(&compact("dev-t12 · C2(main) · +18 -4 · ?1")),
+            "{screen}"
+        );
+    }
+    assert!(
+        screen.contains("dev-t12 · C2(main) · +18 -4 · ?1"),
+        "{screen}"
+    );
+    let main = "main · C0(origin/main) · +0 -0 · 2 binary · ?0";
+    assert!(info("demo/main").contains(&compact(main)), "{screen}");
+    assert!(
+        !screen.contains(main),
+        "narrow panes wrap the line: {screen}"
+    );
+    assert!(
+        info("demo/odd").contains(&compact("HEAD detached · C— · +— -— · ?—")),
+        "{screen}"
+    );
+    assert!(info("demo/gone").contains("gitunavailable"), "{screen}");
+    assert!(info("demo/new").contains("git…"), "{screen}");
+    assert_label_color(&buffer, "+18", theme::AGENT_IDLE);
+    assert_label_color(&buffer, "-4", theme::AGENT_ERROR);
+    // The Git line sits right below the agent's own directory line.
+    let y = (row("demo/main")..)
+        .find(|y| line(*y).contains("/w/main"))
+        .unwrap();
+    assert!(line(y + 1).contains("C0(origin/main)"), "{screen}");
 }

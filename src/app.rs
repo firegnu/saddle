@@ -2,7 +2,7 @@ use crate::{
     agents::Panel,
     config::{Config, expand_home},
     corral::{Client, Poller},
-    drover,
+    drover, git,
     input::{Focus, Route, encode_key, encode_mouse, encode_paste},
     layout::Panes,
     pty::Session,
@@ -125,6 +125,7 @@ struct App {
     panel: Panel,
     focus: Focus,
     poller: Poller,
+    git: git::Poller,
     actions: Actions,
     viewer: Viewer,
     queue: queue::Panel,
@@ -179,6 +180,7 @@ impl App {
             drover::Worker::start(queue_client, Duration::from_millis(config.refresh_ms));
         Self {
             poller: Poller::start(client.clone(), Duration::from_millis(config.refresh_ms)),
+            git: git::Poller::start("git".into(), Duration::from_secs(5)),
             actions: Actions::new(client.clone()),
             viewer: Viewer::new(client.program),
             config,
@@ -254,9 +256,21 @@ impl App {
                         .disappeared(&agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>())?;
                     self.panel
                         .absorb(agents, self.viewer.showing.as_deref(), now());
+                    let mut cwds: Vec<_> = self
+                        .panel
+                        .agents
+                        .iter()
+                        .filter_map(|a| a.cwd.clone())
+                        .collect();
+                    cwds.sort();
+                    cwds.dedup();
+                    self.git.watch(cwds);
                 }
                 Err(error) => self.panel.message = format!("corral: {error:#}"),
             }
+        }
+        for batch in self.git.updates.try_iter() {
+            self.panel.absorb_git(batch);
         }
         for result in self.actions.receiver.try_iter() {
             match result.action {

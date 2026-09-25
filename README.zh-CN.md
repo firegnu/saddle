@@ -22,6 +22,7 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](http
 ## 功能
 
 - **Agents：** 按仓库分组的树形列表，展示实时状态、agent 类型、活动、接入数量、工作目录和标题。用颜色区分工作、空闲、阻塞、停滞和错误。agent 带有 corral 公开标签 `effort` 时显示点阵信号图标：medium `⡄⡀⡀`、high `⡄⡆⡀`、xhigh `⡄⡆⡇`（没亮的位置只留一个暗色底点，选中与否图标一致）；没有该标签或是其他值时不显示。图标只反映委派时的标签，不代表运行时实际 effort。
+- **每个 agent 的 Git 摘要：** 目录下面一行，例如 `dev-t12 · C2(main) · +18 -4 · ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支；比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据：不 fetch，不运行仓库 `.gitattributes` 声明的 diff 驱动、textconv 或 clean filter，不运行 fsmonitor 钩子，也不顺带写索引。agent 之后 cd 到别处不会跟随。
 - **Queue：** 当前任务、待放行、待办和历史记录。原生控件支持查看详情、新增任务、编辑、调整次序和删除待办、汇总查看所有登记项目的待办、切换项目、放行、暂停和循环设置。
 - **Viewer：** 选中 agent 的实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
 - **鼠标与键盘：** 紧凑的可点击按钮、鼠标滚轮、触控板和快捷键。滚动列表不改变选择，正常刷新保留滚动位置。
@@ -36,6 +37,7 @@ Agents 和 Queue 均为 Rust 原生控件。只有 Viewer 使用子 PTY，不嵌
 
 - Rust stable **1.96 或更高版本**。
 - `corral` 和 `drover` 在 `PATH` 中，或在配置中指定路径。
+- Agents 的 Git 摘要需要 `PATH` 中有 Git 2.41 或更高版本；更旧或没有 Git 时显示 `git unavailable`。
 - 支持 Unicode 和鼠标的终端，建议支持真彩色。
 
 目前在 macOS 上开发并进行交互验证，其他平台尚未验证。

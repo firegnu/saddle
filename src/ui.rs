@@ -1,6 +1,7 @@
 use crate::{
     agents::{Panel, group},
     corral::{Agent, Effort},
+    git::{Head, Summary},
     input::Focus,
     layout::Panes,
     pty::Session,
@@ -616,6 +617,8 @@ fn agent_rows(
         if name.width() > name_width {
             details.insert(0, (name.to_owned(), Style::default().fg(t.text)));
         }
+        // The Git line goes right below the path, which sits just before the title here.
+        let path_index = details.len() - 2;
         if matches!(a.state.as_deref(), Some("working" | "blocked")) {
             details.push((
                 format!(
@@ -635,21 +638,33 @@ fn agent_rows(
                 Style::default().fg(t.danger),
             ));
         }
-        for (detail, detail_style) in details {
-            for line in reply_lines(t, &detail, width.saturating_sub(6)) {
-                rows.push(Row {
-                    line: Line::from(vec![
-                        Span::styled(
-                            if last { "      " } else { " │    " },
-                            Style::default().fg(tree_color),
-                        ),
-                        Span::styled(line.to_string(), detail_style),
-                    ])
-                    .style(style),
-                    name: Some(a.name.clone()),
-                    headline: false,
-                });
+        let mut lines = Vec::new();
+        for (i, (detail, detail_style)) in details.into_iter().enumerate() {
+            lines.extend(
+                reply_lines(t, &detail, width.saturating_sub(6))
+                    .into_iter()
+                    .map(|line| vec![Span::styled(line.to_string(), detail_style)]),
+            );
+            if i == path_index
+                && let Some(cwd) = &a.cwd
+            {
+                lines.extend(wrap_spans(
+                    git_spans(t, panel.git.get(cwd)),
+                    width.saturating_sub(6),
+                ));
             }
+        }
+        for spans in lines {
+            let mut line = vec![Span::styled(
+                if last { "      " } else { " │    " },
+                Style::default().fg(tree_color),
+            )];
+            line.extend(spans);
+            rows.push(Row {
+                line: Line::from(line).style(style),
+                name: Some(a.name.clone()),
+                headline: false,
+            });
         }
         if index + 1 < ordered.len() {
             rows.push(Row {
@@ -694,6 +709,79 @@ fn effort_bars(t: &Theme, effort: Option<Effort>) -> Vec<Span<'static>> {
             }
         })
         .collect()
+}
+
+// Git state of the agent's directory: a missing entry is still loading, `None` is unavailable,
+// and fields Git could not determine show — rather than zero.
+fn git_spans(t: &Theme, git: Option<&Option<Summary>>) -> Vec<Span<'static>> {
+    let muted = Style::default().fg(t.muted);
+    let Some(git) = git else {
+        return vec![Span::styled("git …", muted)];
+    };
+    let Some(s) = git else {
+        return vec![Span::styled("git unavailable", muted)];
+    };
+    let head = match &s.head {
+        Head::Branch(branch) => branch.as_str(),
+        Head::Detached => "HEAD detached",
+        Head::Unknown => "—",
+    };
+    let ahead = s
+        .ahead
+        .as_ref()
+        .map_or("C—".into(), |(count, base)| format!("C{count}({base})"));
+    let mut spans = vec![Span::styled(format!("{head} · {ahead} · "), muted)];
+    match &s.changes {
+        Some(changes) => {
+            spans.push(Span::styled(
+                format!("+{}", changes.added),
+                Style::default().fg(t.agent_idle),
+            ));
+            spans.push(Span::styled(" ", muted));
+            spans.push(Span::styled(
+                format!("-{}", changes.deleted),
+                Style::default().fg(t.agent_error),
+            ));
+            if changes.binary > 0 {
+                spans.push(Span::styled(format!(" · {} binary", changes.binary), muted));
+            }
+        }
+        None => spans.push(Span::styled("+— -—", muted)),
+    }
+    let untracked = s.untracked.map_or("—".into(), |n| n.to_string());
+    spans.push(Span::styled(format!(" · ?{untracked}"), muted));
+    spans
+}
+
+// Wraps styled spans by display width, keeping each character's style.
+fn wrap_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'static>>> {
+    let mut lines = vec![Vec::new()];
+    let mut used = 0;
+    for span in spans {
+        let mut piece = String::new();
+        for c in span.content.chars() {
+            let w = c.width().unwrap_or(0);
+            if used + w > width && used > 0 {
+                if !piece.is_empty() {
+                    lines
+                        .last_mut()
+                        .unwrap()
+                        .push(Span::styled(std::mem::take(&mut piece), span.style));
+                }
+                lines.push(Vec::new());
+                used = 0;
+            }
+            piece.push(c);
+            used += w;
+        }
+        if !piece.is_empty() {
+            lines
+                .last_mut()
+                .unwrap()
+                .push(Span::styled(piece, span.style));
+        }
+    }
+    lines
 }
 
 fn short_path(path: &str) -> String {

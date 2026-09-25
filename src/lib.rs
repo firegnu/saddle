@@ -5,6 +5,7 @@ mod command;
 pub mod config;
 pub mod corral;
 pub mod drover;
+pub mod git;
 pub mod input;
 pub mod layout;
 pub mod pty;

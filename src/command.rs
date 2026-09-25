@@ -23,12 +23,23 @@ pub fn run(
     timeout: Duration,
     cancel: &AtomicBool,
 ) -> Result<Output> {
+    run_with_env(program, args, cwd, &[], timeout, cancel)
+}
+pub fn run_with_env(
+    program: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+    env: &[(&str, &str)],
+    timeout: Duration,
+    cancel: &AtomicBool,
+) -> Result<Output> {
     let mut command = Command::new(program);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
     let mut child = command
         .args(args)
+        .envs(env.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

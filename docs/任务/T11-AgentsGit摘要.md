@@ -67,3 +67,17 @@ dev-t12 · C2(main) · +18 -4 · ?1
 ## 做完
 
 在本文件末尾追加「## 完成记录」并提交：做了什么、验证了什么、拿主意的地方、没做的事，各几句话。回复同样列这些和需主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 做了什么：先在 DESIGN 第 25 节写下实现方式，再新增 `src/git.rs`（只读 Git CLI 摘要 + 后台 Poller）。每个 agent 目录行下多一行 `分支 · C<n>(<基准>) · +增 -删 · ?未跟踪`，窄窗按显示宽度折行，`+` 绿（agent_idle）、`-` 红（agent_error）。结果存在 Agents 面板的独立表 `Panel.git`（按公开 cwd 作键，与 corral 数据分开），`absorb_git` 只收当前名单里仍在用的 cwd，并删掉已不在名单里的条目。App 在每次 corral 刷新后把去重的 cwd 交给 Git Poller（名单变化时立即重查，否则约 5 秒一轮），退出时取消并等线程结束。`command.rs` 加了带环境变量的 `run_with_env`，原 `run` 行为不变。中英文 README 补了显示含义、限制和 Git 2.41 要求。
+- 验证了什么：先写 tests/git.rs、tests/agents.rs、tests/ui.rs 的新检查，用能编译的空实现拿到真实 RED（都是断言失败），实现后转 GREEN。覆盖：临时合成仓库里 main 相对上游 / 开发 worktree 相对本地 main 的提交数、暂存加未暂存的增删行、二进制单列、未跟踪数；同一 worktree 的根目录和子目录只查一次，同仓库两个 worktree 分开统计（用记录调用的 git 包装脚本数出来）；非 Git、已删除、相对路径显示不可用；无 HEAD、detached、没有 main、main 没有上游时对应字段为未知而不是 0；仓库配置的 clean/process filter、textconv、diff 驱动、diff.external、fsmonitor 都没被运行，索引字节不变（另手工确认去掉这些保护时 clean filter 确实会跑，说明测试能抓到问题）；Poller 跟随目录切换，git 卡住时 drop 在 2 秒内返回，取消的一轮不上报结果；晚到的旧目录结果不会显示在已换目录的 agent 名下；渲染、共享 worktree 同数字、颜色、折行、紧贴路径行。`cargo test --all-targets`、`cargo clippy --all-targets -- -D warnings`、`git diff --check` 均通过。原多条目排版测试的「每个 agent 4 行」按批准方案改为 5 行。
+- 拿主意的地方：
+  - 读不出来的值显示 `—`（`C—`、`+— -—`、`?—`），detached 显示 `HEAD detached`，没取回显示 `git …`，整目录不可用显示 `git unavailable`。
+  - 二进制文件显示为 `N binary`，不计入行数。
+  - 没有 cwd 的 agent 不显示 Git 行。
+  - 同一 worktree 的判定用 `rev-parse --show-toplevel`，子目录也算同一 worktree，统计范围是整个 worktree。
+  - 所有 worktree 在一个后台线程里依次查，每条命令超时 5 秒。
+  - 为了不跑仓库配置的 filter，用了 `--attr-source=<空树>`，因此需要 Git ≥ 2.41。代价是 `.gitattributes` 里的 `binary`/eol 设置不参与这次统计，改由 Git 按内容自动判断二进制。
+  - 部分克隆不补取缺失对象，用的是环境变量 `GIT_NO_LAZY_FETCH=1`，旧版 Git 会直接忽略。
+- 没做的事：Git 写操作、diff 详情页、配置项（git 程序固定从 PATH 找 `git`，刷新间隔固定 5 秒）；不跟随 agent 之后 cd 到的目录；`$GIT_DIR/info/attributes` 和用户全局 attributes 里的 filter 仍按 Git 规则生效（已在 DESIGN 注明）；没做真实界面录屏或手动启动检查。

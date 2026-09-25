@@ -257,3 +257,20 @@ drover = "drover"
 - 目标固定：打开弹层时保存整份 pending 基线和位置，弹层只显示这份快照；后台刷新和选中项变化不改变目标。确认后调用 `drover drop --pos <位置> "Deleted in saddle"`（直接参数，不启动 shell，固定原因写进放弃历史），执行前按第 20 节重新 `list --json` 核对整份 pending，变化则报过期错误、不写入。同样没有可用于 `--expect` 的公开指纹，不声称原子保护。
 - 执行中弹层保留、按钮禁用、显示 Deleting task…；成功回列表并刷新，选中落到同一位置的下一项（没有则上一项；已无待办时跟到 History 里的 Dropped 记录）；失败按其他动作显示 Action result 错误。底部输入提示为 Confirm delete。
 - 不做 current 退回 pending（公开 CLI 没有对应状态转换，需 drover 侧评估）；All pending 汇总仍只读。
+
+## 25. Agents Git 摘要（T11）
+
+用户要求：想知道有没有提交以及 diff 情况，而且不只在主控的分支显示。主控调查后给出方案，用户批准。
+
+- 范围：每个 agent 都显示它公开 cwd（`corral ls` 的 `cwd`）所在 worktree 的 Git 状态，不限于主控分支。cwd 只取公开数据，不从进程或终端推断 agent 之后 cd 到哪里；没有 cwd 的 agent 不显示这一行。
+- 显示：目录行下面加一行，窄窗按显示宽度折行，例如 `dev-t12 · C2(main) · +18 -4 · ?1`。
+  - 分支：当前分支；detached 显示 `HEAD detached`，读不出来显示 `—`。
+  - `C2(main)`：开发分支比本仓库本地 `main`（`refs/heads/main`）多几个提交；当前分支是 `main` 时，相对它配置的上游（如 `origin/main`）计数并显示上游名，表示尚未推送的提交。没有本地 main、没有上游、detached 或没有 HEAD 时显示 `C—`，不猜基准。这是相对基准的提交差值，不是 agent 的历史提交数或本轮提交数。
+  - `+18 -4`：未提交的增删行数，暂存与未暂存一起相对 HEAD 计算（工作区对 HEAD）；提交后归零。`+` 用 `agent_idle` 绿，`-` 用 `agent_error` 红。二进制等没有行数的文件不计入行数，另以 `N binary` 标出；没有 HEAD 时显示 `+— -—`。
+  - `?1`：未跟踪（且未被忽略）文件数，不混入增删行；读不出来显示 `?—`。
+  - 尚未取回显示 `git …`；非 Git 目录、目录已删除、git 不可用或超时显示 `git unavailable`。都不冒充零值。
+- 归属：数字属于目录，不属于 agent。多个 agent 共用同一 worktree 时显示相同数字；不同 worktree（包括同一仓库的不同 worktree）分别统计，不按公共 Git 目录合并。
+- 读取：一个后台线程，约每 5 秒一轮。每轮对每个不同 cwd 先 `git rev-parse --show-toplevel --show-object-format` 找到 worktree 根，同一根只查一次，在根目录运行：`symbolic-ref --quiet --short HEAD`、确认基准（main 上 `rev-parse --abbrev-ref --symbolic-full-name @{upstream}`，其他分支 `rev-parse --verify --quiet refs/heads/main^{commit}`）、`rev-list --count <基准>..HEAD`、`diff-index --numstat -z HEAD`、`ls-files --others --exclude-standard -z`。agent 名单变化时立即唤醒重查。每条命令有超时，退出时取消并等线程结束；Git 慢或失败不影响 corral 刷新、界面输入和接入。
+- 只读与不跑外部程序：都用 Git CLI，不解析 `.git`。全部命令加 `--no-optional-locks`（不顺带刷新写索引）、`-c core.fsmonitor=false`、`--attr-source=<空树>`（不读工作区 `.gitattributes`，从而不触发其中声明的 diff 驱动、textconv 和 clean/smudge filter），diff 另加 `--no-ext-diff --no-textconv`；环境加 `GIT_NO_LAZY_FETCH=1`，部分克隆缺对象时不联网补取。不 fetch。`--attr-source` 需要 Git 2.41 及以上，更旧的 Git 会显示 `git unavailable`。`$GIT_DIR/info/attributes` 和用户全局 attributes 仍按 Git 规则生效。
+- 结果归属：每轮结果按 cwd 带回，写入 Agents 面板的独立表（与 corral 状态分开），只接受当前名单里仍存在的 cwd，并删掉已不在名单里的条目；agent 换了 cwd 就按新 cwd 查找，旧目录的结果不会显示在它名下。
+- 不做：Git 写操作、diff 详情页、配置项、提交归属或完成判定。

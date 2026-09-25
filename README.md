@@ -22,6 +22,7 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 ## Features
 
 - **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states. When an agent was started with a public corral `effort` label, a small dotted signal icon shows it: `⡄⡀⡀`, `⡄⡆⡀`, or `⡄⡆⡇` for medium, high, or xhigh (unlit slots keep only a dim baseline dot, and the icon looks the same whether or not the agent is selected). Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
+- **Git summary per agent:** below each agent's directory, a line such as `dev-t12 · C2(main) · +18 -4 · ?1` describes the worktree at the agent's public corral `cwd`: the current branch; commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together; and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only: it never fetches, and it does not run the repository's diff drivers, textconv or clean filters from `.gitattributes`, fsmonitor hooks, or optional index writes. It does not follow an agent that later `cd`s elsewhere.
 - **Queue:** current, awaiting, pending, and historical tasks. Read details, add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
 - **Viewer:** the selected agent's live `corral attach` session, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
@@ -36,6 +37,7 @@ Agents and Queue are native Rust widgets. Only Viewer runs a child PTY; saddle d
 
 - Rust stable **1.96 or later**.
 - `corral` and `drover` available on `PATH`, or configured by path.
+- Git 2.41 or later on `PATH` for the Agents Git summary; older or missing Git shows `git unavailable`.
 - A terminal with Unicode and mouse support; true color is recommended.
 
 Development and interactive validation currently take place on macOS. Other platforms have not been verified.
