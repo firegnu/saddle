@@ -3,6 +3,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Style},
+    text::{Line, Span},
     widgets::Paragraph,
 };
 use unicode_width::UnicodeWidthStr;
@@ -42,13 +43,13 @@ pub fn draw(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec
     let mut placements = Vec::new();
     let (mut x, mut y) = (0, 0);
     for button in buttons {
-        let width = (button.label.width() as u16 + 2).min(area.width);
+        let width = (button.label.width() as u16 + 3).min(area.width);
         if x > 0 && x + width > area.width {
             x = 0;
-            y += 1;
+            y += 2;
         }
         placements.push((Rect::new(x, y, width, 1), button));
-        x += width + 1;
+        x += width + 2;
     }
     let height = (y + 1).min(area.height.saturating_sub(2));
     let top = area.bottom() - height;
@@ -59,12 +60,25 @@ pub fn draw(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec
         }
         let rect = Rect::new(area.x + relative.x, top + relative.y, relative.width, 1);
         let style = if button.enabled {
-            Style::default().fg(Color::White).bg(Color::Indexed(24))
+            Style::default()
+                .fg(Color::Indexed(252))
+                .bg(Color::Indexed(236))
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::Indexed(240))
+        };
+        let (label, shortcut) = button.label.rsplit_once(' ').unwrap_or((button.label, ""));
+        let shortcut_style = if button.enabled {
+            Style::default().fg(Color::Indexed(245))
+        } else {
+            style
         };
         frame.render_widget(
-            Paragraph::new(format!("[{}]", button.label)).style(style),
+            Paragraph::new(Line::from(vec![
+                Span::raw(format!(" {label}  ")),
+                Span::styled(shortcut, shortcut_style),
+                Span::raw(" "),
+            ]))
+            .style(style),
             rect,
         );
         if button.enabled {

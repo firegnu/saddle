@@ -332,15 +332,15 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
         );
     let mut h = Harness::start_with_projects(&script, true);
     h.see("Queue project-one");
-    h.click("[项目 c]");
+    h.click(" 项目  c ");
     h.see("选择项目");
     h.click("project-two");
     h.see("Queue project-two");
-    h.click("[暂停 p]");
+    h.click(" 暂停  p ");
     h.see("Paused");
     assert!(!h.dir.path().join("project-one/queue-state.json").exists());
     assert!(h.dir.path().join("project-two/queue-state.json").exists());
-    h.click("[项目 c]");
+    h.click(" 项目  c ");
     h.click("project-one");
     h.see("Queue project-one");
     h.see("Manual");
@@ -353,22 +353,22 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     let mut h = Harness::start();
     h.see("Native queue task");
     h.see("Synthetic title");
-    h.click("[回复 r]");
+    h.click(" 回复  r ");
     h.see("REPLY p/a");
-    h.click("[停止 x]");
-    h.click("[取消 Esc]");
+    h.click(" 停止  x ");
+    h.click(" 取消  Esc ");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
-    h.click("[详情 Enter]");
+    h.click(" 详情  Enter ");
     h.see("detail line 0");
-    h.click("[返回 Esc]");
-    h.see("[详情 Enter]");
-    h.click("[新增 a]");
+    h.click(" 返回  Esc ");
+    h.see(" 详情  Enter ");
+    h.click(" 新增  a ");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
     h.click("正文");
     h.send("正文内容".as_bytes());
-    h.click("[保存 ^S]");
+    h.click(" 保存  ^S ");
     h.see("鼠标新增");
     h.until(|h| {
         h.log("queue-events")
@@ -385,8 +385,8 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     h.screen.screen_mut().set_size(48, 80);
     h.until(|h| h.screen.screen().cell(24, 0).unwrap().contents() == "┌");
     // The narrower Agents toolbar wraps; hit targets must follow the new rows.
-    h.click("[停止 x]");
-    h.click("[确认停止 y]");
+    h.click(" 停止  x ");
+    h.click(" 确认停止  y ");
     h.event("stop p/a");
     h.quit();
 }
@@ -401,7 +401,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Native queue task");
     h.send(b"\r");
     h.see("detail line 0");
-    h.send(b"\x1b[6~");
+    h.send(b"\x1b[6~\x1b[6~");
     h.see("detail line 15");
     h.send(b"\x1b");
     h.see("Native queue task");
