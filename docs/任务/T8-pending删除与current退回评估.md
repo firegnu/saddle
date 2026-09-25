@@ -62,3 +62,11 @@
 - 验证了什么：先加 tests/queue.rs、tests/drover.rs、tests/workflow.rs 三个检查（假 drover 加 `drop --pos` 支持），补好类型骨架后三个都因目标行为缺失失败（没发 drop、`x` 不开弹层、没有 Delete 按钮），实现后通过。`cargo test --all-targets`、`cargo clippy --all-targets -- -D warnings`、`git diff --check` 全部通过。另在隔离 HOME + 临时 git 仓库里用真实 drover 核对：`drop --pos` 接受空/缺省原因、按位置放弃并在 `list --json` 的 history 留 `status: dropped` 和 reason，越界退出码 2。没有碰真实队列。
 - 拿主意的地方：快捷键用 `x`（`d` 已是下移，和 Agents Stop `x` 一致）；原因写死为 `Deleted in saddle`，不再加输入框；确认只认 `y`、取消只认 Esc，不像 Agents 的“任意键取消”，这样弹层里滚轮滚长正文不会误取消；删除后选中下一项（没有则上一项，都没有就跟到 History 的 Dropped 记录），避免按 id 跟到 History 里被删的那条。
 - 没做的事：current 退回 pending（第二项）没有实现；没有做跨项目删除，All pending 仍只读；没有用 `--expect`（公开 list 仍没有指纹），预检查和写入之间的竞态窗口与第 20 节记录的一样，没有发现更大的接口缺口。
+
+## 主控审查
+
+- 2026-09-26：可以合并。核对 74194bf 的全部 diff、完成记录和最新回复，按用户「只做删除」的最终范围验收；pending 删除通过公开 drop --pos 执行，确认目标固定、取消不写、失败反馈及 Dropped 历史语义符合任务要求。current 退回未实现，也不作为本次收尾的阻挡项。
+- 主控复跑 cargo test --all-targets：82 passed、2 ignored；cargo clippy --all-targets -- -D warnings、git diff --check 通过。没有修改真实队列内容或用户配置做测试。
+- 同意 Delete x、确认 y/取消 Esc、固定原因 Deleted in saddle、弹层滚动及删除后选择相邻待办的取舍；无待办时回到被删除条目的历史记录。All pending 保持只读。开发者额外用隔离 HOME/临时仓库核对真实 CLI 的记录可接受，不将其当作真实用户队列验证。
+- 接受沿用已记录的公开 pending 预检查限制：没有公开指纹，检查与写入之间仍存在竞态；本次未扩大接口或宣称原子保证。无新增阻挡项，无需返工。
+- release 更新后需用户重启 saddle；不重启当前运行实例，不夹带 T9 effort 图标修复。
