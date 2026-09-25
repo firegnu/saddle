@@ -8,6 +8,8 @@ pub enum Page {
     Detail,
     Help,
     Feedback(String),
+    Projects,
+    Project(String),
     Add {
         title: String,
         body: String,
@@ -16,6 +18,14 @@ pub enum Page {
 }
 #[derive(Default)]
 pub struct Panel {
+    pub(crate) buttons: Vec<crate::buttons::Hit>,
+    pub(crate) fields: Vec<(ratatui::layout::Rect, bool)>,
+    pub projects: Vec<String>,
+    pub project_selected: usize,
+    pub registry_error: Option<String>,
+    pub project_rows: Vec<(ratatui::layout::Rect, usize)>,
+    pub project: String,
+    pub read_error: Option<String>,
     pub snapshot: Option<Snapshot>,
     pub selected: usize,
     pub top: usize,
@@ -25,6 +35,94 @@ pub struct Panel {
     pub busy: bool,
 }
 impl Panel {
+    pub fn click(&mut self, column: u16, row: u16) -> Option<Request> {
+        let point = (column, row).into();
+        if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
+            return self.key(hit.key);
+        }
+        if self.busy {
+            return None;
+        }
+        if let Some((_, index)) = self
+            .project_rows
+            .iter()
+            .find(|(area, _)| area.contains(point))
+        {
+            return self.projects.get(*index).cloned().map(Request::Project);
+        }
+        if let Page::Add { body_focus, .. } = &mut self.page
+            && let Some((_, body)) = self.fields.iter().find(|(area, _)| area.contains(point))
+        {
+            *body_focus = *body;
+        }
+        None
+    }
+
+    fn controls(&self) -> Vec<crate::buttons::Button<'static>> {
+        use crate::buttons::Button as B;
+        use KeyCode as K;
+        match self.page {
+            Page::Add { .. } => vec![
+                B::control(
+                    "保存 ^S",
+                    K::Char('s'),
+                    !self.busy && self.read_error.is_none(),
+                ),
+                B::new("取消 Esc", K::Esc, !self.busy),
+            ],
+            Page::Project(_) => vec![
+                B::new("应用 Enter", K::Enter, !self.busy),
+                B::new("取消 Esc", K::Esc, true),
+            ],
+            Page::Projects => vec![
+                B::new("打开 Enter", K::Enter, !self.projects.is_empty()),
+                B::new("刷新 r", K::Char('r'), true),
+                B::new("目录 e", K::Char('e'), true),
+                B::new("返回 Esc", K::Esc, true),
+            ],
+            _ => {
+                let ready = !self.busy && self.snapshot.is_some() && self.read_error.is_none();
+                let mut buttons = vec![
+                    B::new("项目 c", K::Char('c'), !self.busy),
+                    B::new("刷新 r", K::Char('r'), !self.busy),
+                ];
+                if matches!(self.page, Page::List) {
+                    buttons.push(B::new(
+                        "详情 Enter",
+                        K::Enter,
+                        ready && !self.tasks().is_empty(),
+                    ));
+                } else {
+                    buttons.push(B::new("返回 Esc", K::Esc, true));
+                }
+                buttons.extend([
+                    B::new("新增 a", K::Char('a'), ready),
+                    B::new("放行 g", K::Char('g'), ready),
+                    B::new("下一件 n", K::Char('n'), ready),
+                    B::new(
+                        if self.snapshot.as_ref().is_some_and(|s| s.paused) {
+                            "恢复 p"
+                        } else {
+                            "暂停 p"
+                        },
+                        K::Char('p'),
+                        ready,
+                    ),
+                    B::new(
+                        if self.snapshot.as_ref().is_some_and(|s| s.mode.r#loop) {
+                            "关闭循环 l"
+                        } else {
+                            "开启循环 l"
+                        },
+                        K::Char('l'),
+                        ready,
+                    ),
+                    B::new("帮助 ?", K::Char('?'), true),
+                ]);
+                buttons
+            }
+        }
+    }
     pub fn tasks(&self) -> Vec<(&'static str, &Task)> {
         let Some(s) = &self.snapshot else {
             return Vec::new();
@@ -38,6 +136,7 @@ impl Panel {
             .collect()
     }
     pub fn absorb(&mut self, snapshot: Snapshot) {
+        self.read_error = None;
         let old = self
             .tasks()
             .get(self.selected)
@@ -59,6 +158,10 @@ impl Panel {
     }
     pub fn paste(&mut self, text: &str) {
         if self.busy {
+            return;
+        }
+        if let Page::Project(path) = &mut self.page {
+            path.extend(text.chars().filter(|c| !c.is_control()));
             return;
         }
         if let Page::Add {
@@ -99,6 +202,52 @@ impl Panel {
         if key.kind == KeyEventKind::Release {
             return None;
         }
+        if matches!(self.page, Page::Projects) {
+            match key.code {
+                KeyCode::Esc => self.page = Page::List,
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.project_selected = self.project_selected.saturating_sub(1)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.project_selected =
+                        (self.project_selected + 1).min(self.projects.len().saturating_sub(1))
+                }
+                KeyCode::Enter => {
+                    return self
+                        .projects
+                        .get(self.project_selected)
+                        .cloned()
+                        .map(Request::Project);
+                }
+                KeyCode::Char('e') => self.page = Page::Project(self.project.clone()),
+                KeyCode::Char('r') => return Some(Request::Projects),
+                _ => {}
+            }
+            return None;
+        }
+        if let Page::Project(path) = &mut self.page {
+            match key.code {
+                KeyCode::Esc => self.page = Page::List,
+                KeyCode::Enter => {
+                    if !path.trim().is_empty() {
+                        return Some(Request::Project(path.clone()));
+                    }
+                }
+                KeyCode::Backspace => {
+                    path.pop();
+                }
+                KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => path.clear(),
+                KeyCode::Char(c)
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    path.push(c)
+                }
+                _ => {}
+            }
+            return None;
+        }
         if let Page::Add {
             title,
             body,
@@ -121,6 +270,9 @@ impl Panel {
                     }
                 }
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if self.read_error.is_some() {
+                        return None;
+                    }
                     if title.trim().is_empty() {
                         self.message = "标题不能为空".into();
                         return None;
@@ -159,14 +311,14 @@ impl Panel {
                 self.scroll = 0;
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                if matches!(self.page, Page::List) {
+                if matches!(self.page, Page::List) && self.read_error.is_none() {
                     self.select(self.selected.saturating_sub(1));
                 } else {
                     self.scroll = self.scroll.saturating_sub(1);
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if matches!(self.page, Page::List) {
+                if matches!(self.page, Page::List) && self.read_error.is_none() {
                     self.select(self.selected + 1);
                 } else {
                     self.scroll = self.scroll.saturating_add(1);
@@ -174,7 +326,7 @@ impl Panel {
             }
             KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
             KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
-            KeyCode::Enter if !self.tasks().is_empty() => {
+            KeyCode::Enter if !self.tasks().is_empty() && self.read_error.is_none() => {
                 self.page = Page::Detail;
                 self.scroll = 0;
             }
@@ -182,7 +334,14 @@ impl Panel {
                 self.page = Page::Help;
                 self.scroll = 0;
             }
-            KeyCode::Char('a') if !self.busy => {
+            KeyCode::Char('c') if !self.busy => {
+                self.page = Page::Projects;
+                self.scroll = 0;
+                return Some(Request::Projects);
+            }
+            KeyCode::Char('a')
+                if !self.busy && self.read_error.is_none() && self.snapshot.is_some() =>
+            {
                 self.page = Page::Add {
                     title: String::new(),
                     body: String::new(),
@@ -192,6 +351,9 @@ impl Panel {
             }
             KeyCode::Char('r') => return Some(Request::Refresh),
             KeyCode::Char(c @ ('g' | 'n' | 'p' | 'l')) if !self.busy => {
+                if self.read_error.is_some() {
+                    return None;
+                }
                 let Some(snapshot) = &self.snapshot else {
                     self.message = "等待队列数据，操作未执行".into();
                     return None;
@@ -233,6 +395,9 @@ impl Panel {
                 Color::DarkGray
             }));
         let inside = block.inner(area);
+        self.buttons.clear();
+        self.fields.clear();
+        self.project_rows.clear();
         frame.render_widget(block, area);
         if inside.height < 2 || inside.width == 0 {
             return Vec::new();
@@ -254,14 +419,44 @@ impl Panel {
                 )
             })
             .unwrap_or_else(|| "正在读取队列…".into());
+        let mode = if self.read_error.is_some() {
+            "读取失败".to_string()
+        } else {
+            mode
+        };
         frame.render_widget(
             Paragraph::new(mode).style(Style::default().fg(Color::Cyan)),
             Rect::new(inside.x, inside.y, inside.width, 1),
         );
-        let body = Rect::new(inside.x, inside.y + 1, inside.width, inside.height - 2);
+        let project = Rect::new(inside.x, inside.y + 1, inside.width, 1);
+        if inside.height > 2 {
+            let name = std::path::Path::new(&self.project)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy();
+            frame.render_widget(
+                Paragraph::new(format!("项目：{name} · {}", self.project)),
+                project,
+            );
+        }
+        let (content, buttons) = crate::buttons::draw(
+            frame,
+            Rect {
+                height: inside.height.saturating_sub(1),
+                ..inside
+            },
+            &self.controls(),
+        );
+        self.buttons = buttons;
+        let body = Rect::new(
+            content.x,
+            content.y + 2,
+            content.width,
+            content.height.saturating_sub(2),
+        );
         let footer = Rect::new(inside.x, inside.bottom() - 1, inside.width, 1);
         let footer_text = if self.message.is_empty() {
-            "↑↓ ⏎详情 ?帮助 a新增 g放行 n下一件 p暂停 l循环"
+            "滚轮选择 · PgUp/PgDn 滚动"
         } else {
             &self.message
         };
@@ -272,13 +467,29 @@ impl Panel {
         let mut hits = Vec::new();
         match &self.page {
             Page::List => {
+                if let Some(error) = &self.read_error {
+                    let text = format!(
+                        "{error}\n\n检查 queue.cwd，或点击项目按钮切换。\nPgUp/PgDn 滚动完整错误。\n\n当前目录：{}",
+                        self.project
+                    );
+                    let lines = wrap_text(&text, body.width);
+                    self.scroll = self
+                        .scroll
+                        .min(lines.len().saturating_sub(usize::from(body.height)));
+                    frame.render_widget(
+                        Paragraph::new(lines)
+                            .scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
+                        body,
+                    );
+                    return hits;
+                }
                 let tasks = self.tasks();
                 if tasks.is_empty() {
                     frame.render_widget(
                         Paragraph::new(if self.snapshot.is_some() {
                             "队列为空 · a 新增任务"
                         } else {
-                            "读取失败时请检查 queue.cwd。\n仅通过 drover list --json 读取。"
+                            "正在通过公开 CLI 读取任务…"
                         })
                         .wrap(Wrap { trim: false }),
                         body,
@@ -345,6 +556,82 @@ impl Panel {
                     );
                 }
             }
+            Page::Projects => {
+                let mut lines = vec![(None, "选择项目 · 点击或 Enter 打开".to_string())];
+                if let Some(error) = &self.registry_error {
+                    lines.extend(
+                        wrap_text(error, body.width)
+                            .into_iter()
+                            .map(|line| (None, line.to_string())),
+                    );
+                }
+                for (index, path) in self.projects.iter().enumerate() {
+                    let name = std::path::Path::new(path)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
+                    lines.push((
+                        Some(index),
+                        format!(
+                            "{} {}",
+                            if index == self.project_selected {
+                                "▎"
+                            } else {
+                                " "
+                            },
+                            name
+                        ),
+                    ));
+                    lines.extend(
+                        wrap_text(path, body.width.saturating_sub(2))
+                            .into_iter()
+                            .map(|line| (Some(index), format!("  {line}"))),
+                    );
+                }
+                if self.projects.is_empty() {
+                    lines.push((None, "未登记项目 · 点击目录手动指定".into()));
+                }
+                let selected = lines
+                    .iter()
+                    .position(|(i, _)| *i == Some(self.project_selected))
+                    .unwrap_or(0);
+                let top = selected.saturating_sub(usize::from(body.height.saturating_sub(2)));
+                for (offset, (index, line)) in lines
+                    .iter()
+                    .skip(top)
+                    .take(usize::from(body.height))
+                    .enumerate()
+                {
+                    let row = Rect::new(body.x, body.y + offset as u16, body.width, 1);
+                    let style = if *index == Some(self.project_selected) {
+                        Style::default().bg(Color::Indexed(237))
+                    } else {
+                        Style::default()
+                    };
+                    frame.render_widget(Paragraph::new(line.as_str()).style(style), row);
+                    if let Some(index) = index {
+                        self.project_rows.push((row, *index));
+                    }
+                }
+            }
+            Page::Project(path) => {
+                let field = Block::bordered().title("项目目录 · Enter 应用 · Esc 取消");
+                let field_area = Rect::new(body.x, body.y, body.width, body.height.min(3));
+                let inner = field.inner(field_area);
+                frame.render_widget(field, field_area);
+                let width = unicode_width::UnicodeWidthStr::width(path.as_str()) as u16;
+                frame.render_widget(
+                    Paragraph::new(path.as_str())
+                        .scroll((0, width.saturating_sub(inner.width.saturating_sub(1)))),
+                    inner,
+                );
+                if focused && !inner.is_empty() {
+                    frame.set_cursor_position((inner.x + width.min(inner.width - 1), inner.y));
+                }
+                if body.height > 3 {
+                    frame.render_widget(Paragraph::new("输入已接入 drover 的目录。Ctrl-U 清空。\n仅本次运行生效；长期默认请设置 queue.cwd。").wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 3, body.width, body.height - 3));
+                }
+            }
             Page::Add {
                 title,
                 body: text,
@@ -356,6 +643,7 @@ impl Panel {
                 }
                 let title_area = Rect::new(body.x, body.y, body.width, 3);
                 let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3);
+                self.fields = vec![(title_area, false), (text_area, true)];
                 let title_block =
                     Block::bordered()
                         .title("标题")
@@ -413,7 +701,7 @@ impl Panel {
             _ => {
                 let text=match &self.page {
                     Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\n原因：{r}")).unwrap_or_default())).unwrap_or_else(||"任务已移出队列".into()),
-                    Page::Help=>"Queue 原生看板\n↑↓ / j k：选择任务\nEnter：任务详情；Esc：列表\nPgUp/PgDn：滚动详情/反馈\nr：刷新；g：核对并放行\nn：发送下一件\np：暂停/恢复；l：循环开/关\na：新增任务（原生表单）\n新增时 Tab 切字段、Ctrl-S 提交\nq / Ctrl-]：回 Agents\n\n只调用公开 drover CLI。\n操作不会启动外部看板。".into(),
+                    Page::Help=>"Queue 原生看板\n点击底部按钮执行操作\nc：已登记项目；e：手动目录（项目页）\n↑↓ / j k：选择任务或项目\nEnter：任务详情；Esc：列表\nPgUp/PgDn：滚动详情/反馈\nr：刷新；g：核对并放行\nn：发送下一件\np：暂停/恢复；l：循环开/关\na：新增任务（原生表单）\n新增时 Tab 切字段、Ctrl-S 提交\nq / Ctrl-]：回 Agents\n\n只调用公开 drover CLI。\n操作不会启动外部看板。".into(),
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };

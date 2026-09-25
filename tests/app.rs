@@ -29,6 +29,8 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
     cmd.args(["--config", config.to_str().unwrap()]);
     cmd.env("TERM", "xterm-256color");
+    cmd.env("HOME", temp.path());
+    cmd.cwd(temp.path());
     let mut child = pair.slave.spawn_command(cmd).unwrap();
     drop(pair.slave);
     let mut reader = pair.master.try_clone_reader().unwrap();

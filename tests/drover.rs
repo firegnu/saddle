@@ -1,6 +1,23 @@
 mod common;
 use saddle::drover::Client;
 #[test]
+fn project_registry_preserves_order_deduplicates_and_reports_read_errors() {
+    use saddle::drover::registered_projects;
+    let temp = tempfile::tempdir().unwrap();
+    let registry = temp.path().join("projects");
+    assert!(registered_projects(&registry).unwrap().is_empty());
+    std::fs::write(
+        &registry,
+        "/tmp/saddle-first\n\n/tmp/saddle-second\n/tmp/saddle-first\n",
+    )
+    .unwrap();
+    assert_eq!(
+        registered_projects(&registry).unwrap(),
+        ["/tmp/saddle-first", "/tmp/saddle-second"]
+    );
+    assert!(registered_projects(temp.path()).is_err());
+}
+#[test]
 fn queue_reads_public_json_in_the_configured_project_without_launching_a_board() {
     let temp = tempfile::tempdir().unwrap();
     let program = common::script(

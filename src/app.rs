@@ -140,6 +140,21 @@ impl App {
         let client = Client {
             program: expand_home(&config.corral).to_string_lossy().into_owned(),
         };
+        let registered = drover::registered_projects(&expand_home("~/.drover/projects"));
+        let registry_error = registered.as_ref().err().map(|error| format!("{error:#}"));
+        let projects = registered.unwrap_or_default();
+        let current = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        let default_project = if projects
+            .iter()
+            .any(|path| std::path::Path::new(path) == current)
+        {
+            current.clone()
+        } else {
+            projects
+                .first()
+                .map(std::path::PathBuf::from)
+                .unwrap_or(current)
+        };
         let queue_client = drover::Client {
             program: expand_home(&config.queue.drover)
                 .to_string_lossy()
@@ -149,8 +164,14 @@ impl App {
                 .cwd
                 .as_deref()
                 .map(expand_home)
-                .unwrap_or_else(|| std::path::PathBuf::from(".")),
+                .unwrap_or(default_project),
         };
+        let project = queue_client
+            .cwd
+            .canonicalize()
+            .unwrap_or_else(|_| queue_client.cwd.clone())
+            .display()
+            .to_string();
         let queue_worker =
             drover::Worker::start(queue_client, Duration::from_millis(config.refresh_ms));
         Self {
@@ -163,7 +184,12 @@ impl App {
                 ..Default::default()
             },
             focus: Focus::Agents,
-            queue: queue::Panel::default(),
+            queue: queue::Panel {
+                project,
+                projects,
+                registry_error,
+                ..Default::default()
+            },
             queue_worker,
             reply: None,
             reply_busy: false,
@@ -260,7 +286,7 @@ impl App {
             match update {
                 drover::Update::Snapshot(Ok(snapshot)) => self.queue.absorb(*snapshot),
                 drover::Update::Snapshot(Err(error)) => {
-                    self.queue.message = format!("{error:#} · 检查 queue.cwd")
+                    self.queue.read_error = Some(format!("{error:#}"));
                 }
                 drover::Update::Feedback(operation, result) => {
                     self.queue.complete(&operation, result)
@@ -317,11 +343,14 @@ impl App {
                     Route::Panel => self.panel_key(key),
                     Route::Queue => {
                         if key.code == KeyCode::Char('q')
-                            && !matches!(self.queue.page, queue::Page::Add { .. })
+                            && !matches!(
+                                self.queue.page,
+                                queue::Page::Add { .. } | queue::Page::Project(_)
+                            )
                         {
                             self.focus = Focus::Agents;
                         } else if let Some(request) = self.queue.key(key) {
-                            self.queue_worker.request(request);
+                            self.queue_request(request);
                         }
                     }
                     Route::Terminal => {
@@ -357,6 +386,15 @@ impl App {
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+                    if let Some(hit) = self
+                        .hits
+                        .buttons
+                        .iter()
+                        .find(|hit| hit.area.contains(point))
+                    {
+                        self.focus = Focus::Agents;
+                        return self.event(Event::Key(hit.key), panes);
+                    }
                     self.panel.confirm = None;
                     if panes.agents.contains(point) {
                         self.focus = Focus::Agents;
@@ -369,6 +407,10 @@ impl App {
                         }
                     } else if panes.queue.contains(point) {
                         self.focus = Focus::Queue;
+                        if let Some(request) = self.queue.click(mouse.column, mouse.row) {
+                            self.queue_request(request);
+                            return Ok(false);
+                        }
                         if let Some((_, index)) = self
                             .hits
                             .queue_rows
@@ -388,17 +430,14 @@ impl App {
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
                     )
                 {
-                    let delta = if mouse.kind == MouseEventKind::ScrollUp {
-                        -1
-                    } else {
-                        1
-                    };
-                    if matches!(self.queue.page, queue::Page::List) {
-                        self.queue
-                            .select(self.queue.selected.saturating_add_signed(delta));
-                    } else {
-                        self.queue.scroll = self.queue.scroll.saturating_add_signed(delta);
-                    }
+                    self.queue.key(KeyEvent::new(
+                        if mouse.kind == MouseEventKind::ScrollUp {
+                            KeyCode::Up
+                        } else {
+                            KeyCode::Down
+                        },
+                        crossterm::event::KeyModifiers::NONE,
+                    ));
                 } else if panes.agents.contains(point)
                     && matches!(
                         mouse.kind,
@@ -462,6 +501,47 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+    fn queue_request(&mut self, request: drover::Request) {
+        if matches!(request, drover::Request::Projects) {
+            match drover::registered_projects(&expand_home("~/.drover/projects")) {
+                Ok(projects) => {
+                    self.queue.projects = projects;
+                    self.queue.registry_error = None;
+                    self.queue.project_selected = self
+                        .queue
+                        .projects
+                        .iter()
+                        .position(|p| *p == self.queue.project)
+                        .unwrap_or(0);
+                }
+                Err(error) => self.queue.registry_error = Some(format!("{error:#}")),
+            }
+        } else if let drover::Request::Project(path) = request {
+            if self.queue.busy {
+                return;
+            }
+            let cwd = expand_home(&path);
+            let cwd = cwd.canonicalize().unwrap_or(cwd);
+            // Drop the old reader and its result channel before showing the new state.
+            self.queue_worker = drover::Worker::start(
+                drover::Client {
+                    program: expand_home(&self.config.queue.drover)
+                        .to_string_lossy()
+                        .into_owned(),
+                    cwd: cwd.clone(),
+                },
+                Duration::from_millis(self.config.refresh_ms),
+            );
+            self.queue = queue::Panel {
+                project: cwd.display().to_string(),
+                projects: std::mem::take(&mut self.queue.projects),
+                registry_error: self.queue.registry_error.take(),
+                ..Default::default()
+            };
+        } else {
+            self.queue_worker.request(request);
         }
     }
     fn focused_session(&self) -> Option<&Session> {

@@ -27,9 +27,11 @@ drover = "drover"
 # cwd = "~/Developer/personal_projs/your-project"
 ```
 
-Queue 显示 `cwd` 指定项目的任务；默认使用启动 saddle 的目录。该目录应已配置 drover。命令路径和 cwd 支持 `~/`。旧的 `queue.command` 配置已移除，使用它会明确报错，不会启动外部 UI。
+Queue 自动读取 `~/.drover/projects` 中的登记项目，点击 **项目** 按钮可切换。启动时优先使用 `queue.cwd`；没有配置时，若启动目录已登记就选它，否则选登记的首个项目；无登记时尝试启动目录。项目页也可点击 **目录** 手动输入，切换仅本次运行生效。目录应已接入 drover，saddle 不会自动初始化它。命令路径和 cwd 支持 `~/`。旧的 `queue.command` 配置已移除。
 
-左列在窄屏时最多占一半。数据读取与操作在后台执行，超时或失败显示反馈。saddle 只使用公开 CLI，不读取 corral/drover 的内部文件或项目注册表。
+左列在窄屏时最多占一半。数据读取与操作在后台执行，读取失败会显示完整、可滚动的错误，成功后恢复。除用户授权的项目登记清单外，saddle 不读取 corral/drover 的内部文件；任务数据和操作全部使用公开 CLI。
+
+Agents 和 Queue 底部都有可点击的原生按钮，窄窗时自动换行；不可用操作置灰。Agents 的停止操作仍需确认。新增任务可以点击标题/正文字段和保存/取消按钮，原有快捷键也保留。
 
 ## 按键
 
@@ -44,6 +46,9 @@ Queue 显示 `cwd` 指定项目的任务；默认使用启动 saddle 的目录�
 | Agents | x 然后 y | 停止选中的 agent；其他键取消 |
 | Agents | q | 退出 saddle |
 | Queue | ↑↓ / j k、鼠标点击/滚轮 | 选择任务 |
+| Queue | c | 打开已登记项目列表；点击或 Enter 切换 |
+| Queue 项目页 | e / r | 手动目录 / 重读登记清单 |
+| Queue 目录表单 | Ctrl-U / Enter / Esc | 清空路径 / 应用 / 取消 |
 | Queue | Enter / Esc | 详情 / 返回列表 |
 | Queue | PgUp / PgDn | 滚动详情或操作反馈 |
 | Queue | ? / h | 原生帮助页 |

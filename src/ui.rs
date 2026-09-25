@@ -16,6 +16,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Default)]
 pub struct Hits {
+    pub(crate) buttons: Vec<crate::buttons::Hit>,
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
@@ -98,7 +99,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     if inside.is_empty() {
         return Hits::default();
     }
-    let help = "↑↓/jk ⏎ r PgUp/Dn s x y q Tab/⇧Tab";
+    let help = "↑↓ 选择 · Tab 队列 · q 退出";
     let footer = Rect::new(inside.x, inside.bottom() - 1, inside.width, 1);
     frame.render_widget(
         Paragraph::new(if panel.message.is_empty() {
@@ -109,7 +110,46 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         .style(Style::default().fg(Color::Yellow)),
         footer,
     );
-    let available = inside.height.saturating_sub(1);
+    use crate::buttons::{self, Button};
+    use crossterm::event::KeyCode as K;
+    let buttons = if panel.confirm.is_some() {
+        vec![
+            Button::new("确认停止 y", K::Char('y'), true),
+            Button::new("取消 Esc", K::Esc, true),
+        ]
+    } else {
+        vec![
+            Button::new("接入 Enter", K::Enter, panel.selected.is_some()),
+            Button::new(
+                if panel.show_reply {
+                    "收起 r"
+                } else {
+                    "回复 r"
+                },
+                K::Char('r'),
+                panel.selected.is_some(),
+            ),
+            Button::new(
+                if panel.by_state {
+                    "项目排序 s"
+                } else {
+                    "状态排序 s"
+                },
+                K::Char('s'),
+                true,
+            ),
+            Button::new("停止 x", K::Char('x'), panel.selected.is_some()),
+        ]
+    };
+    let (content, buttons) = buttons::draw(
+        frame,
+        Rect {
+            height: inside.height.saturating_sub(1),
+            ..inside
+        },
+        &buttons,
+    );
+    let available = content.height;
     let list_height = if panel.show_reply && available >= 5 {
         (available / 2).max(3)
     } else {
@@ -122,6 +162,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         list_height,
     );
     let mut hits = Hits {
+        buttons,
         list,
         ..Default::default()
     };

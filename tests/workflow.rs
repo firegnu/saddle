@@ -22,7 +22,28 @@ impl Harness {
         Self::start_with_queue(include_str!("fixtures/drover.py"))
     }
     fn start_with_queue(queue_script: &str) -> Self {
+        Self::start_with_projects(queue_script, false)
+    }
+    fn start_with_projects(queue_script: &str, registered: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(home.join(".drover")).unwrap();
+        if registered {
+            let first = dir.path().join("project-one");
+            let second = dir.path().join("project-two");
+            std::fs::create_dir(&first).unwrap();
+            std::fs::create_dir(&second).unwrap();
+            std::fs::write(
+                home.join(".drover/projects"),
+                format!(
+                    "{}\n\n{}\n{}\n",
+                    first.display(),
+                    second.display(),
+                    first.display()
+                ),
+            )
+            .unwrap();
+        }
         let corral = common::script(dir.path(), "corral", include_str!("fixtures/corral.py"));
         let queue = common::script(dir.path(), "queue", queue_script);
         std::fs::write(
@@ -47,6 +68,8 @@ impl Harness {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
         cmd.args(["--config", config.to_str().unwrap()]);
         cmd.env("TERM", "xterm-256color");
+        cmd.env("HOME", &home);
+        cmd.cwd(dir.path());
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().unwrap();
@@ -105,6 +128,26 @@ impl Harness {
     }
     fn see(&mut self, text: &str) {
         self.until(|h| h.screen.screen().contents().contains(text));
+    }
+    fn click(&mut self, label: &str) {
+        self.see(label);
+        let screen = self.screen.screen();
+        let (rows, cols) = screen.size();
+        for row in 0..rows {
+            for col in 0..cols {
+                if screen.cell(row, col).unwrap().contents().is_empty() {
+                    continue;
+                }
+                let text: String = (col..cols)
+                    .map(|x| screen.cell(row, x).unwrap().contents())
+                    .collect();
+                if text.starts_with(label) {
+                    self.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
+                    return;
+                }
+            }
+        }
+        panic!("click target not found: {label}");
     }
     fn event(&mut self, text: &str) {
         self.until(|h| h.log("events").contains(text));
@@ -195,7 +238,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     h.event("detached p/b");
     h.send(b"\x1dr");
     h.see("REPLY p/a");
-    h.send(b"\x1b[6~");
+    h.send(b"\x1b[6~\x1b[6~");
     h.see("line 15");
     h.send(b"rxq"); // cancel stop with q; cancellation must not quit.
     h.see("cancelled");
@@ -245,10 +288,106 @@ fn mouse_selection_attaches_and_quit_remains_responsive_during_output_flood() {
 
 #[test]
 fn failed_queue_data_request_keeps_actionable_error_visible() {
-    let mut h =
-        Harness::start_with_queue("#!/bin/sh\necho 'QUEUE FAILED: missing project'\nexit 2\n");
-    h.see("QUEUE FAILED: missing project");
+    let mut h = Harness::start_with_queue(
+        "#!/bin/sh\necho 'QUEUE FAILED: /tmp/a-long-project-directory/another-long-directory/.drover.conf missing project'\nexit 2\n",
+    );
+    h.see("读取失败");
+    h.see("missing"); // The full error wraps across rows in a narrow pane.
     h.see("检查 queue.cwd");
+    assert!(!h.screen.screen().contents().contains("正在读取队列"));
+    h.quit();
+}
+
+#[test]
+fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repository() {
+    let script = format!(
+        "#!/usr/bin/env python3\nfrom pathlib import Path\nimport sys\nif Path.cwd().name != 'chosen-project':\n    print('missing project', file=sys.stderr)\n    sys.exit(2)\n{}",
+        include_str!("fixtures/drover.py")
+    );
+    let mut h = Harness::start_with_queue(&script);
+    let project = h.dir.path().join("chosen-project");
+    std::fs::create_dir(&project).unwrap();
+    h.see("missing project");
+    h.send(b"\tce");
+    h.see("项目目录");
+    h.send(b"\x15"); // Ctrl-U replaces the initial directory.
+    h.send(format!("\x1b[200~{}\x1b[201~", project.display()).as_bytes());
+    h.send(b"\r");
+    h.see("Native queue task");
+    assert!(!h.screen.screen().contents().contains("missing project"));
+    h.send(b"p");
+    h.see("Paused");
+    h.quit();
+    assert!(!project.join(".drover.conf").exists());
+    assert!(!h.log("queue-events").contains("init"));
+}
+
+#[test]
+fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_project() {
+    let script = include_str!("fixtures/drover.py")
+        .replace("state_file = root /", "state_file = Path.cwd() /")
+        .replace(
+            "title='Native queue task'",
+            "title='Queue ' + Path.cwd().name",
+        );
+    let mut h = Harness::start_with_projects(&script, true);
+    h.see("Queue project-one");
+    h.click("[项目 c]");
+    h.see("选择项目");
+    h.click("project-two");
+    h.see("Queue project-two");
+    h.click("[暂停 p]");
+    h.see("Paused");
+    assert!(!h.dir.path().join("project-one/queue-state.json").exists());
+    assert!(h.dir.path().join("project-two/queue-state.json").exists());
+    h.click("[项目 c]");
+    h.click("project-one");
+    h.see("Queue project-one");
+    h.see("Manual");
+    h.quit();
+    assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
+fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
+    let mut h = Harness::start();
+    h.see("Native queue task");
+    h.see("Synthetic title");
+    h.click("[回复 r]");
+    h.see("REPLY p/a");
+    h.click("[停止 x]");
+    h.click("[取消 Esc]");
+    h.see("cancelled");
+    assert!(!h.log("events").contains("stop "));
+    h.click("[详情 Enter]");
+    h.see("detail line 0");
+    h.click("[返回 Esc]");
+    h.see("[详情 Enter]");
+    h.click("[新增 a]");
+    h.see("Ctrl-S");
+    h.send("鼠标新增".as_bytes());
+    h.click("正文");
+    h.send("正文内容".as_bytes());
+    h.click("[保存 ^S]");
+    h.see("鼠标新增");
+    h.until(|h| {
+        h.log("queue-events")
+            .contains("[\"add\", \"鼠标新增\", \"正文内容\"]")
+    });
+    h.master
+        .resize(PtySize {
+            rows: 48,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    h.screen.screen_mut().set_size(48, 80);
+    h.until(|h| h.screen.screen().cell(24, 0).unwrap().contents() == "┌");
+    // The narrower Agents toolbar wraps; hit targets must follow the new rows.
+    h.click("[停止 x]");
+    h.click("[确认停止 y]");
+    h.event("stop p/a");
     h.quit();
 }
 

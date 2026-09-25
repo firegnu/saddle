@@ -3,6 +3,24 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::{sync::atomic::AtomicBool, time::Duration};
 
+/// The only drover file saddle reads directly, explicitly authorized by the user.
+pub fn registered_projects(path: &std::path::Path) -> Result<Vec<String>> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error).with_context(|| format!("读取 {}", path.display())),
+    };
+    let mut projects = Vec::new();
+    for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        let path = crate::config::expand_home(line);
+        let path = path.canonicalize().unwrap_or(path).display().to_string();
+        if !projects.contains(&path) {
+            projects.push(path);
+        }
+    }
+    Ok(projects)
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Task {
@@ -110,6 +128,8 @@ impl Client {
 
 pub enum Request {
     Refresh,
+    Projects,
+    Project(String),
     Run(Operation),
 }
 pub enum Update {

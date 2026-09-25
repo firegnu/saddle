@@ -1,5 +1,15 @@
 # 进度
 
+## 2026-09-25：修复 Queue 项目入口，加入原生按钮
+
+- 根因已复现：从 saddle 目录执行 `drover list --json` 返回“尚未接入 drover”；原实现只读启动目录，没有沿用登记项目列表，而且完整错误被截在页脚、状态仍显示读取中。
+- 用户已明确授权只读 `~/.drover/projects`。默认优先 `queue.cwd`、已登记的启动目录、登记首项；无登记才尝试启动目录。点击「项目」从原生列表切换，支持刷新登记清单和手动目录；不读取 `.drover.conf` 或任务内部文件，不自动初始化仓库。
+- 读取失败在内容区折行展示完整错误，支持滚动，禁用过期状态上的写操作；成功后清除读取错误。切换项目会丢弃旧 worker 的结果，执行操作时禁止切换。
+- Agents 新增接入、回复、排序、停止及确认/取消按钮。Queue 新增项目、刷新、详情、新增、放行、下一件、暂停/恢复、循环、帮助按钮；表单可点击字段、保存/取消。窄窗按钮自动换行，全部由 Rust/ratatui 绘制。
+- 自动检查：32 项通过，1 项真实 drover CLI 隔离测试默认忽略、已单独执行通过。clippy（拒绝警告）、fmt、release 构建、diff 检查通过。
+- RED→GREEN：长路径错误不再截断/假装加载；从未接入目录启动可自动加载登记项目；鼠标切换后动作只作用于选中项目；表单和停止确认可点击。回归还覆盖缩窄窗口后的按钮命中、失败时阻止过期动作、登记缺失/去重/读取错误及手动修正目录。
+- 实际只读核对：登记的 drover 项目公开 `list --json` 正常返回。没有修改登记清单或真实项目，没有启动、接入或操作真实 agent。新版可执行文件为 `target/release/saddle`，已运行的旧进程需退出后重新打开。
+
 ## 第 1 步（原生 UI 修订版）：实现与自动验收完成
 
 2026-09-25，直接在 main 分步提交，未推送。按用户后续要求，原来的「Queue 先嵌入 drover board」方案已经作废。
@@ -10,14 +20,14 @@
 - Queue：ratatui 原生列表、详情、帮助、操作反馈、标题/正文新增表单。公开 `drover list --json` 提供 mode、paused、current、awaiting、pending、history；g/n/p/l/a 通过公开 CLI 执行放行、下一件、暂停/恢复、循环和新增。失败保留新增草稿，执行中不重复提交。
 - Viewer：唯一使用 PTY 的窗格，仅运行公开 `corral attach`。Rust/alacritty_terminal 解析、ratatui 绘制颜色、中文、光标、鼠标和粘贴；切换等待旧 attach 退出，再接入最新选择。已有其他 attach 时拒绝接入，agent 消失后不自动换人。
 - 所有 saddle UI 都是 Rust。生产代码没有 `board` 或 Python UI 调用；不启动外部编辑器。测试中的 Python 文件只是假的 CLI/字节流边界，不作为 UI 实现。
-- Queue 的 `queue.command` 已删除并在解析时拒绝；新配置为 `queue.drover` 和可选 `queue.cwd`。cwd 默认启动目录，不读取 drover 内部项目注册表。
+- Queue 的 `queue.command` 已删除并在解析时拒绝；新配置为 `queue.drover` 和可选 `queue.cwd`。未指定 cwd 时从 `~/.drover/projects` 选择默认项目（用户已授权只读该清单）。
 - TOML 配置、三窗格缩放、焦点路由、后台命令取消/超时、终端退出恢复、README 和 `--help` 已同步。
 
 ### 验证
 
 全部通过：
 
-- `cargo test --all-targets`：27 项通过；依赖本机 drover 的 1 项默认忽略，已单独执行通过。
+- `cargo test --all-targets`：32 项通过；依赖本机 drover 的 1 项默认忽略，已单独执行通过。
 - `SADDLE_DROVER_BIN=/Users/firegnu/.local/bin/drover cargo test --test workflow installed_drover_cli -- --ignored`：真实公开 CLI 在隔离 HOME/临时项目中驱动原生 Queue，验证正文、暂停/恢复、循环开关、多行中文新增和缩放。不调用外部看板，不启动真实 agent。
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo fmt --check`
