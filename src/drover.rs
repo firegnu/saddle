@@ -94,6 +94,10 @@ pub enum Operation {
         index: usize,
         to: usize,
     },
+    Delete {
+        pending: Vec<Task>,
+        index: usize,
+    },
 }
 impl Operation {
     pub fn args(&self) -> Vec<String> {
@@ -118,13 +122,20 @@ impl Operation {
             Self::Move { index, to, .. } => {
                 vec!["move".into(), (index + 1).to_string(), (to + 1).to_string()]
             }
+            Self::Delete { index, .. } => vec![
+                "drop".into(),
+                "--pos".into(),
+                (index + 1).to_string(),
+                "Deleted in saddle".into(),
+            ],
         }
     }
 }
 impl Client {
     pub fn execute(&self, operation: &Operation, cancel: &AtomicBool) -> Result<String> {
-        if let Operation::Edit { pending, index, .. } | Operation::Move { pending, index, .. } =
-            operation
+        if let Operation::Edit { pending, index, .. }
+        | Operation::Move { pending, index, .. }
+        | Operation::Delete { pending, index } = operation
         {
             let fresh = self.read(cancel)?;
             if *index >= pending.len()
@@ -135,7 +146,7 @@ impl Client {
                     .eq(pending.iter().map(|t| (&t.id, &t.title, &t.body)))
             {
                 bail!(
-                    "Pending tasks changed; action not sent. Reopen Edit or retry Move using the refreshed queue."
+                    "Pending tasks changed; action not sent. Reopen Edit or Delete, or retry Move, using the refreshed queue."
                 );
             }
         }

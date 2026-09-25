@@ -61,7 +61,7 @@
 | 退出 | 焦点在 Agents 时按 `q` |
 
 - 焦点在 Viewer 时，除了 `Ctrl-]`，所有按键、粘贴、鼠标事件都原样送进 `corral attach`。
-- Queue 是原生面板：↑↓/j k 选任务，Enter 显示详情，PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，e 编辑选中的待办，u/d 上移/下移待办，? / h 帮助，q / Ctrl-] 回 Agents。新增/编辑表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
+- Queue 是原生面板：↑↓/j k 选任务，Enter 显示详情，PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，e 编辑选中的待办，u/d 上移/下移待办，x 删除选中的待办（需确认），? / h 帮助，q / Ctrl-] 回 Agents。新增/编辑表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
 - Agents 面板现有的按键全部保留：`r` 显示或隐藏回复区、`PgUp/PgDn` 滚动回复区、`s` 按状态分组、`x` 再按 `y` 停掉 agent、滚轮在列表上滚动。
 - 原生按钮与快捷键使用相同操作：Agents 提供接入、回复、排序、停止（仍需确认）；Queue 提供项目、刷新、详情、新增、放行、下一件、暂停/恢复、循环、帮助。表单提供保存/取消，字段可点击聚焦；窄窗按钮换行。
 - 按钮遵循第 13 节的语义配色、悬停/按下反馈；按下和松开必须命中同一个按钮才执行，移出取消。
@@ -245,3 +245,13 @@ drover = "drover"
 - 数据：只读公开 JSON 每个 agent 的 `labels` 对象（键值为字符串；未传标签为 `{}`，同名重开不继承）。`status` 返回的 labels 与其他状态字段一起覆盖 `ls` 的条目；跳过 `status` 的 starting/incompatible 条目沿用 `ls` 的 labels。旧版输出缺少 `labels`、值不是字符串，或 `effort` 不是 `medium`/`high`/`xhigh`（区分大小写）都按未知。不解析 argv、不读 corral 内部文件、不从终端输出推断，不推断默认档位；图标只表示委派时写入的标签，不称为运行时实际 effort、token 或负载。
 - 显示：主行在类型列（窄窗无类型列时在名称列）之后、状态文字之前放一个 3 列信号格 `▂▄▆`：medium 亮一格、high 亮两格、xhigh 三格全亮；亮格用正文色，暗格用树线的弱化色（选中时随树线提亮）。未知不显示图标，只留空白保持同列对齐；整个列表都没有已知 effort 时不占这一列，原有布局不变。
 - 只加 effort，不展示 model，不新增配置项；状态判断、排序、选择、接入和操作语义不变。用合成数据/假 CLI 验证解析和三档/未知的渲染。
+
+## 24. 删除 pending 任务（T8）
+
+用户要求：提供可以在看板中删除 pending task 的功能。
+
+- 入口：选中的 Pending 在 Move down 之后多一个危险色轻量按钮 `Delete x`（快捷键 `x`，与 Agents 的 Stop `x` 一致）；Current、Awaiting、History 不显示、快捷键不启用。忙碌、读取错误、已有弹层时不可用。
+- 确认：打开原生弹层 ` Delete task `（沿用 Queue 弹层尺寸与按钮样式），按钮 `Delete y`（危险色）和 `Cancel Esc`。正文写明 pending 位置、公开 id、完整标题和正文，并说明「移出待办，drover 在 History 保留为 Dropped」。`y` 或点 Delete 确认，Esc/Cancel（或 `q` 回 Agents）取消；其他键不生效，↑↓/PgUp/PgDn/滚轮滚动长正文。
+- 目标固定：打开弹层时保存整份 pending 基线和位置，弹层只显示这份快照；后台刷新和选中项变化不改变目标。确认后调用 `drover drop --pos <位置> "Deleted in saddle"`（直接参数，不启动 shell，固定原因写进放弃历史），执行前按第 20 节重新 `list --json` 核对整份 pending，变化则报过期错误、不写入。同样没有可用于 `--expect` 的公开指纹，不声称原子保护。
+- 执行中弹层保留、按钮禁用、显示 Deleting task…；成功回列表并刷新，选中落到同一位置的下一项（没有则上一项；已无待办时跟到 History 里的 Dropped 记录）；失败按其他动作显示 Action result 错误。底部输入提示为 Confirm delete。
+- 不做 current 退回 pending（公开 CLI 没有对应状态转换，需 drover 侧评估）；All pending 汇总仍只读。

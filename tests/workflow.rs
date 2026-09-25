@@ -527,6 +527,33 @@ fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
 }
 
 #[test]
+fn pending_delete_button_confirms_names_the_task_and_can_be_cancelled() {
+    let mut h = Harness::start();
+    h.see("T1 Native queue task");
+    h.send(b"\t");
+    h.click("Delete x");
+    h.see("Delete task");
+    h.see("detail line 0");
+    h.see("History as Dropped");
+    h.click("Cancel Esc");
+    h.until(|h| !h.screen.screen().contents().contains("Delete task"));
+    h.see("T1 Native queue task");
+    h.send(b"x");
+    h.see("Delete task");
+    h.click("Delete y");
+    h.until(|h| {
+        h.log("queue-events")
+            .contains("[\"drop\", \"--pos\", \"1\", \"Deleted in saddle\"]")
+    });
+    h.until(|h| !h.screen.screen().contents().contains("Delete task"));
+    h.see("Dropped");
+    h.see("No active tasks");
+    h.quit();
+    assert_eq!(h.log("queue-events").matches("\"drop\"").count(), 1);
+    assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
 #[ignore = "requires installed drover CLI; no external UI, real queues, or agents"]
 fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
     use std::process::Command;
