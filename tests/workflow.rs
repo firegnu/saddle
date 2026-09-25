@@ -130,6 +130,10 @@ impl Harness {
         self.until(|h| h.screen.screen().contents().contains(text));
     }
     fn click(&mut self, label: &str) {
+        let (col, row) = self.press_button(label);
+        self.send(format!("\x1b[<0;{};{}m", col + 1, row + 1).as_bytes());
+    }
+    fn press_button(&mut self, label: &str) -> (u16, u16) {
         self.see(label);
         let screen = self.screen.screen();
         let (rows, cols) = screen.size();
@@ -143,7 +147,7 @@ impl Harness {
                     .collect();
                 if text.starts_with(label) {
                     self.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
-                    return;
+                    return (col, row);
                 }
             }
         }
@@ -512,4 +516,21 @@ fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
     h.see("原生新增");
     h.quit();
     assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
+fn buttons_require_release_on_the_same_target() {
+    let mut h = Harness::start();
+    h.see("Native queue task");
+    h.press_button(" 暂停  p ");
+    let deadline = Instant::now() + Duration::from_millis(400);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    assert!(
+        !h.log("queue-events").contains("[\"pause\"]"),
+        "Down must not run a command"
+    );
+    h.send(b"\x1b[<0;139;39m"); // Release elsewhere cancels.
+    h.quit();
 }

@@ -1,6 +1,6 @@
 pub mod agents;
 pub mod app;
-mod buttons;
+pub mod buttons;
 mod command;
 pub mod config;
 pub mod corral;
@@ -12,3 +12,5 @@ pub mod queue;
 pub mod terminal;
 pub mod ui;
 pub mod viewer;
+
+pub mod theme;

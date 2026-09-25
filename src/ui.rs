@@ -32,9 +32,14 @@ pub struct View<'a> {
     pub viewer_note: &'a str,
     pub reply: &'a str,
     pub now: f64,
+    pub pointer: &'a crate::buttons::Pointer,
 }
 
 pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
+    let screen_area = frame.area();
+    frame
+        .buffer_mut()
+        .set_style(screen_area, crate::theme::base());
     let mut hits = draw_agents(frame, panel, &view);
     hits.queue_rows = view
         .queue
@@ -51,20 +56,84 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         view.viewer,
         view.viewer_note,
     );
+    let controls: Vec<_> = hits
+        .buttons
+        .iter()
+        .cloned()
+        .map(|h| (Focus::Agents, h))
+        .chain(
+            view.queue
+                .buttons
+                .iter()
+                .cloned()
+                .map(|h| (Focus::Queue, h)),
+        )
+        .collect();
+    view.pointer.paint(frame, &controls);
+    if !view.panes.tabs.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    " Agents ",
+                    Style::default().fg(if !view.panes.agents.is_empty() {
+                        crate::theme::FOCUS
+                    } else {
+                        crate::theme::MUTED
+                    }),
+                ),
+                Span::styled(
+                    " Queue ",
+                    Style::default().fg(if !view.panes.queue.is_empty() {
+                        crate::theme::FOCUS
+                    } else {
+                        crate::theme::MUTED
+                    }),
+                ),
+            ])),
+            view.panes.tabs,
+        );
+    }
+    let (target, help) = match view.focus {
+        Focus::Agents => (
+            "Agents".to_string(),
+            " ↑↓ 选择  Enter 接入  r 回复  s 排序  x 停止  Tab 队列  q 退出",
+        ),
+        Focus::Queue => (
+            "Queue".to_string(),
+            " ↑↓ 选择  Enter 详情  c 项目  a 新增  ? 帮助  Ctrl-] Agents",
+        ),
+        Focus::Viewer => (
+            view.showing.unwrap_or("Viewer · 未连接").to_string(),
+            " 按键发送到终端  Ctrl-] 返回 Agents",
+        ),
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" 输入 ▸ {target} "),
+                Style::default()
+                    .fg(crate::theme::BG)
+                    .bg(crate::theme::FOCUS),
+            ),
+            Span::styled(
+                if panel.message.is_empty() {
+                    help
+                } else {
+                    &panel.message
+                },
+                Style::default().fg(crate::theme::MUTED),
+            ),
+        ])),
+        view.panes.status,
+    );
     hits
 }
 
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
 }
-fn border(title: &str, focused: bool) -> Block<'_> {
-    Block::bordered()
-        .title(title)
-        .border_style(Style::default().fg(if focused {
-            Color::Cyan
-        } else {
-            Color::DarkGray
-        }))
+fn border(title: &str, focused: bool) -> Block<'static> {
+    crate::theme::block(title.to_string(), focused)
 }
 fn draw_terminal(
     frame: &mut Frame,

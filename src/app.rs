@@ -134,6 +134,8 @@ struct App {
     reply_due: Instant,
     attach_sequence: u64,
     hits: Hits,
+    pointer: crate::buttons::Pointer,
+    left_queue: bool,
 }
 impl App {
     fn new(config: Config) -> Self {
@@ -196,12 +198,21 @@ impl App {
             reply_due: Instant::now(),
             attach_sequence: 0,
             hits: Hits::default(),
+            pointer: Default::default(),
+            left_queue: false,
         }
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         loop {
             let size = terminal.size()?;
-            let panes = Panes::new(Rect::new(0, 0, size.width, size.height), &self.config);
+            if self.focus != Focus::Viewer {
+                self.left_queue = self.focus == Focus::Queue;
+            }
+            let panes = Panes::with_queue(
+                Rect::new(0, 0, size.width, size.height),
+                &self.config,
+                self.left_queue,
+            );
             self.tick(panes)?;
             let reply = self
                 .reply
@@ -222,6 +233,7 @@ impl App {
                         viewer_note: &self.viewer.note,
                         reply,
                         now: now(),
+                        pointer: &self.pointer,
                     },
                 );
             })?;
@@ -324,6 +336,7 @@ impl App {
     fn event(&mut self, event: Event, panes: Panes) -> Result<bool> {
         match event {
             Event::Key(key) => {
+                self.pointer.cancel();
                 if key.kind == KeyEventKind::Release {
                     return Ok(false);
                 }
@@ -385,15 +398,36 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
+                let controls: Vec<_> = self
+                    .hits
+                    .buttons
+                    .iter()
+                    .cloned()
+                    .map(|h| (Focus::Agents, h))
+                    .chain(
+                        self.queue
+                            .buttons
+                            .iter()
+                            .cloned()
+                            .map(|h| (Focus::Queue, h)),
+                    )
+                    .collect();
+                if let Some((focus, key)) = self.pointer.event(mouse, &controls) {
+                    self.focus = focus;
+                    return self.event(Event::Key(key), panes);
+                }
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                    if let Some(hit) = self
-                        .hits
-                        .buttons
-                        .iter()
-                        .find(|hit| hit.area.contains(point))
-                    {
-                        self.focus = Focus::Agents;
-                        return self.event(Event::Key(hit.key), panes);
+                    if controls.iter().any(|(_, h)| h.area.contains(point)) {
+                        return Ok(false);
+                    }
+                    if panes.tabs.contains(point) {
+                        self.focus = if mouse.column - panes.tabs.x < 9 {
+                            Focus::Agents
+                        } else {
+                            Focus::Queue
+                        };
+                        self.left_queue = self.focus == Focus::Queue;
+                        return Ok(false);
                     }
                     self.panel.confirm = None;
                     if panes.agents.contains(point) {
@@ -463,7 +497,7 @@ impl App {
                     }
                 }
             }
-            Event::Resize(_, _) => {}
+            Event::Resize(_, _) => self.pointer.cancel(),
             _ => {}
         }
         Ok(false)
