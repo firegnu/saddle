@@ -456,6 +456,64 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
 }
 
 #[test]
+fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
+    let mut h = Harness::start();
+    h.see("Native queue task");
+    h.send(b"\ta");
+    h.see("Add task");
+    h.send(b"Second\tBody\x13");
+    h.until(|h| !h.screen.screen().contents().contains("Add task"));
+    h.see("Second");
+    h.send(b"j");
+    h.click("Edit e");
+    h.see("Edit task");
+    h.see("Second");
+    h.send(b" q\t\rExtra");
+    h.see("Extra");
+    h.send(b"\x1d");
+    h.see("Click Queue to resume");
+    h.send(b"\t");
+    h.see("Edit task");
+    h.see("Extra");
+    std::fs::write(h.dir.path().join("write-error"), "synthetic write refused").unwrap();
+    h.click("Save ^s");
+    h.see("synthetic write refused");
+    h.see("Second q");
+    std::fs::remove_file(h.dir.path().join("write-error")).unwrap();
+    h.click("Save ^s");
+    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
+    h.see("Second q");
+    h.click("Move up u");
+    h.until(|h| h.log("queue-events").contains("[\"move\", \"2\", \"1\"]"));
+    // Wait for the refreshed task order before issuing the opposite movement.
+    h.until(|h| {
+        let text = h.screen.screen().contents();
+        text.find("Second q")
+            .zip(text.find("Native queue task"))
+            .is_some_and(|(a, b)| a < b)
+    });
+    h.click("Move down d");
+    h.until(|h| h.log("queue-events").contains("[\"move\", \"1\", \"2\"]"));
+    h.until(|h| {
+        let text = h.screen.screen().contents();
+        text.find("Second q")
+            .zip(text.find("Native queue task"))
+            .is_some_and(|(a, b)| a > b)
+    });
+    h.click("Edit e");
+    h.see("Second q");
+    h.see("Extra");
+    h.click("Cancel Esc");
+    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
+    h.quit();
+    assert!(
+        h.log("queue-events")
+            .contains("[\"edit\", \"2\", \"Second q\", \"Body\\nExtra\"]")
+    );
+    assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
 #[ignore = "requires installed drover CLI; no external UI, real queues, or agents"]
 fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
     use std::process::Command;

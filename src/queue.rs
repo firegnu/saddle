@@ -11,6 +11,13 @@ pub enum Page {
     Feedback(String),
     Projects,
     Project(String),
+    Edit {
+        pending: Vec<Task>,
+        index: usize,
+        title: String,
+        body: String,
+        body_focus: bool,
+    },
     Add {
         title: String,
         body: String,
@@ -37,6 +44,7 @@ pub struct Panel {
     pub message: String,
     pub(crate) message_failed: bool,
     pub busy: bool,
+    pub(crate) selection_after_write: Option<(usize, Task)>,
 }
 impl Panel {
     pub fn click(&mut self, column: u16, row: u16) -> Option<Request> {
@@ -54,7 +62,7 @@ impl Panel {
         {
             return self.projects.get(*index).cloned().map(Request::Project);
         }
-        if let Page::Add { body_focus, .. } = &mut self.page
+        if let Page::Add { body_focus, .. } | Page::Edit { body_focus, .. } = &mut self.page
             && let Some((_, body)) = self.fields.iter().find(|(area, _)| area.contains(point))
         {
             *body_focus = *body;
@@ -66,7 +74,7 @@ impl Panel {
         use crate::buttons::Button as B;
         use KeyCode as K;
         match self.page {
-            Page::Add { .. } => vec![
+            Page::Add { .. } | Page::Edit { .. } => vec![
                 B::control(
                     "Save ^s",
                     K::Char('s'),
@@ -100,19 +108,37 @@ impl Panel {
             .chain(s.history.iter().rev().map(|t| ("History", t)))
             .collect()
     }
+    fn pending_index(&self) -> Option<usize> {
+        let s = self.snapshot.as_ref()?;
+        let index = self
+            .selected
+            .checked_sub(usize::from(s.current.is_some()) + usize::from(s.awaiting.is_some()))?;
+        (index < s.pending.len()).then_some(index)
+    }
     pub fn absorb(&mut self, snapshot: Snapshot) {
         self.read_error = None;
-        let old = self
-            .tasks()
-            .get(self.selected)
-            .map(|(_, t)| (t.id.clone(), t.title.clone()));
+        let old = if let Some((index, task)) = self.selection_after_write.take() {
+            let offset =
+                usize::from(snapshot.current.is_some()) + usize::from(snapshot.awaiting.is_some());
+            Some((index + offset, task))
+        } else {
+            self.tasks()
+                .get(self.selected)
+                .map(|(_, t)| (self.selected, (*t).clone()))
+        };
         self.snapshot = Some(snapshot);
         let tasks = self.tasks();
         self.selected = old
-            .and_then(|old| {
-                tasks
-                    .iter()
-                    .position(|(_, t)| (t.id.clone(), t.title.clone()) == old)
+            .and_then(|(index, old)| {
+                let matches = |(_, t): &(&str, &Task)| match &old.id {
+                    Some(id) => t.id.as_ref() == Some(id),
+                    None => t.id.is_none() && t.title == old.title && t.body == old.body,
+                };
+                if tasks.get(index).is_some_and(matches) {
+                    Some(index)
+                } else {
+                    tasks.iter().position(matches)
+                }
             })
             .unwrap_or(self.selected)
             .min(tasks.len().saturating_sub(1));
@@ -144,6 +170,12 @@ impl Panel {
             title,
             body,
             body_focus,
+        }
+        | Page::Edit {
+            title,
+            body,
+            body_focus,
+            ..
         } = &mut self.page
         {
             let field = if *body_focus { body } else { title };
@@ -162,14 +194,33 @@ impl Panel {
                 if matches!(operation, Operation::Go | Operation::Next) {
                     self.page = Page::Feedback(text);
                     self.scroll = 0;
+                } else if let Operation::Edit {
+                    pending,
+                    index,
+                    title,
+                    body,
+                } = operation
+                {
+                    self.selection_after_write = pending.get(*index).cloned().map(|mut task| {
+                        task.title = title.clone();
+                        task.body = body.clone();
+                        (*index, task)
+                    });
+                    self.page = Page::List;
+                    self.manual_scroll = false;
                 } else if matches!(operation, Operation::Add { .. }) {
                     self.page = Page::List;
+                } else if let Operation::Move { pending, index, to } = operation {
+                    self.selection_after_write =
+                        pending.get(*index).cloned().map(|task| (*to, task));
+                    self.page = Page::List;
+                    self.manual_scroll = false;
                 }
             }
             Err(error) => {
                 self.message_failed = true;
                 self.message = format!("{error:#}");
-                if !matches!(self.page, Page::Add { .. }) {
+                if !matches!(self.page, Page::Add { .. } | Page::Edit { .. }) {
                     self.page = Page::Feedback(self.message.clone());
                     self.scroll = 0;
                 }
@@ -230,6 +281,12 @@ impl Panel {
             title,
             body,
             body_focus,
+        }
+        | Page::Edit {
+            title,
+            body,
+            body_focus,
+            ..
         } = &mut self.page
         {
             if self.busy {
@@ -258,11 +315,21 @@ impl Panel {
                     }
                     self.busy = true;
                     self.message_failed = false;
-                    self.message = "Adding task…".into();
-                    return Some(Request::Run(Operation::Add {
-                        title: title.clone(),
-                        body: body.clone(),
-                    }));
+                    let title = title.clone();
+                    let body = body.clone();
+                    let operation = if let Page::Edit { pending, index, .. } = &self.page {
+                        self.message = "Saving task…".into();
+                        Operation::Edit {
+                            pending: pending.clone(),
+                            index: *index,
+                            title,
+                            body,
+                        }
+                    } else {
+                        self.message = "Adding task…".into();
+                        Operation::Add { title, body }
+                    };
+                    return Some(Request::Run(operation));
                 }
                 KeyCode::Char(c)
                     if !key
@@ -330,7 +397,45 @@ impl Panel {
                 };
                 self.message.clear();
             }
+            KeyCode::Char('e')
+                if matches!(self.page, Page::List) && !self.busy && self.read_error.is_none() =>
+            {
+                if let Some(index) = self.pending_index() {
+                    let pending = self.snapshot.as_ref().unwrap().pending.clone();
+                    let task = &pending[index];
+                    self.page = Page::Edit {
+                        title: task.title.clone(),
+                        body: task.body.clone(),
+                        body_focus: false,
+                        pending,
+                        index,
+                    };
+                    self.message.clear();
+                }
+            }
             KeyCode::Char('r') => return Some(Request::Refresh),
+            KeyCode::Char(c @ ('u' | 'd'))
+                if matches!(self.page, Page::List) && !self.busy && self.read_error.is_none() =>
+            {
+                let index = self.pending_index()?;
+                let pending = &self.snapshot.as_ref().unwrap().pending;
+                let to = if c == 'u' {
+                    index.checked_sub(1)?
+                } else {
+                    index + 1
+                };
+                if to >= pending.len() {
+                    return None;
+                }
+                self.busy = true;
+                self.message_failed = false;
+                self.message = "Moving task…".into();
+                return Some(Request::Run(Operation::Move {
+                    pending: pending.clone(),
+                    index,
+                    to,
+                }));
+            }
             KeyCode::Char(c @ ('g' | 'n' | 'p' | 'l')) if !self.busy => {
                 if self.read_error.is_some() {
                     return None;
@@ -540,16 +645,23 @@ impl Panel {
             )
         };
         self.buttons.extend(action_hits);
-        let (mut body, task_hits) = buttons::draw_compact(
-            t,
-            frame,
-            remaining,
-            &[
-                B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
-                B::new("Add a", K::Char('a'), ready),
-                B::new("Help ?", K::Char('?'), !self.overlay_open()),
-            ],
-        );
+        let mut task_controls = vec![
+            B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
+            B::new("Add a", K::Char('a'), ready),
+        ];
+        if let Some(index) = self.pending_index() {
+            task_controls.extend([
+                B::new("Edit e", K::Char('e'), ready),
+                B::new("Move up u", K::Char('u'), ready && index > 0),
+                B::new(
+                    "Move down d",
+                    K::Char('d'),
+                    ready && index + 1 < self.snapshot.as_ref().unwrap().pending.len(),
+                ),
+            ]);
+        }
+        task_controls.push(B::new("Help ?", K::Char('?'), !self.overlay_open()));
+        let (mut body, task_hits) = buttons::draw_compact(t, frame, remaining, &task_controls);
         self.buttons.extend(task_hits);
         if body.height > 0 {
             frame.render_widget(
@@ -589,6 +701,7 @@ impl Panel {
             Page::Projects => " Projects ",
             Page::Project(_) => " Project path ",
             Page::Add { .. } => " Add task ",
+            Page::Edit { .. } => " Edit task ",
             Page::Detail => " Task details ",
             Page::Help => " Help ",
             Page::Feedback(_) => " Action result ",
@@ -904,6 +1017,12 @@ impl Panel {
                 title,
                 body: text,
                 body_focus,
+            }
+            | Page::Edit {
+                title,
+                body: text,
+                body_focus,
+                ..
             } => {
                 if body.height < 5 {
                     frame.render_widget(Paragraph::new("Enlarge the window to edit a task"), body);
@@ -964,7 +1083,7 @@ impl Panel {
             _ => {
                 let text=match &self.page {
                     Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\nReason: {r}")).unwrap_or_default())).unwrap_or_else(||"Task no longer in queue".into()),
-                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\ne: Edit selected pending task\nu / d: Move pending up / down\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };
