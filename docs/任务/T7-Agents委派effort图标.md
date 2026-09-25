@@ -49,3 +49,10 @@
 ## 做完
 
 在本文件末尾追加「## 完成记录」并提交：做了什么、验证了什么、拿主意的地方、没做的事，各几句话。回复同样列这些和需主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 做了什么：`Agent` 增加公开 `labels`（缺失按 `{}`），`Agent::effort()` 只把 `labels.effort` 为 `medium`/`high`/`xhigh` 的映射成三档，其余（无键、其他值、大小写不同、非字符串）为未知。`status` 的 labels 随其他字段覆盖 `ls`；跳过 status 的 starting/incompatible 条目用 `ls` 的 labels。Agents 主行在类型列（窄窗在名称列）后、状态前加 3 列 `▂▄▆` 信号图标，亮格数 1/2/3，亮格正文色、暗格树线色；未知留白对齐；整个列表都没有已知 effort 时不占列，原布局不变。先写 DESIGN 第 23 节，同步中英文 README。
+- 验证了什么：tests/corral.rs 新增假 corral 用例，先以 `effort()` 桩取得断言 RED（`left: None, right: Some(Medium)`），实现后 GREEN。tests/ui.rs 新增合成渲染检查：无标签时无图标；160/80 列下三档亮格数与颜色、未知/其他值无图标、各行图标同列。`cargo test --all-targets` 全过，`cargo clippy --all-targets -- -D warnings` 无警告，`cargo fmt --check`、`git diff --check` 干净。未启动真实 agent。
+- 拿主意的地方：图标放主行类型列后固定列宽，便于纵向扫读；未知选「不显示」而非「?」，与「主控/手动开的 agent 没标签」的常态一致，不制造噪音；有已知 effort 时名称预留宽度 +4 列（33→37），只在需要时生效；effort 值区分大小写，按接口字面匹配；亮格用中性正文色，不复用状态语义色。
+- 没做的事：不显示 model，不新增配置项/颜色字段，不在附加信息行加文字说明，不改状态、排序、接入和操作语义；未合并 main、未推送、未更新 HANDOFF。

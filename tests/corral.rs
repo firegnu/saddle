@@ -58,3 +58,35 @@ fn command_errors_and_timeouts_are_not_empty_successful_lists() {
     assert!(result.unwrap_err().to_string().contains("timed out"));
     assert!(start.elapsed() < Duration::from_secs(2));
 }
+
+#[test]
+fn only_public_effort_labels_in_the_three_known_tiers_are_reported() {
+    use saddle::corral::Effort;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "corral",
+        r##"#!/bin/sh
+case "$1:$2" in
+  ls:) echo '{"agents":[{"name":"d/m","labels":{"effort":"medium"}},{"name":"d/h","labels":{}},{"name":"d/x","labels":{"effort":"xhigh"}},{"name":"d/none"},{"name":"d/odd","labels":{"effort":"max"}},{"name":"d/case","labels":{"effort":"High"}},{"name":"d/start","starting":true,"labels":{"effort":"high"}}]}' ;;
+  status:d/m) echo '{"ok":true,"state":"idle","labels":{"effort":"medium","model":"x"}}' ;;
+  status:d/h) echo '{"ok":true,"state":"idle","labels":{"effort":"high"}}' ;;
+  status:d/x) echo '{"ok":true,"state":"idle","labels":{"effort":"xhigh"}}' ;;
+  status:d/none) echo '{"ok":true,"state":"idle"}' ;;
+  status:d/odd) echo '{"ok":true,"state":"idle","labels":{"effort":"max"}}' ;;
+  status:d/case) echo '{"ok":true,"state":"idle","labels":{"effort":"High"}}' ;;
+  *) echo '{"ok":false,"error":"unexpected_command"}'; exit 1 ;;
+esac
+"##,
+    );
+    let agents = Client { program }.collect().unwrap();
+    let effort = |name: &str| agents.iter().find(|a| a.name == name).unwrap().effort();
+    assert_eq!(effort("d/m"), Some(Effort::Medium));
+    assert_eq!(effort("d/h"), Some(Effort::High)); // status is the fresher public source
+    assert_eq!(effort("d/x"), Some(Effort::Xhigh));
+    assert_eq!(effort("d/none"), None);
+    assert_eq!(effort("d/odd"), None);
+    assert_eq!(effort("d/case"), None);
+    assert_eq!(effort("d/start"), Some(Effort::High)); // no status call while starting
+    assert!(agents.iter().all(|a| a.error.is_none()));
+}

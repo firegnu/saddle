@@ -1,6 +1,6 @@
 use crate::{
     agents::{Panel, group},
-    corral::Agent,
+    corral::{Agent, Effort},
     input::Focus,
     layout::Panes,
     pty::Session,
@@ -453,6 +453,8 @@ fn agent_rows(
     let mut previous = None;
     let wide = width >= 46;
     let mut name_width = 8;
+    // The effort column exists only when some agent carries a known delegated effort label.
+    let effort_column = ordered.iter().any(|a| a.effort().is_some());
     for (index, a) in ordered.iter().enumerate() {
         let prefix = group(&a.name);
         if previous != Some(prefix) {
@@ -469,8 +471,9 @@ fn agent_rows(
                     })
                     .max()
                     .unwrap_or(8);
-                // Reserve tree/status icon, type, state and the right-hand activity badge.
-                name_width = longest.clamp(8, width.saturating_sub(33).max(8));
+                // Reserve tree/status icon, type, effort, state and the right-hand activity badge.
+                let reserved = if effort_column { 37 } else { 33 };
+                name_width = longest.clamp(8, width.saturating_sub(reserved).max(8));
             }
             rows.push(Row {
                 line: {
@@ -541,6 +544,10 @@ fn agent_rows(
                     },
                 ),
             ));
+        }
+        if effort_column {
+            spans.push(Span::raw(" "));
+            spans.extend(effort_bars(t, a.effort(), tree_color));
         }
         spans.push(Span::styled(
             format!(" {state}"),
@@ -660,6 +667,21 @@ fn agent_brand(t: &Theme, kind: &str) -> (String, Color) {
         _ => return (kind.to_owned(), t.muted),
     };
     (format!("{mark} {kind}"), color)
+}
+
+// Wi-Fi style strength bars for the delegated effort label; unknown stays blank.
+fn effort_bars(t: &Theme, effort: Option<Effort>, off: Color) -> Vec<Span<'static>> {
+    let lit = match effort {
+        Some(Effort::Medium) => 1,
+        Some(Effort::High) => 2,
+        Some(Effort::Xhigh) => 3,
+        None => return vec![Span::raw("   ")],
+    };
+    ["▂", "▄", "▆"]
+        .into_iter()
+        .enumerate()
+        .map(|(i, bar)| Span::styled(bar, Style::default().fg(if i < lit { t.text } else { off })))
+        .collect()
 }
 
 fn short_path(path: &str) -> String {

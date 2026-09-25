@@ -31,6 +31,26 @@ pub struct Agent {
     pub title: Option<String>,
     pub started: Option<f64>,
     pub error: Option<String>,
+    pub labels: serde_json::Map<String, Value>,
+}
+
+/// Effort explicitly labelled when the agent was delegated; not the runtime's actual effort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Effort {
+    Medium,
+    High,
+    Xhigh,
+}
+
+impl Agent {
+    pub fn effort(&self) -> Option<Effort> {
+        match self.labels.get("effort")?.as_str()? {
+            "medium" => Some(Effort::Medium),
+            "high" => Some(Effort::High),
+            "xhigh" => Some(Effort::Xhigh),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone)]

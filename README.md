@@ -21,7 +21,7 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 
 ## Features
 
-- **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states.
+- **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states. When an agent was started with a public corral `effort` label, a signal icon shows it: `▂▄▆` with one, two, or three bars lit for medium, high, or xhigh. Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
 - **Queue:** current, awaiting, pending, and historical tasks. Read details, add tasks, edit and reorder pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
 - **Viewer:** the selected agent's live `corral attach` session, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.

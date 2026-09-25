@@ -940,3 +940,68 @@ fn all_pending_overlay_names_projects_reports_each_state_and_scrolls_to_the_last
     let last = text(&render_queue(&mut q, 80, 32));
     assert!(last.contains("Task number 60"), "{last}");
 }
+
+#[test]
+fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
+    use saddle::theme;
+    let (mut a, mut q) = fixture();
+    let (before, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
+    assert!(!text(&before).contains('▂')); // no labels: layout unchanged, no icon column
+    a.agents = [
+        ("medium", Some("medium")),
+        ("high", Some("high")),
+        ("xhigh", Some("xhigh")),
+        ("manual", None),
+        ("other", Some("max")),
+    ]
+    .into_iter()
+    .map(|(name, effort)| Agent {
+        name: format!("demo/{name}"),
+        kind: Some("claude".into()),
+        state: Some("idle".into()),
+        labels: effort
+            .map(|e| {
+                serde_json::json!({ "effort": e })
+                    .as_object()
+                    .unwrap()
+                    .clone()
+            })
+            .unwrap_or_default(),
+        ..Default::default()
+    })
+    .collect();
+    for width in [160, 80] {
+        let (buffer, hits) = render(width, 60, &mut a, &mut q, Focus::Agents);
+        let mut columns = Vec::new();
+        for (name, lit) in [
+            ("medium", 1),
+            ("high", 2),
+            ("xhigh", 3),
+            ("manual", 0),
+            ("other", 0),
+        ] {
+            let y = hits
+                .agents
+                .iter()
+                .find(|(_, n)| n == &format!("demo/{name}"))
+                .unwrap()
+                .0;
+            let line: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
+            let found = (0..width).find(|x| buffer[(*x, y)].symbol() == "▂");
+            if lit == 0 {
+                assert!(found.is_none(), "{line}");
+                continue;
+            }
+            let x = found.expect(&line);
+            columns.push(x);
+            assert_eq!(buffer[(x + 1, y)].symbol(), "▄", "{line}");
+            assert_eq!(buffer[(x + 2, y)].symbol(), "▆", "{line}");
+            for i in 0..3 {
+                let fg = buffer[(x + i, y)].fg;
+                assert_eq!(fg == theme::TEXT, i < lit, "{name} bar {i}: {line}");
+            }
+            assert!(line.contains("idle"), "{line}");
+        }
+        assert!(columns.windows(2).all(|w| w[0] == w[1]), "{columns:?}");
+    }
+}
