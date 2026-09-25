@@ -288,7 +288,7 @@ drover = "drover"
 - 进入与返回：单击任务行（先选中该行）或 Enter/Details 进入；Esc 或 Back 返回列表，列表的选择和滚动位置保持。Queue 中 `q` 回 Agents 并关闭详情（与其他页面一致）；Ctrl-] 暂回 Agents 时详情页保留，仍在 Queue 面板显示并继续刷新。
 - 目标：进入时记下任务 ID 和一个全进程递增的序号。之后只按 ID 在最新列表中找它所在分组，不跟列表索引走；完成、放行后仍是同一个 ID。ID 为 `T` 加数字且当前不在 pending 时，在当前项目目录下以直接参数调用 `drover show <ID> --json --with-agent-status`；pending 与未编号任务不调用 show，只显示 list 已有的标题、正文、状态和原因（pending 开始后自动改为 show 查询）。未编号任务在列表中找不到同一标题/正文时，标明显示的是进入时的副本。
 - 刷新：每个详情目标由一个后台线程查询，进入即查，每次结果返回后约 5 秒再查下一次，不堆叠。目标以「项目、ID、序号」为键：返回列表、换任务、切换项目或退出时丢弃旧线程（取消并杀掉进行中的命令，等线程结束），它的结果通道随之丢弃；写入前还核对键，旧结果不会显示到新目标上。单次查询预算 60 秒（drover 的 Git 子命令各 30 秒、status 最多 10 秒），超时按失败处理并在 5 秒后重试；查询不跑验收命令，也不阻塞界面、corral 刷新或终端。
-- 加载与失败：首次加载只显示列表已有的编号、标题和 `Loading details…`，不画空的分区。失败显示错误和「每 5 秒自动重试」；已有旧数据时保留并标明是哪一时刻的旧数据。未知 schema_version、`ok` 不为 true、退出码非 0、JSON 缺少必需字段都按失败处理，不当作成功。刷新不重置滚动位置。
+- 加载与失败：首次加载只显示列表已有的编号、标题和 `Loading details…`，不画空的分区。失败显示错误和「每 5 秒自动重试」；已有旧数据时保留并标明是哪一时刻的旧数据。未知 schema_version、`ok` 不为 true、退出码非 0、非 JSON 或无法反序列化为本程序消费结构的响应都按失败处理，不当作成功；这里只校验消费结构所需字段，不是整个 schema 的完整校验器，可选字段缺键按未知值处理。刷新不重置滚动位置。
 - 内容（英文界面，任务原文保留；正文、why 等去掉控制字符后按普通文本显示）：
   - 顶部：编号、状态（current=Running 蓝，awaiting=Awaiting release 琥珀，history 的 done=Done 绿、dropped=Dropped 橙，其他原值中性色）和耗时，标题完整折行，观察时间；awaiting_release 与 suggested 的关注提示；warnings 中 snapshot_changed（带来源）和 snapshot_verification_unavailable 用琥珀色标明「本次快照不一致 / 无法复核，下次刷新重试」，不据此执行动作。
   - Progress：耗时、等待放行时长、区间提交数（注明是 start..HEAD / start..end 的区间计数，不只属于本任务）、main 自开始后前进数（history 未记录）、main 顶端提交时间（注明是现在的 main）、记录的 start/main/end 与本次观察的 HEAD/main。不可用时按 unavailable_reasons 说明原因。
