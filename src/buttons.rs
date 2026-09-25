@@ -108,20 +108,34 @@ impl Pointer {
     }
 }
 
-/// Compact wrapping toolbar. Top and bottom variants share placement and hit geometry.
+/// Wrapping toolbars share placement and hit geometry.
 pub fn draw(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
-    draw_bar(frame, area, buttons, false)
+    draw_bar(frame, area, buttons, false, false)
 }
 pub fn draw_top(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
-    draw_bar(frame, area, buttons, true)
+    draw_bar(frame, area, buttons, true, false)
 }
-fn draw_bar(frame: &mut Frame, area: Rect, buttons: &[Button<'_>], top: bool) -> (Rect, Vec<Hit>) {
-    if area.height < 3 || area.width < 5 {
+pub fn draw_compact(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
+    draw_bar(frame, area, buttons, false, true)
+}
+fn draw_bar(
+    frame: &mut Frame,
+    area: Rect,
+    buttons: &[Button<'_>],
+    top: bool,
+    compact: bool,
+) -> (Rect, Vec<Hit>) {
+    let row_height = if compact { 1 } else { 3 };
+    let padding = if compact { 2 } else { 4 };
+    if area.height < row_height || area.width < padding + 1 {
         return (area, Vec::new());
     }
     let mut placements = Vec::new();
     let (mut x, mut y) = (0, 0);
-    let total: usize = buttons.iter().map(|b| b.label.width() + 4).sum::<usize>()
+    let total: usize = buttons
+        .iter()
+        .map(|b| b.label.width() + usize::from(padding))
+        .sum::<usize>()
         + buttons.len().saturating_sub(1);
     let columns = if buttons.len() == 4 && total > usize::from(area.width) {
         2
@@ -130,28 +144,33 @@ fn draw_bar(frame: &mut Frame, area: Rect, buttons: &[Button<'_>], top: bool) ->
     };
     let mut in_row = 0;
     for button in buttons {
-        let width = (button.label.width() as u16 + 4).min(area.width);
+        let width = (button.label.width() as u16 + padding).min(area.width);
         if x > 0 && (x + width > area.width || in_row == columns) {
             x = 0;
-            y += 3;
+            y += row_height;
             in_row = 0;
         }
-        placements.push((Rect::new(x, y, width, 3), button));
+        placements.push((Rect::new(x, y, width, row_height), button));
         x += width + 1;
         in_row += 1;
     }
     let height = if buttons.is_empty() {
         0
     } else {
-        (y + 3).min(area.height / 3 * 3)
+        (y + row_height).min(area.height / row_height * row_height)
     };
     let start = if top { area.y } else { area.bottom() - height };
     let mut hits = Vec::new();
     for (relative, button) in placements {
-        if relative.y + 3 > height {
+        if relative.y + row_height > height {
             break;
         }
-        let rect = Rect::new(area.x + relative.x, start + relative.y, relative.width, 3);
+        let rect = Rect::new(
+            area.x + relative.x,
+            start + relative.y,
+            relative.width,
+            row_height,
+        );
         let foreground = if !button.enabled {
             theme::DIM
         } else {
@@ -171,31 +190,42 @@ fn draw_bar(frame: &mut Frame, area: Rect, buttons: &[Button<'_>], top: bool) ->
         } else {
             foreground
         };
-        let block = Block::bordered()
-            .border_type(BorderType::Rounded)
-            .style(style)
-            .border_style(Style::default().fg(border));
-        let inner = block.inner(rect);
-        frame.render_widget(block, rect);
         let (label, key) = button.label.rsplit_once(' ').unwrap_or((button.label, ""));
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::raw(format!(" {label}{}", if key.is_empty() { "" } else { " " })),
-                Span::styled(
-                    key,
-                    Style::default().fg(
-                        if button.enabled && matches!(button.kind, Kind::Secondary) {
-                            theme::MUTED
-                        } else {
-                            foreground
-                        },
-                    ),
-                ),
-                Span::raw(" "),
-            ]))
-            .style(style),
-            inner,
+        let key_style = Style::default().fg(
+            if button.enabled && matches!(button.kind, Kind::Secondary) {
+                theme::MUTED
+            } else {
+                foreground
+            },
         );
+        if compact {
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::styled("‹", Style::default().fg(border)),
+                    Span::raw(format!("{label}{}", if key.is_empty() { "" } else { " " })),
+                    Span::styled(key, key_style),
+                    Span::styled("›", Style::default().fg(border)),
+                ]))
+                .style(style),
+                rect,
+            );
+        } else {
+            let block = Block::bordered()
+                .border_type(BorderType::Rounded)
+                .style(style)
+                .border_style(Style::default().fg(border));
+            let inner = block.inner(rect);
+            frame.render_widget(block, rect);
+            frame.render_widget(
+                Paragraph::new(Line::from(vec![
+                    Span::raw(format!(" {label}{}", if key.is_empty() { "" } else { " " })),
+                    Span::styled(key, key_style),
+                    Span::raw(" "),
+                ]))
+                .style(style),
+                inner,
+            );
+        }
         if button.enabled {
             hits.push(Hit {
                 area: rect,

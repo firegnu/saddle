@@ -359,9 +359,9 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     let mut h = Harness::start();
     h.see("Native queue task");
     h.see("Synthetic title");
-    h.click(" Reply r ");
+    h.click("Reply r");
     h.see("REPLY p/a");
-    h.click(" Stop x ");
+    h.click("Stop x");
     h.click(" Cancel Esc ");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
@@ -393,7 +393,7 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     h.send(b"\x1d");
     h.see("输入 ▸ Agents");
     // Narrow-window tabs expose Agents; hit targets must follow the new rows.
-    h.click(" Stop x ");
+    h.click("Stop x");
     h.click(" Stop y ");
     h.event("stop p/a");
     h.quit();

@@ -272,7 +272,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     use crossterm::event::KeyCode as K;
     let selected = panel.selected.is_some();
     let connected = selected && panel.selected.as_deref() == view.showing;
-    let (content, buttons) = buttons::draw(
+    let (content, buttons) = buttons::draw_compact(
         frame,
         inside,
         &[
@@ -380,8 +380,17 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             .skip(panel.top + usize::from(list.height))
             .filter(|r| r.headline)
             .count();
+        // Keep the repository visible when its root has scrolled above the viewport.
+        let context = rows[panel.top]
+            .name
+            .as_deref()
+            .map(|name| {
+                let prefix = group(name);
+                format!("{} · ", if prefix.is_empty() { "agents/" } else { prefix })
+            })
+            .unwrap_or_default();
         frame.render_widget(
-            border(&format!(" Agents · ↑{above} ↓{below} "), focused),
+            border(&format!(" Agents · {context}↑{above} ↓{below} "), focused),
             area,
         );
     }
@@ -443,22 +452,27 @@ fn agent_rows(
     let ordered = panel.ordered(now);
     let mut rows = Vec::new();
     let mut previous = None;
-    for a in ordered {
+    for (index, a) in ordered.iter().enumerate() {
         let prefix = group(&a.name);
         if previous != Some(prefix) {
             rows.push(Row {
                 line: Line::styled(
                     if prefix.is_empty() { "agents/" } else { prefix }.to_string(),
-                    Style::default().fg(t::BRIGHT).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(t::CONNECTED)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 name: None,
                 headline: false,
             });
             previous = Some(prefix);
         }
+        let last = ordered
+            .get(index + 1)
+            .is_none_or(|next| group(&next.name) != prefix);
         let selected = panel.selected.as_deref() == Some(&a.name);
         let style = if selected {
-            Style::default().add_modifier(Modifier::BOLD)
+            Style::default().bg(t::SELECTED)
         } else {
             Style::default()
         };
@@ -470,6 +484,10 @@ fn agent_rows(
             Span::styled(
                 if selected { "▎" } else { " " },
                 Style::default().fg(if focused { t::FOCUS } else { t::MUTED }),
+            ),
+            Span::styled(
+                if last { "└─ " } else { "├─ " },
+                Style::default().fg(t::DIM),
             ),
             Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
@@ -515,36 +533,52 @@ fn agent_rows(
             headline: true,
         });
         let mut details = vec![
-            format!(
-                "{} {} · ATT {} · SOURCE {}",
-                a.kind.as_deref().unwrap_or("—"),
-                a.instance.as_deref().unwrap_or("—"),
-                a.attached,
-                a.last_input_source.as_deref().unwrap_or("—")
+            (
+                format!(
+                    "{} {} · ATT {} · VIA {}",
+                    a.kind.as_deref().unwrap_or("—"),
+                    a.instance.as_deref().unwrap_or("—"),
+                    a.attached,
+                    a.last_input_source.as_deref().unwrap_or("—")
+                ),
+                t::WORKING,
             ),
-            format!("DIR {}", a.cwd.as_deref().unwrap_or("—")),
-            format!("TITLE {}", a.title.as_deref().unwrap_or("—")),
+            (short_path(a.cwd.as_deref().unwrap_or("—")), t::MUTED),
+            (a.title.as_deref().unwrap_or("—").to_owned(), t::TEXT),
         ];
         if name.width() > name_width {
-            details.insert(0, format!("NAME {}", a.name));
+            details.insert(0, (name.to_owned(), t::TEXT));
         }
         if matches!(a.state.as_deref(), Some("working" | "blocked")) {
-            details.push(format!(
-                "DOING {} · {}",
-                a.last_tool.as_deref().unwrap_or("thinking"),
-                seconds(a.turn_started.map(|v| now - v))
+            details.push((
+                format!(
+                    "DOING {} · {}",
+                    a.last_tool.as_deref().unwrap_or("thinking"),
+                    seconds(a.turn_started.map(|v| now - v))
+                ),
+                color,
             ));
         }
         if let Some(error) = &a.error {
-            details.push(format!("ERROR {error}"));
+            details.push((format!("ERROR {error}"), t::DANGER));
         }
         if a.incompatible {
-            details.push(format!("Incompatible protocol {}", a.proto.unwrap_or(0)));
+            details.push((
+                format!("Incompatible protocol {}", a.proto.unwrap_or(0)),
+                t::DANGER,
+            ));
         }
-        for detail in details {
-            for line in reply_lines(&detail, width.saturating_sub(3)) {
+        for (detail, color) in details {
+            for line in reply_lines(&detail, width.saturating_sub(6)) {
                 rows.push(Row {
-                    line: Line::styled(format!("   {line}"), style.fg(t::MUTED)),
+                    line: Line::from(vec![
+                        Span::styled(
+                            if last { "      " } else { " │    " },
+                            Style::default().fg(t::DIM),
+                        ),
+                        Span::styled(line.to_string(), Style::default().fg(color)),
+                    ])
+                    .style(style),
                     name: Some(a.name.clone()),
                     headline: false,
                 });
@@ -553,6 +587,15 @@ fn agent_rows(
     }
     rows
 }
+fn short_path(path: &str) -> String {
+    let parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.len() > 2 {
+        format!("…/{}", parts[parts.len() - 2..].join("/"))
+    } else {
+        path.to_owned()
+    }
+}
+
 fn state(a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
     if a.error.is_some() || a.incompatible {
         return ("!", "异常", t::DANGER);

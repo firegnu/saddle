@@ -108,7 +108,7 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
             buffer[(panes.queue.right() - 4, row)].bg,
             ratatui::style::Color::Reset
         );
-        for pane in [panes.agents, panes.queue, panes.tabs] {
+        for pane in [panes.queue, panes.tabs] {
             for y in pane.y..pane.bottom() {
                 for x in pane.x..pane.right() {
                     assert_eq!(
@@ -169,7 +169,7 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
         for (name, markers) in [
             (
                 "demo/main",
-                ["FIRST-TITLE", "abcdef123", "/tmp/demo", "SOURCE human"],
+                ["FIRST-TITLE", "abcdef123", "/tmp/demo", "VIA human"],
             ),
             (
                 "demo/second",
@@ -198,4 +198,66 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
             assert!(text(&buffer).contains("上一轮回复"));
         }
     }
+}
+
+#[test]
+fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
+    use saddle::theme;
+    let (mut a, mut q) = fixture();
+    a.agents[0].cwd = Some("/Users/example/Developer/work/demo".into());
+    a.agents[0].last_input_source = Some("human".into());
+    a.agents.extend([
+        Agent {
+            name: "demo/review".into(),
+            state: Some("blocked".into()),
+            title: Some("Review changes".into()),
+            ..Default::default()
+        },
+        Agent {
+            name: "other/main".into(),
+            state: Some("idle".into()),
+            ..Default::default()
+        },
+    ]);
+    for by_state in [false, true] {
+        a.by_state = by_state;
+        let (buffer, hits) = render(160, 100, &mut a, &mut q, Focus::Agents);
+        let output = text(&buffer);
+        assert!(output.contains("…/work/demo"), "{output}");
+        for label in ["SOURCE ", "DIR ", "TITLE ", "/Users/example"] {
+            assert!(!output.contains(label), "{label}: {output}");
+        }
+        assert!(output.contains("Review changes"));
+        let headline = |name: &str| hits.agents.iter().find(|(_, n)| n == name).unwrap().0;
+        let first = if by_state { "demo/review" } else { "demo/main" };
+        let last = if by_state { "demo/main" } else { "demo/review" };
+        assert_eq!(buffer[(2, headline(first))].symbol(), "├");
+        assert_eq!(buffer[(2, headline(last))].symbol(), "└");
+        assert_eq!(buffer[(2, headline(first) + 1)].symbol(), "│");
+        assert_eq!(buffer[(2, headline("other/main"))].symbol(), "└");
+        for (y, name) in &hits.agents {
+            assert_eq!(
+                buffer[(45, *y)].bg,
+                if name == "demo/main" {
+                    theme::SELECTED
+                } else {
+                    ratatui::style::Color::Reset
+                }
+            );
+        }
+        assert!(output.contains("‹Attach") || output.contains("‹Attached"));
+    }
+    a.follow = false;
+    a.top = 2;
+    a.by_state = false;
+    let (buffer, _) = render(80, 20, &mut a, &mut q, Focus::Agents);
+    let output = text(&buffer);
+    assert!(output.contains("Agents · demo/"), "{output}");
+    assert!(output.contains("…/work/demo"), "{output}");
+    let lines: Vec<_> = output.lines().collect();
+    let reply = lines
+        .iter()
+        .position(|line| line.contains("‹Reply r›"))
+        .unwrap();
+    assert!(lines[reply + 1].contains("‹Sort s› ‹Stop x›"));
 }
