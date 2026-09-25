@@ -1,6 +1,12 @@
 # 交接
 
-> 2026-09-25 corral/main 按用户决定接入主控分派：`AGENTS.md` 已加「开发方式（主控分派）」，删掉「直接在 main 上开发」；本文件由 `docs/PROGRESS.md` 改名而来。下面「仓库 AGENTS.md 仍写直接在 main 上开发」那条已过时。
+## 2026-09-25 晚：接入主控分派和 drover（新主控先读本节）
+
+- **开发方式变了**：从这里起，`saddle/main` 是主控，只拆任务、写任务文件、审查、合并，不自己写功能代码；规矩见 `AGENTS.md`「开发方式（主控分派）」，分派按 corral-dispatch 技能做。旧的 `saddle/main` 是亲手写代码的开发者，已收尾关掉，本节以下是它留下的交接。
+- **drover 已接上**：交接目录 `~/.drover/saddle`，`.drover.conf`（不进 git）填了 `MAIN_AGENT=saddle/main`、`TASK_FILE_DIR=docs/任务`、`DONE_MARK=收尾`，`CHECK_CMD` 留空（不跑验收命令），放行模式（每件做完等用户 `drover go`）。队列目前是空的，任务由用户加。
+- **仓库状态**：main 已推送到 origin，和远端一致（推送含旧会话的交接提交 `432471d` 和本次 AGENTS / HANDOFF 改动）；下面「本次交接提交仅保留本地」一句已过时。本文件由 `docs/PROGRESS.md` 改名而来。
+- **约定**：每件活一个分支和 worktree（`../saddle-worktrees/<分支>`），所有 worktree 共用编译目录 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`；标准测试 `cargo test --all-targets` 和 `cargo clippy --all-targets -- -D warnings`；合并后推送，收尾打「收尾: 」空提交，再更新本文件。
+- **可以接着做的**：见下一节「已知问题与接续事项」（帮助文案里残留的 `r reply`、Queue 列表 PgUp/PgDn 不翻页等）。做不做、先做哪件，等用户给任务。
 
 ## 2026-09-25：旧会话收尾，交给新主控（接手先读本节）
 
