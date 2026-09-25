@@ -1,5 +1,13 @@
 # 进度
 
+## 2026-09-25：英文首页、中文 README 与首次公开发布
+
+- 用户明确授权创建 GitHub public repo 并推送；公开仓库为 https://github.com/firegnu/saddle，origin 已配置。本次发布范围仅 saddle，不推送 drover 或 corral。
+- README.md 为默认英文首页，顶部链接 README.zh-CN.md，中文版链接回英文；整理功能、构建/安装、入门操作、配置、快捷键与验证方式，移出首页的历史实现细节仍保留在 docs。
+- 两种语言的命令和配置逐字一致，本地链接与 Markdown 代码块检查通过，`cargo build --release --locked` 通过。本轮仅改文档，不重复运行行为测试；Gitleaks/TruffleHog 检查 Git 历史未发现凭证。
+- 明确记录依赖版本边界：GitHub 上 drover 的 JSON 接口尚有限制十条的版本，完整历史需要其修复版；没有把本地未推送的依赖修复当作已公开发布。
+- AGENTS.md 的“没有远端”旧说明已更新为仅在用户明确授权时推送，后续发布仍需对应授权。
+
 ## 2026-09-25：真实截图下历史仍不可滚动（已修复接口截断）
 
 - 用户再次确认 e6d2e36 的历史底边没有解决问题，上一轮关于历史区已完成的结论不足。
