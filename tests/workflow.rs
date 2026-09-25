@@ -113,6 +113,7 @@ impl Harness {
     fn log(&self, filename: &str) -> String {
         std::fs::read_to_string(self.dir.path().join(filename)).unwrap_or_default()
     }
+    #[track_caller]
     fn until(&mut self, mut predicate: impl FnMut(&Self) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(8);
         while !predicate(self) {
@@ -126,6 +127,7 @@ impl Harness {
             self.pump();
         }
     }
+    #[track_caller]
     fn see(&mut self, text: &str) {
         self.until(|h| h.screen.screen().contents().contains(text));
     }
@@ -215,7 +217,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         r#"{"p/a":"blocked","p/b":"working","p/new":"idle","p/taken":"idle"}"#,
     )
     .unwrap();
-    h.see("blocked");
+    h.see("待处理");
     h.master
         .resize(PtySize {
             rows: 44,
@@ -225,7 +227,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(44, 160);
-    h.event("size p/b 106x42");
+    h.event("size p/b 106x41");
     h.until(|h| h.screen.screen().cell(22, 0).unwrap().contents() == "┌");
     h.see("Native queue task");
     // Native Queue translates actions into public CLI calls, never a PTY.
@@ -363,10 +365,10 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     h.click(" 取消  Esc ");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
-    h.click(" 详情  Enter ");
+    h.click(" 详情  ↵ ");
     h.see("detail line 0");
     h.click(" 返回  Esc ");
-    h.see(" 详情  Enter ");
+    h.see(" 详情  ↵ ");
     h.click(" 新增  a ");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
@@ -387,8 +389,10 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(48, 80);
-    h.until(|h| h.screen.screen().cell(24, 0).unwrap().contents() == "┌");
-    // The narrower Agents toolbar wraps; hit targets must follow the new rows.
+    h.see(" Agents  Queue ");
+    h.send(b"\x1d");
+    h.see("输入 ▸ Agents");
+    // Narrow-window tabs expose Agents; hit targets must follow the new rows.
     h.click(" 停止  x ");
     h.click(" 确认停止  y ");
     h.event("stop p/a");
@@ -401,13 +405,17 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Native queue task");
     h.send(b"\t?");
     h.see("Queue 原生看板");
+    h.see(" 返回  Esc ");
     h.send(b"\x1b");
+    h.until(|h| !h.screen.screen().contents().contains(" 返回  Esc "));
     h.see("Native queue task");
     h.send(b"\r");
     h.see("detail line 0");
     h.send(b"\x1b[6~\x1b[6~");
-    h.see("detail line 15");
+    h.see("detail line 30");
+    h.see(" 返回  Esc ");
     h.send(b"\x1b");
+    h.until(|h| !h.screen.screen().contents().contains(" 返回  Esc "));
     h.see("Native queue task");
     h.send(b"a");
     h.see("Ctrl-S");
@@ -430,6 +438,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"g");
     h.see("checked public criteria");
     h.send(b"\x1b");
+    h.until(|h| !h.screen.screen().contents().contains(" 返回  Esc "));
     h.see("Native queue task");
     h.send(b"n");
     h.see("next request accepted");
@@ -532,5 +541,65 @@ fn buttons_require_release_on_the_same_target() {
         "Down must not run a command"
     );
     h.send(b"\x1b[<0;139;39m"); // Release elsewhere cancels.
+    h.quit();
+}
+
+#[test]
+fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"\t");
+    h.event("input p/a 09"); // Viewer keeps Tab; never changes management focus.
+    h.send(b"\x1dx");
+    h.see(" 确认停止  y ");
+    let input_before = h
+        .log("events")
+        .lines()
+        .filter(|l| l.starts_with("input "))
+        .count();
+    h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m"); // Behind modal, inside Viewer.
+    h.send(b"z"); // Cancels confirmation; must not go to the agent.
+    h.see("cancelled");
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|l| l.starts_with("input "))
+            .count(),
+        input_before
+    );
+    assert!(!h.log("events").contains("stop "));
+    h.send(b"\tc");
+    h.see(" 目录  e ");
+    h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m");
+    h.send(b"\x1d");
+    h.see("输入 ▸ Agents");
+    h.master
+        .resize(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    h.screen.screen_mut().set_size(24, 80);
+    h.see(" Agents  Queue ");
+    h.click("Queue");
+    h.see("输入 ▸ Queue");
+    h.see("Native queue task");
+    h.click(" 暂停  p ");
+    h.see("Paused");
+    h.click("Agents");
+    h.see("输入 ▸ Agents");
+    h.see("Synthetic title");
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|s| s.starts_with("attach "))
+            .count(),
+        1
+    );
+    assert!(!h.log("events").contains("detached p/a"));
     h.quit();
 }

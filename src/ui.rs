@@ -4,6 +4,7 @@ use crate::{
     input::Focus,
     layout::Panes,
     pty::Session,
+    theme as t,
 };
 use ratatui::{
     Frame,
@@ -56,6 +57,49 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         view.viewer,
         view.viewer_note,
     );
+    if view.queue.overlay_open() {
+        view.queue.draw_overlay(frame);
+        hits.buttons.clear();
+        hits.agents.clear();
+        hits.queue_rows.clear();
+    }
+    if let Some(name) = &panel.confirm {
+        let modal = crate::theme::centered(frame.area(), 64, 12);
+        frame.render_widget(ratatui::widgets::Clear, modal);
+        frame.render_widget(
+            crate::theme::block(" 停止 agent ", true)
+                .style(Style::default().bg(crate::theme::OVERLAY))
+                .border_style(Style::default().fg(crate::theme::DANGER)),
+            modal,
+        );
+        let content = inner(modal);
+        let (body, buttons) = crate::buttons::draw(
+            frame,
+            content,
+            &[
+                crate::buttons::Button::new("取消 Esc", crossterm::event::KeyCode::Esc, true),
+                crate::buttons::Button::new(
+                    "确认停止 y",
+                    crossterm::event::KeyCode::Char('y'),
+                    true,
+                )
+                .danger(),
+            ],
+        );
+        let agent = panel.agents.iter().find(|a| &a.name == name);
+        let text = format!(
+            "停止 {name}？\n实例：{}\n当前活动：{}\n\n这会停止该 agent，不只是断开 Viewer。\n仅 y 或确认停止按钮执行；其他键取消。",
+            agent.and_then(|a| a.instance.as_deref()).unwrap_or("未知"),
+            agent.and_then(|a| a.last_tool.as_deref()).unwrap_or("—")
+        );
+        frame.render_widget(Paragraph::new(text).wrap(Default::default()), body);
+        hits.buttons = buttons;
+        hits.agents.clear();
+        hits.queue_rows.clear();
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
+    }
     let controls: Vec<_> = hits
         .buttons
         .iter()
@@ -93,10 +137,10 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
             view.panes.tabs,
         );
     }
-    let (target, help) = match view.focus {
+    let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ 选择  Enter 接入  r 回复  s 排序  x 停止  Tab 队列  q 退出",
+            " ↑↓ 选择  ↵ 接入  r 回复  PgUp/Dn 详情  Tab 队列  q 退出",
         ),
         Focus::Queue => (
             "Queue".to_string(),
@@ -107,6 +151,30 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
             " 按键发送到终端  Ctrl-] 返回 Agents",
         ),
     };
+    if view.queue.overlay_open() {
+        match &view.queue.page {
+            crate::queue::Page::Add { body_focus, .. } => {
+                target = format!("新增 · {}", if *body_focus { "正文" } else { "标题" });
+                help = " Tab 切字段  Ctrl-S 保存  Esc 取消";
+            }
+            crate::queue::Page::Projects => {
+                target = "项目选择".into();
+                help = " ↑↓ 选择  Enter 切换  e 手动目录  Esc 取消";
+            }
+            crate::queue::Page::Project(_) => {
+                target = "项目目录".into();
+                help = " Enter 应用  Ctrl-U 清空  Esc 取消";
+            }
+            _ => {
+                target = "Queue · 详情/反馈".into();
+                help = " PgUp/PgDn 滚动  Esc 返回  Ctrl-] Agents";
+            }
+        }
+    }
+    if panel.confirm.is_some() {
+        target = "停止确认".into();
+        help = " y 确认停止  其他键取消";
+    }
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
@@ -116,7 +184,11 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                     .bg(crate::theme::FOCUS),
             ),
             Span::styled(
-                if panel.message.is_empty() {
+                if panel.confirm.is_some() || view.queue.overlay_open() {
+                    help
+                } else if view.focus == Focus::Queue && !view.queue.message.is_empty() {
+                    &view.queue.message
+                } else if panel.message.is_empty() {
                     help
                 } else {
                     &panel.message
@@ -143,7 +215,22 @@ fn draw_terminal(
     session: Option<&Session>,
     note: &str,
 ) {
-    frame.render_widget(border(title, focused), area);
+    let block = border(title, focused).title_top(
+        Line::styled(
+            if session.is_some() {
+                " ◉ 已连接 "
+            } else {
+                " 未连接 "
+            },
+            Style::default().fg(if session.is_some() {
+                t::CONNECTED
+            } else {
+                t::MUTED
+            }),
+        )
+        .right_aligned(),
+    );
+    frame.render_widget(block, area);
     let area = inner(area);
     if let Some(session) = session {
         let screen = session.screen.lock().unwrap();
@@ -163,32 +250,32 @@ struct Row {
 }
 fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     let area = view.panes.agents;
-    frame.render_widget(border("Agents", view.focus == Focus::Agents), area);
+    if area.is_empty() {
+        return Hits::default();
+    }
+    let focused = view.focus == Focus::Agents;
+    let block = border(" Agents ", focused).title_bottom(Line::styled(
+        format!(" {} agents ", panel.agents.len()),
+        Style::default().fg(t::DIM),
+    ));
+    frame.render_widget(block, area);
     let inside = inner(area);
     if inside.is_empty() {
         return Hits::default();
     }
-    let help = "↑↓ 选择 · Tab 队列 · q 退出";
-    let footer = Rect::new(inside.x, inside.bottom() - 1, inside.width, 1);
-    frame.render_widget(
-        Paragraph::new(if panel.message.is_empty() {
-            help
-        } else {
-            &panel.message
-        })
-        .style(Style::default().fg(Color::Yellow)),
-        footer,
-    );
     use crate::buttons::{self, Button};
     use crossterm::event::KeyCode as K;
-    let buttons = if panel.confirm.is_some() {
-        vec![
-            Button::new("确认停止 y", K::Char('y'), true),
-            Button::new("取消 Esc", K::Esc, true),
-        ]
-    } else {
-        vec![
-            Button::new("接入 Enter", K::Enter, panel.selected.is_some()),
+    let selected = panel.selected.is_some();
+    let connected = selected && panel.selected.as_deref() == view.showing;
+    let (content, buttons) = buttons::draw(
+        frame,
+        inside,
+        &[
+            Button::new(
+                if connected { "已接入" } else { "接入 ↵" },
+                K::Enter,
+                selected && !connected,
+            ),
             Button::new(
                 if panel.show_reply {
                     "收起 r"
@@ -196,50 +283,51 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                     "回复 r"
                 },
                 K::Char('r'),
-                panel.selected.is_some(),
+                selected,
             ),
             Button::new(
                 if panel.by_state {
-                    "项目排序 s"
+                    "按名称 s"
                 } else {
-                    "状态排序 s"
+                    "按状态 s"
                 },
                 K::Char('s'),
                 true,
             ),
-            Button::new("停止 x", K::Char('x'), panel.selected.is_some()),
-        ]
-    };
-    let (content, buttons) = buttons::draw(
-        frame,
-        Rect {
-            height: inside.height.saturating_sub(1),
-            ..inside
-        },
-        &buttons,
+            Button::new("停止 x", K::Char('x'), selected).danger(),
+        ],
     );
-    let available = content.height;
-    let list_height = if panel.show_reply && available >= 5 {
-        (available / 2).max(3)
+    let detail_height = if selected && content.height >= 6 {
+        if panel.show_reply {
+            (content.height / 2).max(3)
+        } else {
+            (content.height / 4).clamp(3, 5)
+        }
     } else {
-        available
+        0
     };
     let list = Rect::new(
-        inside.x,
-        inside.y,
-        inside.width.saturating_sub(1),
-        list_height,
+        content.x,
+        content.y,
+        content.width.saturating_sub(1),
+        content.height - detail_height,
     );
     let mut hits = Hits {
         buttons,
         list,
         ..Default::default()
     };
-    let rows = agent_rows(panel, view.showing, usize::from(list.width), view.now);
+    let rows = agent_rows(
+        panel,
+        view.showing,
+        usize::from(list.width),
+        view.now,
+        focused,
+    );
     let selected_rows: Vec<_> = rows
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.name.as_ref() == panel.selected.as_ref() && r.name.is_some())
+        .filter(|(_, r)| r.name.is_some() && r.name == panel.selected)
         .map(|(i, _)| i)
         .collect();
     if panel.follow
@@ -261,7 +349,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     {
         let y = list.y + offset as u16;
         frame.render_widget(
-            Paragraph::new(row.line.clone()),
+            Paragraph::new(row.line.clone()).style(row.line.style),
             Rect::new(list.x, y, list.width, 1),
         );
         if let Some(name) = &row.name {
@@ -269,18 +357,20 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         }
     }
     if rows.is_empty() {
-        frame.render_widget(Paragraph::new("(no agents)"), list);
+        frame.render_widget(
+            Paragraph::new("暂无 agent").style(Style::default().fg(t::MUTED)),
+            list,
+        );
     }
     if rows.len() > usize::from(list.height) && list.height > 0 {
-        let mut scrollbar =
-            ScrollbarState::new(rows.len().saturating_sub(usize::from(list.height)))
-                .position(panel.top);
-        frame.render_stateful_widget(
-            Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(None)
-                .end_symbol(None),
-            Rect::new(inside.x, inside.y, inside.width, list.height),
-            &mut scrollbar,
+        scrollbar(
+            frame,
+            Rect {
+                width: inside.width,
+                ..list
+            },
+            rows.len(),
+            panel.top,
         );
         let above = rows[..panel.top].iter().filter(|r| r.headline).count();
         let below = rows
@@ -289,264 +379,235 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             .filter(|r| r.headline)
             .count();
         frame.render_widget(
-            border(
-                &format!("Agents · ↑ {above} ↓ {below}"),
-                view.focus == Focus::Agents,
-            ),
+            border(&format!(" Agents · ↑{above} ↓{below} "), focused),
             area,
         );
     }
-    if list_height < available {
-        let y = list.bottom();
+    if detail_height > 0 {
+        let a = panel
+            .agents
+            .iter()
+            .find(|a| Some(&a.name) == panel.selected.as_ref());
+        let heading = format!(
+            "─ {} {}",
+            panel.selected.as_deref().unwrap_or(""),
+            if panel.show_reply {
+                "· 回复"
+            } else {
+                "· 详情"
+            }
+        );
         frame.render_widget(
-            Paragraph::new(format!(
-                "─ {} · last reply",
-                panel.selected.as_deref().unwrap_or("")
-            ))
-            .style(Style::default().fg(Color::Cyan)),
-            Rect::new(inside.x, y, inside.width, 1),
+            Paragraph::new(heading).style(Style::default().fg(t::BRIGHT)),
+            Rect::new(content.x, list.bottom(), content.width, 1),
         );
         hits.reply = Rect::new(
-            inside.x,
-            y + 1,
-            inside.width.saturating_sub(1),
-            available - list_height - 1,
+            content.x,
+            list.bottom() + 1,
+            content.width.saturating_sub(1),
+            detail_height - 1,
         );
-        let lines = reply_lines(view.reply, usize::from(hits.reply.width));
+        let text = if panel.show_reply {
+            view.reply.to_string()
+        } else if let Some(a) = a {
+            format!(
+                "标题 {}\n目录 {}\n{} · {}\n{} {} · SOURCE {} · ATT {}\n活动 {} · 输出 {} 前",
+                a.title.as_deref().unwrap_or("—"),
+                a.cwd.as_deref().unwrap_or("—"),
+                a.name,
+                a.instance.as_deref().unwrap_or("—"),
+                a.kind.as_deref().unwrap_or("—"),
+                a.state.as_deref().unwrap_or("starting"),
+                a.last_input_source.as_deref().unwrap_or("—"),
+                a.attached,
+                a.last_tool.as_deref().unwrap_or("—"),
+                seconds(a.last_output.map(|v| view.now - v))
+            )
+        } else {
+            String::new()
+        };
+        let lines = reply_lines(&text, usize::from(hits.reply.width));
         panel.reply_top = panel
             .reply_top
             .min(lines.len().saturating_sub(usize::from(hits.reply.height)));
         frame.render_widget(
-            Paragraph::new(
-                lines
-                    .iter()
-                    .skip(panel.reply_top)
-                    .take(usize::from(hits.reply.height))
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            ),
+            Paragraph::new(lines.clone())
+                .scroll((panel.reply_top.min(u16::MAX as usize) as u16, 0)),
             hits.reply,
         );
         if lines.len() > usize::from(hits.reply.height) {
-            let mut state =
-                ScrollbarState::new(lines.len().saturating_sub(usize::from(hits.reply.height)))
-                    .position(panel.reply_top);
-            frame.render_stateful_widget(
-                Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                    .begin_symbol(None)
-                    .end_symbol(None),
+            scrollbar(
+                frame,
                 Rect {
-                    width: inside.width,
+                    width: content.width,
                     ..hits.reply
                 },
-                &mut state,
+                lines.len(),
+                panel.reply_top,
             );
         }
     }
     hits
 }
-
-fn agent_rows(panel: &Panel, showing: Option<&str>, width: usize, now: f64) -> Vec<Row> {
+fn scrollbar(frame: &mut Frame, area: Rect, len: usize, top: usize) {
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_style(Style::default().fg(t::MUTED))
+            .track_style(Style::default().fg(t::BORDER)),
+        area,
+        &mut ScrollbarState::new(len)
+            .viewport_content_length(usize::from(area.height))
+            .position(top),
+    );
+}
+fn agent_rows(
+    panel: &Panel,
+    showing: Option<&str>,
+    width: usize,
+    now: f64,
+    focused: bool,
+) -> Vec<Row> {
     let ordered = panel.ordered(now);
-    let cells: Vec<_> = ordered.iter().map(|a| cells(a, now)).collect();
-    let heads = [
-        "NAME", "KIND", "INST", "STATE", "DOING", "QUIET", "ATT", "SOURCE", "DIR", "TITLE",
-    ];
-    let mut widths: Vec<_> = heads.iter().map(|s| s.len()).collect();
-    for row in &cells {
-        for (i, s) in row.iter().enumerate() {
-            widths[i] = widths[i].max(s.width());
-        }
-    }
-    let table = widths.iter().sum::<usize>() + heads.len() - 1 + 4 <= width;
     let mut rows = Vec::new();
-    if table {
-        rows.push(Row {
-            line: Line::styled(
-                format!(
-                    "    {}",
-                    heads
-                        .iter()
-                        .enumerate()
-                        .map(|(i, s)| pad(s, widths[i]))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                ),
-                Style::default().fg(Color::DarkGray),
-            ),
-            name: None,
-            headline: false,
-        });
-    }
-    let mut previous_group = None;
-    for (a, cells) in ordered.iter().zip(cells) {
+    let mut previous = None;
+    for a in ordered {
         let prefix = group(&a.name);
-        if previous_group != Some(prefix) {
+        if previous != Some(prefix) {
             rows.push(Row {
                 line: Line::styled(
-                    if prefix.is_empty() {
-                        "(no prefix)"
-                    } else {
-                        prefix
-                    }
-                    .to_owned(),
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
+                    if prefix.is_empty() { "agents/" } else { prefix }.to_string(),
+                    Style::default().fg(t::BRIGHT).add_modifier(Modifier::BOLD),
                 ),
                 name: None,
                 headline: false,
             });
-            previous_group = Some(prefix);
+            previous = Some(prefix);
         }
         let selected = panel.selected.as_deref() == Some(&a.name);
-        let mut style = Style::default();
-        if selected {
-            style = style.bg(Color::Indexed(237));
+        let style = if selected {
+            Style::default().bg(t::SELECTED)
+        } else {
+            Style::default()
+        };
+        let (icon, state, color) = state(a, panel, now);
+        let wide = width >= 46;
+        let name_width = if wide { 10 } else { 8 };
+        let name = a.name.strip_prefix(prefix).unwrap_or(&a.name);
+        let mut spans = vec![
+            Span::styled(
+                if selected { "▎" } else { " " },
+                Style::default().fg(if focused { t::FOCUS } else { t::MUTED }),
+            ),
+            Span::styled(format!("{icon} "), Style::default().fg(color)),
+            Span::styled(
+                pad(&clip(name, name_width), name_width),
+                Style::default().fg(if selected { t::BRIGHT } else { t::TEXT }),
+            ),
+        ];
+        if wide {
+            spans.push(Span::styled(
+                format!(" {} ", pad(&clip(a.kind.as_deref().unwrap_or(""), 6), 6)),
+                Style::default().fg(t::MUTED),
+            ));
         }
-        let state_color = match a.state.as_deref() {
-            Some("blocked") => Color::Red,
-            Some("working") => Color::Yellow,
-            Some("idle") => Color::Green,
-            _ => Color::Gray,
-        };
-        let marker = if a.state.as_deref() == Some("blocked") {
-            "!"
-        } else if panel.suspect(a, now) {
-            "?"
+        spans.push(Span::styled(
+            format!(" {state}"),
+            Style::default().fg(color),
+        ));
+        let badge = if showing == Some(&a.name) {
+            "◉"
         } else if panel.unread.contains(&a.name) {
-            "●"
+            "新"
         } else {
-            " "
+            ""
         };
-        let lead = format!(
-            "{}{}{marker} ",
-            if selected { "▎" } else { " " },
-            if showing == Some(&a.name) { "▶" } else { " " }
-        );
-        let summary = if table {
-            cells
-                .iter()
-                .enumerate()
-                .map(|(i, s)| pad(s, widths[i]))
-                .collect::<Vec<_>>()
-                .join(" ")
-        } else {
-            format!("{}  {}  {}", cells[0], cells[3], cells[5])
-        };
+        let suffix = format!(" {badge} {}", seconds(a.last_output.map(|v| now - v)));
+        let used: usize = spans.iter().map(|s| s.content.width()).sum();
+        spans.push(Span::raw(
+            " ".repeat(width.saturating_sub(used + suffix.width())),
+        ));
+        spans.push(Span::styled(
+            suffix,
+            Style::default().fg(if showing == Some(&a.name) {
+                t::CONNECTED
+            } else if !badge.is_empty() {
+                t::UNREAD
+            } else {
+                t::MUTED
+            }),
+        ));
         rows.push(Row {
-            line: Line::from(vec![
-                Span::styled(lead, style.fg(state_color)),
-                Span::styled(
-                    clip(&summary, width.saturating_sub(4)),
-                    style.fg(state_color),
-                ),
-            ])
-            .style(style),
+            line: Line::from(spans).style(style),
             name: Some(a.name.clone()),
             headline: true,
         });
-        if !table {
-            let mut items = Vec::new();
-            if !cells[4].is_empty() {
-                items.push(cells[4].clone());
-            }
-            items.extend(
-                [
-                    format!("{} {}", cells[1], cells[2]).trim().to_string(),
-                    format!("ATT {}", cells[6]),
-                    format!("SOURCE {}", cells[7]),
-                    format!("DIR {}", cells[8]),
-                    cells[9].clone(),
-                ]
-                .into_iter()
-                .filter(|s| !s.is_empty() && s != "SOURCE " && s != "DIR "),
-            );
-            for line in fold_items(&items, width.saturating_sub(4)) {
-                rows.push(Row {
-                    line: Line::styled(format!("    {line}"), style.fg(Color::Gray)),
-                    name: Some(a.name.clone()),
-                    headline: false,
-                });
-            }
+        if wide {
+            let activity = if let Some(error) = &a.error {
+                error.clone()
+            } else if a.incompatible {
+                format!("不兼容协议 {}", a.proto.unwrap_or(0))
+            } else if matches!(a.state.as_deref(), Some("working" | "blocked")) {
+                format!(
+                    "{} · {}",
+                    a.last_tool.as_deref().unwrap_or("thinking"),
+                    seconds(a.turn_started.map(|v| now - v))
+                )
+            } else {
+                format!("上次输出 {} 前", seconds(a.last_output.map(|v| now - v)))
+            };
+            rows.push(Row {
+                line: Line::styled(
+                    format!("   {}", clip(&activity, width.saturating_sub(3))),
+                    style.fg(t::MUTED),
+                ),
+                name: Some(a.name.clone()),
+                headline: false,
+            });
         }
     }
     rows
 }
-fn cells(a: &Agent, now: f64) -> Vec<String> {
-    let state = if a.starting {
-        "(starting)".into()
-    } else if a.incompatible {
-        format!("(incompatible proto {})", a.proto.unwrap_or(0))
-    } else if let Some(error) = &a.error {
-        error.clone()
-    } else {
-        a.state.clone().unwrap_or_default()
-    };
-    let doing = if matches!(a.state.as_deref(), Some("working" | "blocked")) {
-        let spin = if a.state.as_deref() == Some("working") {
-            ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"][(now * 5.0) as usize % 10]
-        } else {
-            ""
-        };
-        format!(
-            "{spin} {} {}",
-            a.last_tool.as_deref().unwrap_or("thinking"),
-            seconds(a.turn_started.map(|t| now - t))
-        )
-    } else {
-        String::new()
-    };
-    vec![
-        a.name
-            .strip_prefix(group(&a.name))
-            .unwrap_or(&a.name)
-            .into(),
-        a.kind.clone().unwrap_or_default(),
-        a.instance
-            .as_deref()
-            .unwrap_or("")
-            .chars()
-            .take(6)
-            .collect(),
-        state,
-        doing,
-        seconds(a.last_output.map(|t| now - t)),
-        a.attached.to_string(),
-        a.last_input_source.clone().unwrap_or_default(),
-        short_dir(a.cwd.as_deref().unwrap_or("")),
-        a.title.clone().unwrap_or_default(),
-    ]
+fn state(a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
+    if a.error.is_some() || a.incompatible {
+        return ("!", "异常", t::DANGER);
+    }
+    if panel.suspect(a, now) {
+        return ("▲", "无进展", t::WARNING);
+    }
+    if a.starting {
+        return ("◌", "启动中", t::MUTED);
+    }
+    match a.state.as_deref() {
+        Some("working") => (
+            ["◐", "◓", "◑", "◒"][(now * 3.0) as usize % 4],
+            "工作中",
+            t::WORKING,
+        ),
+        Some("blocked") => ("◆", "待处理", t::BLOCKED),
+        Some("idle") => ("○", "空闲", t::MUTED),
+        Some("starting") => ("◌", "启动中", t::MUTED),
+        _ => ("·", "未知", t::MUTED),
+    }
 }
 fn seconds(value: Option<f64>) -> String {
     value
         .map(|s| {
             if s >= 3600.0 {
                 format!("{:.1}h", s / 3600.0)
+            } else if s >= 60.0 {
+                format!("{}m", (s / 60.0) as u64)
             } else {
                 format!("{}s", s.max(0.0) as u64)
             }
         })
-        .unwrap_or_default()
+        .unwrap_or_else(|| "—".into())
 }
-fn short_dir(path: &str) -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let path = if !home.is_empty() && (path == home || path.starts_with(&format!("{home}/"))) {
-        format!("~{}", &path[home.len()..])
-    } else {
-        path.into()
-    };
-    let parts: Vec<_> = path.split('/').collect();
-    if parts.len() > 3 {
-        format!("…/{}", parts[parts.len() - 2..].join("/"))
-    } else {
-        path
-    }
-}
-fn pad(text: &str, width: usize) -> String {
+pub(crate) fn pad(text: &str, width: usize) -> String {
     format!("{text}{}", " ".repeat(width.saturating_sub(text.width())))
 }
-fn clip(text: &str, width: usize) -> String {
+pub(crate) fn clip(text: &str, width: usize) -> String {
     let clean: String = text.chars().filter(|c| !c.is_control()).collect();
     if clean.width() <= width {
         return clean;
@@ -554,8 +615,7 @@ fn clip(text: &str, width: usize) -> String {
     if width == 0 {
         return String::new();
     }
-    let mut used = 0;
-    let mut result = String::new();
+    let (mut used, mut result) = (0, String::new());
     for c in clean.chars() {
         let w = c.width().unwrap_or(0);
         if used + w >= width {
@@ -566,24 +626,6 @@ fn clip(text: &str, width: usize) -> String {
     }
     result.push('…');
     result
-}
-fn fold_items(items: &[String], width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for item in items {
-        let item = clip(item, width);
-        if !current.is_empty() && current.width() + 3 + item.width() > width {
-            lines.push(std::mem::take(&mut current));
-        }
-        if !current.is_empty() {
-            current.push_str(" · ");
-        }
-        current.push_str(&item);
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
 }
 fn reply_lines(text: &str, width: usize) -> Vec<Line<'static>> {
     if width == 0 {

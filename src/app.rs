@@ -351,6 +351,14 @@ impl App {
                     }
                     return Ok(false);
                 }
+                if self.queue.overlay_open()
+                    && key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL)
+                    && matches!(key.code, KeyCode::Char(']' | '5'))
+                {
+                    self.queue.page = queue::Page::List;
+                }
                 match self.focus.route(key) {
                     Route::Quit => return Ok(true),
                     Route::Panel => self.panel_key(key),
@@ -361,6 +369,7 @@ impl App {
                                 queue::Page::Add { .. } | queue::Page::Project(_)
                             )
                         {
+                            self.queue.page = queue::Page::List;
                             self.focus = Focus::Agents;
                         } else if let Some(request) = self.queue.key(key) {
                             self.queue_request(request);
@@ -416,10 +425,36 @@ impl App {
                     self.focus = focus;
                     return self.event(Event::Key(key), panes);
                 }
-                if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                    if controls.iter().any(|(_, h)| h.area.contains(point)) {
-                        return Ok(false);
+                if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+                    && controls.iter().any(|(_, h)| h.area.contains(point))
+                {
+                    return Ok(false);
+                }
+                if self.panel.confirm.is_some() {
+                    return Ok(false);
+                }
+                if self.queue.overlay_open() {
+                    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+                        if let Some(request) = self.queue.click(mouse.column, mouse.row) {
+                            self.queue_request(request);
+                        }
+                    } else if matches!(
+                        mouse.kind,
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                    ) {
+                        self.queue.key(KeyEvent::new(
+                            if mouse.kind == MouseEventKind::ScrollUp {
+                                KeyCode::Up
+                            } else {
+                                KeyCode::Down
+                            },
+                            crossterm::event::KeyModifiers::NONE,
+                        ));
                     }
+                    return Ok(false);
+                }
+
+                if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                     if panes.tabs.contains(point) {
                         self.focus = if mouse.column - panes.tabs.x < 9 {
                             Focus::Agents
@@ -510,19 +545,20 @@ impl App {
             KeyCode::Enter => self.attach(),
             KeyCode::Char('r') => {
                 self.panel.show_reply = !self.panel.show_reply;
+                self.panel.reply_top = 0;
                 self.reply_due = Instant::now();
             }
             KeyCode::Char('s') => {
                 self.panel.by_state = !self.panel.by_state;
                 self.panel.follow = true;
             }
-            KeyCode::PageUp if self.panel.show_reply => {
+            KeyCode::PageUp => {
                 self.panel.reply_top = self
                     .panel
                     .reply_top
                     .saturating_sub(usize::from(self.hits.reply.height.max(1)))
             }
-            KeyCode::PageDown if self.panel.show_reply => {
+            KeyCode::PageDown => {
                 self.panel.reply_top = self
                     .panel
                     .reply_top

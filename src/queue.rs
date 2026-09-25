@@ -67,7 +67,8 @@ impl Panel {
                     "保存 ^S",
                     K::Char('s'),
                     !self.busy && self.read_error.is_none(),
-                ),
+                )
+                .primary(),
                 B::new("取消 Esc", K::Esc, !self.busy),
             ],
             Page::Project(_) => vec![
@@ -80,47 +81,7 @@ impl Panel {
                 B::new("目录 e", K::Char('e'), true),
                 B::new("返回 Esc", K::Esc, true),
             ],
-            _ => {
-                let ready = !self.busy && self.snapshot.is_some() && self.read_error.is_none();
-                let mut buttons = vec![
-                    B::new("项目 c", K::Char('c'), !self.busy),
-                    B::new("刷新 r", K::Char('r'), !self.busy),
-                ];
-                if matches!(self.page, Page::List) {
-                    buttons.push(B::new(
-                        "详情 Enter",
-                        K::Enter,
-                        ready && !self.tasks().is_empty(),
-                    ));
-                } else {
-                    buttons.push(B::new("返回 Esc", K::Esc, true));
-                }
-                buttons.extend([
-                    B::new("新增 a", K::Char('a'), ready),
-                    B::new("放行 g", K::Char('g'), ready),
-                    B::new("下一件 n", K::Char('n'), ready),
-                    B::new(
-                        if self.snapshot.as_ref().is_some_and(|s| s.paused) {
-                            "恢复 p"
-                        } else {
-                            "暂停 p"
-                        },
-                        K::Char('p'),
-                        ready,
-                    ),
-                    B::new(
-                        if self.snapshot.as_ref().is_some_and(|s| s.mode.r#loop) {
-                            "关闭循环 l"
-                        } else {
-                            "开启循环 l"
-                        },
-                        K::Char('l'),
-                        ready,
-                    ),
-                    B::new("帮助 ?", K::Char('?'), true),
-                ]);
-                buttons
-            }
+            _ => vec![B::new("返回 Esc", K::Esc, true)],
         }
     }
     pub fn tasks(&self) -> Vec<(&'static str, &Task)> {
@@ -307,6 +268,7 @@ impl Panel {
         }
         match key.code {
             KeyCode::Esc => {
+                self.message.clear();
                 self.page = Page::List;
                 self.scroll = 0;
             }
@@ -375,97 +337,237 @@ impl Panel {
 }
 
 impl Panel {
+    pub fn overlay_open(&self) -> bool {
+        !matches!(self.page, Page::List)
+    }
     pub fn draw(
         &mut self,
         frame: &mut ratatui::Frame,
         area: ratatui::layout::Rect,
         focused: bool,
     ) -> Vec<(u16, usize)> {
+        use crate::{
+            buttons::{self, Button as B},
+            theme as t, ui,
+        };
+        use KeyCode as K;
         use ratatui::{
             layout::Rect,
-            style::{Color, Modifier, Style},
+            style::Style,
             text::{Line, Span},
-            widgets::{Block, Paragraph, Wrap},
+            widgets::Paragraph,
         };
-        let block = Block::bordered()
-            .title("Queue")
-            .border_style(Style::default().fg(if focused {
-                Color::Cyan
-            } else {
-                Color::DarkGray
-            }));
-        let inside = block.inner(area);
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
-        frame.render_widget(block, area);
-        if inside.height < 2 || inside.width == 0 {
+        if area.is_empty() {
             return Vec::new();
         }
-        let mode = self
-            .snapshot
-            .as_ref()
-            .map(|s| {
-                format!(
-                    "{} · loop {}",
-                    if s.paused {
-                        "Paused"
-                    } else if s.mode.gate {
-                        "Manual"
-                    } else {
-                        "Auto"
-                    },
-                    if s.mode.r#loop { "on" } else { "off" }
-                )
-            })
-            .unwrap_or_else(|| "正在读取队列…".into());
-        let mode = if self.read_error.is_some() {
-            "读取失败".to_string()
-        } else {
-            mode
-        };
-        frame.render_widget(
-            Paragraph::new(mode).style(Style::default().fg(Color::Cyan)),
-            Rect::new(inside.x, inside.y, inside.width, 1),
+        let block = t::block(" Queue ", focused).title_top(
+            Line::styled(
+                format!(" {} 项 ", self.tasks().len()),
+                Style::default().fg(t::MUTED),
+            )
+            .right_aligned(),
         );
-        let project = Rect::new(inside.x, inside.y + 1, inside.width, 1);
-        if inside.height > 2 {
-            let name = std::path::Path::new(&self.project)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
-            frame.render_widget(
-                Paragraph::new(format!("项目：{name} · {}", self.project)),
-                project,
-            );
+        let inside = block.inner(area);
+        frame.render_widget(block, area);
+        if inside.height < 3 || inside.width == 0 {
+            return Vec::new();
         }
-        let (content, buttons) = crate::buttons::draw(
+        let ready = !self.busy && self.snapshot.is_some() && self.read_error.is_none();
+        let name = std::path::Path::new(&self.project)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let controls_width = 19.min(inside.width);
+        let controls = Rect::new(inside.right() - controls_width, inside.y, controls_width, 1);
+        let (_, project_hits) = buttons::draw_top(
             frame,
-            Rect {
-                height: inside.height.saturating_sub(1),
-                ..inside
-            },
-            &self.controls(),
+            controls,
+            &[
+                B::new("刷新 r", K::Char('r'), !self.busy),
+                B::new("项目 c", K::Char('c'), !self.busy),
+            ],
         );
-        self.buttons = buttons;
-        let body = Rect::new(
-            content.x,
-            content.y + 2,
-            content.width,
-            content.height.saturating_sub(2),
+        self.buttons.extend(project_hits);
+        let name_width = inside.width.saturating_sub(controls_width + 1);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    ui::clip(&name, usize::from(name_width)),
+                    Style::default().fg(t::BRIGHT),
+                ),
+                Span::styled(
+                    format!(
+                        " {}",
+                        ui::clip(
+                            &self.project,
+                            usize::from(name_width).saturating_sub(
+                                unicode_width::UnicodeWidthStr::width(name.as_ref()) + 1
+                            )
+                        )
+                    ),
+                    Style::default().fg(t::DIM),
+                ),
+            ])),
+            Rect::new(inside.x, inside.y, name_width, 1),
         );
-        let footer = Rect::new(inside.x, inside.bottom() - 1, inside.width, 1);
-        let footer_text = if self.message.is_empty() {
-            "滚轮选择 · PgUp/PgDn 滚动"
+        let mode = if self.read_error.is_some() {
+            "读取失败".into()
         } else {
-            &self.message
+            self.snapshot
+                .as_ref()
+                .map(|s| {
+                    format!(
+                        "{} · {} · loop {}",
+                        if s.paused {
+                            "Paused"
+                        } else if s.mode.gate {
+                            "Manual"
+                        } else {
+                            "Auto"
+                        },
+                        if s.paused { "已暂停" } else { "运行中" },
+                        if s.mode.r#loop { "on" } else { "off" }
+                    )
+                })
+                .unwrap_or_else(|| "正在读取队列…".into())
         };
         frame.render_widget(
-            Paragraph::new(clean(footer_text)).style(Style::default().fg(Color::Yellow)),
-            footer,
+            Paragraph::new(mode).style(Style::default().fg(if self.read_error.is_some() {
+                t::DANGER
+            } else {
+                t::MUTED
+            })),
+            Rect::new(inside.x, inside.y + 1, inside.width, 1),
         );
+        let remaining = Rect::new(inside.x, inside.y + 2, inside.width, inside.height - 2);
+        let (remaining, action_hits) = buttons::draw_top(
+            frame,
+            remaining,
+            &[
+                B::new("放行 g", K::Char('g'), ready).primary(),
+                B::new("下一件 n", K::Char('n'), ready),
+                B::new(
+                    if self.snapshot.as_ref().is_some_and(|s| s.paused) {
+                        "恢复 p"
+                    } else {
+                        "暂停 p"
+                    },
+                    K::Char('p'),
+                    ready,
+                ),
+                B::new(
+                    if inside.width < 46 {
+                        "循环 l"
+                    } else if self.snapshot.as_ref().is_some_and(|s| s.mode.r#loop) {
+                        "关循环 l"
+                    } else {
+                        "开循环 l"
+                    },
+                    K::Char('l'),
+                    ready,
+                ),
+            ],
+        );
+        self.buttons.extend(action_hits);
+        let (mut body, task_hits) = buttons::draw(
+            frame,
+            remaining,
+            &[
+                B::new("详情 ↵", K::Enter, ready && !self.tasks().is_empty()),
+                B::new("新增 a", K::Char('a'), ready),
+                B::new("帮助 ?", K::Char('?'), true),
+            ],
+        );
+        self.buttons.extend(task_hits);
+        if body.height > 0 {
+            frame.render_widget(
+                Paragraph::new(if self.busy {
+                    "─ 项目操作执行中…"
+                } else {
+                    "─ 任务 ─────────────"
+                })
+                .style(Style::default().fg(if self.busy {
+                    t::FOCUS
+                } else {
+                    t::BORDER
+                })),
+                Rect::new(body.x, body.y, body.width, 1),
+            );
+            body.y += 1;
+            body.height -= 1;
+        }
+        let hits = self.draw_page(frame, body, focused, true);
+        if self.overlay_open() {
+            Vec::new()
+        } else {
+            hits
+        }
+    }
+    pub fn draw_overlay(&mut self, frame: &mut ratatui::Frame) {
+        if !self.overlay_open() {
+            return;
+        }
+        use crate::{buttons, theme as t};
+        use ratatui::{
+            layout::Rect,
+            style::Style,
+            widgets::{Clear, Paragraph},
+        };
+        let title = match self.page {
+            Page::Projects => " 选择项目 ",
+            Page::Project(_) => " 项目目录 ",
+            Page::Add { .. } => " 新增任务 ",
+            Page::Detail => " 任务详情 ",
+            Page::Help => " 帮助 ",
+            Page::Feedback(_) => " 项目操作反馈 ",
+            Page::List => return,
+        };
+        let height = if matches!(self.page, Page::Projects | Page::Project(_)) {
+            20
+        } else {
+            28
+        };
+        let area = t::centered(frame.area(), 76, height);
+        frame.render_widget(Clear, area);
+        let block = t::block(title, true).style(Style::default().bg(t::OVERLAY));
+        let inside = block.inner(area);
+        frame.render_widget(block, area);
+        self.buttons.clear();
+        self.fields.clear();
+        self.project_rows.clear();
+        let (mut body, hits) = buttons::draw(frame, inside, &self.controls());
+        self.buttons = hits;
+        if !self.message.is_empty() && body.height > 3 {
+            let lines = wrap_text(&self.message, body.width);
+            let height = (lines.len() as u16).min(body.height / 3).max(1);
+            frame.render_widget(
+                Paragraph::new(lines).style(Style::default().fg(t::WARNING)),
+                Rect::new(body.x, body.bottom() - height, body.width, height),
+            );
+            body.height -= height;
+        }
+        self.draw_page(frame, body, true, false);
+    }
+    fn draw_page(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        body: ratatui::layout::Rect,
+        focused: bool,
+        list: bool,
+    ) -> Vec<(u16, usize)> {
+        use crate::theme as t;
+        use ratatui::{
+            layout::Rect,
+            style::{Modifier, Style},
+            text::{Line, Span},
+            widgets::{Block, Paragraph, Wrap},
+        };
         let mut hits = Vec::new();
-        match &self.page {
+        let page = if list { &Page::List } else { &self.page };
+        match page {
             Page::List => {
                 if let Some(error) = &self.read_error {
                     let text = format!(
@@ -502,28 +604,53 @@ impl Panel {
                     if section != *group {
                         rows.push((
                             None,
-                            Line::styled(group.to_string(), Style::default().fg(Color::Cyan)),
+                            Line::styled(
+                                format!(
+                                    "{group} {}",
+                                    tasks.iter().filter(|(g, _)| g == group).count()
+                                ),
+                                Style::default().fg(t::DIM),
+                            ),
                         ));
                         section = group;
                     }
                     let style = if index == self.selected {
                         Style::default()
-                            .bg(Color::Indexed(237))
+                            .bg(t::SELECTED)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                     };
-                    let label = format!(
-                        "{}{} {}{}",
-                        if index == self.selected { "▎" } else { " " },
-                        task.id.as_deref().unwrap_or("·"),
-                        task.title,
-                        task.status
-                            .as_ref()
-                            .map(|s| format!(" [{s}]"))
-                            .unwrap_or_default()
-                    );
-                    rows.push((Some(index), Line::styled(clean(&label), style)));
+                    let (status, color) = match *group {
+                        "当前" => ("运行中", t::WORKING),
+                        "待放行" => ("待放行", t::BLOCKED),
+                        "待办" => ("待办", t::MUTED),
+                        _ => match task.status.as_deref() {
+                            Some("done") => ("✓", t::SUCCESS),
+                            Some("failed") => ("失败", t::DANGER),
+                            Some(s) => (s, t::MUTED),
+                            None => ("—", t::DIM),
+                        },
+                    };
+                    let status_width = unicode_width::UnicodeWidthStr::width(status) + 1;
+                    let id = task.id.as_deref().unwrap_or("·");
+                    let id_width = unicode_width::UnicodeWidthStr::width(id).min(8);
+                    let title_width =
+                        usize::from(body.width).saturating_sub(id_width + status_width + 3);
+                    let spans = vec![
+                        Span::styled(
+                            if index == self.selected { "▎" } else { " " },
+                            Style::default().fg(if focused { t::FOCUS } else { t::MUTED }),
+                        ),
+                        Span::styled(crate::ui::clip(id, id_width), Style::default().fg(t::MUTED)),
+                        Span::raw(" "),
+                        Span::raw(crate::ui::pad(
+                            &crate::ui::clip(&task.title, title_width),
+                            title_width,
+                        )),
+                        Span::styled(format!(" {status}"), Style::default().fg(color)),
+                    ];
+                    rows.push((Some(index), Line::from(spans).style(style)));
                 }
                 let selected_row = rows
                     .iter()
@@ -538,7 +665,7 @@ impl Panel {
                 for (i, (index, line)) in rows.iter().skip(self.top).take(height).enumerate() {
                     let y = body.y + i as u16;
                     frame.render_widget(
-                        Paragraph::new(line.clone()),
+                        Paragraph::new(line.clone()).style(line.style),
                         Rect::new(body.x, y, body.width, 1),
                     );
                     if let Some(index) = index {
@@ -550,19 +677,23 @@ impl Panel {
                     frame.render_stateful_widget(
                         Scrollbar::new(ScrollbarOrientation::VerticalRight)
                             .begin_symbol(None)
-                            .end_symbol(None),
+                            .end_symbol(None)
+                            .thumb_style(Style::default().fg(t::MUTED))
+                            .track_style(Style::default().fg(t::BORDER)),
                         body,
-                        &mut ScrollbarState::new(rows.len() - height).position(self.top),
+                        &mut ScrollbarState::new(rows.len())
+                            .viewport_content_length(height)
+                            .position(self.top),
                     );
                 }
             }
             Page::Projects => {
-                let mut lines = vec![(None, "选择项目 · 点击或 Enter 打开".to_string())];
+                let mut lines = Vec::new();
                 if let Some(error) = &self.registry_error {
                     lines.extend(
                         wrap_text(error, body.width)
                             .into_iter()
-                            .map(|line| (None, line.to_string())),
+                            .map(|l| (None, l.to_string())),
                     );
                 }
                 for (index, path) in self.projects.iter().enumerate() {
@@ -570,49 +701,61 @@ impl Panel {
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy();
-                    lines.push((
-                        Some(index),
-                        format!(
-                            "{} {}",
-                            if index == self.project_selected {
-                                "▎"
-                            } else {
-                                " "
-                            },
-                            name
-                        ),
-                    ));
-                    lines.extend(
-                        wrap_text(path, body.width.saturating_sub(2))
-                            .into_iter()
-                            .map(|line| (Some(index), format!("  {line}"))),
+                    let name = crate::ui::clip(&name, 16);
+                    let label = format!(
+                        "{} {} {}",
+                        if index == self.project_selected {
+                            "▎"
+                        } else {
+                            " "
+                        },
+                        crate::ui::pad(&name, 16),
+                        crate::ui::clip(path, usize::from(body.width).saturating_sub(20))
                     );
+                    lines.push((Some(index), label));
                 }
                 if self.projects.is_empty() {
                     lines.push((None, "未登记项目 · 点击目录手动指定".into()));
                 }
+                let footer_height = body.height.min(3);
+                let height = usize::from(body.height - footer_height);
                 let selected = lines
                     .iter()
                     .position(|(i, _)| *i == Some(self.project_selected))
                     .unwrap_or(0);
-                let top = selected.saturating_sub(usize::from(body.height.saturating_sub(2)));
-                for (offset, (index, line)) in lines
-                    .iter()
-                    .skip(top)
-                    .take(usize::from(body.height))
-                    .enumerate()
-                {
+                let top = selected.saturating_sub(height.saturating_sub(1));
+                for (offset, (index, line)) in lines.iter().skip(top).take(height).enumerate() {
                     let row = Rect::new(body.x, body.y + offset as u16, body.width, 1);
-                    let style = if *index == Some(self.project_selected) {
-                        Style::default().bg(Color::Indexed(237))
-                    } else {
-                        Style::default()
-                    };
-                    frame.render_widget(Paragraph::new(line.as_str()).style(style), row);
+                    frame.render_widget(
+                        Paragraph::new(line.as_str()).style(
+                            if *index == Some(self.project_selected) {
+                                Style::default().bg(t::SELECTED)
+                            } else {
+                                Style::default()
+                            },
+                        ),
+                        row,
+                    );
                     if let Some(index) = index {
                         self.project_rows.push((row, *index));
                     }
                 }
+                let path = self
+                    .projects
+                    .get(self.project_selected)
+                    .map(String::as_str)
+                    .unwrap_or(&self.project);
+                frame.render_widget(
+                    Paragraph::new(format!("{}\n点击或 Enter 切换 · e 手动目录", path))
+                        .wrap(Wrap { trim: false })
+                        .style(Style::default().fg(t::MUTED)),
+                    Rect::new(
+                        body.x,
+                        body.bottom() - footer_height,
+                        body.width,
+                        footer_height,
+                    ),
+                );
             }
             Page::Project(path) => {
                 let field = Block::bordered().title("项目目录 · Enter 应用 · Esc 取消");
@@ -644,20 +787,15 @@ impl Panel {
                 let title_area = Rect::new(body.x, body.y, body.width, 3);
                 let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3);
                 self.fields = vec![(title_area, false), (text_area, true)];
-                let title_block =
-                    Block::bordered()
-                        .title("标题")
-                        .border_style(Style::default().fg(if !body_focus {
-                            Color::Cyan
-                        } else {
-                            Color::DarkGray
-                        }));
+                let title_block = Block::bordered().title("标题").border_style(
+                    Style::default().fg(if !body_focus { t::FOCUS } else { t::BORDER }),
+                );
                 let text_block = Block::bordered()
                     .title("正文 · Tab 切换 · Ctrl-S 保存 · Esc 取消")
                     .border_style(Style::default().fg(if *body_focus {
-                        Color::Cyan
+                        t::FOCUS
                     } else {
-                        Color::DarkGray
+                        t::BORDER
                     }));
                 let title_inner = title_block.inner(title_area);
                 let text_inner = text_block.inner(text_area);
@@ -716,19 +854,10 @@ impl Panel {
                 );
             }
         }
-        // Keep an unobtrusive native indicator visible while a public CLI runs.
-        if self.busy {
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    "执行中…",
-                    Style::default().fg(Color::Yellow),
-                ))),
-                footer,
-            );
-        }
         hits
     }
 }
+
 fn clean(text: &str) -> String {
     text.chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
