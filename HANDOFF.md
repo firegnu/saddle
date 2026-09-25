@@ -1,5 +1,14 @@
 # 交接
 
+## 2026-09-25：T1 启动配置与颜色配置完成（最新状态）
+
+- T1 已由 saddle/dev-t1-config-1 实现，主控审查并合并到 main。27 项颜色通过启动配置进入界面，已有布局、刷新、命令路径配置保留；使用方式见 README 配置节和根目录 config.toml，设计见 DESIGN 第 8 节。
+- 主控复跑标准检查：64 项通过，2 项依赖真实 drover 的既有测试忽略；Clippy 无警告，diff 检查通过。release 已构建，并更新本仓库 target/release/saddle；没有重启用户当前界面，下次启动加载新配置。
+- 本机原先没有默认配置，现已创建 ~/.config/saddle/config.toml，内容与仓库默认示例逐字一致。程序支持绝对路径 XDG_CONFIG_HOME 和 --config 优先覆盖，省略项仍用当前默认值。
+- 开发 worktree 和 t1-config 分支已清理；工作目录已删，一并关闭本主控开的 saddle/dev-t1-config-1。未关闭其他 agent，未改 corral/drover 仓库或服务。已补「收尾: T1 启动配置与界面颜色配置完成」空提交。
+- 下一步等用户：T2「支持 tab 和 split」、T3「Tasks 状态文字颜色区分」已通过公开 CLI 加入队列，均为占位，详细内容由用户后续补充；补充前不设计或实现，不自动放行下一件。
+- 仍悬着的旧事项：--help 残留 r reply、Queue 普通列表 PgUp/PgDn 不翻页，以及 drover 完整历史修复的远端发布情况。T1 不扩展处理。
+
 ## 2026-09-25 晚：接入主控分派和 drover（新主控先读本节）
 
 - **开发方式变了**：从这里起，`saddle/main` 是主控，只拆任务、写任务文件、审查、合并，不自己写功能代码；规矩见 `AGENTS.md`「开发方式（主控分派）」，分派按 corral-dispatch 技能做。旧的 `saddle/main` 是亲手写代码的开发者，已收尾关掉，本节以下是它留下的交接。
