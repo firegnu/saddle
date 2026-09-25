@@ -6,7 +6,7 @@
 - 必须改 1–4 均已关闭，最终复核无阻挡。初审标准测试 89 passed、2 ignored；第一轮主控相关回归 40 passed；第二轮 Git/git_env 8 passed、交叉复核子模块定向测试 1 passed，clippy 与 diff 检查通过。
 - release 构建完成，已原子替换并校验 `target/release/saddle`，用户重启后生效；未重启当前运行实例。真实终端观感待用户查看。
 - 开发和 detached 审查 worktree、`t11-agent-git` 分支均已清理；工作目录已删，一并关闭自有 `saddle/dev-t11-git-1`、`saddle/dev-t11-review-1`，其他用户 agent 未动。收尾空提交 `48194ac`，当前仅 main worktree。
-- 提交本交接并推送后执行 `drover done T11`，只标完成待放行；待办顺序仍为 T4 → T2，不自动开始。T4 核查任务历史/过程详情；T2 仍待用户补充。
+- `drover done T11` 已核对通过，T11 完成待放行（退出码 8，等待用户 `drover go`）；待办顺序仍为 T4 → T2，不自动开始。T4 核查任务历史/过程详情；T2 仍待用户补充。
 - 尚存事项沿用前轮：pending 快照检查与写入间竞态；旧 --help r reply、Queue PgUp/PgDn、drover 完整历史修复发布情况；既有帮助流程测试曾偶发失败，未调查原因。current 退回 pending 已按用户决定不做。T11 已接受的限制与建议详见审查文件，不自动扩展实现。
 
 ## 2026-09-26：T9 effort 选中显示与图标优化完成
