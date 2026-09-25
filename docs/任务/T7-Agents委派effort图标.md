@@ -56,3 +56,11 @@
 - 验证了什么：tests/corral.rs 新增假 corral 用例，先以 `effort()` 桩取得断言 RED（`left: None, right: Some(Medium)`），实现后 GREEN。tests/ui.rs 新增合成渲染检查：无标签时无图标；160/80 列下三档亮格数与颜色、未知/其他值无图标、各行图标同列。`cargo test --all-targets` 全过，`cargo clippy --all-targets -- -D warnings` 无警告，`cargo fmt --check`、`git diff --check` 干净。未启动真实 agent。
 - 拿主意的地方：图标放主行类型列后固定列宽，便于纵向扫读；未知选「不显示」而非「?」，与「主控/手动开的 agent 没标签」的常态一致，不制造噪音；有已知 effort 时名称预留宽度 +4 列（33→37），只在需要时生效；effort 值区分大小写，按接口字面匹配；亮格用中性正文色，不复用状态语义色。
 - 没做的事：不显示 model，不新增配置项/颜色字段，不在附加信息行加文字说明，不改状态、排序、接入和操作语义；未合并 main、未推送、未更新 HANDOFF。
+
+## 主控审查
+
+- 2026-09-26：可以合并。核对 45f95d7 全部 diff、完成记录及回复，只接入公开 labels.effort 并增加三档显示，符合已确认范围；未解析 argv/终端或读取内部文件，未改变已有状态、排序和接入语义。
+- 主控复跑 cargo test --all-targets：79 passed、2 ignored；cargo clippy --all-targets -- -D warnings 和 git diff --check 通过。解析检查及 160/80 列合成渲染检查通过，无需返工。
+- 同意图标位置、未知留白、全无已知值时不占列、有图标时名称少四列、精确小写匹配和中性正文色的取舍；未知不显示已获用户授权，无需再请用户决定。
+- 同意不兼容 labels 整体为 null/非对象的畸形输出：公开契约保证对象，当前缺失字段可兼容，effort 的非字符串或其他值按未知；不为契约外输入增加处理。
+- 无阻挡项；release 更新后需用户重启当前 saddle，当前运行实例不动。
