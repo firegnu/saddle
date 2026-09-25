@@ -64,24 +64,24 @@ impl Panel {
         match self.page {
             Page::Add { .. } => vec![
                 B::control(
-                    "保存 ^S",
+                    "Save ^s",
                     K::Char('s'),
                     !self.busy && self.read_error.is_none(),
                 )
                 .primary(),
-                B::new("取消 Esc", K::Esc, !self.busy),
+                B::new("Cancel Esc", K::Esc, !self.busy),
             ],
             Page::Project(_) => vec![
-                B::new("应用 Enter", K::Enter, !self.busy),
-                B::new("取消 Esc", K::Esc, true),
+                B::new("Apply ↵", K::Enter, !self.busy),
+                B::new("Cancel Esc", K::Esc, true),
             ],
             Page::Projects => vec![
-                B::new("打开 Enter", K::Enter, !self.projects.is_empty()),
-                B::new("刷新 r", K::Char('r'), true),
-                B::new("目录 e", K::Char('e'), true),
-                B::new("返回 Esc", K::Esc, true),
+                B::new("Open ↵", K::Enter, !self.projects.is_empty()),
+                B::new("Refresh r", K::Char('r'), true),
+                B::new("Path e", K::Char('e'), true),
+                B::new("Back Esc", K::Esc, true),
             ],
-            _ => vec![B::new("返回 Esc", K::Esc, true)],
+            _ => vec![B::new("Back Esc", K::Esc, true)],
         }
     }
     pub fn tasks(&self) -> Vec<(&'static str, &Task)> {
@@ -351,12 +351,7 @@ impl Panel {
             theme as t, ui,
         };
         use KeyCode as K;
-        use ratatui::{
-            layout::Rect,
-            style::Style,
-            text::{Line, Span},
-            widgets::Paragraph,
-        };
+        use ratatui::{layout::Rect, style::Style, text::Line, widgets::Paragraph};
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
@@ -389,39 +384,49 @@ impl Panel {
             .file_name()
             .unwrap_or_default()
             .to_string_lossy();
-        let controls_width = 19.min(inside.width);
-        let controls = Rect::new(inside.right() - controls_width, inside.y, controls_width, 1);
+        let inline = inside.width >= 40;
+        let controls_width = 27.min(inside.width);
+        let controls = Rect::new(
+            inside.right() - controls_width,
+            inside.y + u16::from(!inline),
+            controls_width,
+            inside.height.saturating_sub(u16::from(!inline)).min(3),
+        );
         let (_, project_hits) = buttons::draw_top(
             frame,
             controls,
             &[
-                B::new("刷新 r", K::Char('r'), !self.busy && !self.overlay_open()),
-                B::new("项目 c", K::Char('c'), !self.busy && !self.overlay_open()),
+                B::new(
+                    "Refresh r",
+                    K::Char('r'),
+                    !self.busy && !self.overlay_open(),
+                ),
+                B::new(
+                    "Project c",
+                    K::Char('c'),
+                    !self.busy && !self.overlay_open(),
+                ),
             ],
         );
         self.buttons.extend(project_hits);
-        let name_width = inside.width.saturating_sub(controls_width + 1);
+        let name_width = if inline {
+            inside.width.saturating_sub(controls_width + 1)
+        } else {
+            inside.width
+        };
         frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    ui::clip(&name, usize::from(name_width)),
-                    Style::default().fg(t::BRIGHT),
-                ),
-                Span::styled(
-                    format!(
-                        " {}",
-                        ui::clip(
-                            &self.project,
-                            usize::from(name_width).saturating_sub(
-                                unicode_width::UnicodeWidthStr::width(name.as_ref()) + 1
-                            )
-                        )
-                    ),
-                    Style::default().fg(t::DIM),
-                ),
-            ])),
+            Paragraph::new(ui::clip(&name, usize::from(name_width)))
+                .style(Style::default().fg(t::BRIGHT)),
             Rect::new(inside.x, inside.y, name_width, 1),
         );
+        if inline {
+            frame.render_widget(
+                Paragraph::new(ui::clip(&self.project, usize::from(name_width)))
+                    .style(Style::default().fg(t::DIM)),
+                Rect::new(inside.x, inside.y + 1, name_width, 1),
+            );
+        }
+        let header_height = if inline { 4 } else { 5 };
         let mode = if self.read_error.is_some() {
             "读取失败".into()
         } else {
@@ -449,45 +454,50 @@ impl Panel {
             } else {
                 t::MUTED
             })),
-            Rect::new(inside.x, inside.y + 1, inside.width, 1),
+            Rect::new(
+                inside.x,
+                inside.y + (header_height - 1).min(inside.height - 1),
+                inside.width,
+                1,
+            ),
         );
-        let remaining = Rect::new(inside.x, inside.y + 2, inside.width, inside.height - 2);
-        let (remaining, action_hits) = buttons::draw_top(
-            frame,
-            remaining,
-            &[
-                B::new("放行 g", K::Char('g'), ready).primary(),
-                B::new("下一件 n", K::Char('n'), ready),
-                B::new(
-                    if self.snapshot.as_ref().is_some_and(|s| s.paused) {
-                        "恢复 p"
-                    } else {
-                        "暂停 p"
-                    },
-                    K::Char('p'),
-                    ready,
-                ),
-                B::new(
-                    if inside.width < 46 {
-                        "循环 l"
-                    } else if self.snapshot.as_ref().is_some_and(|s| s.mode.r#loop) {
-                        "关循环 l"
-                    } else {
-                        "开循环 l"
-                    },
-                    K::Char('l'),
-                    ready,
-                ),
-            ],
+        let used = header_height.min(inside.height);
+        let remaining = Rect::new(
+            inside.x,
+            inside.y + used,
+            inside.width,
+            inside.height - used,
         );
+        let (remaining, action_hits) = if self.read_error.is_some() {
+            (remaining, Vec::new())
+        } else {
+            buttons::draw_top(
+                frame,
+                remaining,
+                &[
+                    B::new("Go g", K::Char('g'), ready).primary(),
+                    B::new("Next n", K::Char('n'), ready),
+                    B::new(
+                        if self.snapshot.as_ref().is_some_and(|s| s.paused) {
+                            "Resume p"
+                        } else {
+                            "Pause p"
+                        },
+                        K::Char('p'),
+                        ready,
+                    ),
+                    B::new("Loop l", K::Char('l'), ready),
+                ],
+            )
+        };
         self.buttons.extend(action_hits);
         let (mut body, task_hits) = buttons::draw(
             frame,
             remaining,
             &[
-                B::new("详情 ↵", K::Enter, ready && !self.tasks().is_empty()),
-                B::new("新增 a", K::Char('a'), ready),
-                B::new("帮助 ?", K::Char('?'), !self.overlay_open()),
+                B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
+                B::new("Add a", K::Char('a'), ready),
+                B::new("Help ?", K::Char('?'), !self.overlay_open()),
             ],
         );
         self.buttons.extend(task_hits);
@@ -624,9 +634,7 @@ impl Panel {
                         section = group;
                     }
                     let style = if index == self.selected {
-                        Style::default()
-                            .bg(t::SELECTED)
-                            .add_modifier(Modifier::BOLD)
+                        Style::default().add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                     };

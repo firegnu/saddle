@@ -547,17 +547,19 @@ impl App {
                 self.panel.by_state = !self.panel.by_state;
                 self.panel.follow = true;
             }
-            KeyCode::PageUp => {
-                self.panel.reply_top = self
-                    .panel
-                    .reply_top
-                    .saturating_sub(usize::from(self.hits.reply.height.max(1)))
-            }
-            KeyCode::PageDown => {
-                self.panel.reply_top = self
-                    .panel
-                    .reply_top
-                    .saturating_add(usize::from(self.hits.reply.height.max(1)))
+            KeyCode::PageUp | KeyCode::PageDown => {
+                let down = key.code == KeyCode::PageDown;
+                let (offset, height) = if self.panel.show_reply {
+                    (&mut self.panel.reply_top, self.hits.reply.height)
+                } else {
+                    self.panel.follow = false;
+                    (&mut self.panel.top, self.hits.list.height)
+                };
+                *offset = if down {
+                    offset.saturating_add(usize::from(height.max(1)))
+                } else {
+                    offset.saturating_sub(usize::from(height.max(1)))
+                };
             }
             KeyCode::Char('x') if !self.panel.stopping => {
                 if let Some(name) = &self.panel.selected {

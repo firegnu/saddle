@@ -7,7 +7,7 @@ use saddle::{
     drover::{Snapshot, Task},
     input::Focus,
     layout::Panes,
-    queue, theme,
+    queue,
     ui::{self, View},
 };
 fn fixture() -> (agents::Panel, queue::Panel) {
@@ -104,7 +104,21 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
         assert!(!hits.queue_rows.is_empty());
         let row = hits.queue_rows[0].0;
         let panes = Panes::with_queue(buffer.area, &Config::default(), true);
-        assert_eq!(buffer[(panes.queue.right() - 4, row)].bg, theme::SELECTED);
+        assert_eq!(
+            buffer[(panes.queue.right() - 4, row)].bg,
+            ratatui::style::Color::Reset
+        );
+        for pane in [panes.agents, panes.queue, panes.tabs] {
+            for y in pane.y..pane.bottom() {
+                for x in pane.x..pane.right() {
+                    assert_eq!(
+                        buffer[(x, y)].bg,
+                        ratatui::style::Color::Reset,
+                        "background at {x},{y}"
+                    );
+                }
+            }
+        }
         if w < 100 {
             assert!(hits.agents.is_empty());
         }
@@ -131,6 +145,57 @@ fn overlays_remove_background_targets_and_small_frames_do_not_panic() {
                 body_focus: true,
             };
             render(w, h, &mut a, &mut q, Focus::Queue);
+        }
+    }
+}
+
+#[test]
+fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
+    let (mut a, mut q) = fixture();
+    a.agents[0].title = Some("FIRST-TITLE".into());
+    a.agents[0].last_input_source = Some("human".into());
+    a.agents.push(Agent {
+        name: "demo/second".into(),
+        kind: Some("claude".into()),
+        instance: Some("second123".into()),
+        cwd: Some("/tmp/second".into()),
+        title: Some("SECOND-TITLE".into()),
+        state: Some("idle".into()),
+        ..Default::default()
+    });
+    for reply in [false, true] {
+        a.show_reply = reply;
+        let (buffer, hits) = render(160, 100, &mut a, &mut q, Focus::Agents);
+        for (name, markers) in [
+            (
+                "demo/main",
+                ["FIRST-TITLE", "abcdef123", "/tmp/demo", "SOURCE human"],
+            ),
+            (
+                "demo/second",
+                ["SECOND-TITLE", "second123", "/tmp/second", "claude"],
+            ),
+        ] {
+            let rows: String = hits
+                .agents
+                .iter()
+                .filter(|(_, n)| n == name)
+                .map(|(y, _)| {
+                    (0..52)
+                        .map(|x| buffer[(x, *y)].symbol())
+                        .collect::<String>()
+                })
+                .collect();
+            for marker in markers {
+                assert!(
+                    rows.contains(marker),
+                    "{name} missing {marker}, reply={reply}: {rows}"
+                );
+            }
+        }
+        assert_eq!(hits.reply.is_empty(), !reply);
+        if reply {
+            assert!(text(&buffer).contains("上一轮回复"));
         }
     }
 }

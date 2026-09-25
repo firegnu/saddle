@@ -244,7 +244,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     h.event("detached p/b");
     h.send(b"\x1dr");
     h.see("REPLY p/a");
-    h.send(b"\x1b[6~\x1b[6~");
+    h.send(b"\x1b[6~\x1b[6~\x1b[6~\x1b[6~");
     h.see("line 15");
     h.send(b"rxq"); // cancel stop with q; cancellation must not quit.
     h.see("cancelled");
@@ -338,15 +338,15 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
         );
     let mut h = Harness::start_with_projects(&script, true);
     h.see("Queue project-one");
-    h.click(" 项目  c ");
+    h.click(" Project c ");
     h.see("选择项目");
     h.click("project-two");
     h.see("Queue project-two");
-    h.click(" 暂停  p ");
+    h.click(" Pause p ");
     h.see("Paused");
     assert!(!h.dir.path().join("project-one/queue-state.json").exists());
     assert!(h.dir.path().join("project-two/queue-state.json").exists());
-    h.click(" 项目  c ");
+    h.click(" Project c ");
     h.click("project-one");
     h.see("Queue project-one");
     h.see("Manual");
@@ -359,22 +359,22 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     let mut h = Harness::start();
     h.see("Native queue task");
     h.see("Synthetic title");
-    h.click(" 回复  r ");
+    h.click(" Reply r ");
     h.see("REPLY p/a");
-    h.click(" 停止  x ");
-    h.click(" 取消  Esc ");
+    h.click(" Stop x ");
+    h.click(" Cancel Esc ");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
-    h.click(" 详情  ↵ ");
+    h.click(" Details ↵ ");
     h.see("detail line 0");
-    h.click(" 返回  Esc ");
-    h.see(" 详情  ↵ ");
-    h.click(" 新增  a ");
+    h.click(" Back Esc ");
+    h.see(" Details ↵ ");
+    h.click(" Add a ");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
     h.click("正文");
     h.send("正文内容".as_bytes());
-    h.click(" 保存  ^S ");
+    h.click(" Save ^s ");
     h.see("鼠标新增");
     h.until(|h| {
         h.log("queue-events")
@@ -393,8 +393,8 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     h.send(b"\x1d");
     h.see("输入 ▸ Agents");
     // Narrow-window tabs expose Agents; hit targets must follow the new rows.
-    h.click(" 停止  x ");
-    h.click(" 确认停止  y ");
+    h.click(" Stop x ");
+    h.click(" Stop y ");
     h.event("stop p/a");
     h.quit();
 }
@@ -405,17 +405,17 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Native queue task");
     h.send(b"\t?");
     h.see("Queue 原生看板");
-    h.see(" 返回  Esc ");
+    h.see(" Back Esc ");
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains(" 返回  Esc "));
+    h.until(|h| !h.screen.screen().contents().contains(" Back Esc "));
     h.see("Native queue task");
     h.send(b"\r");
     h.see("detail line 0");
     h.send(b"\x1b[6~\x1b[6~");
     h.see("detail line 30");
-    h.see(" 返回  Esc ");
+    h.see(" Back Esc ");
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains(" 返回  Esc "));
+    h.until(|h| !h.screen.screen().contents().contains(" Back Esc "));
     h.see("Native queue task");
     h.send(b"a");
     h.see("Ctrl-S");
@@ -438,7 +438,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"g");
     h.see("checked public criteria");
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains(" 返回  Esc "));
+    h.until(|h| !h.screen.screen().contents().contains(" Back Esc "));
     h.see("Native queue task");
     h.send(b"n");
     h.see("next request accepted");
@@ -534,7 +534,7 @@ fn buttons_require_release_on_the_same_target() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.press_button(" 暂停  p ");
+    h.press_button(" Pause p ");
     let deadline = Instant::now() + Duration::from_millis(400);
     while Instant::now() < deadline {
         h.pump();
@@ -564,7 +564,7 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.send(b"\t");
     h.event("input p/a 09"); // Viewer keeps Tab; never changes management focus.
     h.send(b"\x1dx");
-    h.see(" 确认停止  y ");
+    h.see(" Stop y ");
     let input_before = h
         .log("events")
         .lines()
@@ -582,7 +582,7 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     );
     assert!(!h.log("events").contains("stop "));
     h.send(b"\tc");
-    h.see(" 目录  e ");
+    h.see(" Path e ");
     h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m");
     h.send(b"\x1d");
     h.see("输入 ▸ Agents");
@@ -597,11 +597,11 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.screen.screen_mut().set_size(24, 80);
     h.see(" Agents  Queue ");
     h.click("Queue");
-    h.see(" 目录  e "); // The suspended project picker resumes.
+    h.see(" Path e "); // The suspended project picker resumes.
     h.send(b"\x1b");
     h.see("输入 ▸ Queue");
     h.see("Native queue task");
-    h.click(" 暂停  p ");
+    h.click(" Pause p ");
     h.see("Paused");
     h.click("Agents");
     h.see("输入 ▸ Agents");

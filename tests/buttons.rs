@@ -39,17 +39,17 @@ fn release_activates_only_the_original_enabled_target() {
 }
 #[test]
 fn disabled_buttons_have_no_target_and_wrapped_targets_stay_inside() {
-    let mut terminal = Terminal::new(TestBackend::new(20, 5)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(20, 11)).unwrap();
     terminal
         .draw(|frame| {
-            let area = Rect::new(1, 1, 18, 3);
+            let area = Rect::new(1, 1, 18, 9);
             let (_, hits) = buttons::draw(
                 frame,
                 area,
                 &[
-                    Button::new("放行 g", KeyCode::Char('g'), false),
-                    Button::new("下一件 n", KeyCode::Char('n'), true),
-                    Button::new("暂停 p", KeyCode::Char('p'), true),
+                    Button::new("Go g", KeyCode::Char('g'), false),
+                    Button::new("Next n", KeyCode::Char('n'), true),
+                    Button::new("Pause p", KeyCode::Char('p'), true),
                 ],
             );
             assert_eq!(hits.len(), 2);
@@ -59,4 +59,68 @@ fn disabled_buttons_have_no_target_and_wrapped_targets_stay_inside() {
             }
         })
         .unwrap();
+}
+
+#[test]
+fn outlined_buttons_use_terminal_background_in_every_pointer_state() {
+    use ratatui::{layout::Position, style::Color};
+    use saddle::theme;
+    let mut terminal = Terminal::new(TestBackend::new(50, 8)).unwrap();
+    let mut pointer = Pointer::default();
+    let mut hits: Vec<(Focus, Hit)> = Vec::new();
+    for phase in 0..3 {
+        if phase > 0 {
+            let hit = &hits[0];
+            pointer.hover = Some(Position::new(hit.1.area.x, hit.1.area.y));
+            if phase == 2 {
+                pointer.event(
+                    MouseEvent {
+                        kind: E::Down(MouseButton::Left),
+                        column: hit.1.area.x,
+                        row: hit.1.area.y,
+                        modifiers: KeyModifiers::NONE,
+                    },
+                    &hits,
+                );
+            }
+        }
+        terminal
+            .draw(|frame| {
+                frame.buffer_mut().set_style(
+                    Rect::new(0, 0, 50, 8),
+                    ratatui::style::Style::default().bg(theme::BG),
+                );
+                let (_, buttons) = buttons::draw(
+                    frame,
+                    Rect::new(1, 1, 46, 6),
+                    &[
+                        Button::new("Attach ↵", KeyCode::Enter, true),
+                        Button::new("Reply r", KeyCode::Char('r'), true),
+                        Button::new("Sort s", KeyCode::Char('s'), true),
+                        Button::new("Stop x", KeyCode::Char('x'), true).danger(),
+                    ],
+                );
+                hits = buttons.into_iter().map(|h| (Focus::Agents, h)).collect();
+                pointer.paint(frame, &hits);
+            })
+            .unwrap();
+        assert_eq!(hits.len(), 4);
+        for (_, h) in &hits {
+            assert_eq!(h.area.height, 3);
+            assert_eq!(
+                terminal.backend().buffer()[(h.area.x, h.area.y)].symbol(),
+                "╭"
+            );
+            for y in h.area.y..h.area.bottom() {
+                for x in h.area.x..h.area.right() {
+                    assert_eq!(terminal.backend().buffer()[(x, y)].bg, Color::Reset);
+                }
+            }
+        }
+        let corner = &terminal.backend().buffer()[(hits[0].1.area.x, hits[0].1.area.y)];
+        assert_eq!(
+            corner.fg,
+            [theme::BORDER, theme::BRIGHT, theme::FOCUS][phase]
+        );
+    }
 }

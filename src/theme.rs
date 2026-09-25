@@ -20,8 +20,6 @@ pub const WARNING: Color = Color::Rgb(210, 193, 96);
 pub const SUCCESS: Color = Color::Rgb(134, 192, 122);
 pub const DANGER: Color = Color::Rgb(226, 106, 106);
 pub const UNREAD: Color = Color::Rgb(190, 150, 230);
-pub const BUTTON: Color = Color::Rgb(38, 44, 52);
-pub const HOVER: Color = Color::Rgb(52, 59, 70);
 
 pub fn base() -> Style {
     Style::default().fg(TEXT).bg(BG)

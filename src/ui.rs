@@ -41,6 +41,11 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     frame
         .buffer_mut()
         .set_style(screen_area, crate::theme::base());
+    for area in [view.panes.agents, view.panes.queue, view.panes.tabs] {
+        frame
+            .buffer_mut()
+            .set_style(area, Style::default().bg(Color::Reset));
+    }
     let mut hits = draw_agents(frame, panel, &view);
     hits.queue_rows = view
         .queue
@@ -84,13 +89,9 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
             frame,
             content,
             &[
-                crate::buttons::Button::new("取消 Esc", crossterm::event::KeyCode::Esc, true),
-                crate::buttons::Button::new(
-                    "确认停止 y",
-                    crossterm::event::KeyCode::Char('y'),
-                    true,
-                )
-                .danger(),
+                crate::buttons::Button::new("Cancel Esc", crossterm::event::KeyCode::Esc, true),
+                crate::buttons::Button::new("Stop y", crossterm::event::KeyCode::Char('y'), true)
+                    .danger(),
             ],
         );
         let agent = panel.agents.iter().find(|a| &a.name == name);
@@ -147,7 +148,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ 选择  ↵ 接入  r 回复  PgUp/Dn 详情  Tab 队列  q 退出",
+            " ↑↓ 选择  ↵ 接入  r 回复  PgUp/Dn 滚动  Tab 队列  q 退出",
         ),
         Focus::Queue => (
             "Queue".to_string(),
@@ -276,46 +277,34 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         inside,
         &[
             Button::new(
-                if connected { "已接入" } else { "接入 ↵" },
+                if connected { "Attached" } else { "Attach ↵" },
                 K::Enter,
                 selected && !connected,
             ),
             Button::new(
                 if panel.show_reply {
-                    "收起 r"
+                    "Hide r"
                 } else {
-                    "回复 r"
+                    "Reply r"
                 },
                 K::Char('r'),
                 selected,
             ),
             Button::new(
-                if panel.by_state {
-                    "按名称 s"
-                } else {
-                    "按状态 s"
-                },
+                if panel.by_state { "Name s" } else { "Sort s" },
                 K::Char('s'),
                 true,
             ),
             Button::new(
-                if panel.stopping {
-                    "停止中…"
-                } else {
-                    "停止 x"
-                },
+                if panel.stopping { "Stopping" } else { "Stop x" },
                 K::Char('x'),
                 selected && !panel.stopping,
             )
             .danger(),
         ],
     );
-    let detail_height = if selected && content.height >= 6 {
-        if panel.show_reply {
-            (content.height / 2).max(3)
-        } else {
-            (content.height / 4).clamp(3, 5)
-        }
+    let detail_height = if panel.show_reply && selected && content.height >= 6 {
+        (content.height / 3).max(3)
     } else {
         0
     };
@@ -397,19 +386,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         );
     }
     if detail_height > 0 {
-        let a = panel
-            .agents
-            .iter()
-            .find(|a| Some(&a.name) == panel.selected.as_ref());
-        let heading = format!(
-            "─ {} {}",
-            panel.selected.as_deref().unwrap_or(""),
-            if panel.show_reply {
-                "· 回复"
-            } else {
-                "· 详情"
-            }
-        );
+        let heading = format!("─ Last reply · {}", panel.selected.as_deref().unwrap_or(""));
         frame.render_widget(
             Paragraph::new(heading).style(Style::default().fg(t::BRIGHT)),
             Rect::new(content.x, list.bottom(), content.width, 1),
@@ -420,26 +397,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             content.width.saturating_sub(1),
             detail_height - 1,
         );
-        let text = if panel.show_reply {
-            view.reply.to_string()
-        } else if let Some(a) = a {
-            format!(
-                "标题 {}\n目录 {}\n{} · {}\n{} {} · SOURCE {} · ATT {}\n活动 {} · 输出 {} 前",
-                a.title.as_deref().unwrap_or("—"),
-                a.cwd.as_deref().unwrap_or("—"),
-                a.name,
-                a.instance.as_deref().unwrap_or("—"),
-                a.kind.as_deref().unwrap_or("—"),
-                a.state.as_deref().unwrap_or("starting"),
-                a.last_input_source.as_deref().unwrap_or("—"),
-                a.attached,
-                a.last_tool.as_deref().unwrap_or("—"),
-                seconds(a.last_output.map(|v| view.now - v))
-            )
-        } else {
-            String::new()
-        };
-        let lines = reply_lines(&text, usize::from(hits.reply.width));
+        let lines = reply_lines(view.reply, usize::from(hits.reply.width));
         panel.reply_top = panel
             .reply_top
             .min(lines.len().saturating_sub(usize::from(hits.reply.height)));
@@ -500,7 +458,7 @@ fn agent_rows(
         }
         let selected = panel.selected.as_deref() == Some(&a.name);
         let style = if selected {
-            Style::default().bg(t::SELECTED)
+            Style::default().add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
@@ -556,28 +514,41 @@ fn agent_rows(
             name: Some(a.name.clone()),
             headline: true,
         });
-        if wide {
-            let activity = if let Some(error) = &a.error {
-                error.clone()
-            } else if a.incompatible {
-                format!("不兼容协议 {}", a.proto.unwrap_or(0))
-            } else if matches!(a.state.as_deref(), Some("working" | "blocked")) {
-                format!(
-                    "{} · {}",
-                    a.last_tool.as_deref().unwrap_or("thinking"),
-                    seconds(a.turn_started.map(|v| now - v))
-                )
-            } else {
-                format!("上次输出 {} 前", seconds(a.last_output.map(|v| now - v)))
-            };
-            rows.push(Row {
-                line: Line::styled(
-                    format!("   {}", clip(&activity, width.saturating_sub(3))),
-                    style.fg(t::MUTED),
-                ),
-                name: Some(a.name.clone()),
-                headline: false,
-            });
+        let mut details = vec![
+            format!(
+                "{} {} · ATT {} · SOURCE {}",
+                a.kind.as_deref().unwrap_or("—"),
+                a.instance.as_deref().unwrap_or("—"),
+                a.attached,
+                a.last_input_source.as_deref().unwrap_or("—")
+            ),
+            format!("DIR {}", a.cwd.as_deref().unwrap_or("—")),
+            format!("TITLE {}", a.title.as_deref().unwrap_or("—")),
+        ];
+        if name.width() > name_width {
+            details.insert(0, format!("NAME {}", a.name));
+        }
+        if matches!(a.state.as_deref(), Some("working" | "blocked")) {
+            details.push(format!(
+                "DOING {} · {}",
+                a.last_tool.as_deref().unwrap_or("thinking"),
+                seconds(a.turn_started.map(|v| now - v))
+            ));
+        }
+        if let Some(error) = &a.error {
+            details.push(format!("ERROR {error}"));
+        }
+        if a.incompatible {
+            details.push(format!("Incompatible protocol {}", a.proto.unwrap_or(0)));
+        }
+        for detail in details {
+            for line in reply_lines(&detail, width.saturating_sub(3)) {
+                rows.push(Row {
+                    line: Line::styled(format!("   {line}"), style.fg(t::MUTED)),
+                    name: Some(a.name.clone()),
+                    headline: false,
+                });
+            }
         }
     }
     rows
