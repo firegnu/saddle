@@ -10,6 +10,7 @@ pub struct Config {
     pub left_split: f64,
     pub refresh_ms: u64,
     pub queue: Queue,
+    pub colors: crate::theme::Theme,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -35,6 +36,7 @@ impl Default for Config {
             left_split: 0.5,
             refresh_ms: 1000,
             queue: Queue::default(),
+            colors: crate::theme::Theme::default(),
         }
     }
 }
@@ -75,4 +77,13 @@ pub fn expand_home(path: &str) -> PathBuf {
         return PathBuf::from(home).join(path.strip_prefix("~/").unwrap_or(""));
     }
     PathBuf::from(path)
+}
+
+/// XDG requires an absolute base directory; invalid values use the existing fallback.
+pub fn default_path() -> PathBuf {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.join("saddle/config.toml"))
+        .unwrap_or_else(|| expand_home("~/.config/saddle/config.toml"))
 }

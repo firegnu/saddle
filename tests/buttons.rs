@@ -16,6 +16,7 @@ fn event(kind: E, x: u16) -> MouseEvent {
 fn release_activates_only_the_original_enabled_target() {
     let hit = Hit {
         area: Rect::new(2, 2, 8, 1),
+        danger: false,
         key: crossterm::event::KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
     };
     let hits = vec![(Focus::Queue, hit.clone())];
@@ -44,6 +45,7 @@ fn disabled_buttons_have_no_target_and_wrapped_targets_stay_inside() {
         .draw(|frame| {
             let area = Rect::new(1, 1, 18, 9);
             let (_, hits) = buttons::draw(
+                &saddle::theme::Theme::default(),
                 frame,
                 area,
                 &[
@@ -97,6 +99,7 @@ fn outlined_buttons_use_terminal_background_in_every_pointer_state() {
                         buttons::draw
                     };
                     let (content, buttons) = draw(
+                        &saddle::theme::Theme::default(),
                         frame,
                         Rect::new(1, 1, 46, 6),
                         &[
@@ -108,7 +111,7 @@ fn outlined_buttons_use_terminal_background_in_every_pointer_state() {
                     );
                     assert_eq!(content.height, if compact { 5 } else { 3 });
                     hits = buttons.into_iter().map(|h| (Focus::Agents, h)).collect();
-                    pointer.paint(frame, &hits);
+                    pointer.paint(&saddle::theme::Theme::default(), frame, &hits);
                 })
                 .unwrap();
             assert_eq!(hits.len(), 4);
@@ -131,4 +134,32 @@ fn outlined_buttons_use_terminal_background_in_every_pointer_state() {
             );
         }
     }
+}
+
+#[test]
+fn matching_custom_colors_do_not_turn_secondary_hover_into_danger() {
+    let colors = saddle::config::Config::parse(
+        "[colors]\nborder = 'red'\ndanger = 'red'\nbright = '#123456'",
+    )
+    .unwrap()
+    .colors;
+    let mut terminal = Terminal::new(TestBackend::new(30, 5)).unwrap();
+    terminal
+        .draw(|frame| {
+            let (_, hits) = buttons::draw_compact(
+                &colors,
+                frame,
+                frame.area(),
+                &[Button::new("Sort s", KeyCode::Char('s'), true)],
+            );
+            let hit = hits[0].clone();
+            let mut pointer = Pointer::default();
+            pointer.hover = Some(ratatui::layout::Position::new(hit.area.x, hit.area.y));
+            pointer.paint(&colors, frame, &[(Focus::Agents, hit.clone())]);
+            assert_eq!(
+                frame.buffer_mut()[(hit.area.x, hit.area.y)].fg,
+                ratatui::style::Color::Rgb(0x12, 0x34, 0x56)
+            );
+        })
+        .unwrap();
 }

@@ -1,0 +1,51 @@
+# Copy to $XDG_CONFIG_HOME/saddle/config.toml when XDG_CONFIG_HOME is absolute,
+# otherwise ~/.config/saddle/config.toml; or select with saddle --config PATH.
+# All settings are optional. Omitted settings use the defaults shown here.
+corral = "corral"              # Executable name or path; ~/ is supported.
+left_width = 52               # Preferred left column width, in terminal cells.
+left_split = 0.5              # Agents share of left column height, between 0 and 1.
+refresh_ms = 1000             # Background refresh interval, in milliseconds.
+
+[queue]
+drover = "drover"             # Executable name or path; ~/ is supported.
+# cwd = "~/projects/example"  # Optional initial project; omitted by default.
+
+[colors]
+# "default" (or "reset") uses the terminal's color; RGB uses "#RRGGBB".
+# ANSI names: black, red, green, yellow, blue, magenta, cyan, gray,
+# dark_gray, light_red, light_green, light_yellow, light_blue,
+# light_magenta, light_cyan, white. Names are lowercase.
+# Viewer terminal output keeps its own colors.
+bg = "default"               # Main surfaces.
+overlay = "default"          # Dialog surfaces.
+selected = "dark_gray"       # Project picker selection.
+agent_selected = "#302a23"   # Selected agent background.
+border = "dark_gray"
+text = "default"
+bright = "white"
+muted = "gray"
+dim = "dark_gray"
+focus = "yellow"             # Active borders and primary controls.
+input_text = "black"         # Text on the focus-colored input target badge.
+connected = "cyan"           # Connection and repo markers.
+working = "blue"             # Agent instance/identity accent.
+danger = "red"               # Destructive actions and agent error details.
+unread = "magenta"
+
+# Shared Agents / Queue status and Queue action-feedback colors.
+agent_working = "#7fb4ee"
+agent_idle = "#9cbd80"
+agent_blocked = "#e6b566"
+agent_stalled = "#e79b65"
+agent_error = "#ef8174"
+agent_starting = "#b0a1d8"
+
+# Agent type accents.
+claude = "#d97757"
+codex = "#8ed9c1"
+pi = "#ffffff"
+omp = "#a855f7"
+
+# Formatting in retained reply/detail rendering paths.
+reply_code = "yellow"
+reply_heading = "cyan"

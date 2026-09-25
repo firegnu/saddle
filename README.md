@@ -69,7 +69,7 @@ If another terminal is attached to an agent, detach there before attaching throu
 
 ## Configuration
 
-saddle reads `~/.config/saddle/config.toml`. A missing file uses defaults. To select another file:
+At startup, saddle reads `$XDG_CONFIG_HOME/saddle/config.toml` when `XDG_CONFIG_HOME` is an absolute path; if unset, empty, or relative, it reads `~/.config/saddle/config.toml`. Missing files and omitted settings use defaults. `--config` takes priority:
 
 ```sh
 saddle --config /path/to/config.toml
@@ -94,12 +94,24 @@ drover = "drover"
 | `refresh_ms` | Background refresh interval in milliseconds |
 | `queue.drover` | drover executable name or path |
 | `queue.cwd` | Optional initial queue project directory |
+| `colors` | Optional flat table for interface and agent-type colors |
 
 Command paths and `queue.cwd` support `~/`. Queue reads the project registry at `~/.drover/projects`: it prefers `queue.cwd`, then the startup directory if registered, then the first registered project. With no registry entries, it tries the startup directory. The project picker also accepts a manual path; switching projects only affects the current session.
 
 saddle gets task data through **`drover list --json`**. Full history requires a drover version that returns the complete history array; older versions return only the latest ten records. saddle cannot display records that the interface omits. Apart from the project registry, it does not read corral or drover's internal data files.
 
-Font family and size belong to your terminal settings. Theme configuration is not yet available; panel backgrounds follow the terminal, with dedicated status and agent-type accents.
+[config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above. Its defaults preserve the current appearance. For a small override, add:
+
+```toml
+[colors]
+focus = "light_cyan"
+bg = "default"
+agent_selected = "#302a23"
+```
+
+Colors accept `default` (or `reset`), `#RRGGBB`, or lowercase ANSI names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`, `dark_gray`, `light_red`, `light_green`, `light_yellow`, `light_blue`, `light_magenta`, `light_cyan`, `white`. `gray` is normal ANSI white; `dark_gray` is bright black; `white` is bright white. ANSI colors follow the terminal palette.
+
+The table covers backgrounds, selection, borders, focus, text levels, connection/unread indicators, action feedback, agent types, and reply formatting. `agent_*` status accents are shared by Agents and Queue, including Queue action feedback. Invalid colors or unknown settings report a configuration error. Changes apply on the next launch; there is no hot reload. Viewer terminal output keeps its own colors. Font family and size belong to your terminal settings.
 
 ## Controls
 

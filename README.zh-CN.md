@@ -69,7 +69,7 @@ saddle
 
 ## 配置
 
-默认读取 `~/.config/saddle/config.toml`，文件不存在时使用默认值。也可以指定配置文件：
+启动时，若 `XDG_CONFIG_HOME` 为绝对路径，读取 `$XDG_CONFIG_HOME/saddle/config.toml`；未设置、为空或为相对路径时，读取 `~/.config/saddle/config.toml`。文件不存在和省略的配置项均使用默认值。`--config` 指定的路径优先：
 
 ```sh
 saddle --config /path/to/config.toml
@@ -94,12 +94,24 @@ drover = "drover"
 | `refresh_ms` | 后台刷新间隔，单位毫秒 |
 | `queue.drover` | drover 命令名或路径 |
 | `queue.cwd` | 可选的初始队列项目目录 |
+| `colors` | 可选的平铺颜色表，控制界面和 agent 类型配色 |
 
 命令路径和 `queue.cwd` 支持 `~/`。Queue 读取 `~/.drover/projects` 项目清单：优先使用 `queue.cwd`，其次是已登记的启动目录，再其次是登记的首个项目；没有登记项目时尝试启动目录。项目选择页也支持手动输入路径，切换仅对本次运行生效。
 
 saddle 通过 **`drover list --json`** 获取任务数据。完整历史需要 drover 返回全部历史数组；旧版本仅返回最近十条，接口未返回的记录无法显示。除了项目登记清单，saddle 不读取 corral 或 drover 的内部数据文件。
 
-字体和字号由终端设置控制。目前没有主题配置功能；面板背景跟随终端，状态与 agent 类型使用独立强调色。
+[config.toml](config.toml) 提供完整默认配置与简短注释，可直接复制到上述位置，默认呈现与原界面一致。只想改几项时，可添加：
+
+```toml
+[colors]
+focus = "light_cyan"
+bg = "default"
+agent_selected = "#302a23"
+```
+
+颜色支持 `default`（或 `reset`，终端默认色）、`#RRGGBB` 和小写 ANSI 色名：`black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`gray`、`dark_gray`、`light_red`、`light_green`、`light_yellow`、`light_blue`、`light_magenta`、`light_cyan`、`white`。其中 `gray` 是普通 ANSI 白，`dark_gray` 是亮黑，`white` 是亮白；ANSI 色随终端调色板变化。
+
+颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。`agent_*` 状态强调色由 Agents 和 Queue 共用，也用于 Queue 操作反馈。未知字段和无效颜色沿用配置错误报告。修改后下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
 
 ## 操作
 

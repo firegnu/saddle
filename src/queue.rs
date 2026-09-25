@@ -1,4 +1,5 @@
 use crate::drover::{Operation, Request, Snapshot, Task};
+use crate::theme::{self, Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 #[derive(Default)]
@@ -357,14 +358,13 @@ impl Panel {
 }
 
 impl Panel {
-    fn message_color(&self) -> ratatui::style::Color {
-        use crate::theme as t;
+    fn message_color(&self, t: &Theme) -> ratatui::style::Color {
         if self.busy {
-            t::AGENT_WORKING
+            t.agent_working
         } else if self.message_failed {
-            t::AGENT_ERROR
+            t.agent_error
         } else {
-            t::AGENT_IDLE
+            t.agent_idle
         }
     }
     pub fn overlay_open(&self) -> bool {
@@ -372,13 +372,14 @@ impl Panel {
     }
     pub fn draw(
         &mut self,
+        t: &Theme,
         frame: &mut ratatui::Frame,
         area: ratatui::layout::Rect,
         focused: bool,
     ) -> Vec<(u16, usize)> {
         use crate::{
             buttons::{self, Button as B},
-            theme as t, ui,
+            ui,
         };
         use KeyCode as K;
         use ratatui::{
@@ -394,17 +395,17 @@ impl Panel {
         if area.is_empty() {
             return Vec::new();
         }
-        let mut block = t::block(" Queue ", focused).title_top(
+        let mut block = t.block(" Queue ", focused).title_top(
             Line::styled(
                 format!(" {} tasks ", self.tasks().len()),
-                Style::default().fg(t::MUTED),
+                Style::default().fg(t.muted),
             )
             .right_aligned(),
         );
         if self.overlay_open() && !focused {
             block = block.title_bottom(Line::styled(
                 " Click Queue to resume ",
-                Style::default().fg(t::FOCUS),
+                Style::default().fg(t.focus),
             ));
         }
         let inside = block.inner(area);
@@ -429,6 +430,7 @@ impl Panel {
             inside.height.saturating_sub(u16::from(!inline)).min(1),
         );
         let (_, project_hits) = buttons::draw_compact_top(
+            t,
             frame,
             controls,
             &[
@@ -452,36 +454,36 @@ impl Panel {
         };
         frame.render_widget(
             Paragraph::new(ui::clip(&name, usize::from(name_width)))
-                .style(Style::default().fg(t::BRIGHT)),
+                .style(Style::default().fg(t.bright)),
             Rect::new(inside.x, inside.y, name_width, 1),
         );
         if inline {
             frame.render_widget(
                 Paragraph::new(ui::clip(&self.project, usize::from(inside.width)))
-                    .style(Style::default().fg(t::DIM)),
+                    .style(Style::default().fg(t.dim)),
                 Rect::new(inside.x, inside.y + 1, inside.width, 1),
             );
         }
         let header_height = 3;
         let emphasis = |color| Style::default().fg(color).add_modifier(Modifier::BOLD);
         let mode = if self.read_error.is_some() {
-            Line::styled("Read failed", emphasis(t::AGENT_ERROR))
+            Line::styled("Read failed", emphasis(t.agent_error))
         } else if let Some(s) = &self.snapshot {
             let (state, color) = if s.paused {
-                ("Paused", t::AGENT_BLOCKED)
+                ("Paused", t.agent_blocked)
             } else if s.current.is_some() {
-                ("Running", t::AGENT_WORKING)
+                ("Running", t.agent_working)
             } else if s.awaiting.is_some() {
-                ("Awaiting", t::AGENT_BLOCKED)
+                ("Awaiting", t.agent_blocked)
             } else if !s.pending.is_empty() {
-                ("Ready", t::AGENT_IDLE)
+                ("Ready", t.agent_idle)
             } else {
-                ("Idle", t::AGENT_IDLE)
+                ("Idle", t.agent_idle)
             };
             Line::from(vec![
                 Span::styled(
                     if s.mode.gate { "Manual" } else { "Auto" },
-                    Style::default().fg(t::MUTED),
+                    Style::default().fg(t.muted),
                 ),
                 Span::raw(" · "),
                 Span::styled(state, emphasis(color)),
@@ -489,14 +491,14 @@ impl Panel {
                 Span::styled(
                     if s.mode.r#loop { "Loop on" } else { "Loop off" },
                     if s.mode.r#loop {
-                        emphasis(t::AGENT_IDLE)
+                        emphasis(t.agent_idle)
                     } else {
-                        Style::default().fg(t::DIM)
+                        Style::default().fg(t.dim)
                     },
                 ),
             ])
         } else {
-            Line::styled("Loading tasks…", emphasis(t::AGENT_STARTING))
+            Line::styled("Loading tasks…", emphasis(t.agent_starting))
         };
         frame.render_widget(
             Paragraph::new(mode),
@@ -518,6 +520,7 @@ impl Panel {
             (remaining, Vec::new())
         } else {
             buttons::draw_compact_top(
+                t,
                 frame,
                 remaining,
                 &[
@@ -538,6 +541,7 @@ impl Panel {
         };
         self.buttons.extend(action_hits);
         let (mut body, task_hits) = buttons::draw_compact(
+            t,
             frame,
             remaining,
             &[
@@ -555,27 +559,27 @@ impl Panel {
                     "─ Tasks ─────────────"
                 })
                 .style(Style::default().fg(if self.busy {
-                    t::AGENT_WORKING
+                    t.agent_working
                 } else {
-                    t::BORDER
+                    t.border
                 })),
                 Rect::new(body.x, body.y, body.width, 1),
             );
             body.y += 1;
             body.height -= 1;
         }
-        let hits = self.draw_page(frame, body, focused, true);
+        let hits = self.draw_page(t, frame, body, focused, true);
         if self.overlay_open() {
             Vec::new()
         } else {
             hits
         }
     }
-    pub fn draw_overlay(&mut self, frame: &mut ratatui::Frame) {
+    pub fn draw_overlay(&mut self, t: &Theme, frame: &mut ratatui::Frame) {
         if !self.overlay_open() {
             return;
         }
-        use crate::{buttons, theme as t};
+        use crate::buttons;
         use ratatui::{
             layout::Rect,
             style::Style,
@@ -595,35 +599,35 @@ impl Panel {
         } else {
             28
         };
-        let area = t::centered(frame.area(), 76, height);
+        let area = theme::centered(frame.area(), 76, height);
         frame.render_widget(Clear, area);
-        let block = t::block(title, true).style(Style::default().bg(t::OVERLAY));
+        let block = t.block(title, true).style(t.base().bg(t.overlay));
         let inside = block.inner(area);
         frame.render_widget(block, area);
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
-        let (mut body, hits) = buttons::draw_compact(frame, inside, &self.controls());
+        let (mut body, hits) = buttons::draw_compact(t, frame, inside, &self.controls());
         self.buttons = hits;
         if !self.message.is_empty() && body.height > 3 {
             let lines = wrap_text(&self.message, body.width);
             let height = (lines.len() as u16).min(body.height / 3).max(1);
             frame.render_widget(
-                Paragraph::new(lines).style(Style::default().fg(self.message_color())),
+                Paragraph::new(lines).style(Style::default().fg(self.message_color(t))),
                 Rect::new(body.x, body.bottom() - height, body.width, height),
             );
             body.height -= height;
         }
-        self.draw_page(frame, body, true, false);
+        self.draw_page(t, frame, body, true, false);
     }
     fn draw_page(
         &mut self,
+        t: &Theme,
         frame: &mut ratatui::Frame,
         mut body: ratatui::layout::Rect,
         focused: bool,
         list: bool,
     ) -> Vec<(u16, usize)> {
-        use crate::theme as t;
         use ratatui::{
             layout::Rect,
             style::{Modifier, Style},
@@ -673,7 +677,7 @@ impl Panel {
                 {
                     rows.push((
                         None,
-                        Line::styled("No active tasks · Add a", Style::default().fg(t::MUTED)),
+                        Line::styled("No active tasks · Add a", Style::default().fg(t.muted)),
                     ));
                     rows.push((None, Line::raw("")));
                 }
@@ -687,7 +691,7 @@ impl Panel {
                                     "{group} {}",
                                     tasks.iter().filter(|(g, _)| g == group).count()
                                 ),
-                                Style::default().fg(t::MUTED).add_modifier(Modifier::BOLD),
+                                Style::default().fg(t.muted).add_modifier(Modifier::BOLD),
                             ),
                         ));
                         section = group;
@@ -698,15 +702,15 @@ impl Panel {
                         Style::default()
                     };
                     let (status, color) = match *group {
-                        "Current" => ("Running", t::AGENT_WORKING),
-                        "Awaiting" => ("Awaiting", t::AGENT_BLOCKED),
-                        "Pending" => ("Pending", t::MUTED),
+                        "Current" => ("Running", t.agent_working),
+                        "Awaiting" => ("Awaiting", t.agent_blocked),
+                        "Pending" => ("Pending", t.muted),
                         _ => match task.status.as_deref() {
-                            Some("done") => ("Done", t::AGENT_IDLE),
-                            Some("failed") => ("Failed", t::AGENT_ERROR),
-                            Some("dropped" | "drop") => ("Dropped", t::AGENT_STALLED),
-                            Some(s) => (s, t::MUTED),
-                            None => ("—", t::DIM),
+                            Some("done") => ("Done", t.agent_idle),
+                            Some("failed") => ("Failed", t.agent_error),
+                            Some("dropped" | "drop") => ("Dropped", t.agent_stalled),
+                            Some(s) => (s, t.muted),
+                            None => ("—", t.dim),
                         },
                     };
                     let status_width = unicode_width::UnicodeWidthStr::width(status) + 1;
@@ -717,9 +721,9 @@ impl Panel {
                     let spans = vec![
                         Span::styled(
                             if index == self.selected { "▎" } else { " " },
-                            Style::default().fg(if focused { t::FOCUS } else { t::MUTED }),
+                            Style::default().fg(if focused { t.focus } else { t.muted }),
                         ),
-                        Span::styled(crate::ui::clip(id, id_width), Style::default().fg(t::MUTED)),
+                        Span::styled(crate::ui::clip(id, id_width), Style::default().fg(t.muted)),
                         Span::raw(" "),
                         Span::raw(crate::ui::pad(
                             &crate::ui::clip(&task.title, title_width),
@@ -771,8 +775,8 @@ impl Panel {
                     frame.render_widget(
                         Block::new()
                             .borders(ratatui::widgets::Borders::TOP)
-                            .border_style(Style::default().fg(t::BORDER))
-                            .title(Line::styled(label, Style::default().fg(t::MUTED))),
+                            .border_style(Style::default().fg(t.border))
+                            .title(Line::styled(label, Style::default().fg(t.muted))),
                         footer,
                     );
                 }
@@ -792,8 +796,8 @@ impl Panel {
                         Scrollbar::new(ScrollbarOrientation::VerticalRight)
                             .begin_symbol(None)
                             .end_symbol(None)
-                            .thumb_style(Style::default().fg(t::MUTED))
-                            .track_style(Style::default().fg(t::BORDER)),
+                            .thumb_style(Style::default().fg(t.muted))
+                            .track_style(Style::default().fg(t.border)),
                         body,
                         &mut ScrollbarState::new(rows.len().saturating_sub(height) + 1)
                             .viewport_content_length(height)
@@ -843,7 +847,7 @@ impl Panel {
                     frame.render_widget(
                         Paragraph::new(line.as_str()).style(
                             if *index == Some(self.project_selected) {
-                                Style::default().bg(t::SELECTED)
+                                Style::default().bg(t.selected)
                             } else {
                                 Style::default()
                             },
@@ -862,7 +866,7 @@ impl Panel {
                 frame.render_widget(
                     Paragraph::new(format!("{}\nClick / Enter to open · e Set path", path))
                         .wrap(Wrap { trim: false })
-                        .style(Style::default().fg(t::MUTED)),
+                        .style(Style::default().fg(t.muted)),
                     Rect::new(
                         body.x,
                         body.bottom() - footer_height,
@@ -902,14 +906,14 @@ impl Panel {
                 let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3);
                 self.fields = vec![(title_area, false), (text_area, true)];
                 let title_block = Block::bordered().title("Title").border_style(
-                    Style::default().fg(if !body_focus { t::FOCUS } else { t::BORDER }),
+                    Style::default().fg(if !body_focus { t.focus } else { t.border }),
                 );
                 let text_block = Block::bordered()
                     .title("Body · Tab Switch · Ctrl-S Save · Esc Cancel")
                     .border_style(Style::default().fg(if *body_focus {
-                        t::FOCUS
+                        t.focus
                     } else {
-                        t::BORDER
+                        t.border
                     }));
                 let title_inner = title_block.inner(title_area);
                 let text_inner = text_block.inner(text_area);
@@ -963,7 +967,7 @@ impl Panel {
                     .min(wrapped.len().saturating_sub(usize::from(body.height)));
                 let paragraph =
                     Paragraph::new(wrapped).style(if matches!(self.page, Page::Feedback(_)) {
-                        Style::default().fg(self.message_color())
+                        Style::default().fg(self.message_color(t))
                     } else {
                         Style::default()
                     });

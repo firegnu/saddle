@@ -58,3 +58,110 @@ fn tabs_and_status_cover_tiny_and_normal_windows_without_overlap() {
         }
     }
 }
+
+#[test]
+fn startup_selects_absolute_xdg_then_home_with_explicit_path_taking_priority() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    let xdg = dir.path().join("xdg");
+    let fallback = home.join(".config/saddle/config.toml");
+    let xdg_file = xdg.join("saddle/config.toml");
+    let explicit = dir.path().join("explicit.toml");
+    for path in [&fallback, &xdg_file, &explicit] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // Fail before opening a terminal or invoking any external CLI.
+        std::fs::write(path, "refresh_ms = 0").unwrap();
+    }
+    for (value, expected, override_path) in [
+        (Some(xdg.as_os_str()), &xdg_file, false),
+        (None, &fallback, false),
+        (Some(std::ffi::OsStr::new("")), &fallback, false),
+        (Some(std::ffi::OsStr::new("relative")), &fallback, false),
+        (Some(xdg.as_os_str()), &explicit, true),
+    ] {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"));
+        cmd.env("HOME", &home).env_remove("XDG_CONFIG_HOME");
+        if let Some(value) = value {
+            cmd.env("XDG_CONFIG_HOME", value);
+        }
+        if override_path {
+            cmd.arg("--config").arg(&explicit);
+        }
+        let output = cmd.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!output.status.success());
+        assert!(
+            stderr.contains(&format!("invalid config {}", expected.display())),
+            "{stderr}"
+        );
+        assert!(stderr.contains("refresh_ms must be positive"), "{stderr}");
+    }
+}
+
+#[test]
+fn default_example_missing_files_and_partial_colors_keep_current_defaults() {
+    use ratatui::style::Color;
+    let example = Config::parse(include_str!("../config.toml")).unwrap();
+    let defaults = Config::default();
+    assert_eq!(example.corral, defaults.corral);
+    assert_eq!(example.left_width, defaults.left_width);
+    assert_eq!(example.left_split, defaults.left_split);
+    assert_eq!(example.refresh_ms, defaults.refresh_ms);
+    assert_eq!(example.queue.drover, defaults.queue.drover);
+    assert_eq!(example.queue.cwd, None);
+    assert_eq!(example.colors, defaults.colors);
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(
+        Config::load(&dir.path().join("missing.toml"))
+            .unwrap()
+            .colors,
+        defaults.colors
+    );
+    let partial = Config::parse("[colors]\nfocus = '#12aBcD'\ntext = 'default'").unwrap();
+    assert_eq!(partial.colors.focus, Color::Rgb(0x12, 0xab, 0xcd));
+    assert_eq!(partial.colors.text, Color::Reset);
+    assert_eq!(partial.colors.agent_selected, Color::Rgb(0x30, 0x2a, 0x23));
+    for (name, color) in [
+        ("reset", Color::Reset),
+        ("black", Color::Black),
+        ("red", Color::Red),
+        ("green", Color::Green),
+        ("yellow", Color::Yellow),
+        ("blue", Color::Blue),
+        ("magenta", Color::Magenta),
+        ("cyan", Color::Cyan),
+        ("gray", Color::Gray),
+        ("dark_gray", Color::DarkGray),
+        ("light_red", Color::LightRed),
+        ("light_green", Color::LightGreen),
+        ("light_yellow", Color::LightYellow),
+        ("light_blue", Color::LightBlue),
+        ("light_magenta", Color::LightMagenta),
+        ("light_cyan", Color::LightCyan),
+        ("white", Color::White),
+    ] {
+        let c = Config::parse(&format!("[colors]\nfocus = '{name}'")).unwrap();
+        assert_eq!(c.colors.focus, color, "{name}");
+    }
+}
+
+#[test]
+fn invalid_colors_report_the_config_path_and_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("invalid.toml");
+    for invalid in [
+        "'not-a-color'",
+        "'#fff'",
+        "'#12345g'",
+        "'#1234567'",
+        "'#１２'",
+        "123",
+        "[]",
+    ] {
+        std::fs::write(&path, format!("[colors]\nfocus = {invalid}")).unwrap();
+        let error = format!("{:#}", Config::load(&path).unwrap_err());
+        assert!(error.contains(&path.display().to_string()), "{error}");
+        assert!(error.contains("focus"), "{error}");
+    }
+    assert!(Config::parse("[colors]\nfocsu = 'red'").is_err());
+}

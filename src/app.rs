@@ -225,6 +225,7 @@ impl App {
                     frame,
                     &mut self.panel,
                     View {
+                        colors: &self.config.colors,
                         panes,
                         focus: self.focus,
                         showing: self.viewer.showing.as_deref(),

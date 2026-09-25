@@ -25,6 +25,9 @@ impl Harness {
         Self::start_with_projects(queue_script, false)
     }
     fn start_with_projects(queue_script: &str, registered: bool) -> Self {
+        Self::start_with_config(queue_script, registered, "")
+    }
+    fn start_with_config(queue_script: &str, registered: bool, extra: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         std::fs::create_dir_all(home.join(".drover")).unwrap();
@@ -54,7 +57,7 @@ impl Harness {
         let config = dir.path().join("config.toml");
         std::fs::write(
             &config,
-            format!("corral = {corral:?}\nrefresh_ms = 100\n[queue]\ndrover = {queue:?}\n"),
+            format!("corral = {corral:?}\nrefresh_ms = 100\n[queue]\ndrover = {queue:?}\n{extra}"),
         )
         .unwrap();
         let pair = native_pty_system()
@@ -68,6 +71,7 @@ impl Harness {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
         cmd.args(["--config", config.to_str().unwrap()]);
         cmd.env("TERM", "xterm-256color");
+        cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
         cmd.cwd(dir.path());
         let child = pair.slave.spawn_command(cmd).unwrap();
@@ -818,4 +822,78 @@ fn installed_drover_complete_history_reaches_saddle_and_scrolls_both_ends() {
     h.quit();
     assert_eq!(std::fs::read_to_string(&state).unwrap(), records);
     assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
+fn startup_colors_reach_agents_queue_controls_and_leave_viewer_colors_alone() {
+    use vt100::Color;
+    let mut h = Harness::start_with_config(
+        include_str!("fixtures/drover.py"),
+        false,
+        r##"
+[colors]
+bg = "#102030"
+focus = "#112233"
+agent_idle = "#445566"
+claude = "#778899"
+overlay = "#203040"
+text = "#abcdef"
+"##,
+    );
+    h.see("Synthetic title");
+    h.see("Native queue task");
+    let label_cell = |h: &Harness, label: &str| {
+        for y in 0..40 {
+            for x in 0..140 {
+                let row: String = (x..140)
+                    .map(|col| h.screen.screen().cell(y, col).unwrap().contents())
+                    .collect();
+                if row.starts_with(label) {
+                    return h.screen.screen().cell(y, x).unwrap().clone();
+                }
+            }
+        }
+        panic!("missing {label}");
+    };
+    assert_eq!(
+        h.screen.screen().cell(0, 0).unwrap().fgcolor(),
+        Color::Rgb(0x11, 0x22, 0x33)
+    );
+    assert_eq!(
+        label_cell(&h, "idle").fgcolor(),
+        Color::Rgb(0x44, 0x55, 0x66)
+    );
+    assert_eq!(
+        label_cell(&h, "Ready").fgcolor(),
+        Color::Rgb(0x44, 0x55, 0x66)
+    );
+    assert_eq!(
+        label_cell(&h, "claude").fgcolor(),
+        Color::Rgb(0x77, 0x88, 0x99)
+    );
+    assert_eq!(
+        label_cell(&h, "Go g").fgcolor(),
+        Color::Rgb(0x11, 0x22, 0x33)
+    );
+    assert_eq!(
+        label_cell(&h, "Go g").bgcolor(),
+        Color::Rgb(0x10, 0x20, 0x30)
+    );
+    h.send(b"\tc");
+    h.see("Path e");
+    assert_eq!(
+        label_cell(&h, "Projects").bgcolor(),
+        Color::Rgb(0x20, 0x30, 0x40)
+    );
+    h.send(b"\x1b\x1d\r");
+    h.see("p/a READY");
+    let viewer = label_cell(&h, "p/a READY");
+    assert_eq!(viewer.fgcolor(), Color::Default);
+    assert_eq!(viewer.bgcolor(), Color::Default);
+    h.send(b"C");
+    h.see("AGENT COLORS");
+    let colored = label_cell(&h, "AGENT COLORS");
+    assert_eq!(colored.fgcolor(), Color::Idx(1));
+    assert_eq!(colored.bgcolor(), Color::Rgb(9, 8, 7));
+    h.quit();
 }
