@@ -946,7 +946,7 @@ fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
     use saddle::theme;
     let (mut a, mut q) = fixture();
     let (before, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
-    assert!(!text(&before).contains('▂')); // no labels: layout unchanged, no icon column
+    assert!(!text(&before).contains('⡄')); // no labels: layout unchanged, no icon column
     a.agents = [
         ("medium", Some("medium")),
         ("high", Some("high")),
@@ -987,21 +987,69 @@ fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
                 .unwrap()
                 .0;
             let line: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
-            let found = (0..width).find(|x| buffer[(*x, y)].symbol() == "▂");
+            let found = (0..width).find(|x| buffer[(*x, y)].symbol() == "⡄");
             if lit == 0 {
                 assert!(found.is_none(), "{line}");
                 continue;
             }
             let x = found.expect(&line);
             columns.push(x);
-            assert_eq!(buffer[(x + 1, y)].symbol(), "▄", "{line}");
-            assert_eq!(buffer[(x + 2, y)].symbol(), "▆", "{line}");
+            // Each tier has its own shape: lit bars climb, unlit slots keep only a baseline dot.
+            let icon: String = (x..x + 3).map(|x| buffer[(x, y)].symbol()).collect();
+            assert_eq!(icon, ["⡄⡀⡀", "⡄⡆⡀", "⡄⡆⡇"][lit - 1], "{line}");
             for i in 0..3 {
-                let fg = buffer[(x + i, y)].fg;
-                assert_eq!(fg == theme::TEXT, i < lit, "{name} bar {i}: {line}");
+                let fg = buffer[(x + i as u16, y)].fg;
+                assert_eq!(
+                    fg,
+                    if i < lit { theme::TEXT } else { theme::DIM },
+                    "{name} bar {i}: {line}"
+                );
             }
             assert!(line.contains("idle"), "{line}");
         }
         assert!(columns.windows(2).all(|w| w[0] == w[1]), "{columns:?}");
+    }
+}
+
+#[test]
+fn selecting_an_agent_keeps_its_effort_icon_tier() {
+    let (mut a, mut q) = fixture();
+    a.follow = false;
+    a.agents = ["high", "other"]
+        .into_iter()
+        .map(|name| Agent {
+            name: format!("demo/{name}"),
+            kind: Some("claude".into()),
+            state: Some("idle".into()),
+            labels: serde_json::json!({ "effort": "high" })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ..Default::default()
+        })
+        .collect();
+    // The three icon cells sit right before " idle" on the agent's main row.
+    let icon = |a: &mut agents::Panel, q: &mut queue::Panel, focus| {
+        let (buffer, hits) = render(160, 48, a, q, focus);
+        let y = hits
+            .agents
+            .iter()
+            .find(|(_, n)| n == "demo/high")
+            .unwrap()
+            .0;
+        let x = (0..156)
+            .find(|x| {
+                (0..4).all(|i| buffer[(x + i, y)].symbol() == &"idle"[i as usize..=i as usize])
+            })
+            .unwrap();
+        (x - 4..x - 1)
+            .map(|x| (buffer[(x, y)].symbol().to_owned(), buffer[(x, y)].fg))
+            .collect::<Vec<_>>()
+    };
+    a.selected = Some("demo/other".into());
+    let unselected = icon(&mut a, &mut q, Focus::Queue);
+    a.selected = Some("demo/high".into());
+    for focus in [Focus::Agents, Focus::Queue] {
+        assert_eq!(icon(&mut a, &mut q, focus), unselected, "{focus:?}");
     }
 }

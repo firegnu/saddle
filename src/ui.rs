@@ -551,7 +551,7 @@ fn agent_rows(
         }
         if effort_column {
             spans.push(Span::raw(" "));
-            spans.extend(effort_bars(t, a.effort(), tree_color));
+            spans.extend(effort_bars(t, a.effort()));
         }
         spans.push(Span::styled(
             format!(" {state}"),
@@ -673,18 +673,26 @@ fn agent_brand(t: &Theme, kind: &str) -> (String, Color) {
     (format!("{mark} {kind}"), color)
 }
 
-// Wi-Fi style strength bars for the delegated effort label; unknown stays blank.
-fn effort_bars(t: &Theme, effort: Option<Effort>, off: Color) -> Vec<Span<'static>> {
+// Wi-Fi style strength staircase in braille dots for the delegated effort label; unknown stays
+// blank. Unlit slots keep only a baseline dot so each tier has its own shape, and colors do not
+// follow selection, so a selected row reads the same tier as an unselected one.
+fn effort_bars(t: &Theme, effort: Option<Effort>) -> Vec<Span<'static>> {
     let lit = match effort {
         Some(Effort::Medium) => 1,
         Some(Effort::High) => 2,
         Some(Effort::Xhigh) => 3,
         None => return vec![Span::raw("   ")],
     };
-    ["▂", "▄", "▆"]
+    ["⡄", "⡆", "⡇"]
         .into_iter()
         .enumerate()
-        .map(|(i, bar)| Span::styled(bar, Style::default().fg(if i < lit { t.text } else { off })))
+        .map(|(i, bar)| {
+            if i < lit {
+                Span::styled(bar, Style::default().fg(t.text))
+            } else {
+                Span::styled("⡀", Style::default().fg(t.dim))
+            }
+        })
         .collect()
 }
 

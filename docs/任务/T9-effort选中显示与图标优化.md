@@ -52,3 +52,18 @@
 ## 做完
 
 在本文件末尾追加「## 完成记录」并提交：做了什么、验证了什么、拿主意的地方、没做的事，各几句话。回复同样列这些和需主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 做了什么：确认是 bug，出在选中渲染，数据档位没变。T7 让暗格颜色跟着树线走，选中时从 `DarkGray` 提亮为 `Gray`（muted）；多数终端配色里 ANSI `Gray` 和默认正文色（`Reset`）几乎一样，所以 high 的第三格看起来也亮了，像满格。修复：暗格固定用 dim，不再随选中或焦点变化；`effort_bars` 去掉跟树线走的颜色参数。图标改为盲文点阵细阶梯，仍占 3 列、位置和对齐不变，亮柱正文色、底点 dim：
+
+  ```
+  medium  ⡄⡀⡀
+  high    ⡄⡆⡀
+  xhigh   ⡄⡆⡇
+  ```
+
+  先改 DESIGN 第 23 节（字形与颜色规则、选中问题原因），再改实现，同步中英文 README。
+- 验证了什么：tests/ui.rs 新增 `selecting_an_agent_keeps_its_effort_icon_tier`，走真实 `ui::draw`：high 未选中（焦点在 Queue）与选中后（焦点在 Agents、Queue）比较三格字符和颜色。修复前 RED：`("▆", Gray)` 对 `("▆", DarkGray)`；修复后 GREEN。T7 的 `delegated_effort_shows_strength_bars_and_unknown_stays_blank` 改为逐档核对新字形和亮/暗色，160/80 列下同列对齐、未知不显示。另用临时合成渲染（已删）目视四行：`⡄⡀⡀` / `⡄⡆⡀` / `⡄⡆⡇` / 空白。`cargo test --all-targets` 83 passed、2 ignored；`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 都通过。
+- 拿主意的地方：选盲文点阵而不是更细的方块或饼图 `◔◑◕`：方块元素整格实心、柱子挨着显厚；饼图在「歧义字符按双宽」的终端里会错位，也不像信号格；盲文宽度 1、不是歧义宽度，终端普遍自带，每格只用左列点，柱间自然留缝。未亮位置留底点，三档靠形状区分，不靠灰度。亮柱选中时也保持正文色，不跟名称一起变亮，只求三种状态下辨认结果一致。
+- 没做的事：没动 labels.effort 的读取范围（仍是 medium/high/xhigh，其他值不显示，不推断默认值，不显示 model），没改状态判断、排序、选中、接入、主题配置项和 Agents 其余布局；没启动真实 agent；没合并 main、没推送、没更新 HANDOFF。
