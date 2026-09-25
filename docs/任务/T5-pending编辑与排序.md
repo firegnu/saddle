@@ -62,3 +62,13 @@
 - 公开接口限制：通过 `drover --help` 以及隔离 HOME、临时 git 项目中的公开 init/add/list/edit/move 核实了 1 起始待办位置、多行正文和编号保持；list JSON 只有 mode/paused/current/awaiting/pending/history，没有版本字段。子命令没有独立 --help，本 worktree 未接入 drover 时返回配置缺失错误。公开 --expect 需要 queue.md 指纹，未发现公开获取入口，因此未传伪造版本或读内部文件。预检查与执行之间仍有竞态窗口，不能保证原子保护；不修改 drover。
 - 没做的事：未读取内部队列/配置文件，未操作用户真实队列、配置、服务或 agent；未分派、未做覆盖矩阵/录屏/缺陷注入，未扩展其他任务操作。未合并 main、推送或更新 HANDOFF，只在本任务分支提交。
 - 需主控决定：无新增阻塞；按任务已允许的预检查方案交付。若以后要求消除写入竞态，需要另行授权 drover 提供公开版本/原子条件写入能力。
+
+### 第一轮主控审查返工
+
+2026-09-26，按主控 `T5-主控审查.md` 第一轮意见修正；未修改主控审查文件。
+
+- 根因：PTY 测试将分块输出的中间画面当成完成状态。原 `!contains("Add task")` 和 `see("Second")` 可在弹层标题已清除、标题字段仍残留 Second 时同时成立，此时公开队列可能尚未刷新到两项；提前发送 j 仍停在唯一的 T1，接着 Edit 正常编辑 T1。后续 `see("Second")` 还可能命中背景 T2，直到 `see("Second q")` 才暴露错目标。没有发现产品在正确选中 T2 后被刷新重置为 T1 的证据。
+- 复现证据：原测试单独运行可通过；临时将 PTY 读取分块从 16384 缩为 64 字节，并在发送 j 前/打开 Edit 后记录画面，运行 `cargo test --test workflow pending_edit_and_move_buttons_preserve_draft_focus_and_selection -- --exact --nocapture` 得到同一 RED。发送 j 前画面是残留 Second 表单、Pending 1、选中 T1；失败日志实际为 `["edit", "1", "Native queue task q", "detail line 0…Extra"]`，失败断言仍是 `h.see("Second q")`。分块仅改变合法的 PTY 读取边界，没有插入固定 sleep 或改动产品状态。
+- 修正：只改 `tests/workflow.rs`，全部原断言保留。选择前明确等待列表行 `T2 Second`，发送 j 后等待 `▎T2 Second`；保存成功后明确等待刷新后的选中行 `▎T2 Second q` 再移动。为本测试保留 64 字节读取条件作为回归保护，其余工作流继续使用原 16384 字节默认值；无固定 sleep、失败重试或生产代码改动。临时 DEBUG 日志与诊断文件已清除。
+- 验证：修正后的单测试按预算连续运行 5 次全部通过；随后一次 `cargo test --all-targets` 完整通过，73 项通过、2 项原有忽略，一次 `cargo clippy --all-targets -- -D warnings` 通过，`git diff --check` 通过。所有 cargo 命令均加约定的共享 CARGO_TARGET_DIR，全部前台等待结束；测试仍只使用临时配置/假 CLI。
+- 范围：只追加本任务记录并修正工作流测试，在原 t5-pending-edit 分支提交。未修改主控审查文件、真实配置/队列/服务或 agent，未合并、推送。公开快照预检查的非原子限制维持原交付约定；无新增需主控决定的事项。
