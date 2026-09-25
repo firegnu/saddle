@@ -38,7 +38,11 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     draw_terminal(
         frame,
         view.panes.queue,
-        "Queue",
+        if view.queue.is_some() && !view.queue_note.is_empty() {
+            view.queue_note
+        } else {
+            "Queue"
+        },
         view.focus == Focus::Queue,
         view.queue,
         view.queue_note,

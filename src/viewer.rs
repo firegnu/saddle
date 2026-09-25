@@ -19,7 +19,12 @@ impl Viewer {
         }
     }
     pub fn select(&mut self, name: String) -> Result<()> {
-        if self.showing.as_ref() == Some(&name) {
+        if self.showing.as_ref() == Some(&name)
+            && self
+                .session
+                .as_ref()
+                .is_some_and(|session| !session.is_stopping())
+        {
             return Ok(());
         }
         self.pending = Some(name);

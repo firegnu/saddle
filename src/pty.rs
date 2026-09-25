@@ -97,6 +97,9 @@ impl Session {
         }
         Ok(())
     }
+    pub(crate) fn is_stopping(&self) -> bool {
+        self.stopping.is_some()
+    }
     pub fn interrupt(&mut self) -> Result<()> {
         if self.stopping.is_none() && !self.poll_exit()? {
             self.signal(libc::SIGINT);

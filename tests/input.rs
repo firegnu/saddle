@@ -90,3 +90,27 @@ fn mouse_coordinates_are_local_and_paste_obeys_inner_terminal_mode() {
     );
     assert_eq!(encode_paste("plain", false), b"plain");
 }
+
+#[test]
+fn crossterm_legacy_ctrl_bracket_alias_returns_focus_without_sending_a_digit() {
+    // Crossterm decodes the legacy 0x1d byte as Ctrl-5, not Ctrl-].
+    let mut focus = Focus::Viewer;
+    assert_eq!(focus.route(key(K::Char('5'), M::CONTROL)), Route::Ignore);
+    assert_eq!(focus, Focus::Agents);
+}
+
+#[test]
+fn legacy_control_digit_aliases_keep_their_original_bytes() {
+    use saddle::input::encode_key;
+    for (digit, byte) in [('4', 0x1c), ('6', 0x1e), ('7', 0x1f)] {
+        assert_eq!(encode_key(key(K::Char(digit), M::CONTROL), false), [byte]);
+    }
+}
+
+#[test]
+fn modified_enter_is_distinct_from_submit_for_multiline_prompts() {
+    use saddle::input::encode_key;
+    assert_eq!(encode_key(key(K::Enter, M::SHIFT), false), b"\x1b[13;2u");
+    assert_eq!(encode_key(key(K::Enter, M::CONTROL), false), b"\x1b[13;5u");
+    assert_eq!(encode_key(key(K::Enter, M::ALT), false), b"\x1b\r");
+}

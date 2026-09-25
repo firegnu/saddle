@@ -28,3 +28,7 @@ while True:
     if not data:
         break
     log('input ' + data.hex())
+    if data == b'F':
+        log('flood')
+        while True:
+            os.write(1, b'output ' * 512 + b'\r\n')

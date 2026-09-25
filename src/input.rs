@@ -18,7 +18,9 @@ impl Focus {
         if key.kind == KeyEventKind::Release {
             return Route::Ignore;
         }
-        if key.code == KeyCode::Char(']') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        if matches!(key.code, KeyCode::Char(']' | '5'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
             *self = Self::Agents;
             return Route::Ignore;
         }
@@ -49,6 +51,9 @@ pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
     let alt = modifiers.contains(KeyModifiers::ALT);
     let ctrl = modifiers.contains(KeyModifiers::CONTROL);
     let parameter = 1 + u8::from(shift) + 2 * u8::from(alt) + 4 * u8::from(ctrl);
+    if key.code == KeyCode::Enter && (shift || ctrl) {
+        return format!("\x1b[13;{parameter}u").into_bytes();
+    }
     let special = match key.code {
         KeyCode::Up => Some(('A', 1)),
         KeyCode::Down => Some(('B', 1)),
@@ -81,6 +86,7 @@ pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
             let c = c.to_ascii_uppercase();
             match c {
                 '?' => vec![0x7f],
+                '4'..='7' => vec![c as u8 - b'4' + 0x1c],
                 ' ' | '@'..='_' => vec![(c as u8) & 0x1f],
                 _ => c.to_string().into_bytes(),
             }

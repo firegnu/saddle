@@ -214,6 +214,7 @@ impl App {
                     }
                     Ok(_) => {
                         self.viewer.select(name)?;
+                        self.panel.message.clear();
                         self.focus = Focus::Viewer;
                     }
                     Err(error) => self.panel.message = format!("{error:#}"),
@@ -255,11 +256,9 @@ impl App {
         }
         if let Some(queue) = &mut self.queue {
             if queue.poll_exit()? {
-                self.queue = None;
-                self.queue_note = "Queue 命令已退出。".into();
-            } else {
-                queue.resize(size_of(panes.queue))?;
+                self.queue_note = "Queue · exited".into();
             }
+            queue.resize(size_of(panes.queue))?;
         }
         if self.panel.show_reply
             && !self.reply_busy
@@ -276,11 +275,14 @@ impl App {
     }
     fn attach(&mut self) {
         if let Some(name) = &self.panel.selected {
+            self.attach_sequence += 1;
             if self.viewer.showing.as_ref() == Some(name) {
+                if let Err(error) = self.viewer.select(name.clone()) {
+                    self.panel.message = error.to_string();
+                }
                 self.focus = Focus::Viewer;
                 return;
             }
-            self.attach_sequence += 1;
             self.actions
                 .start(Action::Attach(name.clone(), self.attach_sequence));
             self.panel.message = format!("attaching {name}…");
