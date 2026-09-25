@@ -1,6 +1,15 @@
 # 交接
 
-## 2026-09-26：T3 Tasks 状态文字颜色区分完成（最新状态）
+## 2026-09-26：T5 pending 编辑与调整次序完成（最新状态）
+
+- T5 已由 saddle/dev-t5-pending-1 完成，两轮主控审查后合并到 main。选中 Pending 可 Edit e 编辑标题/正文，Move up u / Move down d 调序，Ctrl-S 保存、Esc 取消；失败/刷新保留草稿，成功后保持选中。非 pending 无入口，首末方向禁用。设计及公开接口限制见 DESIGN 第 20 节。
+- 第一轮主控复跑发现新增 PTY 测试提前发送选择按键，开发者用 64 字节分块重现并修正屏幕同步，未改产品逻辑；原断言保留。开发者最终完整标准测试 73 passed、2 ignored，Clippy 通过；主控增量复核 workflow 17 passed、2 ignored，Clippy 与 diff 检查通过。两轮结论见 docs/任务/T5-主控审查.md。
+- release 已构建并更新本仓库 target/release/saddle，重启生效；未重启用户当前界面，未改用户配置。开发分支/worktree 已清理，工作目录已删，一并关闭 saddle/dev-t5-pending-1；其他 agent 未动。已补收尾空提交 7518d18。
+- 当前写入前会通过公开快照核对 pending 列表，变化则拒绝并保留草稿；drover 尚无公开版本获取入口，检查与写入之间仍存在竞态。若以后消除该限制，须另行授权扩展 drover，不能读取内部文件绕过。
+- 下一步等用户放行，待办顺序 T4 → T2；T4 核查并补齐完成后的状态/过程详情，T2 tab/split 仍待补充。不自动开始下一件。
+- --help 的 r reply、Queue 普通列表 PgUp/PgDn、drover 完整历史修复的远端发布情况仍未在本任务处理。
+
+## 2026-09-26：T3 Tasks 状态文字颜色区分完成
 
 - T3 经用户确认解除占位限制，已由 saddle/dev-t3-colors-1 实现、主控审查并合并到 main。Current/Running 蓝，Awaiting 琥珀，Pending 紫；History 标题中性，历史行 Done 绿、Failed 红、Dropped 橙，未知值原样中性显示。配置沿用 T1 现有字段，无需修改用户配置；设计和理由见 DESIGN 第 21 节。
 - 开发者完成 UI 16 项、配置检查和 Clippy；主控检查完整 diff 与渲染检查，diff 检查通过，按纯视觉预算不重跑套件。release 构建通过，已更新 target/release/saddle；用户下次重启生效，本轮未重启运行中的界面。
