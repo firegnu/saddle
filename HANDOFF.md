@@ -1,6 +1,15 @@
 # 交接
 
-## 2026-09-26：T7 Agents 委派 effort 图标完成（最新状态）
+## 2026-09-26：T8 pending 删除完成（最新状态）
+
+- T8 已按用户最终决定「只做删除」完成：saddle/dev-t8-delete-1 的 74194bf 经主控审查后合并。Queue 选中 Pending 可点 Delete x，弹层确认 y、取消 Esc；移出待办，History 保留 Dropped。设计见 DESIGN 第 24 节，审查见 docs/任务/T8-pending删除与current退回评估.md。
+- current 退回 pending 已由 drover/main 只读评估，用户明确暂不做；没有实现，不自动另开任务。T8 仅按删除功能验收及收尾。
+- 主控标准检查：82 passed、2 ignored，Clippy、diff 检查通过。release 已更新 target/release/saddle，用户重启生效，当前运行实例未重启。
+- 开发 worktree、t8-pending-delete 分支已清理；工作目录已删，一并关闭本主控开的 saddle/dev-t8-delete-1，其他用户 agent 未动。收尾空提交 8638fd9。
+- 下一步将 T8 标为完成待放行；公开队列最新顺序 T9 → T4 → T2，等待用户推进。T9 已记录「Claude high effort 未选中时两格，点击选中后像满格」的 bug，尚未排查。T2 仍待补充。
+- 尚存事项：pending 写入前公开快照核对与实际写入间的竞态限制仍在；旧 --help r reply、Queue PgUp/PgDn、drover 完整历史修复发布情况；既有帮助流程测试先前偶发失败原因未调查，本轮通过。
+
+## 2026-09-26：T7 Agents 委派 effort 图标完成
 
 - T7 已由 saddle/dev-t7-effort-1 完成（45f95d7），主控审查通过并合并 main。Agents 从公开 labels.effort 显示 medium/high/xhigh 三档信号图标；缺失或其他值不显示。设计见 DESIGN 第 23 节，审查与取舍见 docs/任务/T7-Agents委派effort图标.md。
 - 主控复跑标准检查：79 passed、2 ignored，Clippy、diff 检查通过。release 已构建并更新 target/release/saddle，重启生效，当前运行实例未重启。已有无标签 agent 不会凭空出现图标，后续委派需显式带 effort 标签。
