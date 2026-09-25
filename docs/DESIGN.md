@@ -178,3 +178,10 @@ drover = "drover"
 - 颜色参考 [Claude 官网样式](https://claude.com)、[OpenAI 品牌页](https://openai.com/brand/)、[Pi 官网样式](https://pi.dev/style.css) 和 [OMP 官方 logo](https://github.com/can1357/oh-my-pi/blob/main/assets/hero.png)；OMP 从渐变取代表性紫色。
 - 只修饰主行类型名；树、状态、连接标记、选中底色与附加信息配色不变。未知类型保留原名和中性色，不借用其他品牌标识。沿用现有宽窗显示类型、窄窗在附加信息保留类型的布局规则；增加标识后的宽度按显示列计算，不挤掉右侧状态和连接信息。
 - 用 Ratatui Buffer 验证四种类型的标识/颜色、未知类型、选中背景及中窄窗口布局；不启动真实 agent。
+
+## 17. Agents 英文文案、隐藏回复入口与终端配色
+
+- Agents 的状态、空列表、未读标记、停止确认及其底栏提示使用英文；标题、工具名、路径、错误和 agent 输出等源数据不翻译。连接提示改为英文。Queue 文案留待后续调整。
+- 隐藏 Reply/Hide 按钮，Agents 的 r 不再触发回复；保留回复读取、渲染、滚动代码和渲染测试，暂不提供新的入口。Queue 的 r 刷新和 Viewer 的 r 输入不变。
+- 共享界面主题改用终端默认前景/背景及 ANSI 16 色，替代固定冷灰 RGB：选择底色用 bright black，正文用默认前景，边框/弱提示用 bright black 或 white，焦点/等待用 yellow，工作用 blue，连接/repo 用 cyan，危险用 red，完成用 green，未读用 magenta。共享控件随主题统一变化；Viewer 终端内容和品牌标识保留各自原始颜色。不添加配置项，后续再做配置。
+- 选中条目内的连接线提升为 ANSI white，避免与选中底色相同。验证英文界面不改中文源数据、隐藏按钮与 r 无操作、回复代码仍能渲染、选中和透明背景以及原有交互。
