@@ -1,6 +1,15 @@
 # 交接
 
-## 2026-09-26：T9 effort 选中显示与图标优化完成（最新状态）
+## 2026-09-26：T11 Agents Git 摘要完成（最新状态）
+
+- T11 已按批准方案完成，开发提交 `2b60ab1` 经主控与 Codex 两轮增量交叉复核通过，合并提交 `a61ab3a`，实现及审查记录已推送 main。每个 agent 按公开 cwd 展示分支、相对基准提交数、未提交增删与未跟踪文件数。设计和限制见 `docs/DESIGN.md` 第 25 节，完成记录见 `docs/任务/T11-AgentsGit摘要.md`，完整裁决见 `docs/任务/T11-主控与交叉审查.md`。
+- 必须改 1–4 均已关闭，最终复核无阻挡。初审标准测试 89 passed、2 ignored；第一轮主控相关回归 40 passed；第二轮 Git/git_env 8 passed、交叉复核子模块定向测试 1 passed，clippy 与 diff 检查通过。
+- release 构建完成，已原子替换并校验 `target/release/saddle`，用户重启后生效；未重启当前运行实例。真实终端观感待用户查看。
+- 开发和 detached 审查 worktree、`t11-agent-git` 分支均已清理；工作目录已删，一并关闭自有 `saddle/dev-t11-git-1`、`saddle/dev-t11-review-1`，其他用户 agent 未动。收尾空提交 `48194ac`，当前仅 main worktree。
+- 提交本交接并推送后执行 `drover done T11`，只标完成待放行；待办顺序仍为 T4 → T2，不自动开始。T4 核查任务历史/过程详情；T2 仍待用户补充。
+- 尚存事项沿用前轮：pending 快照检查与写入间竞态；旧 --help r reply、Queue PgUp/PgDn、drover 完整历史修复发布情况；既有帮助流程测试曾偶发失败，未调查原因。current 退回 pending 已按用户决定不做。T11 已接受的限制与建议详见审查文件，不自动扩展实现。
+
+## 2026-09-26：T9 effort 选中显示与图标优化完成
 
 - T9 两项均已完成：saddle/dev-t9-effort-1 的 5ca733f 经主控审查后合并。选中不再提亮 effort 暗格；图标改为三档点阵阶梯 ⡄⡀⡀ / ⡄⡆⡀ / ⡄⡆⡇。原因与方案见 DESIGN 第 23 节，审查见 docs/任务/T9-effort选中显示与图标优化.md。
 - 主控标准检查：83 passed、2 ignored，Clippy、diff 检查通过。release 已更新 target/release/saddle，重启生效，当前运行实例未重启。合成渲染已验证，真实终端字体观感由用户查看。
