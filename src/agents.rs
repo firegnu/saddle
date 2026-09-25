@@ -14,6 +14,7 @@ pub struct Panel {
     pub first_seen: HashMap<String, f64>,
     pub message: String,
     pub confirm: Option<String>,
+    pub stopping: bool,
 }
 impl Panel {
     pub fn absorb(&mut self, agents: Vec<Agent>, showing: Option<&str>, now: f64) {

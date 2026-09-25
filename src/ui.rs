@@ -56,12 +56,19 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         view.focus == Focus::Viewer,
         view.viewer,
         view.viewer_note,
+        view.showing.is_some(),
     );
-    if view.queue.overlay_open() {
+    let queue_modal = view.focus == Focus::Queue && view.queue.overlay_open();
+    if queue_modal {
         view.queue.draw_overlay(frame);
         hits.buttons.clear();
         hits.agents.clear();
         hits.queue_rows.clear();
+    }
+    if !queue_modal && view.queue.overlay_open() {
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
     }
     if let Some(name) = &panel.confirm {
         let modal = crate::theme::centered(frame.area(), 64, 12);
@@ -151,7 +158,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
             " 按键发送到终端  Ctrl-] 返回 Agents",
         ),
     };
-    if view.queue.overlay_open() {
+    if queue_modal {
         match &view.queue.page {
             crate::queue::Page::Add { body_focus, .. } => {
                 target = format!("新增 · {}", if *body_focus { "正文" } else { "标题" });
@@ -184,7 +191,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                     .bg(crate::theme::FOCUS),
             ),
             Span::styled(
-                if panel.confirm.is_some() || view.queue.overlay_open() {
+                if panel.confirm.is_some() || queue_modal {
                     help
                 } else if view.focus == Focus::Queue && !view.queue.message.is_empty() {
                     &view.queue.message
@@ -214,19 +221,16 @@ fn draw_terminal(
     focused: bool,
     session: Option<&Session>,
     note: &str,
+    connected: bool,
 ) {
     let block = border(title, focused).title_top(
         Line::styled(
-            if session.is_some() {
+            if connected {
                 " ◉ 已连接 "
             } else {
                 " 未连接 "
             },
-            Style::default().fg(if session.is_some() {
-                t::CONNECTED
-            } else {
-                t::MUTED
-            }),
+            Style::default().fg(if connected { t::CONNECTED } else { t::MUTED }),
         )
         .right_aligned(),
     );
@@ -294,7 +298,16 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 K::Char('s'),
                 true,
             ),
-            Button::new("停止 x", K::Char('x'), selected).danger(),
+            Button::new(
+                if panel.stopping {
+                    "停止中…"
+                } else {
+                    "停止 x"
+                },
+                K::Char('x'),
+                selected && !panel.stopping,
+            )
+            .danger(),
         ],
     );
     let detail_height = if selected && content.height >= 6 {

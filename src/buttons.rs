@@ -56,21 +56,28 @@ pub struct Hit {
 pub struct Pointer {
     pub hover: Option<Position>,
     pressed: Option<(Focus, Hit)>,
+    captured: bool,
 }
 impl Pointer {
     pub fn cancel(&mut self) {
         self.pressed = None;
+        self.captured = false;
+    }
+    pub fn captured(&self) -> bool {
+        self.captured
     }
     pub fn event(&mut self, event: MouseEvent, hits: &[(Focus, Hit)]) -> Option<(Focus, KeyEvent)> {
         let point = Position::new(event.column, event.row);
         self.hover = Some(point);
         let hit = hits.iter().find(|(_, h)| h.area.contains(point));
         if matches!(event.kind, MouseEventKind::Up(MouseButton::Left)) {
+            self.captured = false;
             let pressed = self.pressed.take();
             return pressed.filter(|p| Some(p) == hit).map(|(f, h)| (f, h.key));
         }
         if matches!(event.kind, MouseEventKind::Down(MouseButton::Left)) {
             self.pressed = hit.cloned();
+            self.captured = hit.is_some();
         } else if self.pressed.as_ref() != hit {
             self.pressed = None;
         }

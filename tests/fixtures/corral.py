@@ -6,6 +6,7 @@ from pathlib import Path
 import signal
 import sys
 import tty
+import time
 
 root = Path(__file__).parent
 verb = sys.argv[1]
@@ -22,6 +23,8 @@ log(verb + ' ' + name)
 if verb == 'ls':
     print(json.dumps({'agents': [dict(name=n, cwd='/tmp/demo', instance='abcdef123', kind='claude') for n in agents()]}))
 elif verb == 'status':
+    while (root / 'hold-status').exists():
+        time.sleep(0.01)
     if name not in agents():
         print(json.dumps({'ok': False, 'error': 'not_found'}))
         sys.exit(1)
@@ -30,6 +33,8 @@ elif verb == 'status':
 elif verb == 'reply':
     print(json.dumps(dict(ok=True, text='REPLY ' + name + '\n' + '\n'.join('line ' + str(i) for i in range(60)))))
 elif verb == 'stop':
+    while (root / 'hold-stop').exists():
+        time.sleep(0.01)
     state = agents()
     state.pop(name, None)
     (root / 'agents.json').write_text(json.dumps(state))

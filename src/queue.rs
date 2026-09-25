@@ -363,19 +363,28 @@ impl Panel {
         if area.is_empty() {
             return Vec::new();
         }
-        let block = t::block(" Queue ", focused).title_top(
+        let mut block = t::block(" Queue ", focused).title_top(
             Line::styled(
                 format!(" {} 项 ", self.tasks().len()),
                 Style::default().fg(t::MUTED),
             )
             .right_aligned(),
         );
+        if self.overlay_open() && !focused {
+            block = block.title_bottom(Line::styled(
+                " 点击 Queue 继续 ",
+                Style::default().fg(t::FOCUS),
+            ));
+        }
         let inside = block.inner(area);
         frame.render_widget(block, area);
         if inside.height < 3 || inside.width == 0 {
             return Vec::new();
         }
-        let ready = !self.busy && self.snapshot.is_some() && self.read_error.is_none();
+        let ready = !self.overlay_open()
+            && !self.busy
+            && self.snapshot.is_some()
+            && self.read_error.is_none();
         let name = std::path::Path::new(&self.project)
             .file_name()
             .unwrap_or_default()
@@ -386,8 +395,8 @@ impl Panel {
             frame,
             controls,
             &[
-                B::new("刷新 r", K::Char('r'), !self.busy),
-                B::new("项目 c", K::Char('c'), !self.busy),
+                B::new("刷新 r", K::Char('r'), !self.busy && !self.overlay_open()),
+                B::new("项目 c", K::Char('c'), !self.busy && !self.overlay_open()),
             ],
         );
         self.buttons.extend(project_hits);
@@ -478,7 +487,7 @@ impl Panel {
             &[
                 B::new("详情 ↵", K::Enter, ready && !self.tasks().is_empty()),
                 B::new("新增 a", K::Char('a'), ready),
-                B::new("帮助 ?", K::Char('?'), true),
+                B::new("帮助 ?", K::Char('?'), !self.overlay_open()),
             ],
         );
         self.buttons.extend(task_hits);
@@ -839,7 +848,7 @@ impl Panel {
             _ => {
                 let text=match &self.page {
                     Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\n原因：{r}")).unwrap_or_default())).unwrap_or_else(||"任务已移出队列".into()),
-                    Page::Help=>"Queue 原生看板\n点击底部按钮执行操作\nc：已登记项目；e：手动目录（项目页）\n↑↓ / j k：选择任务或项目\nEnter：任务详情；Esc：列表\nPgUp/PgDn：滚动详情/反馈\nr：刷新；g：核对并放行\nn：发送下一件\np：暂停/恢复；l：循环开/关\na：新增任务（原生表单）\n新增时 Tab 切字段、Ctrl-S 提交\nq / Ctrl-]：回 Agents\n\n只调用公开 drover CLI。\n操作不会启动外部看板。".into(),
+                    Page::Help=>"Queue 原生看板\n顶部操作作用于当前项目；底部操作作用于任务\nc：已登记项目；e：手动目录（项目页）\n↑↓ / j k：选择任务或项目\nEnter：任务详情；Esc：列表\nPgUp/PgDn：滚动详情/反馈\nr：刷新；g：核对并放行\nn：发送下一件\np：暂停/恢复；l：循环开/关\na：新增任务（原生表单）\n新增时 Tab 切字段、Ctrl-S 提交\nq / Ctrl-]：回 Agents\n\n放行/下一件/暂停/循环作用于当前项目，\n与选中的历史任务无关。".into(),
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };

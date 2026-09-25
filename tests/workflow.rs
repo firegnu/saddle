@@ -531,6 +531,9 @@ fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
 fn buttons_require_release_on_the_same_target() {
     let mut h = Harness::start();
     h.see("Native queue task");
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
     h.press_button(" 暂停  p ");
     let deadline = Instant::now() + Duration::from_millis(400);
     while Instant::now() < deadline {
@@ -540,7 +543,15 @@ fn buttons_require_release_on_the_same_target() {
         !h.log("queue-events").contains("[\"pause\"]"),
         "Down must not run a command"
     );
-    h.send(b"\x1b[<0;139;39m"); // Release elsewhere cancels.
+    h.send(b"\x1b[<32;130;4M\x1b[<0;130;4m"); // Drag/release over Viewer cancels, without sending a stray release.
+    let deadline = Instant::now() + Duration::from_millis(250);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    assert!(
+        !h.log("events").contains("input p/a "),
+        "A management button gesture must not leak into Viewer"
+    );
     h.quit();
 }
 
@@ -586,6 +597,8 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.screen.screen_mut().set_size(24, 80);
     h.see(" Agents  Queue ");
     h.click("Queue");
+    h.see(" 目录  e "); // The suspended project picker resumes.
+    h.send(b"\x1b");
     h.see("输入 ▸ Queue");
     h.see("Native queue task");
     h.click(" 暂停  p ");
@@ -601,5 +614,61 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
         1
     );
     assert!(!h.log("events").contains("detached p/a"));
+    h.quit();
+}
+
+#[test]
+fn delayed_attach_does_not_steal_input_from_an_open_form() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.see("Native queue task");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\r\ta");
+    h.see("Ctrl-S");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.see("p/a READY");
+    h.send("弹层保持焦点".as_bytes());
+    h.send(b"\x13");
+    h.until(|h| h.log("queue-events").contains("弹层保持焦点"));
+    assert!(!h.log("events").contains("input p/a "));
+    h.quit();
+}
+
+#[test]
+fn stop_in_progress_cannot_be_submitted_twice() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("hold-stop"), "").unwrap();
+    h.send(b"xy");
+    h.event("stop p/a");
+    h.send(b"xy");
+    let deadline = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    let count = h.log("events").lines().filter(|l| *l == "stop p/a").count();
+    std::fs::remove_file(h.dir.path().join("hold-stop")).unwrap();
+    assert_eq!(
+        count, 1,
+        "An in-flight stop must disable keyboard and mouse resubmission"
+    );
+    h.quit();
+}
+
+#[test]
+fn returning_to_agents_preserves_the_unsubmitted_queue_draft() {
+    let mut h = Harness::start();
+    h.see("Native queue task");
+    h.send(b"\ta");
+    h.see("Ctrl-S");
+    h.send("未提交的草稿".as_bytes());
+    h.see("未提交的草稿");
+    h.send(b"\x1d");
+    h.see("输入 ▸ Agents");
+    h.send(b"\t");
+    h.see("Ctrl-S");
+    h.see("未提交的草稿");
+    h.send(b"\x13");
+    h.until(|h| h.log("queue-events").contains("未提交的草稿"));
     h.quit();
 }

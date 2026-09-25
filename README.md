@@ -29,9 +29,11 @@ drover = "drover"
 
 Queue 自动读取 `~/.drover/projects` 中的登记项目，点击 **项目** 按钮可切换。启动时优先使用 `queue.cwd`；没有配置时，若启动目录已登记就选它，否则选登记的首个项目；无登记时尝试启动目录。项目页也可点击 **目录** 手动输入，切换仅本次运行生效。目录应已接入 drover，saddle 不会自动初始化它。命令路径和 cwd 支持 `~/`。旧的 `queue.command` 配置已移除。
 
-左列在窄屏时最多占一半。数据读取与操作在后台执行，读取失败会显示完整、可滚动的错误，成功后恢复。除用户授权的项目登记清单外，saddle 不读取 corral/drover 的内部文件；任务数据和操作全部使用公开 CLI。
+底栏始终显示当前输入目标。宽度 ≥140 列时左侧默认 52 列，100–139 列时最多 44 列；小于 100 列时左侧最多 34 列，Agents/Queue 收为可点击标签，Viewer 始终保留。极窄窗口左侧不超过一半。数据读取与操作在后台执行，读取失败会显示完整、可滚动的错误，成功后恢复。除用户授权的项目登记清单外，saddle 不读取 corral/drover 的内部文件；任务数据和操作全部使用公开 CLI。
 
-Agents 和 Queue 底部都有可点击的原生按钮，窄窗时自动换行；不可用操作置灰。Agents 的停止操作仍需确认。新增任务可以点击标题/正文字段和保存/取消按钮，原有快捷键也保留。
+Agents 列表用于概览，选中项的完整字段集中在底部详情区。Queue 顶部是当前项目及项目操作，底部是详情、新增和帮助；放行/下一件/暂停/循环始终作用于当前项目，与选中的历史任务无关。
+
+原生按钮有悬停和按下反馈，按下后在同一按钮内松开才执行，移出即取消；不可用操作置灰。项目选择、任务详情、新增、帮助和操作反馈在弹层中显示。停止 agent 有独立确认弹层，只有 `y` 或确认停止按钮会执行。弹层打开时，背后的窗格不会接收点击或输入。
 
 ## 按键
 
@@ -41,7 +43,7 @@ Agents 和 Queue 底部都有可点击的原生按钮，窄窗时自动换行；
 | Agents | Enter / 点击行 | 接入 Viewer 并切换焦点 |
 | Agents | Tab / Shift-Tab | 焦点到 Queue / Viewer |
 | Agents | r | 显示/隐藏上一轮回复 |
-| Agents | PgUp / PgDn | 回复翻页 |
+| Agents | PgUp / PgDn | 选中项详情或回复翻页 |
 | Agents | s | 项目内按名字/状态排序 |
 | Agents | x 然后 y | 停止选中的 agent；其他键取消 |
 | Agents | q | 退出 saddle |
@@ -58,11 +60,11 @@ Agents 和 Queue 底部都有可点击的原生按钮，窄窗时自动换行；
 | Queue 新增表单 | Tab / Ctrl-S / Esc | 切字段 / 提交 / 取消 |
 | Queue | q | 返回 Agents（表单内作为文字输入） |
 | Queue / Viewer | Ctrl-] | 回 Agents；Viewer 保持连接 |
-| 所有窗格 | 鼠标点击 | 切换焦点 |
+| 所有窗格 | 鼠标点击 | 切换焦点（弹层内仅操作弹层） |
 
-Viewer 除 Ctrl-] 外的按键、鼠标和粘贴交给 agent；终端可区分的 Shift-Enter 保留为修饰键序列。Queue 所有操作由 Rust 控件处理，表单不会启动外部编辑器。新增失败保留草稿；执行期间不会重复提交。
+Viewer 除 Ctrl-] 外的按键、鼠标和粘贴交给 agent；终端可区分的 Shift-Enter 保留为修饰键序列。Queue 所有操作由 Rust 控件处理，表单不会启动外部编辑器。新增失败保留草稿；Ctrl-] 暂回 Agents 后，Tab 回 Queue 可继续编辑；Esc 取消。执行期间不会重复提交。
 
-已有其他窗口接入的 agent 会被拒绝，先在原窗口断开再接入。Agents 的 `▶` 表示 Viewer 正在接入；`!` 表示 blocked，`?` 表示长时间没有进展，`●` 表示未查看的已完成轮次。
+已有其他窗口接入的 agent 会被拒绝，先在原窗口断开再接入。Agents 的青色 `◉` 表示 Viewer 正在连接；`◆` 表示待处理，`▲` 表示长时间没有进展，紫色“新”表示未查看的已完成轮次。选中行底色、连接标记和琥珀焦点边框分别表示三个独立状态。
 
 ## 验证
 
@@ -71,7 +73,10 @@ cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo run --example compare_parsers
+cargo run --example ui_preview -- /tmp/saddle-ui-preview
 ```
+
+`ui_preview` 直接把 Ratatui 的合成网格导出为 SVG 和文本，包含三种尺寸、项目选择、新增、停止确认和回复状态，不运行任何 agent。
 
 默认测试使用临时目录中的假公开 CLI 和合成终端流，不启动真实 agent。测试覆盖两个原生看板、Viewer 接入/切换、输入/粘贴/鼠标、刷新、回复、停止确认、原生 Queue 表单及操作、缩放、输出压力和退出恢复。
 

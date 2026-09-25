@@ -265,7 +265,9 @@ impl App {
                     Ok(_) => {
                         self.viewer.select(name)?;
                         self.panel.message.clear();
-                        self.focus = Focus::Viewer;
+                        if self.focus == Focus::Agents && self.panel.confirm.is_none() {
+                            self.focus = Focus::Viewer;
+                        }
                     }
                     Err(error) => self.panel.message = format!("{error:#}"),
                 },
@@ -284,6 +286,7 @@ impl App {
                     ));
                 }
                 Action::Stop(name) => {
+                    self.panel.stopping = false;
                     self.panel.message = match result.result {
                         Ok(_) => format!("stopped {name}"),
                         Err(error) => format!("{error:#}"),
@@ -344,20 +347,13 @@ impl App {
                     && let Some(name) = self.panel.confirm.take()
                 {
                     if matches!(key.code, KeyCode::Char('y' | 'Y')) {
+                        self.panel.stopping = true;
                         self.actions.start(Action::Stop(name.clone()));
                         self.panel.message = format!("stopping {name}…");
                     } else {
                         self.panel.message = "cancelled".into();
                     }
                     return Ok(false);
-                }
-                if self.queue.overlay_open()
-                    && key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL)
-                    && matches!(key.code, KeyCode::Char(']' | '5'))
-                {
-                    self.queue.page = queue::Page::List;
                 }
                 match self.focus.route(key) {
                     Route::Quit => return Ok(true),
@@ -421,19 +417,18 @@ impl App {
                             .map(|h| (Focus::Queue, h)),
                     )
                     .collect();
+                let captured = self.pointer.captured();
                 if let Some((focus, key)) = self.pointer.event(mouse, &controls) {
                     self.focus = focus;
                     return self.event(Event::Key(key), panes);
                 }
-                if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
-                    && controls.iter().any(|(_, h)| h.area.contains(point))
-                {
+                if captured || self.pointer.captured() {
                     return Ok(false);
                 }
                 if self.panel.confirm.is_some() {
                     return Ok(false);
                 }
-                if self.queue.overlay_open() {
+                if self.focus == Focus::Queue && self.queue.overlay_open() {
                     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                         if let Some(request) = self.queue.click(mouse.column, mouse.row) {
                             self.queue_request(request);
@@ -564,7 +559,7 @@ impl App {
                     .reply_top
                     .saturating_add(usize::from(self.hits.reply.height.max(1)))
             }
-            KeyCode::Char('x') => {
+            KeyCode::Char('x') if !self.panel.stopping => {
                 if let Some(name) = &self.panel.selected {
                     self.panel.confirm = Some(name.clone());
                     self.panel.message = format!("stop {name}? y confirms; any other key cancels");
