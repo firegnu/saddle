@@ -246,3 +246,47 @@ fn stale_pending_content_order_or_state_never_sends_a_write() {
         "[\"list\", \"--json\"]\n".repeat(3)
     );
 }
+
+#[test]
+fn all_pending_reads_every_project_through_public_json_and_keeps_failures_separate() {
+    use saddle::drover::PendingLoad;
+    use std::time::Duration;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+[ "$1" = list ] && [ "$2" = --json ] || exit 99
+if [ -f fail ]; then echo 'synthetic unreadable queue' >&2; exit 3; fi
+name=$(basename "$PWD")
+printf '{"mode":{},"paused":false,"current":{"title":"not pending"},"awaiting":null,"pending":[{"id":"T1","title":"%s 中文待办","body":"body"}],"history":[{"title":"old"}]}\n' "$name"
+"#,
+    );
+    let projects: Vec<String> = ["alpha", "broken", "gamma"]
+        .iter()
+        .map(|name| {
+            let dir = temp.path().join(name);
+            std::fs::create_dir(&dir).unwrap();
+            dir.display().to_string()
+        })
+        .collect();
+    std::fs::write(temp.path().join("broken/fail"), "").unwrap();
+    let load = PendingLoad::start(&program, &projects);
+    let mut results: Vec<_> = (0..3)
+        .map(|_| load.updates.recv_timeout(Duration::from_secs(10)).unwrap())
+        .collect();
+    results.sort_by_key(|(index, _)| *index);
+    let titles = |i: usize| -> Vec<String> {
+        results[i]
+            .1
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|t| t.title.clone())
+            .collect()
+    };
+    assert_eq!(titles(0), ["alpha 中文待办"]);
+    assert_eq!(titles(2), ["gamma 中文待办"]);
+    let error = format!("{:#}", results[1].1.as_ref().unwrap_err());
+    assert!(error.contains("synthetic unreadable queue"), "{error}");
+}

@@ -142,7 +142,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         ),
         Focus::Queue => (
             "Queue".to_string(),
-            " ↑↓ Select  Enter Details  c Projects  a Add  ? Help  Ctrl-] Agents",
+            " ↑↓ Select  Enter Details  c Projects  a Add  A All pending  ? Help  Ctrl-] Agents",
         ),
         Focus::Viewer => (
             view.showing.unwrap_or("Viewer · disconnected").to_string(),
@@ -171,6 +171,10 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
             crate::queue::Page::Project(_) => {
                 target = "Project path".into();
                 help = " Enter Apply  Ctrl-U Clear  Esc Cancel";
+            }
+            crate::queue::Page::AllPending => {
+                target = "All pending".into();
+                help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  Ctrl-] Agents";
             }
             _ => {
                 target = "Queue · Details / Result".into();
