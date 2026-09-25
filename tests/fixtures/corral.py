@@ -60,6 +60,8 @@ elif verb == 'attach':
             break
         log('input ' + name + ' ' + data.hex())
         os.write(1, b'INPUT RECEIVED\r\n')
+        if data == b'C':
+            os.write(1, b'\x1b[31;48;2;9;8;7mAGENT COLORS\x1b[0m\r\n')
         if data == b'F':
             log('flood ' + name)
             while True:

@@ -148,7 +148,7 @@ fn main() -> anyhow::Result<()> {
         );
         let mut terminal = Terminal::new(TestBackend::new(w, h))?;
         terminal.draw(|frame| {
-            ui::draw(frame,&mut a,View{panes,focus,showing:Some("saddle/main"),viewer:None,queue:&mut q,viewer_note:"",reply:"已完成布局与交互重设计。\n\n- 管理区域全部由 Rust + Ratatui 绘制\n- Viewer 保留原终端颜色与按键\n- 自动验证使用合成数据",now:150.0,pointer:&Pointer::default()});
+            ui::draw(frame,&mut a,View{colors:&saddle::theme::Theme::default(),panes,focus,showing:Some("saddle/main"),viewer:None,queue:&mut q,viewer_note:"",reply:"已完成布局与交互重设计。\n\n- 管理区域全部由 Rust + Ratatui 绘制\n- Viewer 保留原终端颜色与按键\n- 自动验证使用合成数据",now:150.0,pointer:&Pointer::default()});
             if overlay.is_empty() || overlay=="reply" {
                 let area=ui::inner(panes.viewer);
                 let mut screen=Screen::new(Size{rows:area.height,cols:area.width});

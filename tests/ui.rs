@@ -61,6 +61,7 @@ fn render(
                 frame,
                 a,
                 View {
+                    colors: &saddle::theme::Theme::default(),
                     panes,
                     focus,
                     showing: Some("demo/main"),
@@ -611,8 +612,8 @@ fn render_queue(q: &mut queue::Panel, width: u16, height: u16) -> Buffer {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|f| {
-            q.draw(f, f.area(), true);
-            q.draw_overlay(f);
+            q.draw(&saddle::theme::Theme::default(), f, f.area(), true);
+            q.draw_overlay(&saddle::theme::Theme::default(), f);
         })
         .unwrap();
     terminal.backend().buffer().clone()

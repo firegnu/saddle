@@ -4,7 +4,7 @@ use crate::{
     input::Focus,
     layout::Panes,
     pty::Session,
-    theme as t,
+    theme::Theme,
 };
 use ratatui::{
     Frame,
@@ -25,6 +25,7 @@ pub struct Hits {
 }
 
 pub struct View<'a> {
+    pub colors: &'a Theme,
     pub panes: Panes,
     pub focus: Focus,
     pub showing: Option<&'a str>,
@@ -37,35 +38,21 @@ pub struct View<'a> {
 }
 
 pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
+    let t = view.colors;
     let screen_area = frame.area();
-    frame
-        .buffer_mut()
-        .set_style(screen_area, crate::theme::base());
-    for area in [view.panes.agents, view.panes.queue, view.panes.tabs] {
-        frame
-            .buffer_mut()
-            .set_style(area, Style::default().bg(Color::Reset));
-    }
+    frame.buffer_mut().set_style(screen_area, t.base());
     let mut hits = draw_agents(frame, panel, &view);
     hits.queue_rows = view
         .queue
-        .draw(frame, view.panes.queue, view.focus == Focus::Queue);
+        .draw(t, frame, view.panes.queue, view.focus == Focus::Queue);
     let title = view
         .showing
         .map(|name| format!("Viewer · {name}"))
         .unwrap_or_else(|| "Viewer".into());
-    draw_terminal(
-        frame,
-        view.panes.viewer,
-        &title,
-        view.focus == Focus::Viewer,
-        view.viewer,
-        view.viewer_note,
-        view.showing.is_some(),
-    );
+    draw_terminal(frame, view.panes.viewer, &title, &view);
     let queue_modal = view.focus == Focus::Queue && view.queue.overlay_open();
     if queue_modal {
-        view.queue.draw_overlay(frame);
+        view.queue.draw_overlay(t, frame);
         hits.buttons.clear();
         hits.agents.clear();
         hits.queue_rows.clear();
@@ -79,13 +66,14 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         let modal = crate::theme::centered(frame.area(), 64, 12);
         frame.render_widget(ratatui::widgets::Clear, modal);
         frame.render_widget(
-            crate::theme::block(" Stop agent ", true)
-                .style(Style::default().bg(crate::theme::OVERLAY))
-                .border_style(Style::default().fg(crate::theme::DANGER)),
+            t.block(" Stop agent ", true)
+                .style(t.base().bg(t.overlay))
+                .border_style(Style::default().fg(t.danger)),
             modal,
         );
         let content = inner(modal);
         let (body, buttons) = crate::buttons::draw(
+            t,
             frame,
             content,
             &[
@@ -123,24 +111,24 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                 .map(|h| (Focus::Queue, h)),
         )
         .collect();
-    view.pointer.paint(frame, &controls);
+    view.pointer.paint(t, frame, &controls);
     if !view.panes.tabs.is_empty() {
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(
                     " Agents ",
                     Style::default().fg(if !view.panes.agents.is_empty() {
-                        crate::theme::FOCUS
+                        t.focus
                     } else {
-                        crate::theme::MUTED
+                        t.muted
                     }),
                 ),
                 Span::styled(
                     " Queue ",
                     Style::default().fg(if !view.panes.queue.is_empty() {
-                        crate::theme::FOCUS
+                        t.focus
                     } else {
-                        crate::theme::MUTED
+                        t.muted
                     }),
                 ),
             ])),
@@ -189,7 +177,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 format!(" Input ▸ {target} "),
-                Style::default().fg(Color::Black).bg(crate::theme::FOCUS),
+                Style::default().fg(t.input_text).bg(t.focus),
             ),
             Span::styled(
                 if panel.confirm.is_some() || queue_modal {
@@ -201,7 +189,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                 } else {
                     &panel.message
                 },
-                Style::default().fg(crate::theme::MUTED),
+                Style::default().fg(t.muted),
             ),
         ])),
         view.panes.status,
@@ -212,39 +200,37 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
 }
-fn border(title: &str, focused: bool) -> Block<'static> {
-    crate::theme::block(title.to_string(), focused)
+fn border(t: &Theme, title: &str, focused: bool) -> Block<'static> {
+    t.block(title.to_string(), focused)
 }
-fn draw_terminal(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    focused: bool,
-    session: Option<&Session>,
-    note: &str,
-    connected: bool,
-) {
-    let block = border(title, focused).title_top(
+fn draw_terminal(frame: &mut Frame, area: Rect, title: &str, view: &View<'_>) {
+    let t = view.colors;
+    let focused = view.focus == Focus::Viewer;
+    let connected = view.showing.is_some();
+    let block = border(t, title, focused).title_top(
         Line::styled(
             if connected {
                 " ◉ connected "
             } else {
                 " disconnected "
             },
-            Style::default().fg(if connected { t::CONNECTED } else { t::MUTED }),
+            Style::default().fg(if connected { t.connected } else { t.muted }),
         )
         .right_aligned(),
     );
     frame.render_widget(block, area);
     let area = inner(area);
-    if let Some(session) = session {
+    if let Some(session) = view.viewer {
         let screen = session.screen.lock().unwrap();
         let cursor = screen.render(area, frame.buffer_mut());
         if focused && let Some(cursor) = cursor {
             frame.set_cursor_position(cursor);
         }
     } else {
-        frame.render_widget(Paragraph::new(note).wrap(Default::default()), area);
+        frame.render_widget(
+            Paragraph::new(view.viewer_note).wrap(Default::default()),
+            area,
+        );
     }
 }
 
@@ -254,14 +240,15 @@ struct Row {
     headline: bool,
 }
 fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
+    let t = view.colors;
     let area = view.panes.agents;
     if area.is_empty() {
         return Hits::default();
     }
     let focused = view.focus == Focus::Agents;
     let title = format!(" Agents · {} ", panel.agents.len());
-    let block = border(&title, focused)
-        .title_style(Style::default().fg(t::TEXT).add_modifier(Modifier::BOLD));
+    let block = border(t, &title, focused)
+        .title_style(Style::default().fg(t.text).add_modifier(Modifier::BOLD));
     frame.render_widget(block.clone(), area);
     let inside = inner(area);
     if inside.is_empty() {
@@ -272,6 +259,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     let selected = panel.selected.is_some();
     let connected = selected && panel.selected.as_deref() == view.showing;
     let (content, buttons) = buttons::draw_compact(
+        t,
         frame,
         inside,
         &[
@@ -310,6 +298,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         ..Default::default()
     };
     let rows = agent_rows(
+        t,
         panel,
         view.showing,
         usize::from(list.width),
@@ -350,12 +339,13 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     }
     if rows.is_empty() {
         frame.render_widget(
-            Paragraph::new("No agents").style(Style::default().fg(t::MUTED)),
+            Paragraph::new("No agents").style(Style::default().fg(t.muted)),
             list,
         );
     }
     if rows.len() > usize::from(list.height) && list.height > 0 {
         scrollbar(
+            t,
             frame,
             Rect {
                 width: inside.width,
@@ -382,7 +372,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         frame.render_widget(
             block.title_bottom(Line::styled(
                 format!(" {context}↑{above} ↓{below} "),
-                Style::default().fg(t::MUTED),
+                Style::default().fg(t.muted),
             )),
             area,
         );
@@ -390,7 +380,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     if detail_height > 0 {
         let heading = format!("─ Last reply · {}", panel.selected.as_deref().unwrap_or(""));
         frame.render_widget(
-            Paragraph::new(heading).style(Style::default().fg(t::BRIGHT)),
+            Paragraph::new(heading).style(Style::default().fg(t.bright)),
             Rect::new(content.x, list.bottom(), content.width, 1),
         );
         hits.reply = Rect::new(
@@ -399,7 +389,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             content.width.saturating_sub(1),
             detail_height - 1,
         );
-        let lines = reply_lines(view.reply, usize::from(hits.reply.width));
+        let lines = reply_lines(t, view.reply, usize::from(hits.reply.width));
         panel.reply_top = panel
             .reply_top
             .min(lines.len().saturating_sub(usize::from(hits.reply.height)));
@@ -410,6 +400,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         );
         if lines.len() > usize::from(hits.reply.height) {
             scrollbar(
+                t,
                 frame,
                 Rect {
                     width: content.width,
@@ -422,14 +413,14 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     }
     hits
 }
-fn scrollbar(frame: &mut Frame, area: Rect, len: usize, top: usize) {
+fn scrollbar(t: &Theme, frame: &mut Frame, area: Rect, len: usize, top: usize) {
     // Ratatui's position range must match viewport offsets, not the number of rendered rows.
     frame.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(None)
             .end_symbol(None)
-            .thumb_style(Style::default().fg(t::MUTED))
-            .track_style(Style::default().fg(t::BORDER)),
+            .thumb_style(Style::default().fg(t.muted))
+            .track_style(Style::default().fg(t.border)),
         area,
         &mut ScrollbarState::new(len.saturating_sub(usize::from(area.height)) + 1)
             .viewport_content_length(usize::from(area.height))
@@ -437,6 +428,7 @@ fn scrollbar(frame: &mut Frame, area: Rect, len: usize, top: usize) {
     );
 }
 fn agent_rows(
+    t: &Theme,
     panel: &Panel,
     showing: Option<&str>,
     width: usize,
@@ -483,10 +475,10 @@ fn agent_rows(
                         Span::styled(
                             pad(&name, width.saturating_sub(count.width())),
                             Style::default()
-                                .fg(t::CONNECTED)
+                                .fg(t.connected)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(count, Style::default().fg(t::MUTED)),
+                        Span::styled(count, Style::default().fg(t.muted)),
                     ])
                 },
                 name: None,
@@ -499,18 +491,18 @@ fn agent_rows(
             .is_none_or(|next| group(&next.name) != prefix);
         let selected = panel.selected.as_deref() == Some(&a.name);
         let style = if selected {
-            Style::default().bg(t::AGENT_SELECTED)
+            Style::default().bg(t.agent_selected)
         } else {
             Style::default()
         };
-        let tree_color = if selected { t::MUTED } else { t::DIM };
-        let (icon, state, color) = state(a, panel, now);
-        let (brand_label, brand_color) = agent_brand(a.kind.as_deref().unwrap_or(""));
+        let tree_color = if selected { t.muted } else { t.dim };
+        let (icon, state, color) = state(t, a, panel, now);
+        let (brand_label, brand_color) = agent_brand(t, a.kind.as_deref().unwrap_or(""));
         let name = a.name.strip_prefix(prefix).unwrap_or(&a.name);
         let mut spans = vec![
             Span::styled(
                 if selected { "▎" } else { " " },
-                Style::default().fg(if focused { t::FOCUS } else { t::MUTED }),
+                Style::default().fg(if focused { t.focus } else { t.muted }),
             ),
             Span::styled(
                 if last { "└─ " } else { "├─ " },
@@ -519,7 +511,7 @@ fn agent_rows(
             Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
                 pad(&clip(name, name_width), name_width),
-                Style::default().fg(if selected { t::BRIGHT } else { t::TEXT }),
+                Style::default().fg(if selected { t.bright } else { t.text }),
             ),
         ];
         if wide {
@@ -556,11 +548,11 @@ fn agent_rows(
         spans.push(Span::styled(
             suffix,
             Style::default().fg(if showing == Some(&a.name) {
-                t::CONNECTED
+                t.connected
             } else if !badge.is_empty() {
-                t::UNREAD
+                t.unread
             } else {
-                t::MUTED
+                t.muted
             }),
         ));
         rows.push(Row {
@@ -586,19 +578,19 @@ fn agent_rows(
                     a.attached,
                     a.last_input_source.as_deref().unwrap_or("—")
                 ),
-                Style::default().fg(t::WORKING),
+                Style::default().fg(t.working),
             ),
             (
                 short_path(a.cwd.as_deref().unwrap_or("—")),
-                Style::default().fg(t::MUTED).add_modifier(Modifier::DIM),
+                Style::default().fg(t.muted).add_modifier(Modifier::DIM),
             ),
             (
                 a.title.as_deref().unwrap_or("—").to_owned(),
-                Style::default().fg(t::TEXT),
+                Style::default().fg(t.text),
             ),
         ];
         if name.width() > name_width {
-            details.insert(0, (name.to_owned(), Style::default().fg(t::TEXT)));
+            details.insert(0, (name.to_owned(), Style::default().fg(t.text)));
         }
         if matches!(a.state.as_deref(), Some("working" | "blocked")) {
             details.push((
@@ -611,16 +603,16 @@ fn agent_rows(
             ));
         }
         if let Some(error) = &a.error {
-            details.push((format!("ERROR {error}"), Style::default().fg(t::DANGER)));
+            details.push((format!("ERROR {error}"), Style::default().fg(t.danger)));
         }
         if a.incompatible {
             details.push((
                 format!("Incompatible protocol {}", a.proto.unwrap_or(0)),
-                Style::default().fg(t::DANGER),
+                Style::default().fg(t.danger),
             ));
         }
         for (detail, detail_style) in details {
-            for line in reply_lines(&detail, width.saturating_sub(6)) {
+            for line in reply_lines(t, &detail, width.saturating_sub(6)) {
                 rows.push(Row {
                     line: Line::from(vec![
                         Span::styled(
@@ -637,7 +629,7 @@ fn agent_rows(
         }
         if index + 1 < ordered.len() {
             rows.push(Row {
-                line: Line::styled(if last { "" } else { " │" }, Style::default().fg(t::DIM)),
+                line: Line::styled(if last { "" } else { " │" }, Style::default().fg(t.dim)),
                 name: None,
                 headline: false,
             });
@@ -646,13 +638,13 @@ fn agent_rows(
     rows
 }
 // Text approximations of brand marks; no icon font or terminal image protocol required.
-fn agent_brand(kind: &str) -> (String, Color) {
+fn agent_brand(t: &Theme, kind: &str) -> (String, Color) {
     let (mark, color) = match kind.to_ascii_lowercase().as_str() {
-        "claude" => ("✳", Color::Rgb(0xd9, 0x77, 0x57)),
-        "codex" => (">_", Color::Rgb(0x8e, 0xd9, 0xc1)),
-        "pi" => ("π", Color::Rgb(0xff, 0xff, 0xff)),
-        "omp" => ("π", Color::Rgb(0xa8, 0x55, 0xf7)),
-        _ => return (kind.to_owned(), t::MUTED),
+        "claude" => ("✳", t.claude),
+        "codex" => (">_", t.codex),
+        "pi" => ("π", t.pi),
+        "omp" => ("π", t.omp),
+        _ => return (kind.to_owned(), t.muted),
     };
     (format!("{mark} {kind}"), color)
 }
@@ -666,26 +658,26 @@ fn short_path(path: &str) -> String {
     }
 }
 
-fn state(a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
+fn state(t: &Theme, a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
     if a.error.is_some() || a.incompatible {
-        return ("!", "error", t::AGENT_ERROR);
+        return ("!", "error", t.agent_error);
     }
     if panel.suspect(a, now) {
-        return ("▲", "stalled", t::AGENT_STALLED);
+        return ("▲", "stalled", t.agent_stalled);
     }
     if a.starting {
-        return ("◌", "starting", t::AGENT_STARTING);
+        return ("◌", "starting", t.agent_starting);
     }
     match a.state.as_deref() {
         Some("working") => (
             ["◐", "◓", "◑", "◒"][(now * 3.0) as usize % 4],
             "working",
-            t::AGENT_WORKING,
+            t.agent_working,
         ),
-        Some("blocked") => ("◆", "blocked", t::AGENT_BLOCKED),
-        Some("idle") => ("○", "idle", t::AGENT_IDLE),
-        Some("starting") => ("◌", "starting", t::AGENT_STARTING),
-        _ => ("·", "unknown", t::MUTED),
+        Some("blocked") => ("◆", "blocked", t.agent_blocked),
+        Some("idle") => ("○", "idle", t.agent_idle),
+        Some("starting") => ("◌", "starting", t.agent_starting),
+        _ => ("·", "unknown", t.muted),
     }
 }
 fn seconds(value: Option<f64>) -> String {
@@ -724,7 +716,7 @@ pub(crate) fn clip(text: &str, width: usize) -> String {
     result.push('…');
     result
 }
-fn reply_lines(text: &str, width: usize) -> Vec<Line<'static>> {
+fn reply_lines(t: &Theme, text: &str, width: usize) -> Vec<Line<'static>> {
     if width == 0 {
         return Vec::new();
     }
@@ -736,10 +728,10 @@ fn reply_lines(text: &str, width: usize) -> Vec<Line<'static>> {
             continue;
         }
         let style = if code {
-            Style::default().fg(Color::Yellow)
+            Style::default().fg(t.reply_code)
         } else if raw.starts_with('#') {
             Style::default()
-                .fg(Color::Cyan)
+                .fg(t.reply_heading)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()

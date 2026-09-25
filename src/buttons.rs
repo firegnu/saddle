@@ -1,4 +1,4 @@
-use crate::{input::Focus, theme};
+use crate::{input::Focus, theme::Theme};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     Frame,
@@ -49,6 +49,7 @@ impl<'a> Button<'a> {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Hit {
     pub area: Rect,
+    pub danger: bool,
     pub key: KeyEvent,
 }
 
@@ -83,24 +84,20 @@ impl Pointer {
         }
         None
     }
-    pub fn paint(&self, frame: &mut Frame, hits: &[(Focus, Hit)]) {
+    pub fn paint(&self, t: &Theme, frame: &mut Frame, hits: &[(Focus, Hit)]) {
         for (focus, hit) in hits {
             if self.hover.is_some_and(|point| hit.area.contains(point)) {
                 let pressed = self
                     .pressed
                     .as_ref()
                     .is_some_and(|(f, h)| f == focus && h == hit);
-                let danger = frame.buffer_mut()[(hit.area.x, hit.area.y)].fg == theme::DANGER;
+                let danger = hit.danger;
                 frame.buffer_mut().set_style(
                     hit.area,
                     if pressed {
-                        Style::default()
-                            .bg(ratatui::style::Color::Reset)
-                            .fg(if danger { theme::DANGER } else { theme::FOCUS })
+                        Style::default().fg(if danger { t.danger } else { t.focus })
                     } else {
-                        Style::default()
-                            .bg(ratatui::style::Color::Reset)
-                            .fg(if danger { theme::DANGER } else { theme::BRIGHT })
+                        Style::default().fg(if danger { t.danger } else { t.bright })
                     },
                 );
             }
@@ -109,16 +106,27 @@ impl Pointer {
 }
 
 /// Wrapping toolbars share placement and hit geometry.
-pub fn draw(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
-    draw_bar(frame, area, buttons, false, false)
+pub fn draw(t: &Theme, frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
+    draw_bar(t, frame, area, buttons, false, false)
 }
-pub fn draw_compact(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
-    draw_bar(frame, area, buttons, false, true)
+pub fn draw_compact(
+    t: &Theme,
+    frame: &mut Frame,
+    area: Rect,
+    buttons: &[Button<'_>],
+) -> (Rect, Vec<Hit>) {
+    draw_bar(t, frame, area, buttons, false, true)
 }
-pub fn draw_compact_top(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
-    draw_bar(frame, area, buttons, true, true)
+pub fn draw_compact_top(
+    t: &Theme,
+    frame: &mut Frame,
+    area: Rect,
+    buttons: &[Button<'_>],
+) -> (Rect, Vec<Hit>) {
+    draw_bar(t, frame, area, buttons, true, true)
 }
 fn draw_bar(
+    t: &Theme,
     frame: &mut Frame,
     area: Rect,
     buttons: &[Button<'_>],
@@ -172,28 +180,26 @@ fn draw_bar(
             row_height,
         );
         let foreground = if !button.enabled {
-            theme::DIM
+            t.dim
         } else {
             match button.kind {
-                Kind::Secondary => theme::TEXT,
-                Kind::Primary => theme::FOCUS,
-                Kind::Danger => theme::DANGER,
+                Kind::Secondary => t.text,
+                Kind::Primary => t.focus,
+                Kind::Danger => t.danger,
             }
         };
-        let style = Style::default()
-            .fg(foreground)
-            .bg(ratatui::style::Color::Reset);
+        let style = Style::default().fg(foreground);
         let border = if !button.enabled {
-            theme::DIM
+            t.dim
         } else if matches!(button.kind, Kind::Secondary) {
-            theme::BORDER
+            t.border
         } else {
             foreground
         };
         let (label, key) = button.label.rsplit_once(' ').unwrap_or((button.label, ""));
         let key_style = Style::default().fg(
             if button.enabled && matches!(button.kind, Kind::Secondary) {
-                theme::MUTED
+                t.muted
             } else {
                 foreground
             },
@@ -229,6 +235,7 @@ fn draw_bar(
         if button.enabled {
             hits.push(Hit {
                 area: rect,
+                danger: matches!(button.kind, Kind::Danger),
                 key: button.key,
             });
         }
