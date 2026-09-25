@@ -27,7 +27,7 @@
 
 ## 3. 和 corral、drover 的关系
 
-- **只走公开命令，不读它们的内部文件。** corral：`corral ls`、`corral status <名字>`、`corral reply <名字>`、`corral attach <名字>`、`corral stop <名字>`，都输出 JSON（`attach` 除外）。drover：使用 `drover list --json` 和 `drover go / next / pause / resume / loop / add` 等公开命令。只展示公开 JSON 提供的字段；判据核对结果显示 go 命令的原始反馈，不在 saddle 重做判断。
+- **任务数据和操作只走公开命令。** 用户明确授权只读 `~/.drover/projects` 作为项目目录登记入口；不读其他内部文件。 corral：`corral ls`、`corral status <名字>`、`corral reply <名字>`、`corral attach <名字>`、`corral stop <名字>`，都输出 JSON（`attach` 除外）。drover：使用 `drover list --json` 和 `drover go / next / pause / resume / loop / add` 等公开命令。只展示公开 JSON 提供的字段；判据核对结果显示 go 命令的原始反馈，不在 saddle 重做判断。
 - **判断全在它们那边。** agent 的状态（working、idle、blocked……）由 corral 根据钩子事件判定；队列、判据、放行由 drover 决定。本程序只显示和转发按键，行为因此和现在手动开的那套一致。
 - `corral` 从 `PATH` 找，配置里可以改路径。
 
@@ -64,7 +64,7 @@
 - Queue 是原生面板：↑↓/j k 选任务，Enter 显示详情，PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，? / h 帮助，q / Ctrl-] 回 Agents。新增表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
 - Agents 面板现有的按键全部保留：`r` 显示或隐藏回复区、`PgUp/PgDn` 滚动回复区、`s` 按状态分组、`x` 再按 `y` 停掉 agent、滚轮在列表上滚动。
 - 原生按钮与快捷键使用相同操作：Agents 提供接入、回复、排序、停止（仍需确认）；Queue 提供项目、刷新、详情、新增、放行、下一件、暂停/恢复、循环、帮助。表单提供保存/取消，字段可点击聚焦；窄窗按钮换行。
-- Queue 的「项目」按钮（`c`）打开原生路径表单，输入已接入 drover 的项目目录后读取；只在本次运行生效，长期默认仍由 `queue.cwd` 配置。忙碌时禁止切项目。不得自动初始化项目、猜测项目或读取 drover 私有注册表。
+- Queue 的「项目」按钮（`c`）打开原生项目列表，读取 `~/.drover/projects`（每行一个目录，忽略空行和重复项），点击或方向键/Enter 切换；保留手动目录入口（`e`）。启动时优先 `queue.cwd`，其次启动目录（若已登记），再取登记的首个项目；无登记时尝试启动目录。切换只在本次运行生效。忙碌时禁止切项目，不自动初始化仓库。
 - Queue 显示当前目录。读取失败必须停止显示「正在读取」，在内容区折行显示完整错误和恢复方法，支持滚动；重试成功后清除读取错误，失败时禁用队列写操作，避免使用过期状态。
 
 ## 6. Agents 面板（原生）
@@ -105,7 +105,7 @@ drover = "drover"
 
 - **所有 saddle UI 都由 Rust / ratatui 绘制。禁止启动 `corral/tools/board`、`drover board` 或其他 Python UI 作为窗格实现。** Viewer 仅通过 `corral attach` 接收 agent 终端字节流，由 Rust 解析和绘制。
 - 原来的「先嵌入 drover board，再做原生队列」分步方案作废，不保留外部看板后备配置。
-- Queue 的 cwd 指定要展示的 drover 项目，默认继承 saddle 启动目录；不读取 drover 的内部项目注册文件。不支持此项目时显示公开 CLI 报错及配置提示。
+- Queue 的 cwd 指定默认项目；未指定时从已登记项目选择（规则见第 5 节）。可只读 `~/.drover/projects`；登记不可读时明确显示错误，仍可手动指定目录。不支持此项目时显示公开 CLI 报错及配置提示。
 - 公开 `list --json` 已提供 mode、paused、current、awaiting、pending（含正文）和 history；原生面板以这些字段为准。未来更多判据数据需 drover 另行提供公开 API，不读取内部文件补齐。
 
 ## 10. 技术选型
