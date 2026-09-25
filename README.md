@@ -159,4 +159,4 @@ cargo run --example compare_parsers
 
 Previews are SVG and text exports of Ratatui buffers, not recordings of live agents. Synthetic checks do not establish compatibility with every agent terminal application.
 
-See [the design](docs/DESIGN.md) and [implementation progress](docs/PROGRESS.md) for architectural decisions and validation records. These documents are currently in Chinese.
+See [the design](docs/DESIGN.md) and [handoff notes](HANDOFF.md) for architectural decisions and validation records. These documents are currently in Chinese.

@@ -159,4 +159,4 @@ cargo run --example compare_parsers
 
 预览是 Ratatui 网格导出的 SVG 和文本，不是真实 agent 录屏。合成检查不代表已验证所有 agent 终端应用的兼容性。
 
-架构决定与验证记录见[设计文档](docs/DESIGN.md)和[实现进度](docs/PROGRESS.md)，目前均使用中文。
+架构决定与验证记录见[设计文档](docs/DESIGN.md)和[交接记录](HANDOFF.md)，目前均使用中文。
