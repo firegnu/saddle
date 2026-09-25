@@ -172,6 +172,10 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                 target = "Project path".into();
                 help = " Enter Apply  Ctrl-U Clear  Esc Cancel";
             }
+            crate::queue::Page::Delete { .. } => {
+                target = "Confirm delete".into();
+                help = " y Delete  Esc Cancel  PgUp/PgDn Scroll";
+            }
             crate::queue::Page::AllPending => {
                 target = "All pending".into();
                 help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  Ctrl-] Agents";

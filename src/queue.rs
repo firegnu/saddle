@@ -24,6 +24,10 @@ pub enum Page {
         body: String,
         body_focus: bool,
     },
+    Delete {
+        pending: Vec<Task>,
+        index: usize,
+    },
 }
 #[derive(Default)]
 pub struct Panel {
@@ -85,6 +89,15 @@ impl Panel {
                     !self.busy && self.read_error.is_none(),
                 )
                 .primary(),
+                B::new("Cancel Esc", K::Esc, !self.busy),
+            ],
+            Page::Delete { .. } => vec![
+                B::new(
+                    "Delete y",
+                    K::Char('y'),
+                    !self.busy && self.read_error.is_none(),
+                )
+                .danger(),
                 B::new("Cancel Esc", K::Esc, !self.busy),
             ],
             Page::Project(_) => vec![
@@ -223,6 +236,17 @@ impl Panel {
                         pending.get(*index).cloned().map(|task| (*to, task));
                     self.page = Page::List;
                     self.manual_scroll = false;
+                } else if let Operation::Delete { pending, index } = operation {
+                    // Follow the neighbour; the dropped task itself reappears in History.
+                    self.selection_after_write = pending
+                        .get(index + 1)
+                        .map(|task| (*index, task.clone()))
+                        .or_else(|| {
+                            let before = index.checked_sub(1)?;
+                            pending.get(before).map(|task| (before, task.clone()))
+                        });
+                    self.page = Page::List;
+                    self.manual_scroll = false;
                 }
             }
             Err(error) => {
@@ -273,6 +297,30 @@ impl Panel {
                 KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
                 KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
                 KeyCode::Char('r') => return Some(Request::AllPending),
+                _ => {}
+            }
+            return None;
+        }
+        if let Page::Delete { pending, index } = &self.page {
+            match key.code {
+                KeyCode::Esc if !self.busy => {
+                    self.page = Page::List;
+                    self.scroll = 0;
+                }
+                KeyCode::Char('y' | 'Y') if !self.busy && self.read_error.is_none() => {
+                    let operation = Operation::Delete {
+                        pending: pending.clone(),
+                        index: *index,
+                    };
+                    self.busy = true;
+                    self.message_failed = false;
+                    self.message = "Deleting task…".into();
+                    return Some(Request::Run(operation));
+                }
+                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
+                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
                 _ => {}
             }
             return None;
@@ -439,6 +487,18 @@ impl Panel {
                         pending,
                         index,
                     };
+                    self.message.clear();
+                }
+            }
+            KeyCode::Char('x')
+                if matches!(self.page, Page::List) && !self.busy && self.read_error.is_none() =>
+            {
+                if let Some(index) = self.pending_index() {
+                    self.page = Page::Delete {
+                        pending: self.snapshot.as_ref().unwrap().pending.clone(),
+                        index,
+                    };
+                    self.scroll = 0;
                     self.message.clear();
                 }
             }
@@ -687,6 +747,7 @@ impl Panel {
                     K::Char('d'),
                     ready && index + 1 < self.snapshot.as_ref().unwrap().pending.len(),
                 ),
+                B::new("Delete x", K::Char('x'), ready).danger(),
             ]);
         }
         task_controls.push(B::new(
@@ -740,6 +801,7 @@ impl Panel {
             Page::Help => " Help ",
             Page::Feedback(_) => " Action result ",
             Page::AllPending => " All pending ",
+            Page::Delete { .. } => " Delete task ",
             Page::List => return,
         };
         let height = if matches!(self.page, Page::Projects | Page::Project(_)) {
@@ -1142,7 +1204,8 @@ impl Panel {
             _ => {
                 let text=match &self.page {
                     Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\nReason: {r}")).unwrap_or_default())).unwrap_or_else(||"Task no longer in queue".into()),
-                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit selected pending task\nu / d: Move pending up / down\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit selected pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };

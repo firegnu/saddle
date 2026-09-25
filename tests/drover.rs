@@ -183,6 +183,74 @@ fn pending_edit_and_move_check_public_data_and_pass_literal_arguments() {
 }
 
 #[test]
+fn pending_delete_checks_public_data_and_drops_by_position() {
+    use saddle::drover::Operation;
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let client = Client {
+        program: common::script(temp.path(), "drover", include_str!("fixtures/drover.py")),
+        cwd: temp.path().into(),
+    };
+    let cancel = AtomicBool::new(false);
+    client
+        .execute(
+            &Operation::Add {
+                title: "Second".into(),
+                body: "Body".into(),
+            },
+            &cancel,
+        )
+        .unwrap();
+    let pending = client.snapshot().unwrap().pending;
+    let delete = Operation::Delete {
+        pending: pending.clone(),
+        index: 1,
+    };
+    std::fs::write(
+        temp.path().join("write-error"),
+        "queue locked: drop refused",
+    )
+    .unwrap();
+    let error = client.execute(&delete, &cancel).unwrap_err();
+    assert!(error.to_string().contains("queue locked: drop refused"));
+    std::fs::remove_file(temp.path().join("write-error")).unwrap();
+    std::fs::write(temp.path().join("queue-events"), "").unwrap();
+    client.execute(&delete, &cancel).unwrap();
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(temp.path().join("queue-events"))
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(
+        events,
+        [
+            serde_json::json!(["list", "--json"]),
+            serde_json::json!(["drop", "--pos", "2", "Deleted in saddle"])
+        ]
+    );
+    let state = client.snapshot().unwrap();
+    assert_eq!(state.pending, pending[..1]);
+    assert_eq!(state.history.last().unwrap().title, "Second");
+    assert_eq!(
+        state.history.last().unwrap().status.as_deref(),
+        Some("dropped")
+    );
+    // The same confirmed target is now stale, so nothing more is written.
+    std::fs::write(temp.path().join("queue-events"), "").unwrap();
+    assert!(
+        client
+            .execute(&delete, &cancel)
+            .unwrap_err()
+            .to_string()
+            .contains("Pending tasks changed")
+    );
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("queue-events")).unwrap(),
+        "[\"list\", \"--json\"]\n"
+    );
+}
+
+#[test]
 fn stale_pending_content_order_or_state_never_sends_a_write() {
     use saddle::drover::Operation;
     use std::sync::atomic::AtomicBool;

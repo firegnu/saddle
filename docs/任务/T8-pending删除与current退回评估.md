@@ -54,3 +54,10 @@
 ## 做完
 
 在本文件末尾追加「## 第一项完成记录」并提交：做了什么、验证了什么、拿主意的地方、没做的事，各几句话。回复同样列这些和需主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 第一项完成记录
+
+- 做了什么：选中的 Pending 多一个危险色按钮 `Delete x`（快捷键 `x`）。点它打开原生弹层 ` Delete task `，写明位置、id、标题、正文，说明会移出待办、在 History 保留为 Dropped；`y`/Delete 确认，Esc/Cancel（或 `q` 回 Agents）取消，其他键不生效。确认后后台运行 `drover drop --pos <位置> "Deleted in saddle"`，执行前沿用第 20 节的整份 pending 核对，过期不写。目标在弹层打开时固定，刷新和选中变化不改变它；执行中按钮禁用，成功回列表并选中相邻待办，失败显示 Action result。DESIGN 加第 24 节并补第 5 节按键，中英文 README 与帮助页已同步。
+- 验证了什么：先加 tests/queue.rs、tests/drover.rs、tests/workflow.rs 三个检查（假 drover 加 `drop --pos` 支持），补好类型骨架后三个都因目标行为缺失失败（没发 drop、`x` 不开弹层、没有 Delete 按钮），实现后通过。`cargo test --all-targets`、`cargo clippy --all-targets -- -D warnings`、`git diff --check` 全部通过。另在隔离 HOME + 临时 git 仓库里用真实 drover 核对：`drop --pos` 接受空/缺省原因、按位置放弃并在 `list --json` 的 history 留 `status: dropped` 和 reason，越界退出码 2。没有碰真实队列。
+- 拿主意的地方：快捷键用 `x`（`d` 已是下移，和 Agents Stop `x` 一致）；原因写死为 `Deleted in saddle`，不再加输入框；确认只认 `y`、取消只认 Esc，不像 Agents 的“任意键取消”，这样弹层里滚轮滚长正文不会误取消；删除后选中下一项（没有则上一项，都没有就跟到 History 的 Dropped 记录），避免按 id 跟到 History 里被删的那条。
+- 没做的事：current 退回 pending（第二项）没有实现；没有做跨项目删除，All pending 仍只读；没有用 `--expect`（公开 list 仍没有指纹），预检查和写入之间的竞态窗口与第 20 节记录的一样，没有发现更大的接口缺口。

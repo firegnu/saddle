@@ -16,7 +16,7 @@ else:
 if args == ['list', '--json']:
     print(json.dumps(state))
     sys.exit(0)
-elif args[0] in ('edit', 'move') and (root / 'write-error').exists():
+elif args[0] in ('edit', 'move', 'drop') and (root / 'write-error').exists():
     print((root / 'write-error').read_text(), file=sys.stderr)
     sys.exit(10)
 elif args == ['pause']:
@@ -33,6 +33,10 @@ elif len(args) == 4 and args[0] == 'edit':
 elif len(args) == 3 and args[0] == 'move':
     task = state['pending'].pop(int(args[1]) - 1)
     state['pending'].insert(int(args[2]) - 1, task)
+elif len(args) == 4 and args[:2] == ['drop', '--pos']:
+    task = state['pending'].pop(int(args[2]) - 1)
+    task.update(status='dropped', reason=args[3])
+    state['history'].append(task)
 elif args == ['go']:
     print('checked public criteria')
     sys.exit(0)

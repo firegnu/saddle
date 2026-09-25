@@ -280,3 +280,74 @@ fn all_pending_opens_a_read_only_overlay_even_when_the_current_project_failed() 
     assert!(panel.key(key(K::Char('A'))).is_none());
     assert!(matches!(panel.page, Page::List));
 }
+
+#[test]
+fn selected_pending_delete_confirms_a_fixed_target_and_can_be_cancelled() {
+    let mut panel = Panel::default();
+    let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
+        "mode": {}, "paused": false, "history": [{"title":"Old", "status":"done"}],
+        "current": {"id":"T0", "title":"Running"},
+        "awaiting": {"id":"T9", "title":"Waiting"},
+        "pending": [
+            {"id":"T1", "title":"First"},
+            {"id":null, "title":"Unnumbered", "body":"second body"},
+            {"id":"T3", "title":"Third"}
+        ]
+    }))
+    .unwrap();
+    panel.absorb(snapshot.clone());
+    for index in [0, 1, 5] {
+        panel.select(index);
+        assert!(panel.key(key(K::Char('x'))).is_none());
+        assert!(
+            matches!(panel.page, Page::List),
+            "x must ignore row {index}"
+        );
+    }
+    panel.select(3);
+    assert!(panel.key(key(K::Char('x'))).is_none());
+    assert!(matches!(panel.page, Page::Delete { .. }));
+    panel.key(key(K::Esc));
+    assert!(
+        matches!(panel.page, Page::List),
+        "Esc must cancel the delete"
+    );
+    assert!(panel.key(key(K::Char('x'))).is_none());
+    // A refresh and a selection change must not retarget the open confirmation.
+    let mut fresh = snapshot.clone();
+    fresh.pending.remove(0);
+    panel.absorb(fresh);
+    panel.select(0);
+    for c in ['g', 'n', 'e', 'u', 'd', 'a', 'x'] {
+        assert!(panel.key(key(K::Char(c))).is_none(), "{c}");
+    }
+    assert!(matches!(panel.page, Page::Delete { .. }));
+    let Some(Request::Run(op)) = panel.key(key(K::Char('y'))) else {
+        panic!("y must confirm the delete through a public operation");
+    };
+    assert_eq!(op.args(), ["drop", "--pos", "2", "Deleted in saddle"]);
+    let Operation::Delete { pending, index } = &op else {
+        panic!("unexpected operation {op:?}");
+    };
+    assert_eq!(
+        (pending.as_slice(), *index),
+        (snapshot.pending.as_slice(), 1)
+    );
+    assert!(panel.busy);
+    assert!(
+        panel.key(key(K::Char('y'))).is_none(),
+        "busy must block repeats"
+    );
+    panel.complete(&op, Ok("dropped".into()));
+    assert!(matches!(panel.page, Page::List));
+    assert!(!panel.busy);
+    let mut fresh = snapshot;
+    let dropped = fresh.pending.remove(1);
+    fresh.history.push(dropped);
+    panel.absorb(fresh);
+    assert_eq!(
+        panel.tasks()[panel.selected].1.title,
+        "Third",
+        "selection must follow the next pending task, not the dropped history entry"
+    );
+}
