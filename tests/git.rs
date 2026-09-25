@@ -343,3 +343,63 @@ fn poller_follows_the_watched_directories_and_quits_while_git_hangs() {
     let cancelled = collect("git", &[path(&a)], &AtomicBool::new(true));
     assert!(cancelled.is_empty());
 }
+
+#[test]
+fn parent_summaries_never_enter_submodule_worktrees_but_keep_gitlink_changes() {
+    let temp = tempfile::tempdir().unwrap();
+    let origin = temp.path().join("origin");
+    repo(&origin, "main");
+    commit(&origin, ".gitattributes", "*.txt filter=subprobe\n");
+    commit(&origin, "a.txt", "one\n");
+    let parent = temp.path().join("parent");
+    repo(&parent, "main");
+    commit(&parent, "p.txt", "p\n");
+    git(
+        &parent,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "-q",
+            &path(&origin),
+            "child",
+        ],
+    );
+    git(&parent, &["commit", "-q", "-m", "child"]);
+    let child = parent.join("child");
+    set_old_mtime(&child.join("a.txt"));
+    git(&child, &["update-index", "-q", "--refresh"]);
+    // The filter exists only in the submodule's own config; the parent has none to override.
+    let marker = temp.path().join("ran");
+    let hook = common::script(
+        temp.path(),
+        "hook",
+        &format!("#!/bin/sh\ntouch {marker:?}\ncat\n"),
+    );
+    git(&child, &["config", "filter.subprobe.clean", &hook]);
+    fs::write(child.join("a.txt"), "two\n").unwrap();
+    let summary = |dir: &Path| {
+        collect("git", &[path(dir)], &AtomicBool::new(false))[0]
+            .1
+            .clone()
+            .unwrap()
+    };
+    // Uncommitted files inside the submodule are not the parent's changes.
+    assert_eq!(summary(&parent).changes, changes(0, 0, 0));
+    assert!(!marker.exists(), "the submodule's filter ran");
+
+    // A new submodule commit is still a gitlink change of the parent.
+    fs::write(child.join("b.md"), "b\n").unwrap();
+    git(&child, &["-c", "filter.subprobe.clean=cat", "add", "b.md"]);
+    git(
+        &child,
+        &["-c", "filter.subprobe.clean=cat", "commit", "-q", "-m", "b"],
+    );
+    assert_eq!(summary(&parent).changes, changes(1, 1, 0));
+    assert!(!marker.exists(), "the submodule's filter ran");
+
+    // As its own cwd, the submodule is summarised with its own filters blocked.
+    assert_eq!(summary(&child).changes, None);
+    assert!(!marker.exists(), "the submodule's filter ran");
+}

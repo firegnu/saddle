@@ -100,3 +100,15 @@ dev-t12 · C2(main) · +18 -4 · ?1
   - 慢仓库延长整轮刷新周期，已写入 DESIGN 和 README，结构仍是单线程（主控裁决）。
   - 进程组、包装器后代的清理没做（建议改 2，非返工条件）。
   - DESIGN 第 25 节和两份 README 已同步。
+
+## 第二轮返工完成记录（必须改 1 的子模块缺口）
+
+- 做了什么：diff-index 加 `--ignore-submodules=dirty`。父仓库的摘要不再进入子模块工作区查脏状态，子模块自己配置、父仓库覆盖不到的 filter 也就不会被执行。子模块 HEAD 前进仍算父仓库的 gitlink 变化。子模块本身作为 cwd 时照旧按它自己的 worktree 和配置统计，其 filter 同样被阻止。其他项没动。DESIGN 第 25 节和两份 README 已补子模块说明。
+- 验证：新增 tests/git.rs `parent_summaries_never_enter_submodule_worktrees_but_keep_gitlink_changes`，直接 collect 父仓库。夹具是本地子模块 child，只在 child 的仓库配置里定义 `filter.subprobe.clean`，child 中已提交的 a.txt 被改成同长度内容。
+  - RED：修复前 collect 父仓库时脚本标记出现。
+  - GREEN：修复后三条断言都成立：
+    - 子模块只有未提交改动时，父仓库增删为 `+0 -0`，无标记。
+    - 子模块提交前进后，父仓库为 `+1 -1`，无标记。
+    - child 作为 cwd 时增删未知，无标记。
+  - `cargo test --test git --test git_env`（8 passed）、`cargo clippy --all-targets -- -D warnings`、`git diff --check` 通过；按预算没跑其他套件。
+- 取舍：只采用主控接受的最小方案，不做递归扫描或子模块详情，也不忽略全部子模块变化。

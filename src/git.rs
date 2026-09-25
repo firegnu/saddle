@@ -120,6 +120,8 @@ impl Worktree<'_> {
             Some((count.parse().ok()?, name))
         });
         // A changed file that needs a blocked filter fails the diff, so the counts stay unknown.
+        // Submodule worktrees are never entered (their own filters are not blocked here); a
+        // submodule whose HEAD moved still counts as a gitlink change.
         let changes = self
             .blocked_filters()
             .and_then(|overrides| {
@@ -131,6 +133,7 @@ impl Worktree<'_> {
                     "-z",
                     "--no-ext-diff",
                     "--no-textconv",
+                    "--ignore-submodules=dirty",
                     "HEAD",
                     "--",
                 ]);
