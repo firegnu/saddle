@@ -43,3 +43,11 @@
 ## 做完
 
 在本文件末尾追加「## 完成记录」并提交：做了什么、验证了什么、拿主意的地方、没做的事，各几句话。回复同样列这几样和需主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 做了什么：`src/queue.rs` 列表分组标题按组着色，Pending 行状态由 muted 改为 agent_starting 紫；其余行状态沿用原色。`config.toml` 在六个共用状态色后注明 Tasks 用途，DESIGN 第 21 节追加 T3 条目，并把旧的“待办中性色”改成实际的顶部 Ready 绿色说明。
+- 分组与状态的区别及实际清单：分组是列表标题，共 4 种——Current（蓝 agent_working）、Awaiting（琥珀 agent_blocked）、Pending（紫 agent_starting）、History（中性 muted）。任务行状态由分组决定前三种——Running（蓝）、Awaiting（琥珀）、Pending（紫）；History 行按 drover 的 status 取值——done→Done（绿 agent_idle）、failed→Failed（红 agent_error）、dropped/drop→Dropped（橙 agent_stalled）、其他原值原样显示（中性 muted）、缺失显示“—”（弱化 dim）。另有队列顶部的 Paused/Running/Awaiting/Ready/Idle 和 Loop on/off，属于 Queue 顶部项目状态，本任务未改。
+- 验证了什么：tests/ui.rs 新增 `task_groups_and_row_statuses_have_distinct_colors`，渲染含全部分组与历史状态（含未知值和缺失值）的队列，逐项检查标题和行内状态文字颜色；改动前该检查因 Current 标题为 Gray 失败，改动后 `cargo test --test ui`（16 项）、`cargo test --test layout_config`（示例 config.toml 仍可解析）和 `cargo clippy --all-targets -- -D warnings` 通过，`git diff --check` 无输出。
+- 拿主意的地方：History 标题保持 muted（混合多种结果，按任务文件）；标题沿用原有加粗，只换颜色。DESIGN 第 21 节原句“待办中性色”与新配色矛盾，改为描述顶部 Ready 的实际颜色，而不是删掉整句。
+- 没做的事：未改任务状态、分组、排序、滚动、CLI 数据或操作；未动 Agents 和 Queue 顶部状态配色、布局、交互；未新增配置字段；未跑全套测试、未用真实 agent；未合并、未推送、未改 HANDOFF.md。

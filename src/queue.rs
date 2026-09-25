@@ -684,6 +684,13 @@ impl Panel {
                 let mut section = "";
                 for (index, (group, task)) in tasks.iter().enumerate() {
                     if section != *group {
+                        // History mixes outcomes, so only its rows carry status colors.
+                        let color = match *group {
+                            "Current" => t.agent_working,
+                            "Awaiting" => t.agent_blocked,
+                            "Pending" => t.agent_starting,
+                            _ => t.muted,
+                        };
                         rows.push((
                             None,
                             Line::styled(
@@ -691,7 +698,7 @@ impl Panel {
                                     "{group} {}",
                                     tasks.iter().filter(|(g, _)| g == group).count()
                                 ),
-                                Style::default().fg(t.muted).add_modifier(Modifier::BOLD),
+                                Style::default().fg(color).add_modifier(Modifier::BOLD),
                             ),
                         ));
                         section = group;
@@ -704,7 +711,7 @@ impl Panel {
                     let (status, color) = match *group {
                         "Current" => ("Running", t.agent_working),
                         "Awaiting" => ("Awaiting", t.agent_blocked),
-                        "Pending" => ("Pending", t.muted),
+                        "Pending" => ("Pending", t.agent_starting),
                         _ => match task.status.as_deref() {
                             Some("done") => ("Done", t.agent_idle),
                             Some("failed") => ("Failed", t.agent_error),

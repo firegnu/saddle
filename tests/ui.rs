@@ -801,3 +801,63 @@ fn short_history_has_a_footer_at_the_bottom_of_its_available_area() {
         );
     }
 }
+
+#[test]
+fn task_groups_and_row_statuses_have_distinct_colors() {
+    use saddle::theme as t;
+    let task = |title: &str, status: Option<&str>| Task {
+        title: title.into(),
+        status: status.map(Into::into),
+        ..Default::default()
+    };
+    let mut q = queue::Panel::default();
+    q.absorb(Snapshot {
+        current: Some(task("task-current", None)),
+        awaiting: Some(task("task-awaiting", None)),
+        pending: vec![task("task-pending", None)],
+        history: vec![
+            task("task-done", Some("done")),
+            task("task-failed", Some("failed")),
+            task("task-dropped", Some("dropped")),
+            task("task-unknown", Some("unknown")),
+            task("task-missing", None),
+        ],
+        ..Default::default()
+    });
+    let buffer = render_queue(&mut q, 52, 40);
+    for (label, color) in [
+        ("Current 1", t::AGENT_WORKING),
+        ("Awaiting 1", t::AGENT_BLOCKED),
+        ("Pending 1", t::AGENT_STARTING),
+        ("History 5", t::MUTED),
+    ] {
+        assert_label_color(&buffer, label, color);
+    }
+    for (title, label, color) in [
+        ("task-current", "Running", t::AGENT_WORKING),
+        ("task-awaiting", "Awaiting", t::AGENT_BLOCKED),
+        ("task-pending", "Pending", t::AGENT_STARTING),
+        ("task-done", "Done", t::AGENT_IDLE),
+        ("task-failed", "Failed", t::AGENT_ERROR),
+        ("task-dropped", "Dropped", t::AGENT_STALLED),
+        ("task-unknown", "unknown", t::MUTED),
+        ("task-missing", "—", t::DIM),
+    ] {
+        let rows = text(&buffer);
+        let y = rows
+            .lines()
+            .position(|line| line.contains(title))
+            .unwrap_or_else(|| panic!("missing {title}: {rows}"));
+        let cells: Vec<_> = (0..buffer.area.width)
+            .map(|x| buffer[(x, y as u16)].symbol().to_string())
+            .collect();
+        let label: Vec<_> = label.chars().map(String::from).collect();
+        let x = cells
+            .windows(label.len())
+            .rposition(|w| w == label.as_slice())
+            .unwrap_or_else(|| panic!("missing {label:?} in {title}: {rows}"));
+        for i in 0..label.len() {
+            assert_eq!(buffer[((x + i) as u16, y as u16)].fg, color, "{title}");
+        }
+    }
+}
