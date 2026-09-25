@@ -692,3 +692,35 @@ fn agents_reply_entry_is_hidden_and_r_does_not_open_it() {
     assert!(!h.log("events").contains("reply "));
     h.quit();
 }
+
+#[test]
+fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
+    let mut h = Harness::start();
+    let agents: serde_json::Map<String, serde_json::Value> = (0..8)
+        .map(|i| (format!("p/worker-{i:02}"), serde_json::json!("idle")))
+        .collect();
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        serde_json::to_vec(&agents).unwrap(),
+    )
+    .unwrap();
+    h.see("Agents · 8");
+    // Column 50 is the scrollbar, outside the text list but inside Agents.
+    h.send("\x1b[<65;51;4M".repeat(60).as_bytes());
+    h.see("worker-07");
+    let refreshes = h
+        .log("events")
+        .lines()
+        .filter(|line| line.starts_with("ls "))
+        .count();
+    h.until(|h| {
+        h.log("events")
+            .lines()
+            .filter(|line| line.starts_with("ls "))
+            .count()
+            > refreshes + 1
+    });
+    assert!(h.screen.screen().contents().contains("worker-07"));
+    assert!(!h.log("events").contains("attach "));
+    h.quit();
+}

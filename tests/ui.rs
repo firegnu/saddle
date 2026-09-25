@@ -431,3 +431,30 @@ fn agent_status_colors_are_distinct_and_bold() {
         }
     }
 }
+
+#[test]
+fn agents_scrollbar_reaches_the_bottom_when_the_last_row_is_visible() {
+    for (extra, height) in [(1, 20), (12, 40)] {
+        let (mut a, mut q) = fixture();
+        for index in 0..extra {
+            a.agents.push(Agent {
+                name: format!("demo/worker-{index:02}"),
+                title: Some(format!("END-{index:02}")),
+                ..Default::default()
+            });
+        }
+        a.follow = false;
+        a.top = usize::MAX;
+        let (buffer, hits) = render(160, height, &mut a, &mut q, Focus::Agents);
+        let output = text(&buffer);
+        assert!(
+            output.contains(&format!("END-{:02}", extra - 1)),
+            "{output}"
+        );
+        assert_eq!(
+            buffer[(hits.list.right(), hits.list.bottom() - 1)].symbol(),
+            "█",
+            "{output}"
+        );
+    }
+}

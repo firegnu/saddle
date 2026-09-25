@@ -513,9 +513,19 @@ impl App {
                     } else {
                         1
                     };
-                    if self.hits.reply.contains(point) {
+                    if (Rect {
+                        width: self.hits.reply.width.saturating_add(1),
+                        ..self.hits.reply
+                    })
+                    .contains(point)
+                    {
                         self.panel.reply_top = self.panel.reply_top.saturating_add_signed(delta);
-                    } else if self.hits.list.contains(point) {
+                    } else if (Rect {
+                        width: self.hits.list.width.saturating_add(1),
+                        ..self.hits.list
+                    })
+                    .contains(point)
+                    {
                         self.panel.top = self.panel.top.saturating_add_signed(delta);
                         self.panel.follow = false;
                     }

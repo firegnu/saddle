@@ -430,7 +430,7 @@ fn scrollbar(frame: &mut Frame, area: Rect, len: usize, top: usize) {
             .thumb_style(Style::default().fg(t::MUTED))
             .track_style(Style::default().fg(t::BORDER)),
         area,
-        &mut ScrollbarState::new(len)
+        &mut ScrollbarState::new(len.saturating_sub(usize::from(area.height)) + 1)
             .viewport_content_length(usize::from(area.height))
             .position(top),
     );
