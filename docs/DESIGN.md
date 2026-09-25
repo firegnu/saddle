@@ -27,7 +27,7 @@
 
 ## 3. 和 corral、drover 的关系
 
-- **任务数据和操作只走公开命令。** 用户明确授权只读 `~/.drover/projects` 作为项目目录登记入口；不读其他内部文件。 corral：`corral ls`、`corral status <名字>`、`corral reply <名字>`、`corral attach <名字>`、`corral stop <名字>`，都输出 JSON（`attach` 除外）。drover：使用 `drover list --json` 和 `drover go / next / pause / resume / loop / add` 等公开命令。只展示公开 JSON 提供的字段；判据核对结果显示 go 命令的原始反馈，不在 saddle 重做判断。
+- **任务数据和操作只走公开命令。** 用户明确授权只读 `~/.drover/projects` 作为项目目录登记入口；不读其他内部文件。 corral：`corral ls`、`corral status <名字>`、`corral reply <名字>`、`corral attach <名字>`、`corral stop <名字>`，都输出 JSON（`attach` 除外）。drover：使用 `drover list --json`、只读的 `drover show Tn --json --with-agent-status`（T4，见第 26 节）和 `drover go / next / pause / resume / loop / add` 等公开命令。只展示公开 JSON 提供的字段；判据核对结果显示 go 命令的原始反馈，不在 saddle 重做判断。
 - **判断全在它们那边。** agent 的状态（working、idle、blocked……）由 corral 根据钩子事件判定；队列、判据、放行由 drover 决定。本程序只显示和转发按键，行为因此和现在手动开的那套一致。
 - `corral` 从 `PATH` 找，配置里可以改路径。
 
@@ -61,7 +61,7 @@
 | 退出 | 焦点在 Agents 时按 `q` |
 
 - 焦点在 Viewer 时，除了 `Ctrl-]`，所有按键、粘贴、鼠标事件都原样送进 `corral attach`。
-- Queue 是原生面板：↑↓/j k 选任务，Enter 显示详情，PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，e 编辑选中的待办，u/d 上移/下移待办，x 删除选中的待办（需确认），? / h 帮助，q / Ctrl-] 回 Agents。新增/编辑表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
+- Queue 是原生面板：↑↓/j k 选任务，Enter 或单击任务行在 Tasks 区域内显示详情（第 26 节），PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，e 编辑选中的待办，u/d 上移/下移待办，x 删除选中的待办（需确认），? / h 帮助，q / Ctrl-] 回 Agents。新增/编辑表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
 - Agents 面板现有的按键全部保留：`r` 显示或隐藏回复区、`PgUp/PgDn` 滚动回复区、`s` 按状态分组、`x` 再按 `y` 停掉 agent、滚轮在列表上滚动。
 - 原生按钮与快捷键使用相同操作：Agents 提供接入、回复、排序、停止（仍需确认）；Queue 提供项目、刷新、详情、新增、放行、下一件、暂停/恢复、循环、帮助。表单提供保存/取消，字段可点击聚焦；窄窗按钮换行。
 - 按钮遵循第 13 节的语义配色、悬停/按下反馈；按下和松开必须命中同一个按钮才执行，移出取消。
@@ -111,7 +111,7 @@ drover = "drover"
 - **所有 saddle UI 都由 Rust / ratatui 绘制。禁止启动 `corral/tools/board`、`drover board` 或其他 Python UI 作为窗格实现。** Viewer 仅通过 `corral attach` 接收 agent 终端字节流，由 Rust 解析和绘制。
 - 原来的「先嵌入 drover board，再做原生队列」分步方案作废，不保留外部看板后备配置。
 - Queue 的 cwd 指定默认项目；未指定时从已登记项目选择（规则见第 5 节）。可只读 `~/.drover/projects`；登记不可读时明确显示错误，仍可手动指定目录。不支持此项目时显示公开 CLI 报错及配置提示。
-- 公开 `list --json` 已提供 mode、paused、current、awaiting、pending（含正文）和 history；原生面板以这些字段为准。未来更多判据数据需 drover 另行提供公开 API，不读取内部文件补齐。
+- 公开 `list --json` 已提供 mode、paused、current、awaiting、pending（含正文）和 history；原生面板以这些字段为准。未来更多判据数据需 drover 另行提供公开 API，不读取内部文件补齐；任务详情由 T4 的公开 `drover show` 提供（第 26 节）。
 
 ## 10. 技术选型
 
@@ -148,7 +148,7 @@ drover = "drover"
 - 焦点用加粗琥珀边框和底栏输入目标表示，选中用整行底色与左条，连接用独立青色标记；三者不混用。按钮次要深灰、主操作琥珀、危险暗红；禁用无命中区，悬停提亮，按下反色，执行中禁用重复操作并显示反馈。
 - Agents 按项目分组：宽窗两行扫描（名称/类型/状态/时间及活动），中窄窗一行；选中项底部集中显示完整名称、实例、目录、标题、SOURCE、ATT、活动。长详情折行，可滚动；回复在此区展开并分页。接入/回复/排序在底部，停止使用危险样式。未读继续保持现有语义（选中或连接即清除），不在本次视觉改版中改成仅打开回复清除。
 - Queue 顶部固定项目名、路径与项目/刷新入口，下一行模式/暂停/循环，再下一行项目级操作（放行、下一件、暂停/恢复、循环）；与任务列表用分隔标题区分。列表按当前/待放行/待办/历史分组，状态列固定在右侧，标题按显示宽度省略；底部仅任务详情、新增、帮助。
-- 项目选择、新增、任务详情、帮助、完整反馈用原生有边框的覆盖层，保留底下的列表作上下文。停止确认明确目标名称和实例；只有 y/确认停止按钮执行，其他键取消，遮罩不允许穿透到 Viewer。新增失败保留草稿。
+- 项目选择、新增、帮助、完整反馈用原生有边框的覆盖层（任务详情已由第 26 节改为 Tasks 区域内切换），保留底下的列表作上下文。停止确认明确目标名称和实例；只有 y/确认停止按钮执行，其他键取消，遮罩不允许穿透到 Viewer。新增失败保留草稿。
 - 输入规则沿用第 5 节：Agents Tab→Queue，Shift-Tab→Viewer；Queue/Viewer Ctrl-]→Agents；Viewer 的 Tab/Shift-Tab 等均透传，不采用原型中互相矛盾的“三窗格 Tab 循环”。窄窗标签可点击，保留各面板选择和滚动状态。Queue 弹层中 Ctrl-] 暂回 Agents 时保留页面/草稿，重新聚焦 Queue 后恢复；Esc 才取消当前页面。后台接入完成不抢走 Queue/确认弹层的输入焦点。
 - 自动刷新保留现有数据、选择及滚动，不先清空；切换项目才清空。读取失败禁用旧数据的写操作并显示完整错误；后台恢复后清除错误。既有 worker 切换隔离继续阻止旧项目结果污染新项目。
 - 项目清单只显示已知目录，不虚构每个项目的读取状态。时间、工作量、状态均来自已有公开字段，不照搬原型的合成数据。
@@ -214,7 +214,7 @@ drover = "drover"
 - Queue 的项目、队列动作、任务动作和其弹层按钮统一使用 Agents 的单行英文无底色边界样式；保留禁用、悬停/按下、同目标释放执行，窄窗自动换行。项目头部随按钮高度收紧，释放列表空间。
 - 鼠标滚轮/触控板在任务列表正文或滚动条上直接改变列表视口，不再转换为上下选择任务；当前任务选择不变，正常刷新后保留手动位置。显式选择任务时恢复跟随；项目切换重置该项目的 UI 状态。滚轮在按钮/项目栏上不改变任务列表。
 - 滚动条的位置范围使用最大滚动偏移 + 1，末项可见时滑块同步到底；任务文本为滚动条预留一列，避免覆盖状态。
-- 用户明确以鼠标滚动为验收，本轮不改 PgUp/PgDn 行为。错误内容和详情弹层保持各自的滚动处理，列表滚动不得触发 drover 写操作或 Viewer 输入。
+- 用户明确以鼠标滚动为验收，本轮不改 PgUp/PgDn 行为。错误内容和详情页（第 26 节）保持各自的滚动处理，列表滚动不得触发 drover 写操作或 Viewer 输入。
 - 使用假 CLI/合成历史验证连续滚轮立即移动视口、两端可达、选中项和刷新位置保持、正文/滚动条区域响应、按钮命中和弹层交互。
 
 ## 21. Queue 英文界面与状态层次
@@ -279,3 +279,23 @@ drover = "drover"
   - 版本：`--no-lazy-fetch` 从 Git 2.45 起有；更旧的 Git 把它当未知选项拒绝，第一步定位就失败，整行显示 `git unavailable`，不降级成允许补取。
 - 结果归属：每轮结果按 cwd 带回，写入 Agents 面板的独立表（与 corral 状态分开），只接受当前名单里仍存在的 cwd，并删掉已不在名单里的条目；agent 换了 cwd 就按新 cwd 查找，旧目录的结果不会显示在它名下。
 - 不做：Git 写操作、diff 详情页、配置项、提交归属或完成判定。
+
+## 26. Tasks 详情（T4）
+
+用户要求：任务完成后没有状态显示；对照旧 drover Python 看板补齐任务状态和过程详情，点击任务时面板切到该任务当前的状态。用户确认：任务列表和详情共用 Tasks 区域切换，不占右侧 Viewer；数据由 drover 新增的公开只读接口 `drover show Tn --json`（schema_version=1，契约见 drover 仓库 `docs/任务详情JSON接口.md`）提供，打开期间约每 5 秒刷新，返回列表即停止。
+
+- 位置：取代原「Task details」覆盖层。详情只占 Queue 面板中 Tasks 分隔线以下的区域，分隔线显示 `─ Task details`，任务按钮行换成 `Back Esc`；项目头部和 Go/Next/Pause/Loop 行留在原位但禁用（与原详情弹层时一致）。Agents、Viewer 的布局和终端接入不变。窄区域按显示宽度折行，内容过长时有滚动条。
+- 进入与返回：单击任务行（先选中该行）或 Enter/Details 进入；Esc 或 Back 返回列表，列表的选择和滚动位置保持。Queue 中 `q` 回 Agents 并关闭详情（与其他页面一致）；Ctrl-] 暂回 Agents 时详情页保留，仍在 Queue 面板显示并继续刷新。
+- 目标：进入时记下任务 ID 和一个全进程递增的序号。之后只按 ID 在最新列表中找它所在分组，不跟列表索引走；完成、放行后仍是同一个 ID。ID 为 `T` 加数字且当前不在 pending 时，在当前项目目录下以直接参数调用 `drover show <ID> --json --with-agent-status`；pending 与未编号任务不调用 show，只显示 list 已有的标题、正文、状态和原因（pending 开始后自动改为 show 查询）。未编号任务在列表中找不到同一标题/正文时，标明显示的是进入时的副本。
+- 刷新：每个详情目标由一个后台线程查询，进入即查，每次结果返回后约 5 秒再查下一次，不堆叠。目标以「项目、ID、序号」为键：返回列表、换任务、切换项目或退出时丢弃旧线程（取消并杀掉进行中的命令，等线程结束），它的结果通道随之丢弃；写入前还核对键，旧结果不会显示到新目标上。单次查询预算 60 秒（drover 的 Git 子命令各 30 秒、status 最多 10 秒），超时按失败处理并在 5 秒后重试；查询不跑验收命令，也不阻塞界面、corral 刷新或终端。
+- 加载与失败：首次加载只显示列表已有的编号、标题和 `Loading details…`，不画空的分区。失败显示错误和「每 5 秒自动重试」；已有旧数据时保留并标明是哪一时刻的旧数据。未知 schema_version、`ok` 不为 true、退出码非 0、JSON 缺少必需字段都按失败处理，不当作成功。刷新不重置滚动位置。
+- 内容（英文界面，任务原文保留；正文、why 等去掉控制字符后按普通文本显示）：
+  - 顶部：编号、状态（current=Running 蓝，awaiting=Awaiting release 琥珀，history 的 done=Done 绿、dropped=Dropped 橙，其他原值中性色）和耗时，标题完整折行，观察时间；awaiting_release 与 suggested 的关注提示；warnings 中 snapshot_changed（带来源）和 snapshot_verification_unavailable 用琥珀色标明「本次快照不一致 / 无法复核，下次刷新重试」，不据此执行动作。
+  - Progress：耗时、等待放行时长、区间提交数（注明是 start..HEAD / start..end 的区间计数，不只属于本任务）、main 自开始后前进数（history 未记录）、main 顶端提交时间（注明是现在的 main）、记录的 start/main/end 与本次观察的 HEAD/main。不可用时按 unavailable_reasons 说明原因。
+  - Completion checks：current/awaiting 标明「现在重算」，四行按 state 显示 met ✓、unmet ✗、unavailable ?、not applicable –、not run ·，附原因和 why 原文；awaiting 注明已记录的 done 不因重算改变。history 显示完成时判据未保存，不套用当前判据。
+  - Last check：status、原因、stale_reasons 和记录（结果、时间、命令、why）；valid 注明只是上次结果、不是本次验收；missing/invalid 注明不代表从未验收；retained_sample 注明是留存样本、不是完成时快照。
+  - Route, hold & attention：路由注明来自现在的任务文件；Hold 为开、关或未知（带原因）；关注提示显示状态、原因、未满足的行和主控 agent 状态，推断结果注明是推断。
+  - Records：开始、完成/放弃、放行的本地时间和放弃原因；Body：正文原文，空串显示「未记录」。
+  - 缺失、不适用、历史未保存分别说明，不显示成 0 或通过；只读结构化字段判断状态，不解析 why。
+- 输入：详情页 ↑↓/j k 滚一行、PgUp/PgDn 翻页，滚轮在 Tasks 区域滚动详情；其他列表与队列按键（g n p l a A c e u d x ? r）在详情页不生效，不新增队列写操作。Queue 有焦点时按键和滚轮只作用于 Tasks，不流入 Viewer；切到 Viewer 后沿用原输入规则。
+- 不做：执行日志、补造历史、新配置项或新队列动作；不读 drover/corral 内部文件，不复制完成判定。
