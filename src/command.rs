@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
 use std::{
+    ffi::OsString,
     io::Read,
     path::Path,
     process::{Command, ExitStatus, Stdio},
@@ -23,13 +24,14 @@ pub fn run(
     timeout: Duration,
     cancel: &AtomicBool,
 ) -> Result<Output> {
-    run_with_env(program, args, cwd, &[], timeout, cancel)
+    run_without_env(program, args, cwd, &[], timeout, cancel)
 }
-pub fn run_with_env(
+/// Like `run`, but the child does not inherit the environment variables named in `remove`.
+pub fn run_without_env(
     program: &str,
     args: &[&str],
     cwd: Option<&Path>,
-    env: &[(&str, &str)],
+    remove: &[OsString],
     timeout: Duration,
     cancel: &AtomicBool,
 ) -> Result<Output> {
@@ -37,9 +39,11 @@ pub fn run_with_env(
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    for name in remove {
+        command.env_remove(name);
+    }
     let mut child = command
         .args(args)
-        .envs(env.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

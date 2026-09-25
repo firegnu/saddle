@@ -81,3 +81,22 @@ dev-t12 · C2(main) · +18 -4 · ?1
   - 为了不跑仓库配置的 filter，用了 `--attr-source=<空树>`，因此需要 Git ≥ 2.41。代价是 `.gitattributes` 里的 `binary`/eol 设置不参与这次统计，改由 Git 按内容自动判断二进制。
   - 部分克隆不补取缺失对象，用的是环境变量 `GIT_NO_LAZY_FETCH=1`，旧版 Git 会直接忽略。
 - 没做的事：Git 写操作、diff 详情页、配置项（git 程序固定从 PATH 找 `git`，刷新间隔固定 5 秒）；不跟随 agent 之后 cd 到的目录；`$GIT_DIR/info/attributes` 和用户全局 attributes 里的 filter 仍按 Git 规则生效（已在 DESIGN 注明）；没做真实界面录屏或手动启动检查。
+
+## 第一轮返工完成记录（交叉审查必须改 1–4）
+
+- 1 全部 attributes 来源的外部 filter：去掉 `--attr-source=<空树>`，attributes 照常读取。diff 前用 `git config -z --name-only --get-regexp ^filter\.` 列出所有配置层定义的 filter 驱动，每个驱动以 `-c` 清空 clean/smudge/process 并设 `required=true`。无论规则来自工作区 `.gitattributes`、`.git/info/attributes` 还是 `core.attributesFile`，Git 都报 filter 失败而不启动程序，这一轮增删行显示未知。不改仓库配置或 attributes 文件。回归：三种来源 × clean，外加 info × process，标记文件不出现、索引字节不变；不受 filter 影响的改动照常计数。
+- 2 禁止 lazy fetch 的能力门禁：所有 Git 调用（包括第一步定位 `rev-parse --show-toplevel`）都带 `--no-lazy-fetch`，最低版本改为 Git 2.45。更旧的 Git 把它当未知选项拒绝，定位即失败，整行显示 `git unavailable`，不降级。原来的 `GIT_NO_LAZY_FETCH` 环境变量和 `--show-object-format` 都已去掉。回归：
+  - 假旧版 Git 拒绝该选项时，结果为不可用。
+  - 本地 `file://` promisor 的部分克隆缺 HEAD blob、工作区已改：摘要显示增删未知，blob 仍缺失。该 promisor 可达，允许补取的话会成功，所以测试能区分。
+- 3 继承环境隔离：`command::run_with_env` 改为 `run_without_env`（带要去掉的变量名），Git 调用去掉当前进程的全部 `GIT_*` 变量。corral/drover 仍走原 `run`，环境不变。回归放在单独的测试二进制 tests/git_env.rs（只有一个测试，避免改进程环境影响别的测试）：`GIT_DIR`/`GIT_WORK_TREE` 指向 A、另设 `GIT_INDEX_FILE` 和 `GIT_TRACE` 时，A、B 仍各读各的分支，B 的未跟踪数正确，trace 文件没被写。
+- 4 内建属性语义：恢复读取 attributes 后，`*.txt text eol=crlf` 已提交、只改时间戳的文件不再报增删，`*.asset binary` 计为 binary。回归即此夹具。
+- 验证：先补上面这些检查。四项都拿到真实 RED：旧实现分别报 `+3 -3`（原预期 `binary 1`）、filter 夹具仍计数且会跑钩子、假旧 Git 仍返回摘要、受污染环境下 B 读成 `branch-a`。修复后 GREEN。
+  - 通过：`cargo test --test git --test git_env --test agents --test ui`，以及因 command.rs 改动顺带跑的 `--test corral --test drover`；`cargo clippy --all-targets -- -D warnings`；`git diff --check`。
+  - 按预算没重跑无关全套。
+  - 测试夹具里，filter 用例先把 a.txt 设成旧时间戳并刷新索引。否则 Git 对与索引同一秒写入的文件（racy）要重读内容，需要 filter，增删行在触碰 a.txt 前就是未知。这属于 Git 的正确行为，已写进 DESIGN。
+- 取舍：
+  - 被阻止的 filter 让整个 diff 未知，不按文件剔除，不改成原始字节口径。
+  - 纯改名按路径全删全增，不做 rename 检测（主控裁决）。
+  - 慢仓库延长整轮刷新周期，已写入 DESIGN 和 README，结构仍是单线程（主控裁决）。
+  - 进程组、包装器后代的清理没做（建议改 2，非返工条件）。
+  - DESIGN 第 25 节和两份 README 已同步。

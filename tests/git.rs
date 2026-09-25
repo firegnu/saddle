@@ -30,6 +30,14 @@ fn commit(dir: &Path, file: &str, text: &str) {
     git(dir, &["add", file]);
     git(dir, &["commit", "-q", "-m", file]);
 }
+fn set_old_mtime(file: &Path) {
+    fs::File::options()
+        .write(true)
+        .open(file)
+        .unwrap()
+        .set_modified(std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000))
+        .unwrap();
+}
 fn path(dir: &Path) -> String {
     dir.to_str().unwrap().into()
 }
@@ -157,32 +165,141 @@ fn undeterminable_fields_stay_unknown_instead_of_zero() {
 #[test]
 fn summaries_never_run_repository_helpers_or_write_the_index() {
     let temp = tempfile::tempdir().unwrap();
-    let dir = temp.path().join("repo");
-    repo(&dir, "main");
-    commit(&dir, ".gitattributes", "*.txt diff=evil filter=evil\n");
-    commit(&dir, "a.txt", "a\n");
     let marker = temp.path().join("ran");
     let hook = common::script(
         temp.path(),
         "hook",
         &format!("#!/bin/sh\ntouch {marker:?}\ncat\n"),
     );
-    for (key, value) in [
-        ("filter.evil.clean", hook.as_str()),
-        ("filter.evil.process", hook.as_str()),
-        ("diff.evil.textconv", hook.as_str()),
-        ("diff.evil.command", hook.as_str()),
-        ("diff.external", hook.as_str()),
-        ("core.fsmonitor", hook.as_str()),
+    // The same filter rule from each attributes source Git reads, with a clean or process filter.
+    for (source, filter) in [
+        ("worktree", "clean"),
+        ("info", "clean"),
+        ("global", "clean"),
+        ("info", "process"),
     ] {
-        git(&dir, &["config", key, value]);
+        let dir = temp.path().join(format!("{source}-{filter}"));
+        repo(&dir, "main");
+        commit(&dir, "a.txt", "a\n");
+        commit(&dir, "b.md", "b\n");
+        let rule = "*.txt diff=evil filter=evil\n";
+        match source {
+            "worktree" => commit(&dir, ".gitattributes", rule),
+            "info" => fs::write(dir.join(".git/info/attributes"), rule).unwrap(),
+            _ => {
+                let file = temp.path().join(format!("{source}-{filter}.attributes"));
+                fs::write(&file, rule).unwrap();
+                git(&dir, &["config", "core.attributesFile", &path(&file)]);
+            }
+        }
+        // An old, refreshed timestamp: otherwise Git must re-read the racily clean a.txt, which
+        // needs the filter, and the diff is rightly unknown before a.txt is even touched.
+        set_old_mtime(&dir.join("a.txt"));
+        git(&dir, &["update-index", "-q", "--refresh"]);
+        for (key, value) in [
+            (format!("filter.evil.{filter}"), hook.as_str()),
+            ("diff.evil.textconv".into(), hook.as_str()),
+            ("diff.evil.command".into(), hook.as_str()),
+            ("diff.external".into(), hook.as_str()),
+            ("core.fsmonitor".into(), hook.as_str()),
+        ] {
+            git(&dir, &["config", &key, value]);
+        }
+        fs::write(dir.join("b.md"), "b\nc\n").unwrap();
+        let index = fs::read(dir.join(".git/index")).unwrap();
+        let summary = |dir: &Path| {
+            collect("git", &[path(dir)], &AtomicBool::new(false))[0]
+                .1
+                .clone()
+                .unwrap()
+        };
+        // Files outside the filter still count normally.
+        assert_eq!(summary(&dir).changes, changes(1, 0, 0), "{source} {filter}");
+        // A changed file that needs the filter makes the diff unknown instead of running it.
+        fs::write(dir.join("a.txt"), "a\nb\n").unwrap();
+        let s = summary(&dir);
+        assert_eq!(s.changes, None, "{source} {filter}");
+        assert_eq!(s.head, Head::Branch("main".into()));
+        assert!(
+            !marker.exists(),
+            "{source} {filter}: a repository helper ran"
+        );
+        assert_eq!(fs::read(dir.join(".git/index")).unwrap(), index);
     }
-    fs::write(dir.join("a.txt"), "a\nb\n").unwrap();
-    let index = fs::read(dir.join(".git/index")).unwrap();
+}
+
+#[test]
+fn builtin_attributes_keep_normalised_line_counts_and_binary_marks() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("repo");
+    repo(&dir, "main");
+    commit(
+        &dir,
+        ".gitattributes",
+        "*.txt text eol=crlf\n*.asset binary\n",
+    );
+    commit(&dir, "a.txt", "a\r\nb\r\n");
+    commit(&dir, "b.asset", "x\n");
+    // Committed CRLF content, unchanged: only its timestamp moves.
+    set_old_mtime(&dir.join("a.txt"));
+    fs::write(dir.join("b.asset"), "y\n").unwrap();
     let results = collect("git", &[path(&dir)], &AtomicBool::new(false));
-    assert_eq!(results[0].1.as_ref().unwrap().changes, changes(1, 0, 0));
-    assert!(!marker.exists(), "a repository helper ran");
-    assert_eq!(fs::read(dir.join(".git/index")).unwrap(), index);
+    assert_eq!(results[0].1.as_ref().unwrap().changes, changes(0, 0, 1));
+}
+
+#[test]
+fn git_that_cannot_refuse_lazy_fetch_is_unavailable_and_missing_objects_stay_missing() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().join("repo");
+    repo(&dir, "main");
+    commit(&dir, "a.txt", "a\n");
+    // Stands in for Git older than 2.45, which rejects the option as unknown.
+    let old = common::script(
+        temp.path(),
+        "old-git",
+        "#!/bin/sh\nfor a in \"$@\"; do [ \"$a\" = --no-lazy-fetch ] && { echo \"unknown option: $a\" >&2; exit 129; }; done\nexec git \"$@\"\n",
+    );
+    let results = collect(&old, &[path(&dir)], &AtomicBool::new(false));
+    assert_eq!(results[0].1, None);
+
+    // A partial clone whose HEAD blob is missing; its promisor is a local repo, so a lazy fetch
+    // would succeed without any network, and must not happen.
+    git(&dir, &["config", "uploadpack.allowFilter", "true"]);
+    let clone = temp.path().join("clone");
+    let origin = format!("file://{}", path(&dir));
+    git(
+        temp.path(),
+        &[
+            "clone",
+            "-q",
+            "--filter=blob:none",
+            "--no-checkout",
+            &origin,
+            &path(&clone),
+        ],
+    );
+    git(&clone, &["read-tree", "HEAD"]);
+    fs::write(clone.join("a.txt"), "changed\n").unwrap();
+    let blob = Command::new("git")
+        .args(["--no-lazy-fetch", "rev-parse", "HEAD:a.txt"])
+        .current_dir(&clone)
+        .output()
+        .unwrap();
+    let blob = String::from_utf8(blob.stdout).unwrap();
+    let missing = || {
+        !Command::new("git")
+            .args(["--no-lazy-fetch", "cat-file", "-e", blob.trim()])
+            .current_dir(&clone)
+            .status()
+            .unwrap()
+            .success()
+    };
+    assert!(missing());
+    let results = collect("git", &[path(&clone)], &AtomicBool::new(false));
+    let summary = results[0].1.as_ref().unwrap();
+    assert_eq!(summary.head, Head::Branch("main".into()));
+    assert_eq!(summary.changes, None);
+    assert!(missing(), "the summary fetched a missing object");
 }
 
 #[test]

@@ -1,6 +1,7 @@
-use crate::command::{Output, run_with_env};
+use crate::command::{Output, run_without_env};
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
+    ffi::OsString,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -12,8 +13,6 @@ use std::{
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
-// Never fetch missing objects of a partial clone just to count lines.
-const ENV: &[(&str, &str)] = &[("GIT_NO_LAZY_FETCH", "1")];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Head {
@@ -44,17 +43,44 @@ pub type Batch = Vec<(String, Option<Summary>)>;
 struct Worktree<'a> {
     program: &'a str,
     top: PathBuf,
-    attr_source: String,
     cancel: &'a AtomicBool,
 }
 impl Worktree<'_> {
     fn run(&self, args: &[&str]) -> Option<Output> {
-        git(
-            self.program,
-            &self.top,
-            Some(self.attr_source.as_str()),
-            args,
-            self.cancel,
+        git(self.program, &self.top, args, self.cancel)
+    }
+    // `-c` overrides that blank every configured filter driver, from any config scope, and mark
+    // it required: whichever attributes file assigns it, Git then fails instead of running a
+    // program. Built-in text/eol/binary attributes still apply. `None` if drivers can't be listed.
+    fn blocked_filters(&self) -> Option<Vec<String>> {
+        let output = self.run(&["config", "-z", "--name-only", "--get-regexp", r"^filter\."])?;
+        // Exit 1 means no filter is configured at all.
+        if !output.status.success() && output.status.code() != Some(1) {
+            return None;
+        }
+        let mut drivers = BTreeSet::new();
+        for name in output.stdout.split(|b| *b == 0).filter(|n| !n.is_empty()) {
+            let name = std::str::from_utf8(name).ok()?;
+            let Some((driver, _)) = name
+                .strip_prefix("filter.")
+                .and_then(|n| n.rsplit_once('.'))
+            else {
+                continue;
+            };
+            // `-c name=value` splits at the first '=', so such a driver cannot be overridden.
+            if driver.contains('=') {
+                return None;
+            }
+            drivers.insert(driver.to_owned());
+        }
+        Some(
+            drivers
+                .into_iter()
+                .flat_map(|driver| {
+                    ["clean=", "smudge=", "process=", "required=true"]
+                        .map(|key| format!("filter.{driver}.{key}"))
+                })
+                .collect(),
         )
     }
     fn text(&self, args: &[&str]) -> Option<String> {
@@ -93,16 +119,23 @@ impl Worktree<'_> {
             let count = self.text(&["rev-list", "--count", &format!("{rev}..HEAD")])?;
             Some((count.parse().ok()?, name))
         });
+        // A changed file that needs a blocked filter fails the diff, so the counts stay unknown.
         let changes = self
-            .run(&[
-                "diff-index",
-                "--numstat",
-                "-z",
-                "--no-ext-diff",
-                "--no-textconv",
-                "HEAD",
-                "--",
-            ])
+            .blocked_filters()
+            .and_then(|overrides| {
+                let mut args: Vec<&str> =
+                    overrides.iter().flat_map(|o| ["-c", o.as_str()]).collect();
+                args.extend([
+                    "diff-index",
+                    "--numstat",
+                    "-z",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "HEAD",
+                    "--",
+                ]);
+                self.run(&args)
+            })
             .filter(|o| o.status.success())
             .map(|o| {
                 let mut changes = Changes {
@@ -137,19 +170,23 @@ impl Worktree<'_> {
     }
 }
 
-// Every call skips optional index writes and fsmonitor hooks; once the object format is known,
-// attributes come from the empty tree so no diff driver, textconv or filter from the repo runs.
-fn git(
-    program: &str,
-    dir: &Path,
-    attr_source: Option<&str>,
-    args: &[&str],
-    cancel: &AtomicBool,
-) -> Option<Output> {
-    let mut full = vec!["--no-optional-locks", "-c", "core.fsmonitor=false"];
-    full.extend(attr_source);
+// Every call refuses lazy fetches of missing objects (Git 2.45+; older Git rejects the option,
+// so the directory shows as unavailable), skips optional index writes and fsmonitor hooks, and
+// inherits no GIT_* variable, which could redirect the repository, index or objects, inject
+// config, or write traces.
+fn git(program: &str, dir: &Path, args: &[&str], cancel: &AtomicBool) -> Option<Output> {
+    let mut full = vec![
+        "--no-lazy-fetch",
+        "--no-optional-locks",
+        "-c",
+        "core.fsmonitor=false",
+    ];
     full.extend(args);
-    run_with_env(program, &full, Some(dir), ENV, TIMEOUT, cancel).ok()
+    let inherited: Vec<OsString> = std::env::vars_os()
+        .map(|(name, _)| name)
+        .filter(|name| name.as_encoded_bytes().starts_with(b"GIT_"))
+        .collect();
+    run_without_env(program, &full, Some(dir), &inherited, TIMEOUT, cancel).ok()
 }
 
 /// Summaries for each cwd; directories in the same worktree share one query per call.
@@ -159,14 +196,13 @@ pub fn collect(program: &str, cwds: &[String], cancel: &AtomicBool) -> Batch {
     let batch = cwds
         .iter()
         .map(|cwd| {
-            let summary = locate(program, cwd, cancel).map(|(top, attr_source)| {
+            let summary = locate(program, cwd, cancel).map(|top| {
                 shared
                     .entry(top.clone())
                     .or_insert_with(|| {
                         Worktree {
                             program,
                             top,
-                            attr_source,
                             cancel,
                         }
                         .summary()
@@ -183,27 +219,19 @@ pub fn collect(program: &str, cwds: &[String], cancel: &AtomicBool) -> Batch {
     }
 }
 
-fn locate(program: &str, cwd: &str, cancel: &AtomicBool) -> Option<(PathBuf, String)> {
+fn locate(program: &str, cwd: &str, cancel: &AtomicBool) -> Option<PathBuf> {
     if !Path::new(cwd).is_absolute() {
         return None;
     }
     let output = git(
         program,
         Path::new(cwd),
-        None,
-        &["rev-parse", "--show-toplevel", "--show-object-format"],
+        &["rev-parse", "--show-toplevel"],
         cancel,
     )
     .filter(|o| o.status.success())?;
     let text = String::from_utf8(output.stdout).ok()?;
-    let mut lines = text.lines();
-    let top = lines.next()?.into();
-    let empty_tree = match lines.next()? {
-        "sha1" => "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
-        "sha256" => "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321",
-        _ => return None,
-    };
-    Some((top, format!("--attr-source={empty_tree}")))
+    Some(text.trim_end_matches('\n').into())
 }
 
 /// Re-reads the watched directories in the background every `every`, and at once when they change.
