@@ -97,3 +97,152 @@ esac
             .contains("criteria not met")
     );
 }
+
+#[test]
+fn pending_edit_and_move_check_public_data_and_pass_literal_arguments() {
+    use saddle::drover::Operation;
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let client = Client {
+        program: common::script(temp.path(), "drover", include_str!("fixtures/drover.py")),
+        cwd: temp.path().into(),
+    };
+    let cancel = AtomicBool::new(false);
+    client
+        .execute(
+            &Operation::Add {
+                title: "Second".into(),
+                body: "Body".into(),
+            },
+            &cancel,
+        )
+        .unwrap();
+    let op = Operation::Edit {
+        pending: client.snapshot().unwrap().pending,
+        index: 1,
+        title: "中文 $(touch bad) 'quoted'".into(),
+        body: "first\nsecond `touch bad`".into(),
+    };
+    std::fs::write(temp.path().join("queue-events"), "").unwrap();
+    client.execute(&op, &cancel).unwrap();
+    let events: Vec<serde_json::Value> = std::fs::read_to_string(temp.path().join("queue-events"))
+        .unwrap()
+        .lines()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+    assert_eq!(
+        events,
+        [
+            serde_json::json!(["list", "--json"]),
+            serde_json::json!([
+                "edit",
+                "2",
+                "中文 $(touch bad) 'quoted'",
+                "first\nsecond `touch bad`"
+            ])
+        ]
+    );
+    let state = client.snapshot().unwrap();
+    assert_eq!(state.pending[1].title, "中文 $(touch bad) 'quoted'");
+    assert_eq!(state.pending[1].body, "first\nsecond `touch bad`");
+    assert!(!temp.path().join("bad").exists());
+    client
+        .execute(
+            &Operation::Move {
+                pending: state.pending,
+                index: 1,
+                to: 0,
+            },
+            &cancel,
+        )
+        .unwrap();
+    let state = client.snapshot().unwrap();
+    assert_eq!(state.pending[0].id.as_deref(), Some("T2"));
+    assert_eq!(state.pending[1].id.as_deref(), Some("T1"));
+    std::fs::write(
+        temp.path().join("write-error"),
+        "queue locked: actual error",
+    )
+    .unwrap();
+    let error = client
+        .execute(
+            &Operation::Edit {
+                pending: state.pending,
+                index: 0,
+                title: "failed".into(),
+                body: "".into(),
+            },
+            &cancel,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("queue locked: actual error"));
+    assert_eq!(
+        client.snapshot().unwrap().pending[0].title,
+        "中文 $(touch bad) 'quoted'"
+    );
+}
+
+#[test]
+fn stale_pending_content_order_or_state_never_sends_a_write() {
+    use saddle::drover::Operation;
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let client = Client {
+        program: common::script(temp.path(), "drover", include_str!("fixtures/drover.py")),
+        cwd: temp.path().into(),
+    };
+    let state = serde_json::json!({"mode":{}, "paused":false, "current":null, "awaiting":null, "history":[], "pending":[
+        {"id":null,"title":"First","body":"Original"}, {"id":"T2","title":"Second","body":"Other"}
+    ]});
+    let state_path = temp.path().join("queue-state.json");
+    std::fs::write(&state_path, state.to_string()).unwrap();
+    let pending = client.snapshot().unwrap().pending;
+    let edit = Operation::Edit {
+        pending: pending.clone(),
+        index: 0,
+        title: "Draft".into(),
+        body: "Draft body".into(),
+    };
+    let movement = Operation::Move {
+        pending,
+        index: 1,
+        to: 0,
+    };
+    let cancel = AtomicBool::new(false);
+    std::fs::write(temp.path().join("queue-events"), "").unwrap();
+
+    let mut changed = state.clone();
+    changed["pending"][0]["body"] = "External edit".into();
+    std::fs::write(&state_path, changed.to_string()).unwrap();
+    assert!(
+        client
+            .execute(&edit, &cancel)
+            .unwrap_err()
+            .to_string()
+            .contains("Pending tasks changed")
+    );
+    changed = state.clone();
+    changed["pending"].as_array_mut().unwrap().swap(0, 1);
+    std::fs::write(&state_path, changed.to_string()).unwrap();
+    assert!(
+        client
+            .execute(&movement, &cancel)
+            .unwrap_err()
+            .to_string()
+            .contains("Pending tasks changed")
+    );
+    changed = state;
+    changed["current"] = changed["pending"].as_array_mut().unwrap().remove(0);
+    std::fs::write(&state_path, changed.to_string()).unwrap();
+    assert!(
+        client
+            .execute(&edit, &cancel)
+            .unwrap_err()
+            .to_string()
+            .contains("Pending tasks changed")
+    );
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("queue-events")).unwrap(),
+        "[\"list\", \"--json\"]\n".repeat(3)
+    );
+}

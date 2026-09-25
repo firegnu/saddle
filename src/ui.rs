@@ -151,8 +151,17 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     };
     if queue_modal {
         match &view.queue.page {
-            crate::queue::Page::Add { body_focus, .. } => {
-                target = format!("Add · {}", if *body_focus { "Body" } else { "Title" });
+            crate::queue::Page::Add { body_focus, .. }
+            | crate::queue::Page::Edit { body_focus, .. } => {
+                target = format!(
+                    "{} · {}",
+                    if matches!(view.queue.page, crate::queue::Page::Edit { .. }) {
+                        "Edit"
+                    } else {
+                        "Add"
+                    },
+                    if *body_focus { "Body" } else { "Title" }
+                );
                 help = " Tab Switch  Ctrl-S Save  Esc Cancel";
             }
             crate::queue::Page::Projects => {

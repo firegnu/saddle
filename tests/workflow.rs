@@ -28,6 +28,14 @@ impl Harness {
         Self::start_with_config(queue_script, registered, "")
     }
     fn start_with_config(queue_script: &str, registered: bool, extra: &str) -> Self {
+        Self::start_with_read_chunk(queue_script, registered, extra, 16384)
+    }
+    fn start_with_read_chunk(
+        queue_script: &str,
+        registered: bool,
+        extra: &str,
+        read_chunk: usize,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         std::fs::create_dir_all(home.join(".drover")).unwrap();
@@ -80,7 +88,7 @@ impl Harness {
         let writer = pair.master.take_writer().unwrap();
         let (sender, output) = mpsc::channel();
         thread::spawn(move || {
-            let mut bytes = [0; 16384];
+            let mut bytes = vec![0; read_chunk];
             while let Ok(n) = reader.read(&mut bytes) {
                 if n == 0 {
                     break;
@@ -452,6 +460,69 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("next request accepted");
     h.quit();
     assert!(!h.log("queue-events").contains("board"));
+    assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
+fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
+    // PTY reads may split a redraw while the old form's text is still on screen.
+    let mut h = Harness::start_with_read_chunk(include_str!("fixtures/drover.py"), false, "", 64);
+    h.see("Native queue task");
+    h.send(b"\ta");
+    h.see("Add task");
+    h.send(b"Second\tBody\x13");
+    h.until(|h| !h.screen.screen().contents().contains("Add task"));
+    h.see("Second");
+    // The form title can disappear before its fields. Wait for the actual list row.
+    h.see("T2 Second");
+    h.send(b"j");
+    h.see("▎T2 Second");
+    h.click("Edit e");
+    h.see("Edit task");
+    h.see("Second");
+    h.send(b" q\t\rExtra");
+    h.see("Extra");
+    h.send(b"\x1d");
+    h.see("Click Queue to resume");
+    h.send(b"\t");
+    h.see("Edit task");
+    h.see("Extra");
+    std::fs::write(h.dir.path().join("write-error"), "synthetic write refused").unwrap();
+    h.click("Save ^s");
+    h.see("synthetic write refused");
+    h.see("Second q");
+    std::fs::remove_file(h.dir.path().join("write-error")).unwrap();
+    h.click("Save ^s");
+    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
+    h.see("Second q");
+    h.see("▎T2 Second q");
+    h.click("Move up u");
+    h.until(|h| h.log("queue-events").contains("[\"move\", \"2\", \"1\"]"));
+    // Wait for the refreshed task order before issuing the opposite movement.
+    h.until(|h| {
+        let text = h.screen.screen().contents();
+        text.find("Second q")
+            .zip(text.find("Native queue task"))
+            .is_some_and(|(a, b)| a < b)
+    });
+    h.click("Move down d");
+    h.until(|h| h.log("queue-events").contains("[\"move\", \"1\", \"2\"]"));
+    h.until(|h| {
+        let text = h.screen.screen().contents();
+        text.find("Second q")
+            .zip(text.find("Native queue task"))
+            .is_some_and(|(a, b)| a > b)
+    });
+    h.click("Edit e");
+    h.see("Second q");
+    h.see("Extra");
+    h.click("Cancel Esc");
+    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
+    h.quit();
+    assert!(
+        h.log("queue-events")
+            .contains("[\"edit\", \"2\", \"Second q\", \"Body\\nExtra\"]")
+    );
     assert!(!h.log("events").contains("attach "));
 }
 

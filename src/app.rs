@@ -363,7 +363,9 @@ impl App {
                         if key.code == KeyCode::Char('q')
                             && !matches!(
                                 self.queue.page,
-                                queue::Page::Add { .. } | queue::Page::Project(_)
+                                queue::Page::Add { .. }
+                                    | queue::Page::Edit { .. }
+                                    | queue::Page::Project(_)
                             )
                         {
                             self.queue.page = queue::Page::List;

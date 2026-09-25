@@ -21,7 +21,7 @@ pub fn registered_projects(path: &std::path::Path) -> Result<Vec<String>> {
     Ok(projects)
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Task {
     pub id: Option<String>,
@@ -79,26 +79,70 @@ pub enum Operation {
     Next,
     Pause(bool),
     Loop(bool),
-    Add { title: String, body: String },
+    Add {
+        title: String,
+        body: String,
+    },
+    Edit {
+        pending: Vec<Task>,
+        index: usize,
+        title: String,
+        body: String,
+    },
+    Move {
+        pending: Vec<Task>,
+        index: usize,
+        to: usize,
+    },
 }
 impl Operation {
-    pub fn args(&self) -> Vec<&str> {
+    pub fn args(&self) -> Vec<String> {
         match self {
-            Self::Go => vec!["go"],
-            Self::Next => vec!["next"],
-            Self::Pause(true) => vec!["pause"],
-            Self::Pause(false) => vec!["resume"],
-            Self::Loop(true) => vec!["loop", "on"],
-            Self::Loop(false) => vec!["loop", "off"],
-            Self::Add { title, body } => vec!["add", title, body],
+            Self::Go => vec!["go".into()],
+            Self::Next => vec!["next".into()],
+            Self::Pause(true) => vec!["pause".into()],
+            Self::Pause(false) => vec!["resume".into()],
+            Self::Loop(true) => vec!["loop".into(), "on".into()],
+            Self::Loop(false) => vec!["loop".into(), "off".into()],
+            Self::Add { title, body } => vec!["add".into(), title.clone(), body.clone()],
+            Self::Edit {
+                index, title, body, ..
+            } => {
+                vec![
+                    "edit".into(),
+                    (index + 1).to_string(),
+                    title.clone(),
+                    body.clone(),
+                ]
+            }
+            Self::Move { index, to, .. } => {
+                vec!["move".into(), (index + 1).to_string(), (to + 1).to_string()]
+            }
         }
     }
 }
 impl Client {
     pub fn execute(&self, operation: &Operation, cancel: &AtomicBool) -> Result<String> {
+        if let Operation::Edit { pending, index, .. } | Operation::Move { pending, index, .. } =
+            operation
+        {
+            let fresh = self.read(cancel)?;
+            if *index >= pending.len()
+                || !fresh
+                    .pending
+                    .iter()
+                    .map(|t| (&t.id, &t.title, &t.body))
+                    .eq(pending.iter().map(|t| (&t.id, &t.title, &t.body)))
+            {
+                bail!(
+                    "Pending tasks changed; action not sent. Reopen Edit or retry Move using the refreshed queue."
+                );
+            }
+        }
+        let args = operation.args();
         let output = crate::command::run(
             &self.program,
-            &operation.args(),
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
             Some(&self.cwd),
             Duration::from_secs(120),
             cancel,
