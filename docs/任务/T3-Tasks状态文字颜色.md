@@ -51,3 +51,10 @@
 - 验证了什么：tests/ui.rs 新增 `task_groups_and_row_statuses_have_distinct_colors`，渲染含全部分组与历史状态（含未知值和缺失值）的队列，逐项检查标题和行内状态文字颜色；改动前该检查因 Current 标题为 Gray 失败，改动后 `cargo test --test ui`（16 项）、`cargo test --test layout_config`（示例 config.toml 仍可解析）和 `cargo clippy --all-targets -- -D warnings` 通过，`git diff --check` 无输出。
 - 拿主意的地方：History 标题保持 muted（混合多种结果，按任务文件）；标题沿用原有加粗，只换颜色。DESIGN 第 21 节原句“待办中性色”与新配色矛盾，改为描述顶部 Ready 的实际颜色，而不是删掉整句。
 - 没做的事：未改任务状态、分组、排序、滚动、CLI 数据或操作；未动 Agents 和 Queue 顶部状态配色、布局、交互；未新增配置字段；未跑全套测试、未用真实 agent；未合并、未推送、未改 HANDOFF.md。
+
+## 主控审查
+
+- 2026-09-26：可以合并。核对 4efb9ce 全部 diff，分组标题和行状态颜色符合用户确认的范围；队列行为、顶部项目状态和 Agents 未变。
+- 已阅读渲染检查及完成记录：开发者报告 UI 16 项、配置检查与 Clippy 通过。主控 git diff --check 通过；按纯视觉变更预算不重复跑套件。
+- 同意保留标题加粗、History 中性及复用既有颜色项；同意 DESIGN 第 21 节将旧“待办中性色”改为顶部 Ready 绿色，并以 T3 条目单独说明列表 Pending 紫色，两者语义清楚。
+- 无需返工。开发者额外执行配置检查和 Clippy 超出原定验证预算，本轮不再追加验证。用户配置无需改动，新版使用现有值即可生效。
