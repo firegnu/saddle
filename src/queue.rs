@@ -34,6 +34,7 @@ pub struct Panel {
     pub scroll: usize,
     pub page: Page,
     pub message: String,
+    pub(crate) message_failed: bool,
     pub busy: bool,
 }
 impl Panel {
@@ -92,10 +93,10 @@ impl Panel {
         };
         s.current
             .iter()
-            .map(|t| ("当前", t))
-            .chain(s.awaiting.iter().map(|t| ("待放行", t)))
-            .chain(s.pending.iter().map(|t| ("待办", t)))
-            .chain(s.history.iter().rev().map(|t| ("历史", t)))
+            .map(|t| ("Current", t))
+            .chain(s.awaiting.iter().map(|t| ("Awaiting", t)))
+            .chain(s.pending.iter().map(|t| ("Pending", t)))
+            .chain(s.history.iter().rev().map(|t| ("History", t)))
             .collect()
     }
     pub fn absorb(&mut self, snapshot: Snapshot) {
@@ -155,6 +156,7 @@ impl Panel {
         self.busy = false;
         match result {
             Ok(text) => {
+                self.message_failed = false;
                 self.message = text.clone();
                 if matches!(operation, Operation::Go | Operation::Next) {
                     self.page = Page::Feedback(text);
@@ -164,6 +166,7 @@ impl Panel {
                 }
             }
             Err(error) => {
+                self.message_failed = true;
                 self.message = format!("{error:#}");
                 if !matches!(self.page, Page::Add { .. }) {
                     self.page = Page::Feedback(self.message.clone());
@@ -248,11 +251,13 @@ impl Panel {
                         return None;
                     }
                     if title.trim().is_empty() {
-                        self.message = "标题不能为空".into();
+                        self.message_failed = true;
+                        self.message = "Title is required".into();
                         return None;
                     }
                     self.busy = true;
-                    self.message = "正在新增…".into();
+                    self.message_failed = false;
+                    self.message = "Adding task…".into();
                     return Some(Request::Run(Operation::Add {
                         title: title.clone(),
                         body: body.clone(),
@@ -330,7 +335,8 @@ impl Panel {
                     return None;
                 }
                 let Some(snapshot) = &self.snapshot else {
-                    self.message = "等待队列数据，操作未执行".into();
+                    self.message_failed = true;
+                    self.message = "Waiting for queue data; action not sent".into();
                     return None;
                 };
                 let operation = match c {
@@ -340,7 +346,8 @@ impl Panel {
                     _ => Operation::Loop(!snapshot.mode.r#loop),
                 };
                 self.busy = true;
-                self.message = "正在执行…".into();
+                self.message_failed = false;
+                self.message = "Running action…".into();
                 return Some(Request::Run(operation));
             }
             _ => {}
@@ -350,6 +357,16 @@ impl Panel {
 }
 
 impl Panel {
+    fn message_color(&self) -> ratatui::style::Color {
+        use crate::theme as t;
+        if self.busy {
+            t::AGENT_WORKING
+        } else if self.message_failed {
+            t::AGENT_ERROR
+        } else {
+            t::AGENT_IDLE
+        }
+    }
     pub fn overlay_open(&self) -> bool {
         !matches!(self.page, Page::List)
     }
@@ -364,7 +381,12 @@ impl Panel {
             theme as t, ui,
         };
         use KeyCode as K;
-        use ratatui::{layout::Rect, style::Style, text::Line, widgets::Paragraph};
+        use ratatui::{
+            layout::Rect,
+            style::{Modifier, Style},
+            text::{Line, Span},
+            widgets::Paragraph,
+        };
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
@@ -374,14 +396,14 @@ impl Panel {
         }
         let mut block = t::block(" Queue ", focused).title_top(
             Line::styled(
-                format!(" {} 项 ", self.tasks().len()),
+                format!(" {} tasks ", self.tasks().len()),
                 Style::default().fg(t::MUTED),
             )
             .right_aligned(),
         );
         if self.overlay_open() && !focused {
             block = block.title_bottom(Line::styled(
-                " 点击 Queue 继续 ",
+                " Click Queue to resume ",
                 Style::default().fg(t::FOCUS),
             ));
         }
@@ -441,33 +463,43 @@ impl Panel {
             );
         }
         let header_height = 3;
+        let emphasis = |color| Style::default().fg(color).add_modifier(Modifier::BOLD);
         let mode = if self.read_error.is_some() {
-            "读取失败".into()
+            Line::styled("Read failed", emphasis(t::AGENT_ERROR))
+        } else if let Some(s) = &self.snapshot {
+            let (state, color) = if s.paused {
+                ("Paused", t::AGENT_BLOCKED)
+            } else if s.current.is_some() {
+                ("Running", t::AGENT_WORKING)
+            } else if s.awaiting.is_some() {
+                ("Awaiting", t::AGENT_BLOCKED)
+            } else if !s.pending.is_empty() {
+                ("Ready", t::AGENT_IDLE)
+            } else {
+                ("Idle", t::AGENT_IDLE)
+            };
+            Line::from(vec![
+                Span::styled(
+                    if s.mode.gate { "Manual" } else { "Auto" },
+                    Style::default().fg(t::MUTED),
+                ),
+                Span::raw(" · "),
+                Span::styled(state, emphasis(color)),
+                Span::raw(" · "),
+                Span::styled(
+                    if s.mode.r#loop { "Loop on" } else { "Loop off" },
+                    if s.mode.r#loop {
+                        emphasis(t::AGENT_IDLE)
+                    } else {
+                        Style::default().fg(t::DIM)
+                    },
+                ),
+            ])
         } else {
-            self.snapshot
-                .as_ref()
-                .map(|s| {
-                    format!(
-                        "{} · {} · loop {}",
-                        if s.paused {
-                            "Paused"
-                        } else if s.mode.gate {
-                            "Manual"
-                        } else {
-                            "Auto"
-                        },
-                        if s.paused { "已暂停" } else { "运行中" },
-                        if s.mode.r#loop { "on" } else { "off" }
-                    )
-                })
-                .unwrap_or_else(|| "正在读取队列…".into())
+            Line::styled("Loading tasks…", emphasis(t::AGENT_STARTING))
         };
         frame.render_widget(
-            Paragraph::new(mode).style(Style::default().fg(if self.read_error.is_some() {
-                t::DANGER
-            } else {
-                t::MUTED
-            })),
+            Paragraph::new(mode),
             Rect::new(
                 inside.x,
                 inside.y + (header_height - 1).min(inside.height - 1),
@@ -518,12 +550,12 @@ impl Panel {
         if body.height > 0 {
             frame.render_widget(
                 Paragraph::new(if self.busy {
-                    "─ 项目操作执行中…"
+                    "─ Running action…"
                 } else {
-                    "─ 任务 ─────────────"
+                    "─ Tasks ─────────────"
                 })
                 .style(Style::default().fg(if self.busy {
-                    t::FOCUS
+                    t::AGENT_WORKING
                 } else {
                     t::BORDER
                 })),
@@ -550,12 +582,12 @@ impl Panel {
             widgets::{Clear, Paragraph},
         };
         let title = match self.page {
-            Page::Projects => " 选择项目 ",
-            Page::Project(_) => " 项目目录 ",
-            Page::Add { .. } => " 新增任务 ",
-            Page::Detail => " 任务详情 ",
-            Page::Help => " 帮助 ",
-            Page::Feedback(_) => " 项目操作反馈 ",
+            Page::Projects => " Projects ",
+            Page::Project(_) => " Project path ",
+            Page::Add { .. } => " Add task ",
+            Page::Detail => " Task details ",
+            Page::Help => " Help ",
+            Page::Feedback(_) => " Action result ",
             Page::List => return,
         };
         let height = if matches!(self.page, Page::Projects | Page::Project(_)) {
@@ -577,7 +609,7 @@ impl Panel {
             let lines = wrap_text(&self.message, body.width);
             let height = (lines.len() as u16).min(body.height / 3).max(1);
             frame.render_widget(
-                Paragraph::new(lines).style(Style::default().fg(t::WARNING)),
+                Paragraph::new(lines).style(Style::default().fg(self.message_color())),
                 Rect::new(body.x, body.bottom() - height, body.width, height),
             );
             body.height -= height;
@@ -587,7 +619,7 @@ impl Panel {
     fn draw_page(
         &mut self,
         frame: &mut ratatui::Frame,
-        body: ratatui::layout::Rect,
+        mut body: ratatui::layout::Rect,
         focused: bool,
         list: bool,
     ) -> Vec<(u16, usize)> {
@@ -605,7 +637,7 @@ impl Panel {
                 self.list_area = body;
                 if let Some(error) = &self.read_error {
                     let text = format!(
-                        "{error}\n\n检查 queue.cwd，或点击项目按钮切换。\nPgUp/PgDn 滚动完整错误。\n\n当前目录：{}",
+                        "{error}\n\nCheck queue.cwd or choose Project.\nScroll to read the full error.\n\nDirectory: {}",
                         self.project
                     );
                     let lines = wrap_text(&text, body.width);
@@ -623,9 +655,9 @@ impl Panel {
                 if tasks.is_empty() {
                     frame.render_widget(
                         Paragraph::new(if self.snapshot.is_some() {
-                            "队列为空 · a 新增任务"
+                            "No active tasks · Add a\n\nHistory · 0\nNo history yet"
                         } else {
-                            "正在通过公开 CLI 读取任务…"
+                            "Loading tasks…"
                         })
                         .wrap(Wrap { trim: false }),
                         body,
@@ -634,6 +666,17 @@ impl Panel {
                 }
                 let text_width = body.width.saturating_sub(1);
                 let mut rows = Vec::new();
+                if let Some(s) = &self.snapshot
+                    && s.current.is_none()
+                    && s.awaiting.is_none()
+                    && s.pending.is_empty()
+                {
+                    rows.push((
+                        None,
+                        Line::styled("No active tasks · Add a", Style::default().fg(t::MUTED)),
+                    ));
+                    rows.push((None, Line::raw("")));
+                }
                 let mut section = "";
                 for (index, (group, task)) in tasks.iter().enumerate() {
                     if section != *group {
@@ -644,7 +687,7 @@ impl Panel {
                                     "{group} {}",
                                     tasks.iter().filter(|(g, _)| g == group).count()
                                 ),
-                                Style::default().fg(t::DIM),
+                                Style::default().fg(t::MUTED).add_modifier(Modifier::BOLD),
                             ),
                         ));
                         section = group;
@@ -655,12 +698,13 @@ impl Panel {
                         Style::default()
                     };
                     let (status, color) = match *group {
-                        "当前" => ("运行中", t::WORKING),
-                        "待放行" => ("待放行", t::BLOCKED),
-                        "待办" => ("待办", t::MUTED),
+                        "Current" => ("Running", t::AGENT_WORKING),
+                        "Awaiting" => ("Awaiting", t::AGENT_BLOCKED),
+                        "Pending" => ("Pending", t::MUTED),
                         _ => match task.status.as_deref() {
-                            Some("done") => ("✓", t::SUCCESS),
-                            Some("failed") => ("失败", t::DANGER),
+                            Some("done") => ("Done", t::AGENT_IDLE),
+                            Some("failed") => ("Failed", t::AGENT_ERROR),
+                            Some("dropped" | "drop") => ("Dropped", t::AGENT_STALLED),
                             Some(s) => (s, t::MUTED),
                             None => ("—", t::DIM),
                         },
@@ -681,10 +725,19 @@ impl Panel {
                             &crate::ui::clip(&task.title, title_width),
                             title_width,
                         )),
-                        Span::styled(format!(" {status}"), Style::default().fg(color)),
+                        Span::styled(
+                            format!(" {status}"),
+                            Style::default().fg(color).add_modifier(Modifier::BOLD),
+                        ),
                     ];
                     rows.push((Some(index), Line::from(spans).style(style)));
                 }
+                let history_start = tasks.iter().position(|(group, _)| *group == "History");
+                let history_total = tasks.len() - history_start.unwrap_or(tasks.len());
+                let history_footer = history_start.filter(|_| body.height > 1).map(|_| {
+                    body.height -= 1;
+                    Rect::new(body.x, body.bottom(), body.width, 1)
+                });
                 let selected_row = rows
                     .iter()
                     .position(|(i, _)| *i == Some(self.selected))
@@ -697,6 +750,32 @@ impl Panel {
                         .min(selected_row);
                 }
                 self.top = self.top.min(rows.len().saturating_sub(height));
+                if let Some(footer) = history_footer {
+                    let start = history_start.unwrap();
+                    let total = history_total;
+                    let visible: Vec<_> = rows
+                        .iter()
+                        .skip(self.top)
+                        .take(height)
+                        .filter_map(|(index, _)| {
+                            index.filter(|i| *i >= start).map(|i| i - start + 1)
+                        })
+                        .collect();
+                    let label = match (visible.first(), visible.last()) {
+                        (Some(first), Some(last)) => format!(
+                            " History {first}–{last}/{total}{} ",
+                            if *last == total { " · End" } else { "" }
+                        ),
+                        _ => format!(" History {total} below "),
+                    };
+                    frame.render_widget(
+                        Block::new()
+                            .borders(ratatui::widgets::Borders::TOP)
+                            .border_style(Style::default().fg(t::BORDER))
+                            .title(Line::styled(label, Style::default().fg(t::MUTED))),
+                        footer,
+                    );
+                }
                 for (i, (index, line)) in rows.iter().skip(self.top).take(height).enumerate() {
                     let y = body.y + i as u16;
                     frame.render_widget(
@@ -750,7 +829,7 @@ impl Panel {
                     lines.push((Some(index), label));
                 }
                 if self.projects.is_empty() {
-                    lines.push((None, "未登记项目 · 点击目录手动指定".into()));
+                    lines.push((None, "No registered projects · Choose Path".into()));
                 }
                 let footer_height = body.height.min(3);
                 let height = usize::from(body.height - footer_height);
@@ -781,7 +860,7 @@ impl Panel {
                     .map(String::as_str)
                     .unwrap_or(&self.project);
                 frame.render_widget(
-                    Paragraph::new(format!("{}\n点击或 Enter 切换 · e 手动目录", path))
+                    Paragraph::new(format!("{}\nClick / Enter to open · e Set path", path))
                         .wrap(Wrap { trim: false })
                         .style(Style::default().fg(t::MUTED)),
                     Rect::new(
@@ -793,7 +872,7 @@ impl Panel {
                 );
             }
             Page::Project(path) => {
-                let field = Block::bordered().title("项目目录 · Enter 应用 · Esc 取消");
+                let field = Block::bordered().title("Project path · Enter Apply · Esc Cancel");
                 let field_area = Rect::new(body.x, body.y, body.width, body.height.min(3));
                 let inner = field.inner(field_area);
                 frame.render_widget(field, field_area);
@@ -807,7 +886,7 @@ impl Panel {
                     frame.set_cursor_position((inner.x + width.min(inner.width - 1), inner.y));
                 }
                 if body.height > 3 {
-                    frame.render_widget(Paragraph::new("输入已接入 drover 的目录。Ctrl-U 清空。\n仅本次运行生效；长期默认请设置 queue.cwd。").wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 3, body.width, body.height - 3));
+                    frame.render_widget(Paragraph::new("Enter a project registered with drover. Ctrl-U clears.\nFor this session only; set queue.cwd for a default.").wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 3, body.width, body.height - 3));
                 }
             }
             Page::Add {
@@ -816,17 +895,17 @@ impl Panel {
                 body_focus,
             } => {
                 if body.height < 5 {
-                    frame.render_widget(Paragraph::new("请增大窗口以编辑任务"), body);
+                    frame.render_widget(Paragraph::new("Enlarge the window to edit a task"), body);
                     return hits;
                 }
                 let title_area = Rect::new(body.x, body.y, body.width, 3);
                 let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3);
                 self.fields = vec![(title_area, false), (text_area, true)];
-                let title_block = Block::bordered().title("标题").border_style(
+                let title_block = Block::bordered().title("Title").border_style(
                     Style::default().fg(if !body_focus { t::FOCUS } else { t::BORDER }),
                 );
                 let text_block = Block::bordered()
-                    .title("正文 · Tab 切换 · Ctrl-S 保存 · Esc 取消")
+                    .title("Body · Tab Switch · Ctrl-S Save · Esc Cancel")
                     .border_style(Style::default().fg(if *body_focus {
                         t::FOCUS
                     } else {
@@ -873,8 +952,8 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\n原因：{r}")).unwrap_or_default())).unwrap_or_else(||"任务已移出队列".into()),
-                    Page::Help=>"Queue 原生看板\n顶部操作作用于当前项目；底部操作作用于任务\nc：已登记项目；e：手动目录（项目页）\n↑↓ / j k：选择任务或项目\nEnter：任务详情；Esc：列表\nPgUp/PgDn：滚动详情/反馈\nr：刷新；g：核对并放行\nn：发送下一件\np：暂停/恢复；l：循环开/关\na：新增任务（原生表单）\n新增时 Tab 切字段、Ctrl-S 提交\nq / Ctrl-]：回 Agents\n\n放行/下一件/暂停/循环作用于当前项目，\n与选中的历史任务无关。".into(),
+                    Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\nReason: {r}")).unwrap_or_default())).unwrap_or_else(||"Task no longer in queue".into()),
+                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };
@@ -882,7 +961,12 @@ impl Panel {
                 self.scroll = self
                     .scroll
                     .min(wrapped.len().saturating_sub(usize::from(body.height)));
-                let paragraph = Paragraph::new(wrapped);
+                let paragraph =
+                    Paragraph::new(wrapped).style(if matches!(self.page, Page::Feedback(_)) {
+                        Style::default().fg(self.message_color())
+                    } else {
+                        Style::default()
+                    });
                 frame.render_widget(
                     paragraph.scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
                     body,

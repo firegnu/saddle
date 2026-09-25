@@ -8,7 +8,7 @@ pub fn registered_projects(path: &std::path::Path) -> Result<Vec<String>> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error).with_context(|| format!("读取 {}", path.display())),
+        Err(error) => return Err(error).with_context(|| format!("Read {}", path.display())),
     };
     let mut projects = Vec::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
@@ -118,11 +118,7 @@ impl Client {
                 text
             );
         }
-        Ok(if text.is_empty() {
-            "完成".into()
-        } else {
-            text
-        })
+        Ok(if text.is_empty() { "Done".into() } else { text })
     }
 }
 

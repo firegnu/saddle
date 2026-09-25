@@ -303,10 +303,10 @@ fn failed_queue_data_request_keeps_actionable_error_visible() {
     let mut h = Harness::start_with_queue(
         "#!/bin/sh\necho 'QUEUE FAILED: /tmp/a-long-project-directory/another-long-directory/.drover.conf missing project'\nexit 2\n",
     );
-    h.see("读取失败");
+    h.see("Read failed");
     h.see("missing"); // The full error wraps across rows in a narrow pane.
-    h.see("检查 queue.cwd");
-    assert!(!h.screen.screen().contents().contains("正在读取队列"));
+    h.see("Check queue.cwd");
+    assert!(!h.screen.screen().contents().contains("Loading tasks"));
     h.quit();
 }
 
@@ -321,7 +321,7 @@ fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repositor
     std::fs::create_dir(&project).unwrap();
     h.see("missing project");
     h.send(b"\tce");
-    h.see("项目目录");
+    h.see("Project path");
     h.send(b"\x15"); // Ctrl-U replaces the initial directory.
     h.send(format!("\x1b[200~{}\x1b[201~", project.display()).as_bytes());
     h.send(b"\r");
@@ -345,7 +345,7 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
     let mut h = Harness::start_with_projects(&script, true);
     h.see("Queue project-one");
     h.click("Project c");
-    h.see("选择项目");
+    h.see("Projects");
     h.click("project-two");
     h.see("Queue project-two");
     h.click("Pause p");
@@ -376,7 +376,7 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.click("Add a");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
-    h.click("正文");
+    h.click("Body");
     h.send("正文内容".as_bytes());
     h.click("Save ^s");
     h.see("鼠标新增");
@@ -408,7 +408,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     let mut h = Harness::start();
     h.see("Native queue task");
     h.send(b"\t?");
-    h.see("Queue 原生看板");
+    h.see("Queue help");
     h.see("Back Esc");
     h.send(b"\x1b");
     h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
@@ -436,9 +436,9 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"p");
     h.see("Paused");
     h.send(b"p");
-    h.see("Manual");
+    h.see("Ready");
     h.send(b"l");
-    h.see("loop on");
+    h.see("Loop on");
     h.send(b"g");
     h.see("checked public criteria");
     h.send(b"\x1b");
@@ -501,11 +501,11 @@ fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
     let state: serde_json::Value = serde_json::from_str(&cli(&["list", "--json"])).unwrap();
     assert_eq!(state["paused"], true);
     h.send(b"p");
-    h.see("Manual");
+    h.see("Ready");
     h.send(b"l");
-    h.see("loop on");
+    h.see("Loop on");
     h.send(b"l");
-    h.see("loop off");
+    h.see("Loop off");
     h.send(b"a");
     h.see("Ctrl-S");
     h.send("\x1b[200~原生新增\x1b[201~".as_bytes());
@@ -743,9 +743,9 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
     .unwrap();
     h.see("History-39");
     // Wheel over the task list, while keyboard focus remains in Agents.
-    h.send("\x1b[<65;12;32M".repeat(3).as_bytes());
+    h.send("\x1b[<65;12;32M".repeat(4).as_bytes());
     h.send(b"s");
-    h.see("Name s"); // Barrier: all three wheel events have been processed.
+    h.see("Name s"); // Barrier: all four wheel events have been processed.
     assert!(
         !h.screen.screen().contents().contains("History-39"),
         "{}",

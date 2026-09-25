@@ -154,7 +154,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         ),
         Focus::Queue => (
             "Queue".to_string(),
-            " ↑↓ 选择  Enter 详情  c 项目  a 新增  ? 帮助  Ctrl-] Agents",
+            " ↑↓ Select  Enter Details  c Projects  a Add  ? Help  Ctrl-] Agents",
         ),
         Focus::Viewer => (
             view.showing.unwrap_or("Viewer · disconnected").to_string(),
@@ -164,20 +164,20 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     if queue_modal {
         match &view.queue.page {
             crate::queue::Page::Add { body_focus, .. } => {
-                target = format!("新增 · {}", if *body_focus { "正文" } else { "标题" });
-                help = " Tab 切字段  Ctrl-S 保存  Esc 取消";
+                target = format!("Add · {}", if *body_focus { "Body" } else { "Title" });
+                help = " Tab Switch  Ctrl-S Save  Esc Cancel";
             }
             crate::queue::Page::Projects => {
-                target = "项目选择".into();
-                help = " ↑↓ 选择  Enter 切换  e 手动目录  Esc 取消";
+                target = "Projects".into();
+                help = " ↑↓ Select  Enter Open  e Path  Esc Cancel";
             }
             crate::queue::Page::Project(_) => {
-                target = "项目目录".into();
-                help = " Enter 应用  Ctrl-U 清空  Esc 取消";
+                target = "Project path".into();
+                help = " Enter Apply  Ctrl-U Clear  Esc Cancel";
             }
             _ => {
-                target = "Queue · 详情/反馈".into();
-                help = " PgUp/PgDn 滚动  Esc 返回  Ctrl-] Agents";
+                target = "Queue · Details / Result".into();
+                help = " Wheel / PgUp/PgDn Scroll  Esc Back  Ctrl-] Agents";
             }
         }
     }
