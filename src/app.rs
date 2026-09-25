@@ -538,11 +538,6 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.panel.move_selection(-1, now()),
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
-            KeyCode::Char('r') => {
-                self.panel.show_reply = !self.panel.show_reply;
-                self.panel.reply_top = 0;
-                self.reply_due = Instant::now();
-            }
             KeyCode::Char('s') => {
                 self.panel.by_state = !self.panel.by_state;
                 self.panel.follow = true;

@@ -15,7 +15,7 @@ impl Viewer {
             showing: None,
             pending: None,
             corral,
-            note: "在左边选一个 agent，按 Enter 或点击。".into(),
+            note: "Select an agent on the left, then press Enter or click.".into(),
         }
     }
     pub fn select(&mut self, name: String) -> Result<()> {
@@ -56,7 +56,7 @@ impl Viewer {
             if session.poll_exit()? {
                 self.session = None;
                 self.note = format!(
-                    "{} attach 已退出。在左边重新选择 agent。",
+                    "{} attach exited. Select an agent on the left to reconnect.",
                     self.showing.take().unwrap_or_default()
                 );
             } else {

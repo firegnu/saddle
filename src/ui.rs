@@ -79,7 +79,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         let modal = crate::theme::centered(frame.area(), 64, 12);
         frame.render_widget(ratatui::widgets::Clear, modal);
         frame.render_widget(
-            crate::theme::block(" 停止 agent ", true)
+            crate::theme::block(" Stop agent ", true)
                 .style(Style::default().bg(crate::theme::OVERLAY))
                 .border_style(Style::default().fg(crate::theme::DANGER)),
             modal,
@@ -96,8 +96,10 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         );
         let agent = panel.agents.iter().find(|a| &a.name == name);
         let text = format!(
-            "停止 {name}？\n实例：{}\n当前活动：{}\n\n这会停止该 agent，不只是断开 Viewer。\n仅 y 或确认停止按钮执行；其他键取消。",
-            agent.and_then(|a| a.instance.as_deref()).unwrap_or("未知"),
+            "Stop {name}?\nInstance: {}\nActivity: {}\n\nThis stops the agent, not just the Viewer connection.\nPress y or click Stop to confirm; any other key cancels.",
+            agent
+                .and_then(|a| a.instance.as_deref())
+                .unwrap_or("unknown"),
             agent.and_then(|a| a.last_tool.as_deref()).unwrap_or("—")
         );
         frame.render_widget(Paragraph::new(text).wrap(Default::default()), body);
@@ -148,15 +150,15 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ 选择  ↵ 接入  r 回复  PgUp/Dn 滚动  Tab 队列  q 退出",
+            " ↑↓ Select  ↵ Attach  PgUp/Dn Scroll  Tab Queue  q Quit",
         ),
         Focus::Queue => (
             "Queue".to_string(),
             " ↑↓ 选择  Enter 详情  c 项目  a 新增  ? 帮助  Ctrl-] Agents",
         ),
         Focus::Viewer => (
-            view.showing.unwrap_or("Viewer · 未连接").to_string(),
-            " 按键发送到终端  Ctrl-] 返回 Agents",
+            view.showing.unwrap_or("Viewer · disconnected").to_string(),
+            " Keys go to terminal  Ctrl-] Agents",
         ),
     };
     if queue_modal {
@@ -180,16 +182,14 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         }
     }
     if panel.confirm.is_some() {
-        target = "停止确认".into();
-        help = " y 确认停止  其他键取消";
+        target = "Confirm stop".into();
+        help = " y Stop  Any other key cancels";
     }
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
-                format!(" 输入 ▸ {target} "),
-                Style::default()
-                    .fg(crate::theme::BG)
-                    .bg(crate::theme::FOCUS),
+                format!(" Input ▸ {target} "),
+                Style::default().fg(Color::Black).bg(crate::theme::FOCUS),
             ),
             Span::styled(
                 if panel.confirm.is_some() || queue_modal {
@@ -227,9 +227,9 @@ fn draw_terminal(
     let block = border(title, focused).title_top(
         Line::styled(
             if connected {
-                " ◉ 已连接 "
+                " ◉ connected "
             } else {
-                " 未连接 "
+                " disconnected "
             },
             Style::default().fg(if connected { t::CONNECTED } else { t::MUTED }),
         )
@@ -280,15 +280,6 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 if connected { "Attached" } else { "Attach ↵" },
                 K::Enter,
                 selected && !connected,
-            ),
-            Button::new(
-                if panel.show_reply {
-                    "Hide r"
-                } else {
-                    "Reply r"
-                },
-                K::Char('r'),
-                selected,
             ),
             Button::new(
                 if panel.by_state { "Name s" } else { "Sort s" },
@@ -360,7 +351,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     }
     if rows.is_empty() {
         frame.render_widget(
-            Paragraph::new("暂无 agent").style(Style::default().fg(t::MUTED)),
+            Paragraph::new("No agents").style(Style::default().fg(t::MUTED)),
             list,
         );
     }
@@ -476,6 +467,7 @@ fn agent_rows(
         } else {
             Style::default()
         };
+        let tree_color = if selected { t::MUTED } else { t::DIM };
         let (icon, state, color) = state(a, panel, now);
         let wide = width >= 46;
         let name_width = 8;
@@ -488,7 +480,7 @@ fn agent_rows(
             ),
             Span::styled(
                 if last { "└─ " } else { "├─ " },
-                Style::default().fg(t::DIM),
+                Style::default().fg(tree_color),
             ),
             Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
@@ -509,7 +501,7 @@ fn agent_rows(
         let badge = if showing == Some(&a.name) {
             "◉"
         } else if panel.unread.contains(&a.name) {
-            "新"
+            "new"
         } else {
             ""
         };
@@ -575,7 +567,7 @@ fn agent_rows(
                     line: Line::from(vec![
                         Span::styled(
                             if last { "      " } else { " │    " },
-                            Style::default().fg(t::DIM),
+                            Style::default().fg(tree_color),
                         ),
                         Span::styled(line.to_string(), Style::default().fg(color)),
                     ])
@@ -611,24 +603,24 @@ fn short_path(path: &str) -> String {
 
 fn state(a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
     if a.error.is_some() || a.incompatible {
-        return ("!", "异常", t::DANGER);
+        return ("!", "error", t::DANGER);
     }
     if panel.suspect(a, now) {
-        return ("▲", "无进展", t::WARNING);
+        return ("▲", "stalled", t::WARNING);
     }
     if a.starting {
-        return ("◌", "启动中", t::MUTED);
+        return ("◌", "starting", t::MUTED);
     }
     match a.state.as_deref() {
         Some("working") => (
             ["◐", "◓", "◑", "◒"][(now * 3.0) as usize % 4],
-            "工作中",
+            "working",
             t::WORKING,
         ),
-        Some("blocked") => ("◆", "待处理", t::BLOCKED),
-        Some("idle") => ("○", "空闲", t::MUTED),
-        Some("starting") => ("◌", "启动中", t::MUTED),
-        _ => ("·", "未知", t::MUTED),
+        Some("blocked") => ("◆", "blocked", t::BLOCKED),
+        Some("idle") => ("○", "idle", t::MUTED),
+        Some("starting") => ("◌", "starting", t::MUTED),
+        _ => ("·", "unknown", t::MUTED),
     }
 }
 fn seconds(value: Option<f64>) -> String {

@@ -4,22 +4,22 @@ use ratatui::{
     widgets::{Block, BorderType},
 };
 
-pub const BG: Color = Color::Rgb(20, 22, 25);
-pub const OVERLAY: Color = Color::Rgb(27, 30, 35);
-pub const SELECTED: Color = Color::Rgb(35, 41, 49);
-pub const BORDER: Color = Color::Rgb(52, 58, 67);
-pub const TEXT: Color = Color::Rgb(213, 216, 221);
-pub const BRIGHT: Color = Color::Rgb(244, 245, 247);
-pub const MUTED: Color = Color::Rgb(139, 146, 156);
-pub const DIM: Color = Color::Rgb(90, 97, 107);
-pub const FOCUS: Color = Color::Rgb(226, 178, 98);
-pub const CONNECTED: Color = Color::Rgb(98, 195, 192);
-pub const WORKING: Color = Color::Rgb(111, 166, 227);
-pub const BLOCKED: Color = Color::Rgb(232, 150, 79);
-pub const WARNING: Color = Color::Rgb(210, 193, 96);
-pub const SUCCESS: Color = Color::Rgb(134, 192, 122);
-pub const DANGER: Color = Color::Rgb(226, 106, 106);
-pub const UNREAD: Color = Color::Rgb(190, 150, 230);
+pub const BG: Color = Color::Reset;
+pub const OVERLAY: Color = Color::Reset;
+pub const SELECTED: Color = Color::DarkGray;
+pub const BORDER: Color = Color::DarkGray;
+pub const TEXT: Color = Color::Reset;
+pub const BRIGHT: Color = Color::White;
+pub const MUTED: Color = Color::Gray;
+pub const DIM: Color = Color::DarkGray;
+pub const FOCUS: Color = Color::Yellow;
+pub const CONNECTED: Color = Color::Cyan;
+pub const WORKING: Color = Color::Blue;
+pub const BLOCKED: Color = Color::Yellow;
+pub const WARNING: Color = Color::Yellow;
+pub const SUCCESS: Color = Color::Green;
+pub const DANGER: Color = Color::Red;
+pub const UNREAD: Color = Color::Magenta;
 
 pub fn base() -> Style {
     Style::default().fg(TEXT).bg(BG)

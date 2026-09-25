@@ -141,11 +141,20 @@ impl Harness {
         let (rows, cols) = screen.size();
         for row in 0..rows {
             for col in 0..cols {
-                if screen.cell(row, col).unwrap().contents().is_empty() {
+                if screen.cell(row, col).unwrap().is_wide_continuation() {
                     continue;
                 }
                 let text: String = (col..cols)
-                    .map(|x| screen.cell(row, x).unwrap().contents())
+                    .filter_map(|x| {
+                        let cell = screen.cell(row, x).unwrap();
+                        if cell.is_wide_continuation() {
+                            None
+                        } else if cell.contents().is_empty() {
+                            Some(" ")
+                        } else {
+                            Some(cell.contents())
+                        }
+                    })
                     .collect();
                 if text.starts_with(label) {
                     self.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
@@ -217,7 +226,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         r#"{"p/a":"blocked","p/b":"working","p/new":"idle","p/taken":"idle"}"#,
     )
     .unwrap();
-    h.see("待处理");
+    h.see("blocked");
     h.master
         .resize(PtySize {
             rows: 44,
@@ -240,13 +249,10 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         r#"{"p/a":"blocked","p/new":"idle","p/taken":"idle"}"#,
     )
     .unwrap();
-    h.see("attach 已退出");
+    h.see("attach exited");
     h.event("detached p/b");
     h.send(b"\x1dr");
-    h.see("REPLY p/a");
-    h.send(b"\x1b[6~\x1b[6~\x1b[6~\x1b[6~");
-    h.see("line 15");
-    h.send(b"rxq"); // cancel stop with q; cancellation must not quit.
+    h.send(b"xq"); // cancel stop with q; cancellation must not quit.
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
     h.send(b"jj\r");
@@ -355,12 +361,10 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
 }
 
 #[test]
-fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
+fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     let mut h = Harness::start();
     h.see("Native queue task");
     h.see("Synthetic title");
-    h.click("Reply r");
-    h.see("REPLY p/a");
     h.click("Stop x");
     h.click(" Cancel Esc ");
     h.see("cancelled");
@@ -391,7 +395,7 @@ fn native_mouse_buttons_cover_forms_replies_and_stop_confirmation() {
     h.screen.screen_mut().set_size(48, 80);
     h.see(" Agents  Queue ");
     h.send(b"\x1d");
-    h.see("输入 ▸ Agents");
+    h.see("Input ▸ Agents");
     // Narrow-window tabs expose Agents; hit targets must follow the new rows.
     h.click("Stop x");
     h.click(" Stop y ");
@@ -585,7 +589,7 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.see(" Path e ");
     h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m");
     h.send(b"\x1d");
-    h.see("输入 ▸ Agents");
+    h.see("Input ▸ Agents");
     h.master
         .resize(PtySize {
             rows: 24,
@@ -599,12 +603,12 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.click("Queue");
     h.see(" Path e "); // The suspended project picker resumes.
     h.send(b"\x1b");
-    h.see("输入 ▸ Queue");
+    h.see("Input ▸ Queue");
     h.see("Native queue task");
     h.click(" Pause p ");
     h.see("Paused");
     h.click("Agents");
-    h.see("输入 ▸ Agents");
+    h.see("Input ▸ Agents");
     h.see("Synthetic title");
     assert_eq!(
         h.log("events")
@@ -664,11 +668,27 @@ fn returning_to_agents_preserves_the_unsubmitted_queue_draft() {
     h.send("未提交的草稿".as_bytes());
     h.see("未提交的草稿");
     h.send(b"\x1d");
-    h.see("输入 ▸ Agents");
+    h.see("Input ▸ Agents");
     h.send(b"\t");
     h.see("Ctrl-S");
     h.see("未提交的草稿");
     h.send(b"\x13");
     h.until(|h| h.log("queue-events").contains("未提交的草稿"));
+    h.quit();
+}
+
+#[test]
+fn agents_reply_entry_is_hidden_and_r_does_not_open_it() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"rs");
+    h.see("Name s"); // The next key confirms the preceding r was processed.
+    let screen = h.screen.screen().contents();
+    assert!(!screen.contains("Last reply"), "{screen}");
+    assert!(
+        !screen.contains("Reply r") && !screen.contains("Hide r"),
+        "{screen}"
+    );
+    assert!(!h.log("events").contains("reply "));
     h.quit();
 }

@@ -96,7 +96,7 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
         let (mut a, mut q) = fixture();
         let (buffer, hits) = render(w, h, &mut a, &mut q, Focus::Queue);
         let output = text(&buffer);
-        assert!(output.contains("输入 ▸ Queue"), "{output}");
+        assert!(output.contains("Input ▸ Queue"), "{output}");
         assert!(
             output.contains("T12345") && output.contains("…") && output.contains("待办"),
             "{output}"
@@ -254,12 +254,8 @@ fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
     let output = text(&buffer);
     assert!(output.contains("Agents · demo/"), "{output}");
     assert!(output.contains("…/work/demo"), "{output}");
-    let lines: Vec<_> = output.lines().collect();
-    let reply = lines
-        .iter()
-        .position(|line| line.contains("‹Reply r›"))
-        .unwrap();
-    assert!(lines[reply + 1].contains("‹Sort s› ‹Stop x›"));
+    assert!(output.contains("‹Attached› ‹Sort s› ‹Stop x›"), "{output}");
+    assert!(!output.contains("Reply r"));
 }
 
 #[test]
@@ -300,10 +296,49 @@ fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_st
                     }
                 );
             }
-            assert!(line.contains("工作中"), "{line}");
+            assert!(line.contains("working"), "{line}");
             assert!(line.contains("◉ 1s"), "{line}");
-            let state = 1 + line[..line.find('工').unwrap()].width() as u16;
+            let state = 1 + line[..line.find("working").unwrap()].width() as u16;
             assert_eq!(buffer[(state, y)].fg, theme::WORKING);
         }
     }
+}
+
+#[test]
+fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim() {
+    use ratatui::style::Color;
+    for state in ["working", "idle", "blocked", "starting", "unknown"] {
+        let (mut a, mut q) = fixture();
+        a.agents[0].state = Some(state.into());
+        a.agents[0].last_tool = Some("读取文件".into());
+        let (buffer, hits) = render(160, 60, &mut a, &mut q, Focus::Agents);
+        let panes = Panes::with_queue(buffer.area, &Config::default(), false);
+        let mut chrome = String::new();
+        for y in panes.agents.y..panes.agents.bottom() {
+            for x in panes.agents.x..panes.agents.right() {
+                let cell = &buffer[(x, y)];
+                chrome.push_str(cell.symbol());
+                assert!(matches!(cell.bg, Color::Reset | Color::DarkGray));
+                assert!(!matches!(cell.fg, Color::Rgb(..)) || cell.fg == Color::Rgb(255, 255, 255));
+            }
+        }
+        // Buffer wide-cell continuations are spaces, so remove them for this language check.
+        let compact = chrome.replace(' ', "");
+        assert!(compact.contains("中文任务"));
+        let internal = compact.replace("中文任务", "").replace("读取文件", "");
+        assert!(
+            !internal
+                .chars()
+                .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
+            "{chrome}"
+        );
+        assert!(chrome.contains(state), "{chrome}");
+        assert!(!chrome.contains("Reply") && hits.reply.is_empty());
+        assert!(text(&buffer).contains("Input ▸ Agents"));
+    }
+    let (mut a, mut q) = fixture();
+    a.confirm = Some("demo/main".into());
+    let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
+    let output = text(&buffer);
+    assert!(output.contains("Stop demo/main?") && output.contains("Instance: abcdef123"));
 }

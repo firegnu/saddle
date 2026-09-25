@@ -199,6 +199,9 @@ fn color(color: Color, fallback: &str) -> String {
         Color::Magenta => "#be96e6".into(),
         Color::Cyan => "#62c3c0".into(),
         Color::White => "#ffffff".into(),
+        // Preview-only ANSI palette; the real terminal supplies its own colors.
+        Color::Gray => "#c0c0c0".into(),
+        Color::DarkGray => "#606060".into(),
         _ => fallback.into(),
     }
 }
