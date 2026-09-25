@@ -67,3 +67,10 @@
 - 验证了什么：tests/ui.rs 新增 `selecting_an_agent_keeps_its_effort_icon_tier`，走真实 `ui::draw`：high 未选中（焦点在 Queue）与选中后（焦点在 Agents、Queue）比较三格字符和颜色。修复前 RED：`("▆", Gray)` 对 `("▆", DarkGray)`；修复后 GREEN。T7 的 `delegated_effort_shows_strength_bars_and_unknown_stays_blank` 改为逐档核对新字形和亮/暗色，160/80 列下同列对齐、未知不显示。另用临时合成渲染（已删）目视四行：`⡄⡀⡀` / `⡄⡆⡀` / `⡄⡆⡇` / 空白。`cargo test --all-targets` 83 passed、2 ignored；`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 都通过。
 - 拿主意的地方：选盲文点阵而不是更细的方块或饼图 `◔◑◕`：方块元素整格实心、柱子挨着显厚；饼图在「歧义字符按双宽」的终端里会错位，也不像信号格；盲文宽度 1、不是歧义宽度，终端普遍自带，每格只用左列点，柱间自然留缝。未亮位置留底点，三档靠形状区分，不靠灰度。亮柱选中时也保持正文色，不跟名称一起变亮，只求三种状态下辨认结果一致。
 - 没做的事：没动 labels.effort 的读取范围（仍是 medium/high/xhigh，其他值不显示，不推断默认值，不显示 model），没改状态判断、排序、选中、接入、主题配置项和 Agents 其余布局；没启动真实 agent；没合并 main、没推送、没更新 HANDOFF。
+
+## 主控审查
+
+- 2026-09-26：两项均通过，可以合并。核对 5ca733f 全部 diff、回复和完成记录，确认选中后树线色提亮会影响旧图标暗格；修复使 effort 图标脱离选中树线色，元数据和档位映射未变。
+- 主控复跑 cargo test --all-targets：83 passed、2 ignored；cargo clippy --all-targets -- -D warnings 与 git diff --check 通过。新增真实 ui::draw 检查对比选中/未选中的图标字符及颜色，已有三档渲染检查同步核对新字形、宽窄布局和未知留白。
+- 接受三列盲文点阵细阶梯、未亮位置留底点、正文色与 dim 固定使用的选择；三档形状独立可辨，不再只靠灰度区分，未扩大字体依赖、配置或面板布局。实际字形观感仍由终端字体决定，自动渲染检查不等同于用户终端目视验收。
+- 无阻挡项，无需返工。release 更新后需用户重启 saddle，当前实例不动；后续委派带标签时即可观察新版图标。T11/T4/T2 未开始。
