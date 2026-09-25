@@ -1,6 +1,15 @@
 # 交接
 
-## 2026-09-26：T5 pending 编辑与调整次序完成（最新状态）
+## 2026-09-26：T6 所有项目 pending 汇总完成（最新状态）
+
+- T6 已由 saddle/dev-t6-pending-1 完成，主控审查、合并。Queue 底部 All pending A 打开只读弹层，按登记项目显示 pending 任务位置、id、完整标题，可滚动、r 刷新、Esc 关闭。界面方案见 DESIGN 第 22 节；不在此弹层编辑或调序。
+- 每次打开/刷新重读授权的 ~/.drover/projects，再后台调用各项目公开 list --json；加载、空队列和失败分别显示，失败不遮掉其他项目。只在打开/刷新时读取，不自动轮询所有项目；无真实队列或配置改动。
+- 主控复跑标准检查：77 passed、2 ignored，Clippy、diff 检查通过；release 已构建并更新 target/release/saddle，重启生效，当前界面未重启。接受大写 A 快捷键及窄窗按钮多占一行的设计取舍，审查已写入任务文件。
+- 开发 worktree 与 t6-all-pending 分支已清理；工作目录已删，一并关闭本主控开的 saddle/dev-t6-pending-1。其他 agent 未动，已补收尾空提交 434a2d7。
+- 下一步等待用户放行，待办顺序仍为 T4 → T2。T4 核查完成状态/过程详情，T2 tab/split 仍待补充，不自动开始。
+- 尚存事项：T5 公开快照预检查与执行间的竞态限制；旧 --help r reply、Queue PgUp/PgDn、drover 完整历史修复发布情况。本次开发者曾遇到既有帮助流程测试偶发失败，主控本轮通过，未调查其原因。
+
+## 2026-09-26：T5 pending 编辑与调整次序完成
 
 - T5 已由 saddle/dev-t5-pending-1 完成，两轮主控审查后合并到 main。选中 Pending 可 Edit e 编辑标题/正文，Move up u / Move down d 调序，Ctrl-S 保存、Esc 取消；失败/刷新保留草稿，成功后保持选中。非 pending 无入口，首末方向禁用。设计及公开接口限制见 DESIGN 第 20 节。
 - 第一轮主控复跑发现新增 PTY 测试提前发送选择按键，开发者用 64 字节分块重现并修正屏幕同步，未改产品逻辑；原断言保留。开发者最终完整标准测试 73 passed、2 ignored，Clippy 通过；主控增量复核 workflow 17 passed、2 ignored，Clippy 与 diff 检查通过。两轮结论见 docs/任务/T5-主控审查.md。
