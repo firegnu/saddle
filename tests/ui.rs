@@ -169,11 +169,11 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
         for (name, markers) in [
             (
                 "demo/main",
-                ["FIRST-TITLE", "abcdef123", "/tmp/demo", "VIA human"],
+                ["FIRST-TITLE", "abcdef", "/tmp/demo", "VIA human"],
             ),
             (
                 "demo/second",
-                ["SECOND-TITLE", "second123", "/tmp/second", "claude"],
+                ["SECOND-TITLE", "second", "/tmp/second", "claude"],
             ),
         ] {
             let rows: String = hits
@@ -186,6 +186,7 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
                         .collect::<String>()
                 })
                 .collect();
+            assert!(!rows.contains("abcdef123") && !rows.contains("second123"));
             for marker in markers {
                 assert!(
                     rows.contains(marker),
@@ -239,7 +240,7 @@ fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
             assert_eq!(
                 buffer[(45, *y)].bg,
                 if name == "demo/main" {
-                    theme::SELECTED
+                    theme::AGENT_SELECTED
                 } else {
                     ratatui::style::Color::Reset
                 }
@@ -252,7 +253,10 @@ fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
     a.by_state = false;
     let (buffer, _) = render(80, 20, &mut a, &mut q, Focus::Agents);
     let output = text(&buffer);
-    assert!(output.contains("Agents · demo/"), "{output}");
+    assert!(
+        output.contains("Agents · 3") && output.contains("demo/ · ↑"),
+        "{output}"
+    );
     assert!(output.contains("…/work/demo"), "{output}");
     assert!(output.contains("‹Attached› ‹Sort s› ‹Stop x›"), "{output}");
     assert!(!output.contains("Reply r"));
@@ -265,7 +269,7 @@ fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_st
     use unicode_width::UnicodeWidthStr;
     for (kind, label, color) in [
         ("claude", "✳ claude", Color::Rgb(0xd9, 0x77, 0x57)),
-        ("codex", ">_ codex", Color::Rgb(0xff, 0xff, 0xff)),
+        ("codex", ">_ codex", Color::Rgb(0x8e, 0xd9, 0xc1)),
         ("pi", "π pi", Color::Rgb(0xff, 0xff, 0xff)),
         ("omp", "π omp", Color::Rgb(0xa8, 0x55, 0xf7)),
         ("custom", "custom", theme::MUTED),
@@ -287,10 +291,17 @@ fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_st
             let x = 1 + line[..offset].width() as u16;
             for column in x..x + label.width() as u16 {
                 assert_eq!(buffer[(column, y)].fg, color, "{label}");
+                if kind == "codex" {
+                    assert!(
+                        buffer[(column, y)]
+                            .modifier
+                            .contains(ratatui::style::Modifier::BOLD)
+                    );
+                }
                 assert_eq!(
                     buffer[(column, y)].bg,
                     if selected {
-                        theme::SELECTED
+                        theme::AGENT_SELECTED
                     } else {
                         Color::Reset
                     }
@@ -299,7 +310,7 @@ fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_st
             assert!(line.contains("working"), "{line}");
             assert!(line.contains("◉ 1s"), "{line}");
             let state = 1 + line[..line.find("working").unwrap()].width() as u16;
-            assert_eq!(buffer[(state, y)].fg, theme::WORKING);
+            assert_eq!(buffer[(state, y)].fg, theme::AGENT_WORKING);
         }
     }
 }
@@ -318,8 +329,7 @@ fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim()
             for x in panes.agents.x..panes.agents.right() {
                 let cell = &buffer[(x, y)];
                 chrome.push_str(cell.symbol());
-                assert!(matches!(cell.bg, Color::Reset | Color::DarkGray));
-                assert!(!matches!(cell.fg, Color::Rgb(..)) || cell.fg == Color::Rgb(255, 255, 255));
+                assert!(cell.bg == Color::Reset || cell.bg == saddle::theme::AGENT_SELECTED);
             }
         }
         // Buffer wide-cell continuations are spaces, so remove them for this language check.
@@ -341,4 +351,83 @@ fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim()
     let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
     let output = text(&buffer);
     assert!(output.contains("Stop demo/main?") && output.contains("Instance: abcdef123"));
+}
+
+#[test]
+fn agent_totals_and_repo_counts_stay_visible_and_aligned() {
+    let (mut a, mut q) = fixture();
+    a.agents.extend([
+        Agent {
+            name: "demo/review".into(),
+            ..Default::default()
+        },
+        Agent {
+            name: "other/main".into(),
+            ..Default::default()
+        },
+    ]);
+    for by_state in [false, true] {
+        a.by_state = by_state;
+        let (buffer, hits) = render(160, 100, &mut a, &mut q, Focus::Agents);
+        let output = text(&buffer);
+        assert!(
+            output.lines().next().unwrap().contains("Agents · 3"),
+            "{output}"
+        );
+        for (repo, count) in [("demo/", "2"), ("other/", "1")] {
+            let y = output
+                .lines()
+                .position(|line| line.starts_with(&format!("┃{repo}")))
+                .unwrap() as u16;
+            assert_eq!(buffer[(hits.list.right() - 3, y)].symbol(), "(");
+            assert_eq!(buffer[(hits.list.right() - 2, y)].symbol(), count);
+            assert_eq!(buffer[(hits.list.right() - 1, y)].symbol(), ")");
+        }
+    }
+    a.agents.truncate(1);
+    a.agents[0].name = "a-very-long-repository-name-that-needs-truncation/main".into();
+    a.selected = Some(a.agents[0].name.clone());
+    let (buffer, hits) = render(80, 24, &mut a, &mut q, Focus::Agents);
+    assert!(text(&buffer).contains("Agents · 1"));
+    assert_eq!(buffer[(hits.list.right() - 3, hits.list.y)].symbol(), "(");
+    assert_eq!(buffer[(hits.list.right() - 2, hits.list.y)].symbol(), "1");
+    a.agents.clear();
+    a.selected = None;
+    let (buffer, _) = render(80, 24, &mut a, &mut q, Focus::Agents);
+    assert!(text(&buffer).contains("Agents · 0"));
+}
+
+#[test]
+fn agent_status_colors_are_distinct_and_bold() {
+    use ratatui::style::{Color, Modifier};
+    use unicode_width::UnicodeWidthStr;
+    for (state, color) in [
+        ("working", Color::Rgb(0x7f, 0xb4, 0xee)),
+        ("idle", Color::Rgb(0x9c, 0xbd, 0x80)),
+        ("blocked", Color::Rgb(0xe6, 0xb5, 0x66)),
+        ("stalled", Color::Rgb(0xe7, 0x9b, 0x65)),
+        ("error", Color::Rgb(0xef, 0x81, 0x74)),
+        ("starting", Color::Rgb(0xb0, 0xa1, 0xd8)),
+    ] {
+        for selected in [false, true] {
+            let (mut a, mut q) = fixture();
+            a.selected = selected.then(|| "demo/main".into());
+            a.agents[0].state = Some(state.into());
+            if state == "stalled" {
+                a.agents[0].state = Some("working".into());
+                a.agents[0].last_output = Some(-21.0);
+            } else if state == "error" {
+                a.agents[0].error = Some("Synthetic error".into());
+            }
+            let (buffer, hits) = render(160, 48, &mut a, &mut q, Focus::Agents);
+            let output = text(&buffer);
+            let y = hits.agents[0].0;
+            let row = output.lines().nth(y as usize).unwrap();
+            let start = row[..row.find(state).unwrap()].width() as u16;
+            for x in start..start + state.len() as u16 {
+                assert_eq!(buffer[(x, y)].fg, color, "{state}");
+                assert!(buffer[(x, y)].modifier.contains(Modifier::BOLD));
+            }
+        }
+    }
 }

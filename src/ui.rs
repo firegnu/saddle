@@ -259,11 +259,10 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         return Hits::default();
     }
     let focused = view.focus == Focus::Agents;
-    let block = border(" Agents ", focused).title_bottom(Line::styled(
-        format!(" {} agents ", panel.agents.len()),
-        Style::default().fg(t::DIM),
-    ));
-    frame.render_widget(block, area);
+    let title = format!(" Agents · {} ", panel.agents.len());
+    let block = border(&title, focused)
+        .title_style(Style::default().fg(t::TEXT).add_modifier(Modifier::BOLD));
+    frame.render_widget(block.clone(), area);
     let inside = inner(area);
     if inside.is_empty() {
         return Hits::default();
@@ -381,7 +380,10 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             })
             .unwrap_or_default();
         frame.render_widget(
-            border(&format!(" Agents · {context}↑{above} ↓{below} "), focused),
+            block.title_bottom(Line::styled(
+                format!(" {context}↑{above} ↓{below} "),
+                Style::default().fg(t::MUTED),
+            )),
             area,
         );
     }
@@ -447,12 +449,27 @@ fn agent_rows(
         let prefix = group(&a.name);
         if previous != Some(prefix) {
             rows.push(Row {
-                line: Line::styled(
-                    if prefix.is_empty() { "agents/" } else { prefix }.to_string(),
-                    Style::default()
-                        .fg(t::CONNECTED)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                line: {
+                    let count = ordered[index..]
+                        .iter()
+                        .take_while(|agent| group(&agent.name) == prefix)
+                        .count();
+                    let count = format!("({count})");
+                    let name_width = width.saturating_sub(count.width() + 1);
+                    let name = clip(
+                        if prefix.is_empty() { "agents/" } else { prefix },
+                        name_width,
+                    );
+                    Line::from(vec![
+                        Span::styled(
+                            pad(&name, width.saturating_sub(count.width())),
+                            Style::default()
+                                .fg(t::CONNECTED)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(count, Style::default().fg(t::MUTED)),
+                    ])
+                },
                 name: None,
                 headline: false,
             });
@@ -463,7 +480,7 @@ fn agent_rows(
             .is_none_or(|next| group(&next.name) != prefix);
         let selected = panel.selected.as_deref() == Some(&a.name);
         let style = if selected {
-            Style::default().bg(t::SELECTED)
+            Style::default().bg(t::AGENT_SELECTED)
         } else {
             Style::default()
         };
@@ -491,12 +508,21 @@ fn agent_rows(
         if wide {
             spans.push(Span::styled(
                 format!(" {} ", pad(&clip(&brand_label, 8), 8)),
-                Style::default().fg(brand_color),
+                Style::default().fg(brand_color).add_modifier(
+                    if a.kind
+                        .as_deref()
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("codex"))
+                    {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    },
+                ),
             ));
         }
         spans.push(Span::styled(
             format!(" {state}"),
-            Style::default().fg(color),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
         ));
         let badge = if showing == Some(&a.name) {
             "◉"
@@ -530,7 +556,12 @@ fn agent_rows(
                 format!(
                     "{} {} · ATT {} · VIA {}",
                     a.kind.as_deref().unwrap_or("—"),
-                    a.instance.as_deref().unwrap_or("—"),
+                    a.instance
+                        .as_deref()
+                        .unwrap_or("—")
+                        .chars()
+                        .take(6)
+                        .collect::<String>(),
                     a.attached,
                     a.last_input_source.as_deref().unwrap_or("—")
                 ),
@@ -584,7 +615,7 @@ fn agent_rows(
 fn agent_brand(kind: &str) -> (String, Color) {
     let (mark, color) = match kind.to_ascii_lowercase().as_str() {
         "claude" => ("✳", Color::Rgb(0xd9, 0x77, 0x57)),
-        "codex" => (">_", Color::Rgb(0xff, 0xff, 0xff)),
+        "codex" => (">_", Color::Rgb(0x8e, 0xd9, 0xc1)),
         "pi" => ("π", Color::Rgb(0xff, 0xff, 0xff)),
         "omp" => ("π", Color::Rgb(0xa8, 0x55, 0xf7)),
         _ => return (kind.to_owned(), t::MUTED),
@@ -603,23 +634,23 @@ fn short_path(path: &str) -> String {
 
 fn state(a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
     if a.error.is_some() || a.incompatible {
-        return ("!", "error", t::DANGER);
+        return ("!", "error", t::AGENT_ERROR);
     }
     if panel.suspect(a, now) {
-        return ("▲", "stalled", t::WARNING);
+        return ("▲", "stalled", t::AGENT_STALLED);
     }
     if a.starting {
-        return ("◌", "starting", t::MUTED);
+        return ("◌", "starting", t::AGENT_STARTING);
     }
     match a.state.as_deref() {
         Some("working") => (
             ["◐", "◓", "◑", "◒"][(now * 3.0) as usize % 4],
             "working",
-            t::WORKING,
+            t::AGENT_WORKING,
         ),
-        Some("blocked") => ("◆", "blocked", t::BLOCKED),
-        Some("idle") => ("○", "idle", t::MUTED),
-        Some("starting") => ("◌", "starting", t::MUTED),
+        Some("blocked") => ("◆", "blocked", t::AGENT_BLOCKED),
+        Some("idle") => ("○", "idle", t::AGENT_IDLE),
+        Some("starting") => ("◌", "starting", t::AGENT_STARTING),
         _ => ("·", "unknown", t::MUTED),
     }
 }

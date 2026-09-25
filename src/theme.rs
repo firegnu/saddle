@@ -7,6 +7,14 @@ use ratatui::{
 pub const BG: Color = Color::Reset;
 pub const OVERLAY: Color = Color::Reset;
 pub const SELECTED: Color = Color::DarkGray;
+// Subtle warm tint matched to the current Terminal theme.
+pub const AGENT_SELECTED: Color = Color::Rgb(0x30, 0x2a, 0x23);
+pub const AGENT_WORKING: Color = Color::Rgb(0x7f, 0xb4, 0xee);
+pub const AGENT_IDLE: Color = Color::Rgb(0x9c, 0xbd, 0x80);
+pub const AGENT_BLOCKED: Color = Color::Rgb(0xe6, 0xb5, 0x66);
+pub const AGENT_STALLED: Color = Color::Rgb(0xe7, 0x9b, 0x65);
+pub const AGENT_ERROR: Color = Color::Rgb(0xef, 0x81, 0x74);
+pub const AGENT_STARTING: Color = Color::Rgb(0xb0, 0xa1, 0xd8);
 pub const BORDER: Color = Color::DarkGray;
 pub const TEXT: Color = Color::Reset;
 pub const BRIGHT: Color = Color::White;
