@@ -1,6 +1,14 @@
 # 交接
 
-## 2026-09-26：T6 所有项目 pending 汇总完成（最新状态）
+## 2026-09-26：T7 Agents 委派 effort 图标完成（最新状态）
+
+- T7 已由 saddle/dev-t7-effort-1 完成（45f95d7），主控审查通过并合并 main。Agents 从公开 labels.effort 显示 medium/high/xhigh 三档信号图标；缺失或其他值不显示。设计见 DESIGN 第 23 节，审查与取舍见 docs/任务/T7-Agents委派effort图标.md。
+- 主控复跑标准检查：79 passed、2 ignored，Clippy、diff 检查通过。release 已构建并更新 target/release/saddle，重启生效，当前运行实例未重启。已有无标签 agent 不会凭空出现图标，后续委派需显式带 effort 标签。
+- 开发 worktree 与 t7-effort 分支已清理；工作目录已删，一并关闭本主控开的 saddle/dev-t7-effort-1。其余用户 agent 未动，已补收尾空提交 3047741。
+- 下一步将 T7 标为完成待放行，等待用户操作；最新待办顺序 T8 → T4 → T2，不自动开始。T8 是 pending 删除及未运行 current 退回 pending 的需求（后者先评估）；T2 仍待补充。
+- 尚存事项沿用前轮：T5 快照预检查与执行间的竞态限制；旧 --help r reply、Queue PgUp/PgDn、drover 完整历史修复发布情况；既有帮助流程测试先前偶发失败原因未调查，本轮通过。T7 无阻挡项。
+
+## 2026-09-26：T6 所有项目 pending 汇总完成
 
 - T6 已由 saddle/dev-t6-pending-1 完成，主控审查、合并。Queue 底部 All pending A 打开只读弹层，按登记项目显示 pending 任务位置、id、完整标题，可滚动、r 刷新、Esc 关闭。界面方案见 DESIGN 第 22 节；不在此弹层编辑或调序。
 - 每次打开/刷新重读授权的 ~/.drover/projects，再后台调用各项目公开 list --json；加载、空队列和失败分别显示，失败不遮掉其他项目。只在打开/刷新时读取，不自动轮询所有项目；无真实队列或配置改动。
