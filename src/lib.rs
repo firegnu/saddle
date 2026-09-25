@@ -1,6 +1,10 @@
 pub mod agents;
+pub mod app;
 pub mod config;
 pub mod corral;
 pub mod input;
 pub mod layout;
+pub mod pty;
 pub mod terminal;
+pub mod ui;
+pub mod viewer;

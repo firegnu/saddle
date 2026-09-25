@@ -103,3 +103,83 @@ fn default_rgb(index: usize) -> Rgb {
     };
     Rgb { r, g, b }
 }
+
+impl Screen {
+    pub fn render(
+        &self,
+        area: ratatui::layout::Rect,
+        buffer: &mut ratatui::buffer::Buffer,
+    ) -> Option<(u16, u16)> {
+        use alacritty_terminal::{
+            index::{Column, Line},
+            term::{TermMode, cell::Flags},
+        };
+        use ratatui::style::{Modifier, Style};
+        let rows = area.height.min(self.term.screen_lines() as u16);
+        let cols = area.width.min(self.term.columns() as u16);
+        for y in 0..rows {
+            for x in 0..cols {
+                let cell = &self.term.grid()[Line(i32::from(y))][Column(usize::from(x))];
+                if cell
+                    .flags
+                    .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+                {
+                    continue;
+                }
+                let mut style = Style::default()
+                    .fg(self.color(cell.fg))
+                    .bg(self.color(cell.bg));
+                for (flag, modifier) in [
+                    (Flags::BOLD, Modifier::BOLD),
+                    (Flags::DIM, Modifier::DIM),
+                    (Flags::ITALIC, Modifier::ITALIC),
+                    (Flags::ALL_UNDERLINES, Modifier::UNDERLINED),
+                    (Flags::INVERSE, Modifier::REVERSED),
+                    (Flags::HIDDEN, Modifier::HIDDEN),
+                    (Flags::STRIKEOUT, Modifier::CROSSED_OUT),
+                ] {
+                    if cell.flags.intersects(flag) {
+                        style = style.add_modifier(modifier);
+                    }
+                }
+                let mut symbol = cell.c.to_string();
+                if let Some(chars) = cell.zerowidth() {
+                    symbol.extend(chars);
+                }
+                if cell.flags.contains(Flags::WIDE_CHAR) && x + 1 >= cols {
+                    symbol = " ".into();
+                }
+                buffer[(area.x + x, area.y + y)]
+                    .set_symbol(&symbol)
+                    .set_style(style);
+            }
+        }
+        let point = self.term.grid().cursor.point;
+        if self.term.mode().contains(TermMode::SHOW_CURSOR)
+            && point.line.0 >= 0
+            && point.line.0 < i32::from(rows)
+            && point.column.0 < usize::from(cols)
+        {
+            Some((area.x + point.column.0 as u16, area.y + point.line.0 as u16))
+        } else {
+            None
+        }
+    }
+    fn color(&self, color: alacritty_terminal::vte::ansi::Color) -> ratatui::style::Color {
+        use alacritty_terminal::vte::ansi::Color as A;
+        use ratatui::style::Color as R;
+        let index = match color {
+            A::Spec(rgb) => return R::Rgb(rgb.r, rgb.g, rgb.b),
+            A::Indexed(index) => usize::from(index),
+            A::Named(name) => name as usize,
+        };
+        if let Some(rgb) = self.term.colors()[index] {
+            return R::Rgb(rgb.r, rgb.g, rgb.b);
+        }
+        if index <= 255 {
+            R::Indexed(index as u8)
+        } else {
+            R::Reset
+        }
+    }
+}

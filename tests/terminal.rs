@@ -38,3 +38,20 @@ fn screen_preserves_split_utf8_color_modes_and_replies_to_terminal_queries() {
             .contains(TermMode::MOUSE_DRAG | TermMode::SGR_MOUSE | TermMode::BRACKETED_PASTE)
     );
 }
+
+#[test]
+fn terminal_rendering_offsets_cells_styles_and_cursor_inside_its_pane() {
+    use ratatui::{buffer::Buffer, layout::Rect, style::Color as C};
+    let mut screen = Screen::new(Size { rows: 4, cols: 10 });
+    screen.process("\x1b[38;2;12;34;56m中\x1b[38;5;196mA".as_bytes());
+    let mut buffer = Buffer::empty(Rect::new(0, 0, 30, 10));
+    let cursor = screen.render(Rect::new(5, 2, 10, 4), &mut buffer);
+    assert_eq!(buffer[(5, 2)].symbol(), "中");
+    assert_eq!(buffer[(5, 2)].fg, C::Rgb(12, 34, 56));
+    assert_eq!(buffer[(7, 2)].symbol(), "A");
+    assert_eq!(buffer[(7, 2)].fg, C::Indexed(196));
+    assert_eq!(buffer[(4, 2)].symbol(), " ");
+    assert_eq!(cursor, Some((8, 2)));
+    screen.process(b"\x1b[?25l");
+    assert_eq!(screen.render(Rect::new(5, 2, 10, 4), &mut buffer), None);
+}

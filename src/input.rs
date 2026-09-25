@@ -80,8 +80,8 @@ pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
         KeyCode::Char(c) if ctrl => {
             let c = c.to_ascii_uppercase();
             match c {
-                ' '..='_' => vec![(c as u8) & 0x1f],
                 '?' => vec![0x7f],
+                ' ' | '@'..='_' => vec![(c as u8) & 0x1f],
                 _ => c.to_string().into_bytes(),
             }
         }
@@ -97,4 +97,81 @@ pub fn encode_key(key: KeyEvent, application_cursor: bool) -> Vec<u8> {
         bytes.insert(0, 0x1b);
     }
     bytes
+}
+
+pub fn encode_mouse(
+    event: crossterm::event::MouseEvent,
+    area: ratatui::layout::Rect,
+    mode: alacritty_terminal::term::TermMode,
+) -> Vec<u8> {
+    use alacritty_terminal::term::TermMode as T;
+    use crossterm::event::{MouseButton as B, MouseEventKind as E};
+    if !area.contains((event.column, event.row).into()) || !mode.intersects(T::MOUSE_MODE) {
+        return Vec::new();
+    }
+    let (mut code, release) = match event.kind {
+        E::Down(button) | E::Up(button) | E::Drag(button) => {
+            if matches!(event.kind, E::Drag(_)) && !mode.intersects(T::MOUSE_DRAG | T::MOUSE_MOTION)
+            {
+                return Vec::new();
+            }
+            let button = match button {
+                B::Left => 0,
+                B::Middle => 1,
+                B::Right => 2,
+            };
+            (
+                button
+                    + if matches!(event.kind, E::Drag(_)) {
+                        32
+                    } else {
+                        0
+                    },
+                matches!(event.kind, E::Up(_)),
+            )
+        }
+        E::Moved if mode.contains(T::MOUSE_MOTION) => (35, false),
+        E::ScrollUp => (64, false),
+        E::ScrollDown => (65, false),
+        E::ScrollLeft => (66, false),
+        E::ScrollRight => (67, false),
+        _ => return Vec::new(),
+    };
+    if release && !mode.contains(T::SGR_MOUSE) {
+        code = 3;
+    }
+    if event.modifiers.contains(KeyModifiers::SHIFT) {
+        code += 4;
+    }
+    if event.modifiers.contains(KeyModifiers::ALT) {
+        code += 8;
+    }
+    if event.modifiers.contains(KeyModifiers::CONTROL) {
+        code += 16;
+    }
+    let x = u32::from(event.column - area.x + 1);
+    let y = u32::from(event.row - area.y + 1);
+    if mode.contains(T::SGR_MOUSE) {
+        return format!("\x1b[<{code};{x};{y}{}", if release { 'm' } else { 'M' }).into_bytes();
+    }
+    let mut result = b"\x1b[M".to_vec();
+    for value in [code + 32, x + 32, y + 32] {
+        if mode.contains(T::UTF8_MOUSE) {
+            if let Some(c) = char::from_u32(value) {
+                result.extend(c.to_string().as_bytes());
+            }
+        } else if value <= 255 {
+            result.push(value as u8);
+        } else {
+            return Vec::new();
+        }
+    }
+    result
+}
+pub fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if bracketed {
+        format!("\x1b[200~{text}\x1b[201~").into_bytes()
+    } else {
+        text.as_bytes().to_vec()
+    }
 }
