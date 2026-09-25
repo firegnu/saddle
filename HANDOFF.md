@@ -1,6 +1,14 @@
 # 交接
 
-## 2026-09-26：T8 pending 删除完成（最新状态）
+## 2026-09-26：T9 effort 选中显示与图标优化完成（最新状态）
+
+- T9 两项均已完成：saddle/dev-t9-effort-1 的 5ca733f 经主控审查后合并。选中不再提亮 effort 暗格；图标改为三档点阵阶梯 ⡄⡀⡀ / ⡄⡆⡀ / ⡄⡆⡇。原因与方案见 DESIGN 第 23 节，审查见 docs/任务/T9-effort选中显示与图标优化.md。
+- 主控标准检查：83 passed、2 ignored，Clippy、diff 检查通过。release 已更新 target/release/saddle，重启生效，当前运行实例未重启。合成渲染已验证，真实终端字体观感由用户查看。
+- 开发 worktree、t9-effort-polish 分支已清理；工作目录已删，一并关闭本主控开的 saddle/dev-t9-effort-1，其余用户 agent 未动。收尾空提交 efd4cfb。
+- 下一步将 T9 标为完成待放行；最新待办顺序 T11 → T4 → T2，不自动开始。T11 是 agent 区域显示提交/diff 信息的调查方案，须用户确认后才委派实现；T2 仍待补充。
+- 尚存事项沿用前轮：pending 快照检查与写入间竞态；旧 --help r reply、Queue PgUp/PgDn、drover 完整历史修复发布情况；既有帮助流程测试先前偶发失败原因未调查，本轮通过。current 退回 pending 已按用户决定不做。
+
+## 2026-09-26：T8 pending 删除完成
 
 - T8 已按用户最终决定「只做删除」完成：saddle/dev-t8-delete-1 的 74194bf 经主控审查后合并。Queue 选中 Pending 可点 Delete x，弹层确认 y、取消 Esc；移出待办，History 保留 Dropped。设计见 DESIGN 第 24 节，审查见 docs/任务/T8-pending删除与current退回评估.md。
 - current 退回 pending 已由 drover/main 只读评估，用户明确暂不做；没有实现，不自动另开任务。T8 仅按删除功能验收及收尾。
