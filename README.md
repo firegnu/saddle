@@ -23,7 +23,7 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 
 - **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states. When an agent was started with a public corral `effort` label, a small dotted signal icon shows it: `⣄⡀`, `⣴⡀`, or `⣴⡇` for medium, high, or xhigh (three bars packed into two character cells, using the theme’s idle/working/starting colors—soft green/blue/purple by default; unlit bars keep only baseline dots, and selection does not change the icon). Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
 - **Git summary per agent:** below each agent's directory, a line such as `dev-t12 · C2(main) · +18 -4 · ?1` describes the worktree at the agent's public corral `cwd`: the current branch; commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together, after Git's built-in text/eol attributes (so a committed CRLF file whose timestamp changed is not counted), per path with no rename detection (a pure rename counts as all lines deleted and added); and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only; a slow repository delays the round for every directory. It never fetches or lazily fetches missing objects, and it runs no external diff, textconv, fsmonitor hook or clean/smudge/process filter from any attributes source. When a changed file would need such a filter, the line counts show `+— -—` instead. A parent repository's line does not look inside submodule worktrees: uncommitted changes inside a submodule are not counted, while a submodule whose commit moved counts as a changed gitlink (`+1 -1`). It also skips optional index writes and ignores inherited `GIT_*` variables such as `GIT_DIR`. It does not follow an agent that later `cd`s elsewhere.
-- **Queue:** current, awaiting, pending, and historical tasks. Read details, add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
+- **Queue:** current, awaiting, pending, and historical tasks. Click a task for its status and progress details, add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
 - **Viewer:** the selected agent's live `corral attach` session, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
 - **Responsive layout:** three panes in a wide terminal; Agents and Queue become tabs in a narrow window.
@@ -100,7 +100,7 @@ drover = "drover"
 
 Command paths and `queue.cwd` support `~/`. Queue reads the project registry at `~/.drover/projects`: it prefers `queue.cwd`, then the startup directory if registered, then the first registered project. With no registry entries, it tries the startup directory. The project picker also accepts a manual path; switching projects only affects the current session.
 
-saddle gets task data through **`drover list --json`**. Full history requires a drover version that returns the complete history array; older versions return only the latest ten records. saddle cannot display records that the interface omits. Apart from the project registry, it does not read corral or drover's internal data files.
+saddle gets task data through **`drover list --json`**. Full history requires a drover version that returns the complete history array; older versions return only the latest ten records. saddle cannot display records that the interface omits. Task details come from the read-only **`drover show Tn --json --with-agent-status`** (schema version 1); a drover without it shows the error on the details page. Apart from the project registry, it does not read corral or drover's internal data files.
 
 [config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above. Its defaults preserve the current appearance. For a small override, add:
 
@@ -127,13 +127,14 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Agents | s | Toggle name / state sorting within repositories |
 | Agents | x, then y | Stop the selected agent; other keys cancel |
 | Agents | q | Quit saddle |
-| Queue | ↑↓ / j k / click | Select a task |
+| Queue | ↑↓ / j k | Select a task |
+| Queue | Click a task / Enter | Show its details in the Tasks area |
 | Queue list | Mouse wheel / trackpad | Scroll tasks and history without changing selection |
 | Queue | c | Open the project picker |
 | Project picker | Enter / click, e, r | Open project, enter a path, reload registry |
 | Path form | Ctrl-U / Enter / Esc | Clear / apply / cancel |
-| Queue | Enter / Esc | Open details / return to the list |
-| Queue details / result | Mouse wheel / PgUp / PgDn | Scroll content |
+| Task details | Esc / Back | Return to the list |
+| Task details / result | ↑↓ / j k / Mouse wheel / PgUp / PgDn | Scroll content |
 | Queue | r / g / n | Refresh / check and release / send next task |
 | Queue | p / l | Pause or resume / toggle loop |
 | Queue | a / ? | Add a task / open help |
@@ -145,6 +146,17 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Queue / Viewer | Ctrl-] | Return to Agents |
 
 Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies the current input target. Open dialogs capture their own input; background controls stay inactive. Unsubmitted Queue drafts survive a temporary return to Agents.
+
+**Task details.** Click a task (or select it and press **Enter**) to switch the Tasks area to that task; **Esc** or **Back** returns to the list with the same selection and scroll position. Agents and Viewer stay as they are, and keys and scrolling in the details stay in Queue. For current, awaiting, and history tasks, saddle runs the read-only `drover show <id> --json --with-agent-status` in the project when the page opens and about every 5 seconds while it stays open, one query at a time; returning to the list, switching projects, or quitting stops it. The page follows the task id, so a task that finishes or is released keeps showing the same task. It shows:
+
+- the status, elapsed time, and any attention hint or inconsistent-snapshot warning;
+- the completion checks recomputed now, with each reason; for history tasks the completion-time checks were not saved, and today's are not applied;
+- the last check-command record, which is only a previous result and is never run by the page;
+- Git progress: the start..HEAD (or start..end) range count, which is not a per-task count, main's progress, and recorded and current commits;
+- routing from the current task file, hold, and the attention hint (an inference, not proof that work stopped);
+- start, finish, and release times, and the body.
+
+Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their page shows the list's title, body, and status; a pending task switches to full details once it starts. Queue actions work from the list, not from the details page.
 
 Select a pending task to use **Edit**, **Move up**, or **Move down**; other task states cannot be edited or reordered. Edit prefills the title and multiline body. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, saddle rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
 

@@ -107,7 +107,7 @@ fn native_queue_selects_details_and_creates_tasks_without_an_external_editor() {
     panel.key(key(K::Down));
     assert_eq!(panel.selected, 1);
     panel.key(key(K::Enter));
-    assert!(matches!(panel.page, Page::Detail));
+    assert!(matches!(panel.page, Page::Detail(_)));
     panel.key(key(K::Esc));
     panel.key(key(K::Char('a')));
     for c in "中文新增".chars() {
@@ -350,4 +350,140 @@ fn selected_pending_delete_confirms_a_fixed_target_and_can_be_cancelled() {
         "Third",
         "selection must follow the next pending task, not the dropped history entry"
     );
+}
+
+fn show(id: &str, location: &str, status: &str) -> saddle::drover::Detail {
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
+    value["task"]["id"] = id.into();
+    value["task"]["location"] = location.into();
+    value["task"]["status"] = status.into();
+    serde_json::from_value(value).unwrap()
+}
+fn opened(panel: &Panel) -> &saddle::detail::TaskDetail {
+    match &panel.page {
+        Page::Detail(detail) => detail,
+        _ => panic!("details are not open"),
+    }
+}
+
+#[test]
+fn details_follow_the_task_id_through_completion_and_ignore_older_targets() {
+    let mut panel = Panel::default();
+    panel.project = "/tmp/project-a".into();
+    let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
+        "mode": {}, "paused": false, "awaiting": null,
+        "current": {"id":"T4", "title":"Running"},
+        "pending": [{"id":"T5", "title":"Next"}],
+        "history": [{"id":"T3", "title":"Old", "status":"done"}]
+    }))
+    .unwrap();
+    panel.absorb(snapshot);
+    assert_eq!(panel.detail_key(), None);
+    assert!(panel.key(key(K::Enter)).is_none());
+    let first = panel.detail_key().expect("current task must be queried");
+    assert_eq!(
+        (first.project.as_str(), first.id.as_str()),
+        ("/tmp/project-a", "T4")
+    );
+    // T4 finishes and T5 starts: the list index 0 is now another task.
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "pending": [],
+            "current": {"id":"T5", "title":"Next"},
+            "awaiting": {"id":"T4", "title":"Running", "status":"done"},
+            "history": [{"id":"T3", "title":"Old", "status":"done"}]
+        }))
+        .unwrap(),
+    );
+    assert_eq!(panel.detail_key(), Some(first.clone()));
+    panel.absorb_detail(&first, Ok(show("T4", "awaiting", "done")));
+    assert_eq!(
+        opened(&panel).data.as_ref().unwrap().task.location,
+        "awaiting"
+    );
+    // A reopened detail is a new target; results for the old one are dropped.
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::List));
+    assert_eq!(panel.detail_key(), None);
+    panel.key(key(K::Enter));
+    let second = panel.detail_key().unwrap();
+    assert_ne!(second, first);
+    panel.absorb_detail(&first, Ok(show("T4", "awaiting", "done")));
+    panel.absorb_detail(&first, Err(anyhow::anyhow!("old failure")));
+    assert!(opened(&panel).data.is_none() && opened(&panel).error.is_none());
+    let other_project = saddle::queue::DetailKey {
+        project: "/tmp/project-b".into(),
+        ..second.clone()
+    };
+    panel.absorb_detail(&other_project, Ok(show("T5", "current", "doing")));
+    assert!(opened(&panel).data.is_none());
+    panel.absorb_detail(&second, Ok(show("T5", "current", "doing")));
+    assert!(opened(&panel).data.is_some());
+}
+
+#[test]
+fn pending_and_unnumbered_details_use_list_data_until_the_task_starts() {
+    let mut panel = Panel::default();
+    let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
+        "mode": {}, "paused": false, "current": null, "awaiting": null,
+        "pending": [{"id":"T2", "title":"Queued"}, {"title":"Unnumbered pending"}],
+        "history": [{"title":"Unnumbered old", "status":"dropped", "reason":"gone"}, {"id":"X9", "title":"Odd id", "status":"done"}]
+    }))
+    .unwrap();
+    panel.absorb(snapshot.clone());
+    for index in 0..4 {
+        panel.select(index);
+        panel.key(key(K::Enter));
+        assert!(matches!(panel.page, Page::Detail(_)), "row {index}");
+        assert_eq!(panel.detail_key(), None, "row {index}");
+        panel.key(key(K::Esc));
+    }
+    panel.select(0);
+    panel.key(key(K::Enter));
+    let mut started = snapshot;
+    started.current = Some(started.pending.remove(0));
+    panel.absorb(started);
+    assert_eq!(panel.detail_key().unwrap().id, "T2");
+}
+
+#[test]
+fn detail_page_ignores_queue_actions_and_back_keeps_the_list_position() {
+    let mut panel = Panel::default();
+    let history: Vec<_> = (0..30)
+        .map(|i| serde_json::json!({"id": format!("T{i}"), "title": format!("Done {i}"), "status":"done"}))
+        .collect();
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "current": {"id":"T99", "title":"Now"}, "awaiting": null,
+            "pending": [{"id":"T100", "title":"Queued"}], "history": history
+        }))
+        .unwrap(),
+    );
+    panel.select(7);
+    panel.top = 5;
+    let selected_title = panel.tasks()[panel.selected].1.title.clone();
+    panel.key(key(K::Enter));
+    for c in [
+        'g', 'n', 'p', 'l', 'a', 'A', 'c', 'e', 'u', 'd', 'x', '?', 'r',
+    ] {
+        assert!(panel.key(key(K::Char(c))).is_none(), "{c}");
+        assert!(matches!(panel.page, Page::Detail(_)), "{c}");
+        assert!(!panel.busy, "{c}");
+    }
+    for code in [
+        K::Down,
+        K::Up,
+        K::PageDown,
+        K::PageUp,
+        K::Char('j'),
+        K::Char('k'),
+    ] {
+        assert!(panel.key(key(code)).is_none());
+        assert!(matches!(panel.page, Page::Detail(_)));
+    }
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::List));
+    assert_eq!(panel.tasks()[panel.selected].1.title, selected_title);
+    assert_eq!(panel.top, 5);
 }

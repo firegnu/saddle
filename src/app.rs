@@ -131,6 +131,7 @@ struct App {
     queue: queue::Panel,
     queue_worker: drover::Worker,
     pending_load: Option<drover::PendingLoad>,
+    detail: Option<(queue::DetailKey, drover::DetailWorker)>,
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
@@ -197,6 +198,7 @@ impl App {
             },
             queue_worker,
             pending_load: None,
+            detail: None,
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
@@ -323,6 +325,30 @@ impl App {
                 drover::Update::Feedback(operation, result) => {
                     self.queue.complete(&operation, result)
                 }
+            }
+        }
+        let wanted = self.queue.detail_key();
+        if self.detail.as_ref().map(|(key, _)| key) != wanted.as_ref() {
+            // Dropping the old worker cancels its query and discards its results before a new
+            // target (another task, project or reopened page) starts.
+            self.detail = None;
+            self.detail = wanted.map(|key| {
+                let worker = drover::DetailWorker::start(
+                    drover::Client {
+                        program: expand_home(&self.config.queue.drover)
+                            .to_string_lossy()
+                            .into_owned(),
+                        cwd: key.project.clone().into(),
+                    },
+                    key.id.clone(),
+                    Duration::from_secs(5),
+                );
+                (key, worker)
+            });
+        }
+        if let Some((key, worker)) = &self.detail {
+            for result in worker.updates.try_iter() {
+                self.queue.absorb_detail(key, result);
             }
         }
         if !matches!(self.queue.page, queue::Page::AllPending) {
@@ -510,7 +536,7 @@ impl App {
                             .iter()
                             .find(|(row, _)| *row == mouse.row)
                         {
-                            self.queue.select(*index);
+                            self.queue.open(*index);
                         }
                         return Ok(false);
                     } else if panes.viewer.contains(point) {
