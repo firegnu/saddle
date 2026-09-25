@@ -478,7 +478,8 @@ fn agent_rows(
         };
         let (icon, state, color) = state(a, panel, now);
         let wide = width >= 46;
-        let name_width = if wide { 10 } else { 8 };
+        let name_width = 8;
+        let (brand_label, brand_color) = agent_brand(a.kind.as_deref().unwrap_or(""));
         let name = a.name.strip_prefix(prefix).unwrap_or(&a.name);
         let mut spans = vec![
             Span::styled(
@@ -497,8 +498,8 @@ fn agent_rows(
         ];
         if wide {
             spans.push(Span::styled(
-                format!(" {} ", pad(&clip(a.kind.as_deref().unwrap_or(""), 6), 6)),
-                Style::default().fg(t::MUTED),
+                format!(" {} ", pad(&clip(&brand_label, 8), 8)),
+                Style::default().fg(brand_color),
             ));
         }
         spans.push(Span::styled(
@@ -587,6 +588,18 @@ fn agent_rows(
     }
     rows
 }
+// Text approximations of brand marks; no icon font or terminal image protocol required.
+fn agent_brand(kind: &str) -> (String, Color) {
+    let (mark, color) = match kind.to_ascii_lowercase().as_str() {
+        "claude" => ("✳", Color::Rgb(0xd9, 0x77, 0x57)),
+        "codex" => (">_", Color::Rgb(0xff, 0xff, 0xff)),
+        "pi" => ("π", Color::Rgb(0xff, 0xff, 0xff)),
+        "omp" => ("π", Color::Rgb(0xa8, 0x55, 0xf7)),
+        _ => return (kind.to_owned(), t::MUTED),
+    };
+    (format!("{mark} {kind}"), color)
+}
+
 fn short_path(path: &str) -> String {
     let parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
     if parts.len() > 2 {

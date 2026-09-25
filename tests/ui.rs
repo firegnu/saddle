@@ -261,3 +261,49 @@ fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
         .unwrap();
     assert!(lines[reply + 1].contains("‹Sort s› ‹Stop x›"));
 }
+
+#[test]
+fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_state() {
+    use ratatui::style::Color;
+    use saddle::theme;
+    use unicode_width::UnicodeWidthStr;
+    for (kind, label, color) in [
+        ("claude", "✳ claude", Color::Rgb(0xd9, 0x77, 0x57)),
+        ("codex", ">_ codex", Color::Rgb(0xff, 0xff, 0xff)),
+        ("pi", "π pi", Color::Rgb(0xff, 0xff, 0xff)),
+        ("omp", "π omp", Color::Rgb(0xa8, 0x55, 0xf7)),
+        ("custom", "custom", theme::MUTED),
+    ] {
+        for selected in [false, true] {
+            let (mut a, mut q) = fixture();
+            a.agents[0].kind = Some(kind.into());
+            a.selected = selected.then(|| "demo/main".into());
+            let (buffer, hits) = render(160, 48, &mut a, &mut q, Focus::Agents);
+            let y = hits.agents[0].0;
+            let mut line = String::new();
+            let mut column = 1;
+            while column < 50 {
+                let symbol = buffer[(column, y)].symbol();
+                line.push_str(symbol);
+                column += symbol.width().max(1) as u16;
+            }
+            let offset = line.find(label).expect(&line);
+            let x = 1 + line[..offset].width() as u16;
+            for column in x..x + label.width() as u16 {
+                assert_eq!(buffer[(column, y)].fg, color, "{label}");
+                assert_eq!(
+                    buffer[(column, y)].bg,
+                    if selected {
+                        theme::SELECTED
+                    } else {
+                        Color::Reset
+                    }
+                );
+            }
+            assert!(line.contains("工作中"), "{line}");
+            assert!(line.contains("◉ 1s"), "{line}");
+            let state = 1 + line[..line.find('工').unwrap()].width() as u16;
+            assert_eq!(buffer[(state, y)].fg, theme::WORKING);
+        }
+    }
+}
