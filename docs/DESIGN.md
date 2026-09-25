@@ -226,3 +226,14 @@ drover = "drover"
 - 2026-09-25 用户授权跨仓库修复：drover 的 `list --json` 历史解除十条截取，返回完整历史；saddle 沿用相同公开命令读取全部记录。使用真实 CLI + 临时合成历史 + 假 corral 验证数据到界面的整条路径，避免只用手工完整 JSON 掩盖接口限制。
 - 2026-09-25 用户 T3 要求 Tasks 的状态文字用颜色区分。列表分组（Current、Awaiting、Pending、History）与任务行状态（Running、Awaiting、Pending、Done、Failed、Dropped）是两层：Current 标题和 Running 蓝色（`agent_working`），Awaiting 标题和状态琥珀色（`agent_blocked`），Pending 标题和状态紫色（`agent_starting`）；History 混合多种结果，标题保持中性，行内 Done 绿（`agent_idle`）、Failed 红（`agent_error`）、Dropped 橙（`agent_stalled`）。未知原值保留原文与中性色，缺失显示弱化的占位。只复用第 8 节已有颜色配置，不新增字段。
 - 用户确认历史区问题是底部留白。历史区域延伸到任务操作栏上方，用固定底边显示可见范围/历史总数，到末尾标记 End；短列表保持紧凑行距，不用虚假记录或拉大行距填满。操作反馈按实际结果区分成功绿色、失败红色、执行中蓝色。
+
+## 22. 所有项目的 pending 汇总（T6）
+
+用户要求：添加一个按钮，弹出类似 Add task 的对话框，展示所有项目中所有 pending 状态的任务；界面由开发 agent 决定。
+
+- 入口：Queue 底部任务按钮行增加 `All pending A`（快捷键大写 `A`，与小写 `a` 新增相邻、便于记忆），列表页可用；当前项目读取失败时也可打开（它不依赖当前项目数据），当前项目有操作在执行时禁用，避免操作结果切换页面时把汇总弹层关掉。
+- 范围：只展示 pending；「所有项目」即 `~/.drover/projects` 登记的项目，每次打开重新读取登记。对每个项目在其目录下运行当前配置的 `drover list --json`，只取公开 `pending` 字段；不读其他文件，不含 current/awaiting/history。
+- 弹层：原生有边框覆盖层 ` All pending `，尺寸与 Add task 相同，按钮 `Refresh r`、`Back Esc`。顶部一行汇总项目数、pending 总数、仍在读取与失败的项目数。之后按登记顺序逐个项目：项目名（repo 青色加粗）与数量，下一行弱化的完整路径，再逐条列出 pending，前缀为该项目中 1 起始的位置（与 `drover edit/move` 的位置一致）和公开 id，标题原文完整折行，不截断。正文不在汇总中展开，需要时切到该项目用 Details 查看。
+- 状态如实呈现：尚未返回的项目显示 `Loading…`；读取成功但为空显示 `No pending`；失败显示红色 `Read failed` 和完整错误，其余项目照常显示。登记读取失败时在顶部显示错误，不把它当成没有任务；无登记项目时显示 `No registered projects`。
+- 加载：每次打开或刷新，为每个项目开一个后台线程读取，结果逐个返回，界面不等待；关闭弹层、刷新或切换项目时取消并丢弃旧的读取，旧结果不会写进新弹层。不做自动定时刷新，按 `r` 手动刷新。
+- 输入：沿用弹层边界，↑↓/j k、PgUp/PgDn、滚轮滚动内容，`r` 刷新，Esc 返回，`q`/Ctrl-] 回 Agents；其他键（包括队列动作和编辑/调序）在此弹层中不生效。汇总只读，不提供跨项目编辑、调序或切换。

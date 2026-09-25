@@ -968,3 +968,40 @@ text = "#abcdef"
     assert_eq!(colored.bgcolor(), Color::Rgb(9, 8, 7));
     h.quit();
 }
+
+#[test]
+fn all_pending_button_lists_every_registered_project_and_reports_read_failures() {
+    let script = include_str!("fixtures/drover.py")
+        .replace("state_file = root /", "state_file = Path.cwd() /")
+        .replace(
+            "title='Native queue task'",
+            "title='Queue ' + Path.cwd().name",
+        )
+        .replace(
+            "if args == ['list', '--json']:",
+            "if Path('fail-list').exists():\n    print('synthetic project read failure', file=sys.stderr)\n    sys.exit(4)\nif args == ['list', '--json']:",
+        );
+    let mut h = Harness::start_with_projects(&script, true);
+    h.see("Queue project-one");
+    std::fs::write(h.dir.path().join("project-two/fail-list"), "").unwrap();
+    h.click("All pending A");
+    h.see("All pending ━");
+    h.see("synthetic project read failure");
+    h.see("Read failed");
+    h.see("1 T1 Queue project-one");
+    h.see("project-two");
+    std::fs::remove_file(h.dir.path().join("project-two/fail-list")).unwrap();
+    h.click("Refresh r");
+    h.see("1 T1 Queue project-two");
+    h.until(|h| !h.screen.screen().contents().contains("Read failed"));
+    h.send(b"\x1b");
+    h.until(|h| !h.screen.screen().contents().contains("All pending ━"));
+    h.see("Queue project-one");
+    h.quit();
+    let events = h.log("queue-events");
+    assert!(
+        events.lines().all(|line| line == "[\"list\", \"--json\"]"),
+        "{events}"
+    );
+    assert!(!h.log("events").contains("attach "));
+}

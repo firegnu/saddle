@@ -22,7 +22,7 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 ## Features
 
 - **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states.
-- **Queue:** current, awaiting, pending, and historical tasks. Read details, add tasks, edit and reorder pending tasks, switch projects, release work, and control pause and loop settings through native controls.
+- **Queue:** current, awaiting, pending, and historical tasks. Read details, add tasks, edit and reorder pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
 - **Viewer:** the selected agent's live `corral attach` session, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
 - **Responsive layout:** three panes in a wide terminal; Agents and Queue become tabs in a narrow window.
@@ -136,6 +136,8 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Queue | p / l | Pause or resume / toggle loop |
 | Queue | a / ? | Add a task / open help |
 | Queue pending task | e / u / d | Edit / move up / move down |
+| Queue | A | Show pending tasks from all registered projects |
+| All pending | Mouse wheel / PgUp / PgDn, r, Esc | Scroll / reload / close |
 | Add / Edit form | Tab / Ctrl-S / Esc | Switch field / save / cancel |
 | Queue | q | Return to Agents; in text fields, q is text |
 | Queue / Viewer | Ctrl-] | Return to Agents |
@@ -143,6 +145,8 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies the current input target. Open dialogs capture their own input; background controls stay inactive. Unsubmitted Queue drafts survive a temporary return to Agents.
 
 Select a pending task to use **Edit**, **Move up**, or **Move down**; other task states cannot be edited or reordered. Edit prefills the title and multiline body. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, saddle rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
+
+**All pending A** opens a read-only dialog listing the pending tasks of every project in `~/.drover/projects`, grouped by project with each task's queue position, id, and full title. Each project is read in the background with its own `drover list --json`; a project that is still loading or failed to read is labeled as such, with the full error, while the other projects still show their tasks. Press **r** to reload. The dialog does not edit or reorder tasks; switch to a project to act on its queue.
 
 **Go, Next, Pause, and Loop apply to the selected project**, regardless of which history task is highlighted. A failed refresh disables actions on stale queue data. No active work is shown as `No active tasks`; history remains available, with a range indicator at the bottom.
 

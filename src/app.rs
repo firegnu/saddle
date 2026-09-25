@@ -129,6 +129,7 @@ struct App {
     viewer: Viewer,
     queue: queue::Panel,
     queue_worker: drover::Worker,
+    pending_load: Option<drover::PendingLoad>,
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
@@ -193,6 +194,7 @@ impl App {
                 ..Default::default()
             },
             queue_worker,
+            pending_load: None,
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
@@ -306,6 +308,16 @@ impl App {
                 }
                 drover::Update::Feedback(operation, result) => {
                     self.queue.complete(&operation, result)
+                }
+            }
+        }
+        if !matches!(self.queue.page, queue::Page::AllPending) {
+            self.pending_load = None;
+        }
+        if let Some(load) = &self.pending_load {
+            for (index, result) in load.updates.try_iter() {
+                if let Some((_, entry)) = self.queue.all_pending.get_mut(index) {
+                    *entry = Some(result.map_err(|error| format!("{error:#}")));
                 }
             }
         }
@@ -579,21 +591,40 @@ impl App {
             _ => {}
         }
     }
+    fn reload_projects(&mut self) -> bool {
+        match drover::registered_projects(&expand_home("~/.drover/projects")) {
+            Ok(projects) => {
+                self.queue.projects = projects;
+                self.queue.registry_error = None;
+                self.queue.project_selected = self
+                    .queue
+                    .projects
+                    .iter()
+                    .position(|p| *p == self.queue.project)
+                    .unwrap_or(0);
+                true
+            }
+            Err(error) => {
+                self.queue.registry_error = Some(format!("{error:#}"));
+                false
+            }
+        }
+    }
     fn queue_request(&mut self, request: drover::Request) {
         if matches!(request, drover::Request::Projects) {
-            match drover::registered_projects(&expand_home("~/.drover/projects")) {
-                Ok(projects) => {
-                    self.queue.projects = projects;
-                    self.queue.registry_error = None;
-                    self.queue.project_selected = self
-                        .queue
-                        .projects
-                        .iter()
-                        .position(|p| *p == self.queue.project)
-                        .unwrap_or(0);
-                }
-                Err(error) => self.queue.registry_error = Some(format!("{error:#}")),
-            }
+            self.reload_projects();
+        } else if matches!(request, drover::Request::AllPending) {
+            let projects = if self.reload_projects() {
+                self.queue.projects.clone()
+            } else {
+                Vec::new()
+            };
+            // Replacing the loader cancels the previous reads and drops their results.
+            self.pending_load = Some(drover::PendingLoad::start(
+                &expand_home(&self.config.queue.drover).to_string_lossy(),
+                &projects,
+            ));
+            self.queue.all_pending = projects.into_iter().map(|p| (p, None)).collect();
         } else if let drover::Request::Project(path) = request {
             if self.queue.busy {
                 return;

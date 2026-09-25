@@ -168,6 +168,7 @@ impl Client {
 
 pub enum Request {
     Refresh,
+    AllPending,
     Projects,
     Project(String),
     Run(Operation),
@@ -228,6 +229,47 @@ impl Drop for Worker {
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.request(Request::Refresh);
         if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Reads the pending tasks of every registered project in parallel; results arrive per project.
+pub struct PendingLoad {
+    pub updates: std::sync::mpsc::Receiver<(usize, Result<Vec<Task>>)>,
+    cancel: std::sync::Arc<AtomicBool>,
+    threads: Vec<std::thread::JoinHandle<()>>,
+}
+impl PendingLoad {
+    pub fn start(program: &str, projects: &[String]) -> Self {
+        let (send, updates) = std::sync::mpsc::channel();
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let threads = projects
+            .iter()
+            .enumerate()
+            .map(|(index, project)| {
+                let client = Client {
+                    program: program.into(),
+                    cwd: project.into(),
+                };
+                let (send, cancel) = (send.clone(), cancel.clone());
+                std::thread::spawn(move || {
+                    let _ = send.send((index, client.read(&cancel).map(|s| s.pending)));
+                })
+            })
+            .collect();
+        Self {
+            updates,
+            cancel,
+            threads,
+        }
+    }
+}
+impl Drop for PendingLoad {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        for thread in self.threads.drain(..) {
             let _ = thread.join();
         }
     }

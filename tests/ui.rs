@@ -664,6 +664,7 @@ fn queue_chrome_is_english_and_preserves_source_text() {
             body_focus: false,
         },
         queue::Page::Feedback("原始反馈".into()),
+        queue::Page::AllPending,
     ] {
         q.page = page;
         let buffer = render_queue(&mut q, 80, 32);
@@ -784,20 +785,18 @@ fn short_history_has_a_footer_at_the_bottom_of_its_available_area() {
         let output = text(&buffer);
         assert!(output.contains("No active tasks"));
         assert!(output.contains("Past task"));
+        // Narrow panes may wrap the task buttons; the footer still sits directly above them.
+        let lines: Vec<_> = output.lines().collect();
+        let buttons = lines.iter().position(|l| l.contains("Details")).unwrap();
         assert!(
-            output
-                .lines()
-                .nth(height as usize - 3)
-                .unwrap()
-                .contains("History 1–1/1 · End"),
+            lines[buttons - 1].contains("History 1–1/1 · End"),
             "{output}"
         );
         assert!(
-            output
-                .lines()
-                .nth(height as usize - 2)
-                .unwrap()
-                .contains("Details")
+            lines[buttons..height as usize - 1]
+                .iter()
+                .all(|l| l.contains('‹')),
+            "{output}"
         );
     }
 }
@@ -860,4 +859,84 @@ fn task_groups_and_row_statuses_have_distinct_colors() {
             assert_eq!(buffer[((x + i) as u16, y as u16)].fg, color, "{title}");
         }
     }
+}
+
+#[test]
+fn all_pending_overlay_names_projects_reports_each_state_and_scrolls_to_the_last_task() {
+    let mut q = queue::Panel::default();
+    q.absorb(Snapshot::default());
+    let task = |id: &str, title: &str| Task {
+        id: Some(id.into()),
+        title: title.into(),
+        body: "正文不在汇总里".into(),
+        ..Default::default()
+    };
+    let long = "很长的原文标题需要完整折行显示".repeat(8);
+    q.all_pending = vec![
+        (
+            "/work/alpha".into(),
+            Some(Ok(vec![task("T1", "原文第一件"), task("T2", &long)])),
+        ),
+        ("/work/beta".into(), None),
+        (
+            "/work/gamma".into(),
+            Some(Err("synthetic read failure".into())),
+        ),
+        ("/work/delta".into(), Some(Ok(Vec::new()))),
+    ];
+    q.page = queue::Page::AllPending;
+    let buffer = render_queue(&mut q, 80, 40);
+    let output = text(&buffer);
+    for value in [
+        " All pending ",
+        "alpha",
+        "/work/alpha",
+        "1 T1 原文第一件",
+        "beta",
+        "Loading…",
+        "gamma",
+        "Read failed",
+        "synthetic read failure",
+        "delta",
+        "No pending",
+        "Refresh r",
+        "Back Esc",
+    ] {
+        assert!(output.contains(value), "missing {value}:\n{output}");
+    }
+    let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
+    terminal
+        .draw(|f| q.draw_overlay(&saddle::theme::Theme::default(), f))
+        .unwrap();
+    // Only the overlay's interior: wrapped rows joined back must equal the source title.
+    let joined: String = text(terminal.backend().buffer())
+        .lines()
+        .filter_map(|l| {
+            let (start, end) = (l.find('┃')?, l.rfind('┃')?);
+            (start < end).then(|| l[start + '┃'.len_utf8()..end].trim().to_string())
+        })
+        .collect();
+    assert!(
+        joined.contains(&long),
+        "long titles wrap without clipping: {joined}"
+    );
+    assert!(!output.contains("正文不在汇总里"));
+    assert_label_color(&buffer, "Read failed", saddle::theme::AGENT_ERROR);
+
+    q.all_pending = vec![(
+        "/work/many".into(),
+        Some(Ok((1..=60)
+            .map(|i| task(&format!("T{i}"), &format!("Task number {i}")))
+            .collect())),
+    )];
+    let first = text(&render_queue(&mut q, 80, 32));
+    assert!(first.contains("Task number 1 ") && !first.contains("Task number 60"));
+    for _ in 0..30 {
+        q.key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::PageDown,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+    }
+    let last = text(&render_queue(&mut q, 80, 32));
+    assert!(last.contains("Task number 60"), "{last}");
 }

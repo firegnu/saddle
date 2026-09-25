@@ -254,3 +254,29 @@ fn pending_actions_ignore_other_states_overlays_busy_and_read_errors() {
     }
     assert!(matches!(panel.page, Page::Help));
 }
+
+#[test]
+fn all_pending_opens_a_read_only_overlay_even_when_the_current_project_failed() {
+    let mut panel = Panel::default();
+    panel.absorb(Snapshot::default());
+    panel.read_error = Some("current project unavailable".into());
+    assert!(matches!(
+        panel.key(key(K::Char('A'))),
+        Some(Request::AllPending)
+    ));
+    assert!(matches!(panel.page, Page::AllPending));
+    for c in ['g', 'n', 'p', 'l', 'a', 'e', 'u', 'd', 'c', '?'] {
+        assert!(panel.key(key(K::Char(c))).is_none(), "{c}");
+        assert!(matches!(panel.page, Page::AllPending), "{c}");
+    }
+    assert!(matches!(
+        panel.key(key(K::Char('r'))),
+        Some(Request::AllPending)
+    ));
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::List));
+    panel.read_error = None;
+    panel.busy = true;
+    assert!(panel.key(key(K::Char('A'))).is_none());
+    assert!(matches!(panel.page, Page::List));
+}

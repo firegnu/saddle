@@ -11,6 +11,7 @@ pub enum Page {
     Feedback(String),
     Projects,
     Project(String),
+    AllPending,
     Edit {
         pending: Vec<Task>,
         index: usize,
@@ -45,7 +46,10 @@ pub struct Panel {
     pub(crate) message_failed: bool,
     pub busy: bool,
     pub(crate) selection_after_write: Option<(usize, Task)>,
+    pub all_pending: Vec<ProjectPending>,
 }
+/// A registered project and its pending tasks: `None` while loading, `Err` with the read error.
+pub type ProjectPending = (String, Option<Result<Vec<Task>, String>>);
 impl Panel {
     pub fn click(&mut self, column: u16, row: u16) -> Option<Request> {
         let point = (column, row).into();
@@ -86,6 +90,10 @@ impl Panel {
             Page::Project(_) => vec![
                 B::new("Apply ↵", K::Enter, !self.busy),
                 B::new("Cancel Esc", K::Esc, true),
+            ],
+            Page::AllPending => vec![
+                B::new("Refresh r", K::Char('r'), true),
+                B::new("Back Esc", K::Esc, true),
             ],
             Page::Projects => vec![
                 B::new("Open ↵", K::Enter, !self.projects.is_empty()),
@@ -254,6 +262,21 @@ impl Panel {
             }
             return None;
         }
+        if matches!(self.page, Page::AllPending) {
+            match key.code {
+                KeyCode::Esc => {
+                    self.page = Page::List;
+                    self.scroll = 0;
+                }
+                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
+                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
+                KeyCode::Char('r') => return Some(Request::AllPending),
+                _ => {}
+            }
+            return None;
+        }
         if let Page::Project(path) = &mut self.page {
             match key.code {
                 KeyCode::Esc => self.page = Page::List,
@@ -381,6 +404,12 @@ impl Panel {
             KeyCode::Char('?' | 'h') => {
                 self.page = Page::Help;
                 self.scroll = 0;
+            }
+            KeyCode::Char('A') if matches!(self.page, Page::List) && !self.busy => {
+                self.page = Page::AllPending;
+                self.scroll = 0;
+                self.message.clear();
+                return Some(Request::AllPending);
             }
             KeyCode::Char('c') if !self.busy => {
                 self.page = Page::Projects;
@@ -660,6 +689,11 @@ impl Panel {
                 ),
             ]);
         }
+        task_controls.push(B::new(
+            "All pending A",
+            K::Char('A'),
+            !self.overlay_open() && !self.busy,
+        ));
         task_controls.push(B::new("Help ?", K::Char('?'), !self.overlay_open()));
         let (mut body, task_hits) = buttons::draw_compact(t, frame, remaining, &task_controls);
         self.buttons.extend(task_hits);
@@ -705,6 +739,7 @@ impl Panel {
             Page::Detail => " Task details ",
             Page::Help => " Help ",
             Page::Feedback(_) => " Action result ",
+            Page::AllPending => " All pending ",
             Page::List => return,
         };
         let height = if matches!(self.page, Page::Projects | Page::Project(_)) {
@@ -1080,10 +1115,34 @@ impl Panel {
                     }
                 }
             }
+            Page::AllPending => {
+                let lines = self.all_pending_lines(t, body.width.saturating_sub(1));
+                let height = usize::from(body.height);
+                self.scroll = self.scroll.min(lines.len().saturating_sub(height));
+                frame.render_widget(
+                    Paragraph::new(lines.clone())
+                        .scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
+                    Rect::new(body.x, body.y, body.width.saturating_sub(1), body.height),
+                );
+                if lines.len() > height && height > 0 {
+                    use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
+                    frame.render_stateful_widget(
+                        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                            .begin_symbol(None)
+                            .end_symbol(None)
+                            .thumb_style(Style::default().fg(t.muted))
+                            .track_style(Style::default().fg(t.border)),
+                        body,
+                        &mut ScrollbarState::new(lines.len() - height + 1)
+                            .viewport_content_length(height)
+                            .position(self.scroll),
+                    );
+                }
+            }
             _ => {
                 let text=match &self.page {
                     Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\nReason: {r}")).unwrap_or_default())).unwrap_or_else(||"Task no longer in queue".into()),
-                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\ne: Edit selected pending task\nu / d: Move pending up / down\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit selected pending task\nu / d: Move pending up / down\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };
@@ -1104,6 +1163,108 @@ impl Panel {
             }
         }
         hits
+    }
+}
+
+impl Panel {
+    /// Pending tasks grouped by registered project, including loading and read-failure states.
+    fn all_pending_lines(&self, t: &Theme, width: u16) -> Vec<ratatui::text::Line<'static>> {
+        use ratatui::{
+            style::{Modifier, Style},
+            text::{Line, Span},
+        };
+        let bold = |color| Style::default().fg(color).add_modifier(Modifier::BOLD);
+        let mut lines = Vec::new();
+        if let Some(error) = &self.registry_error {
+            lines.extend(
+                wrap_text(error, width)
+                    .into_iter()
+                    .map(|l| l.style(Style::default().fg(t.agent_error))),
+            );
+            return lines;
+        }
+        if self.all_pending.is_empty() {
+            lines.push(Line::styled(
+                "No registered projects",
+                Style::default().fg(t.muted),
+            ));
+            return lines;
+        }
+        let loaded: Vec<_> = self
+            .all_pending
+            .iter()
+            .filter_map(|(_, r)| r.as_ref())
+            .collect();
+        let total: usize = loaded
+            .iter()
+            .filter_map(|r| r.as_ref().ok())
+            .map(Vec::len)
+            .sum();
+        let failed = loaded.iter().filter(|r| r.is_err()).count();
+        let loading = self.all_pending.len() - loaded.len();
+        let mut summary = format!("{} projects · {total} pending", self.all_pending.len());
+        if loading > 0 {
+            summary += &format!(" · {loading} loading");
+        }
+        if failed > 0 {
+            summary += &format!(" · {failed} failed");
+        }
+        lines.push(Line::styled(summary, Style::default().fg(t.muted)));
+        for (project, result) in &self.all_pending {
+            lines.push(Line::raw(""));
+            let name = std::path::Path::new(project)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| project.clone());
+            let state = match result {
+                None => Span::styled("Loading…", Style::default().fg(t.muted)),
+                Some(Err(_)) => Span::styled("Read failed", bold(t.agent_error)),
+                Some(Ok(tasks)) if tasks.is_empty() => {
+                    Span::styled("No pending", Style::default().fg(t.muted))
+                }
+                Some(Ok(tasks)) => {
+                    Span::styled(format!("{} pending", tasks.len()), bold(t.agent_starting))
+                }
+            };
+            lines.push(Line::from(vec![
+                Span::styled(name, bold(t.connected)),
+                Span::raw("  "),
+                state,
+            ]));
+            lines.extend(
+                wrap_text(project, width)
+                    .into_iter()
+                    .map(|l| l.style(Style::default().fg(t.dim))),
+            );
+            match result {
+                Some(Err(error)) => lines.extend(
+                    wrap_text(error, width)
+                        .into_iter()
+                        .map(|l| l.style(Style::default().fg(t.agent_error))),
+                ),
+                Some(Ok(tasks)) => {
+                    for (index, task) in tasks.iter().enumerate() {
+                        let prefix =
+                            format!("{:>3} {} ", index + 1, task.id.as_deref().unwrap_or("·"));
+                        let indent = unicode_width::UnicodeWidthStr::width(prefix.as_str());
+                        let title =
+                            wrap_text(&task.title, width.saturating_sub(indent as u16).max(1));
+                        for (row, line) in title.into_iter().enumerate() {
+                            let lead = if row == 0 {
+                                Span::styled(prefix.clone(), Style::default().fg(t.muted))
+                            } else {
+                                Span::raw(" ".repeat(indent))
+                            };
+                            let mut spans = vec![lead];
+                            spans.extend(line.spans);
+                            lines.push(Line::from(spans));
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+        lines
     }
 }
 
