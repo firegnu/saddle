@@ -46,3 +46,9 @@ RED→GREEN 的行为检查包含：布局分配、非法配置、公开 JSON �
 在真实终端运行 `./target/release/saddle`，按 DESIGN 第 11 节确认真实 Claude Code / drover 显示与操作、真实 ATT 和断开后 agent 继续运行。本轮按用户要求不执行这部分，也不录屏。
 
 第 2、3 步尚未开始；左下仍运行配置命令（默认 drover board）。没有待用户裁定的设计问题。
+
+## 范围修订：原生 Queue（进行中）
+
+用户明确要求所有看板 UI 都由 Rust UI 库实现，拒绝 Python 看板。左上 Agents 已是 ratatui 原生；左下取消 PTY/`drover board`，改为原生任务、详情、帮助、新增表单及公开 CLI 操作。DESIGN 已先行更新。
+
+公开 CLI 在隔离 HOME/临时项目中验证：`drover list --json` 提供任务正文、当前/待放行/待办/历史和模式，足以实现原生队列。禁止读取内部注册文件，项目由 queue.cwd 指定。

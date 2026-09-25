@@ -15,7 +15,7 @@
 - 一条命令打开，布局已经排好。
 - 左上：原生的 agent 面板，信息和按键与现在的 `corral/tools/board` 一致。
 - 右边：内嵌终端，运行 `corral attach <选中的 agent>`，能直接往 agent 里打字。
-- 左下：任务队列。第 1 步先内嵌终端跑现有的 `drover board`；第 2、3 步换成原生面板（见第 9 节）。
+- 左下：ratatui 原生任务队列。第 1 步就读取 `drover list --json`，原生绘制任务、详情、帮助和新增任务表单；操作调用公开 drover CLI。
 - 一个配置文件。
 
 **不做**
@@ -27,7 +27,7 @@
 
 ## 3. 和 corral、drover 的关系
 
-- **只走公开命令，不读它们的内部文件。** corral：`corral ls`、`corral status <名字>`、`corral reply <名字>`、`corral attach <名字>`、`corral stop <名字>`，都输出 JSON（`attach` 除外）。drover：第 1 步不直接调用；第 2、3 步用 `drover list --json` 和 `drover go / next / pause / resume / loop / add` 等命令。
+- **只走公开命令，不读它们的内部文件。** corral：`corral ls`、`corral status <名字>`、`corral reply <名字>`、`corral attach <名字>`、`corral stop <名字>`，都输出 JSON（`attach` 除外）。drover：使用 `drover list --json` 和 `drover go / next / pause / resume / loop / add` 等公开命令。只展示公开 JSON 提供的字段；判据核对结果显示 go 命令的原始反馈，不在 saddle 重做判断。
 - **判断全在它们那边。** agent 的状态（working、idle、blocked……）由 corral 根据钩子事件判定；队列、判据、放行由 drover 决定。本程序只显示和转发按键，行为因此和现在手动开的那套一致。
 - `corral` 从 `PATH` 找，配置里可以改路径。
 
@@ -39,13 +39,13 @@
 │ drover/main   ◐ work │   选中 agent 的实时终端           │
 │ …                    │   （corral attach）              │
 ├─ Queue ──────────────┤                                  │
-│ （第 1 步：drover     │                                  │
-│   board 内嵌终端）    │                                  │
+│ 原生任务列表与详情   │                                  │
+│ 帮助、状态和操作反馈 │                                  │
 └──────────────────────┴──────────────────────────────────┘
 ```
 
 - 左列默认 52 列，左边上下默认对半；都可在配置里改。窄屏时左列最多占窗口一半，给 Viewer 留出空间。
-- 窗口缩放时按比例重排；嵌进来的终端收到新尺寸（PTY 调整大小），里面的程序自己重画。
+- 窗口缩放时按比例重排；Viewer 终端收到新尺寸（PTY 调整大小），原生看板按新尺寸重画。
 - 焦点所在的格子边框高亮，其余暗一些。
 
 ## 5. 焦点和按键
@@ -61,7 +61,7 @@
 | 退出 | 焦点在 Agents 时按 `q` |
 
 - 焦点在 Viewer 时，除了 `Ctrl-]`，所有按键、粘贴、鼠标事件都原样送进 `corral attach`。
-- 焦点在 Queue 且第 1 步是内嵌终端时，同理：除了切焦点的键，其余原样送进去。
+- Queue 是原生面板：↑↓/j k 选任务，Enter 显示详情，PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，? / h 帮助，q / Ctrl-] 回 Agents。新增表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
 - Agents 面板现有的按键全部保留：`r` 显示或隐藏回复区、`PgUp/PgDn` 滚动回复区、`s` 按状态分组、`x` 再按 `y` 停掉 agent、滚轮在列表上滚动。
 
 ## 6. Agents 面板（原生）
@@ -91,23 +91,19 @@ left_width = 52                # 左列宽度（列）
 left_split = 0.5               # 左边上格占的比例
 refresh_ms = 1000              # Agents 面板刷新间隔
 
-[queue]                        # 左下格（第 1 步：内嵌终端跑一个命令）
-command = ["drover", "board"]
+[queue]                        # 原生队列，只调用公开数据与操作命令
+drover = "drover"
 # cwd = "~/Developer/personal_projs/drover"
 ```
 
-## 9. 分三步
+## 9. 实施范围（按用户要求修订）
 
-每一步做完都能直接用。
+第 1 步直接完成布局、焦点、Agents 原生面板、Queue 原生面板及其操作、Viewer 内嵌终端。
 
-| 步 | 做什么 | 做完的样子 |
-|---|---|---|
-| 1 | 布局、焦点、Agents 原生面板、Viewer 内嵌终端；左下内嵌终端跑配置里的命令（默认 `drover board`） | 取代手动分三格和 `board`、`boardv`；`drover board` 照常用 |
-| 2 | 左下换成原生的队列面板，只看：信息和现在的 drover 看板一致 | `drover board` 退为后备 |
-| 3 | 把 drover 看板的操作键搬过来（放行、下一件、暂停、循环、加任务、帮助页、待办详情页） | 完整替代 |
-
-- 第 2、3 步需要 drover 提供更多 JSON（任务正文、判据结果、待办详情），那是 drover 仓库的活，到时另开。
-- 新程序成为主力后，Python 版的 `tools/board` 和 `drover-board` 保留做后备，不再加新功能。
+- **所有 saddle UI 都由 Rust / ratatui 绘制。禁止启动 `corral/tools/board`、`drover board` 或其他 Python UI 作为窗格实现。** Viewer 仅通过 `corral attach` 接收 agent 终端字节流，由 Rust 解析和绘制。
+- 原来的「先嵌入 drover board，再做原生队列」分步方案作废，不保留外部看板后备配置。
+- Queue 的 cwd 指定要展示的 drover 项目，默认继承 saddle 启动目录；不读取 drover 的内部项目注册文件。不支持此项目时显示公开 CLI 报错及配置提示。
+- 公开 `list --json` 已提供 mode、paused、current、awaiting、pending（含正文）和 history；原生面板以这些字段为准。未来更多判据数据需 drover 另行提供公开 API，不读取内部文件补齐。
 
 ## 10. 技术选型
 
@@ -124,8 +120,8 @@ command = ["drover", "board"]
 - 左边选中一个 agent 按回车或点击，右边切到它，能打字、能看到它的实时输出；`Ctrl-]` 回到左边。
 - 换 agent 时，被断开的 agent 继续跑（`corral status` 看得到）；右边正在看的那个，ATT 显示 1。
 - agent 状态变化、派出去的新 agent 出现，和现在的 `board` 一致（同样来自 `corral ls/status`）。
-- 窗口缩放后三格重排，右边和左下的程序正常重画。
-- 左下内嵌的 `drover board` 能正常使用，焦点切过去后它的按键都有效。
+- 窗口缩放后三格重排，Viewer 和原生 Queue 正常重画。
+- 左下原生 Queue 展示公开任务数据；选择、详情、帮助、新增、刷新和公开操作键有效，不启动任何外部看板。
 - 退出程序后，所有 agent 继续在跑。
 
 ## 12. 验证
