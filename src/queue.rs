@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 pub enum Page {
     #[default]
     List,
-    Detail,
+    Detail(Box<crate::detail::TaskDetail>),
     Help,
     Feedback(String),
     Projects,
@@ -51,6 +51,13 @@ pub struct Panel {
     pub busy: bool,
     pub(crate) selection_after_write: Option<(usize, Task)>,
     pub all_pending: Vec<ProjectPending>,
+}
+/// Which task a detail result belongs to; a reopened page gets a new `seq`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DetailKey {
+    pub project: String,
+    pub id: String,
+    pub seq: u64,
 }
 /// A registered project and its pending tasks: `None` while loading, `Err` with the read error.
 pub type ProjectPending = (String, Option<Result<Vec<Task>, String>>);
@@ -136,6 +143,69 @@ impl Panel {
             .checked_sub(usize::from(s.current.is_some()) + usize::from(s.awaiting.is_some()))?;
         (index < s.pending.len()).then_some(index)
     }
+    /// Where the list has the detail page's task now: by id, or by content if unnumbered.
+    fn live(&self, detail: &crate::detail::TaskDetail) -> Option<(&'static str, &Task)> {
+        self.tasks()
+            .into_iter()
+            .find(|(_, t)| match &detail.task.id {
+                Some(id) => t.id.as_ref() == Some(id),
+                None => {
+                    t.id.is_none() && t.title == detail.task.title && t.body == detail.task.body
+                }
+            })
+    }
+    /// The `drover show` target of the open detail page. Pending and unnumbered tasks are not
+    /// covered by show; a pending task becomes a target once it starts.
+    pub fn detail_key(&self) -> Option<DetailKey> {
+        let Page::Detail(detail) = &self.page else {
+            return None;
+        };
+        let id = detail.task.id.as_ref().filter(|id| {
+            id.strip_prefix('T')
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        })?;
+        if self
+            .live(detail)
+            .is_some_and(|(group, _)| group == "Pending")
+        {
+            return None;
+        }
+        Some(DetailKey {
+            project: self.project.clone(),
+            id: id.clone(),
+            seq: detail.seq,
+        })
+    }
+    /// Takes a show result only if it belongs to the page open now.
+    pub fn absorb_detail(
+        &mut self,
+        key: &DetailKey,
+        result: anyhow::Result<crate::drover::Detail>,
+    ) {
+        if self.detail_key().as_ref() != Some(key) {
+            return;
+        }
+        if let Page::Detail(detail) = &mut self.page {
+            match result {
+                Ok(data) => {
+                    detail.data = Some(Box::new(data));
+                    detail.error = None;
+                }
+                Err(error) => detail.error = Some(format!("{error:#}")),
+            }
+        }
+    }
+    /// Selects a task row and opens its details, as a click does.
+    pub fn open(&mut self, index: usize) {
+        self.select(index);
+        self.open_detail();
+    }
+    fn open_detail(&mut self) {
+        if let Some((group, task)) = self.tasks().get(self.selected) {
+            let detail = crate::detail::TaskDetail::new(group, (*task).clone());
+            self.page = Page::Detail(Box::new(detail));
+        }
+    }
     pub fn absorb(&mut self, snapshot: Snapshot) {
         self.read_error = None;
         let old = if let Some((index, task)) = self.selection_after_write.take() {
@@ -171,7 +241,9 @@ impl Panel {
     }
     pub fn wheel(&mut self, column: u16, row: u16, delta: isize) {
         if !self.overlay_open() && self.list_area.contains((column, row).into()) {
-            if self.read_error.is_some() {
+            if let Page::Detail(detail) = &mut self.page {
+                detail.scroll_by(delta);
+            } else if self.read_error.is_some() {
                 self.scroll = self.scroll.saturating_add_signed(delta);
             } else {
                 self.top = self.top.saturating_add_signed(delta);
@@ -297,6 +369,17 @@ impl Panel {
                 KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
                 KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
                 KeyCode::Char('r') => return Some(Request::AllPending),
+                _ => {}
+            }
+            return None;
+        }
+        if let Page::Detail(detail) = &mut self.page {
+            match key.code {
+                KeyCode::Esc => self.page = Page::List,
+                KeyCode::Up | KeyCode::Char('k') => detail.scroll_by(-1),
+                KeyCode::Down | KeyCode::Char('j') => detail.scroll_by(1),
+                KeyCode::PageUp => detail.scroll_by(-detail.page()),
+                KeyCode::PageDown => detail.scroll_by(detail.page()),
                 _ => {}
             }
             return None;
@@ -446,8 +529,7 @@ impl Panel {
             KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
             KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
             KeyCode::Enter if !self.tasks().is_empty() && self.read_error.is_none() => {
-                self.page = Page::Detail;
-                self.scroll = 0;
+                self.open_detail();
             }
             KeyCode::Char('?' | 'h') => {
                 self.page = Page::Help;
@@ -562,7 +644,7 @@ impl Panel {
         }
     }
     pub fn overlay_open(&self) -> bool {
-        !matches!(self.page, Page::List)
+        !matches!(self.page, Page::List | Page::Detail(_))
     }
     pub fn draw(
         &mut self,
@@ -607,10 +689,8 @@ impl Panel {
         if inside.height < 3 || inside.width == 0 {
             return Vec::new();
         }
-        let ready = !self.overlay_open()
-            && !self.busy
-            && self.snapshot.is_some()
-            && self.read_error.is_none();
+        let on_list = matches!(self.page, Page::List);
+        let ready = on_list && !self.busy && self.snapshot.is_some() && self.read_error.is_none();
         let name = std::path::Path::new(&self.project)
             .file_name()
             .unwrap_or_default()
@@ -628,16 +708,8 @@ impl Panel {
             frame,
             controls,
             &[
-                B::new(
-                    "Refresh r",
-                    K::Char('r'),
-                    !self.busy && !self.overlay_open(),
-                ),
-                B::new(
-                    "Project c",
-                    K::Char('c'),
-                    !self.busy && !self.overlay_open(),
-                ),
+                B::new("Refresh r", K::Char('r'), !self.busy && on_list),
+                B::new("Project c", K::Char('c'), !self.busy && on_list),
             ],
         );
         self.buttons.extend(project_hits);
@@ -734,34 +806,42 @@ impl Panel {
             )
         };
         self.buttons.extend(action_hits);
-        let mut task_controls = vec![
-            B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
-            B::new("Add a", K::Char('a'), ready),
-        ];
-        if let Some(index) = self.pending_index() {
-            task_controls.extend([
-                B::new("Edit e", K::Char('e'), ready),
-                B::new("Move up u", K::Char('u'), ready && index > 0),
-                B::new(
-                    "Move down d",
-                    K::Char('d'),
-                    ready && index + 1 < self.snapshot.as_ref().unwrap().pending.len(),
-                ),
-                B::new("Delete x", K::Char('x'), ready).danger(),
-            ]);
-        }
-        task_controls.push(B::new(
-            "All pending A",
-            K::Char('A'),
-            !self.overlay_open() && !self.busy,
-        ));
-        task_controls.push(B::new("Help ?", K::Char('?'), !self.overlay_open()));
+        let detail = matches!(self.page, Page::Detail(_));
+        let task_controls = if detail {
+            vec![B::new("Back Esc", K::Esc, true)]
+        } else {
+            let mut controls = vec![
+                B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
+                B::new("Add a", K::Char('a'), ready),
+            ];
+            if let Some(index) = self.pending_index() {
+                controls.extend([
+                    B::new("Edit e", K::Char('e'), ready),
+                    B::new("Move up u", K::Char('u'), ready && index > 0),
+                    B::new(
+                        "Move down d",
+                        K::Char('d'),
+                        ready && index + 1 < self.snapshot.as_ref().unwrap().pending.len(),
+                    ),
+                    B::new("Delete x", K::Char('x'), ready).danger(),
+                ]);
+            }
+            controls.push(B::new(
+                "All pending A",
+                K::Char('A'),
+                !self.overlay_open() && !self.busy,
+            ));
+            controls.push(B::new("Help ?", K::Char('?'), !self.overlay_open()));
+            controls
+        };
         let (mut body, task_hits) = buttons::draw_compact(t, frame, remaining, &task_controls);
         self.buttons.extend(task_hits);
         if body.height > 0 {
             frame.render_widget(
                 Paragraph::new(if self.busy {
                     "─ Running action…"
+                } else if detail {
+                    "─ Task details ──────"
                 } else {
                     "─ Tasks ─────────────"
                 })
@@ -775,11 +855,54 @@ impl Panel {
             body.y += 1;
             body.height -= 1;
         }
+        if detail {
+            self.draw_detail(t, frame, body);
+            return Vec::new();
+        }
         let hits = self.draw_page(t, frame, body, focused, true);
         if self.overlay_open() {
             Vec::new()
         } else {
             hits
+        }
+    }
+    fn draw_detail(&mut self, t: &Theme, frame: &mut ratatui::Frame, body: ratatui::layout::Rect) {
+        use ratatui::{
+            layout::Rect,
+            style::Style,
+            widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+        };
+        self.list_area = body;
+        let queried = self.detail_key().is_some();
+        let Page::Detail(detail) = &self.page else {
+            return;
+        };
+        let width = body.width.saturating_sub(1);
+        let lines = detail.lines(t, self.live(detail), queried, usize::from(width));
+        let height = usize::from(body.height);
+        let max = lines.len().saturating_sub(height);
+        let Page::Detail(detail) = &mut self.page else {
+            return;
+        };
+        detail.view = (height, max);
+        let top = detail.scroll.min(max);
+        let visible: Vec<_> = lines.iter().skip(top).take(height).cloned().collect();
+        frame.render_widget(
+            Paragraph::new(visible),
+            Rect::new(body.x, body.y, width, body.height),
+        );
+        if lines.len() > height && height > 0 {
+            frame.render_stateful_widget(
+                Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .begin_symbol(None)
+                    .end_symbol(None)
+                    .thumb_style(Style::default().fg(t.muted))
+                    .track_style(Style::default().fg(t.border)),
+                body,
+                &mut ScrollbarState::new(max + 1)
+                    .viewport_content_length(height)
+                    .position(top),
+            );
         }
     }
     pub fn draw_overlay(&mut self, t: &Theme, frame: &mut ratatui::Frame) {
@@ -797,12 +920,11 @@ impl Panel {
             Page::Project(_) => " Project path ",
             Page::Add { .. } => " Add task ",
             Page::Edit { .. } => " Edit task ",
-            Page::Detail => " Task details ",
             Page::Help => " Help ",
             Page::Feedback(_) => " Action result ",
             Page::AllPending => " All pending ",
             Page::Delete { .. } => " Delete task ",
-            Page::List => return,
+            Page::List | Page::Detail(_) => return,
         };
         let height = if matches!(self.page, Page::Projects | Page::Project(_)) {
             20
@@ -918,18 +1040,7 @@ impl Panel {
                     } else {
                         Style::default()
                     };
-                    let (status, color) = match *group {
-                        "Current" => ("Running", t.agent_working),
-                        "Awaiting" => ("Awaiting", t.agent_blocked),
-                        "Pending" => ("Pending", t.agent_starting),
-                        _ => match task.status.as_deref() {
-                            Some("done") => ("Done", t.agent_idle),
-                            Some("failed") => ("Failed", t.agent_error),
-                            Some("dropped" | "drop") => ("Dropped", t.agent_stalled),
-                            Some(s) => (s, t.muted),
-                            None => ("—", t.dim),
-                        },
-                    };
+                    let (status, color) = task_status(t, group, task.status.as_deref());
                     let status_width = unicode_width::UnicodeWidthStr::width(status) + 1;
                     let id = task.id.as_deref().unwrap_or("·");
                     let id_width = unicode_width::UnicodeWidthStr::width(id).min(8);
@@ -1203,8 +1314,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Detail=>self.tasks().get(self.selected).map(|(group,t)|format!("{} · {} {}\n\n{}{}",group,t.id.as_deref().unwrap_or(""),t.title,t.body,t.reason.as_ref().map(|r|format!("\n\nReason: {r}")).unwrap_or_default())).unwrap_or_else(||"Task no longer in queue".into()),
-                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list\nUp/Down / j k: Select task or project\nEnter: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit selected pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list or details\nUp/Down / j k: Select task or project\nEnter / click a task: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit selected pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
@@ -1331,7 +1441,27 @@ impl Panel {
     }
 }
 
-fn clean(text: &str) -> String {
+/// A task's state as the list words and colors it; unknown values keep their raw text.
+pub(crate) fn task_status<'a>(
+    t: &Theme,
+    group: &str,
+    status: Option<&'a str>,
+) -> (&'a str, ratatui::style::Color) {
+    match group {
+        "Current" => ("Running", t.agent_working),
+        "Awaiting" => ("Awaiting", t.agent_blocked),
+        "Pending" => ("Pending", t.agent_starting),
+        _ => match status {
+            Some("done") => ("Done", t.agent_idle),
+            Some("failed") => ("Failed", t.agent_error),
+            Some("dropped" | "drop") => ("Dropped", t.agent_stalled),
+            Some(s) => (s, t.muted),
+            None => ("—", t.dim),
+        },
+    }
+}
+
+pub(crate) fn clean(text: &str) -> String {
     text.chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
         .collect()

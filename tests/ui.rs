@@ -652,26 +652,11 @@ fn queue_chrome_is_english_and_preserves_source_text() {
         }],
         ..Default::default()
     });
-    for page in [
-        queue::Page::List,
-        queue::Page::Detail,
-        queue::Page::Help,
-        queue::Page::Projects,
-        queue::Page::Project("/tmp/demo".into()),
-        queue::Page::Add {
-            title: "原始任务".into(),
-            body: "原始正文".into(),
-            body_focus: false,
-        },
-        queue::Page::Feedback("原始反馈".into()),
-        queue::Page::AllPending,
-    ] {
-        q.page = page;
-        let buffer = render_queue(&mut q, 80, 32);
-        let output = text(&buffer);
-        if matches!(q.page, queue::Page::Detail) {
+    let check = |q: &mut queue::Panel| {
+        let output = text(&render_queue(q, 80, 32));
+        if matches!(q.page, queue::Page::Detail(_)) {
             for value in ["原始任务", "原始正文", "原始原因"] {
-                assert!(output.contains(value));
+                assert!(output.contains(value), "{output}");
             }
         }
         let chrome = output
@@ -685,7 +670,30 @@ fn queue_chrome_is_english_and_preserves_source_text() {
                 .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
             "{output}"
         );
+    };
+    for page in [
+        queue::Page::List,
+        queue::Page::Help,
+        queue::Page::Projects,
+        queue::Page::Project("/tmp/demo".into()),
+        queue::Page::Add {
+            title: "原始任务".into(),
+            body: "原始正文".into(),
+            body_focus: false,
+        },
+        queue::Page::Feedback("原始反馈".into()),
+        queue::Page::AllPending,
+    ] {
+        q.page = page;
+        check(&mut q);
     }
+    q.page = queue::Page::List;
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(matches!(q.page, queue::Page::Detail(_)));
+    check(&mut q);
 }
 
 #[test]
@@ -1165,4 +1173,234 @@ fn git_summary_line_follows_each_agents_directory_and_wraps_when_narrow() {
         .find(|y| line(*y).contains("/w/main"))
         .unwrap();
     assert!(line(y + 1).contains("C0(origin/main)"), "{screen}");
+}
+
+fn show_json() -> serde_json::Value {
+    serde_json::from_str(include_str!("fixtures/show.json")).unwrap()
+}
+fn detail_queue(list_task: serde_json::Value) -> queue::Panel {
+    let mut q = queue::Panel::default();
+    q.project = "/tmp/demo".into();
+    let location = list_task["at"].as_str().unwrap_or("current").to_owned();
+    let mut state = serde_json::json!({"mode":{}, "paused":false, "current":null, "awaiting":null, "pending":[], "history":[]});
+    if location == "history" {
+        state["history"] = serde_json::json!([list_task]);
+    } else {
+        state[location] = list_task;
+    }
+    q.absorb(serde_json::from_value(state).unwrap());
+    q
+}
+fn open_detail(q: &mut queue::Panel, value: Option<serde_json::Value>) -> saddle::queue::DetailKey {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    q.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let key = q.detail_key().expect("numbered task must be queried");
+    if let Some(value) = value {
+        q.absorb_detail(&key, Ok(serde_json::from_value(value).unwrap()));
+    }
+    key
+}
+fn find(buffer: &Buffer, label: &str) -> Option<(u16, u16)> {
+    let width = label.chars().count() as u16;
+    (0..buffer.area.height).find_map(|y| {
+        (0..buffer.area.width.saturating_sub(width - 1)).find_map(|x| {
+            label
+                .chars()
+                .enumerate()
+                .all(|(i, c)| buffer[(x + i as u16, y)].symbol() == c.to_string())
+                .then_some((x, y))
+        })
+    })
+}
+
+#[test]
+fn task_details_replace_the_list_inside_the_queue_pane_only() {
+    let (mut a, _) = fixture();
+    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
+    open_detail(&mut q, Some(show_json()));
+    let (buffer, hits) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    let panes = Panes::with_queue(buffer.area, &Config::default(), true);
+    assert!(
+        hits.queue_rows.is_empty(),
+        "the list is not behind the details"
+    );
+    let all = text(&buffer);
+    assert!(all.contains("demo/main") && all.contains("Viewer · demo/main"));
+    for label in ["Completion checks", "Back Esc", "Task details"] {
+        let (x, y) = find(&buffer, label).unwrap_or_else(|| panic!("{label}: {all}"));
+        assert!(panes.queue.contains((x, y).into()), "{label}");
+    }
+    let outside: String = (0..buffer.area.height)
+        .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
+        .filter(|(x, y)| !panes.queue.contains((*x, *y).into()))
+        .map(|(x, y)| buffer[(x, y)].symbol().to_owned())
+        .collect();
+    // No overlay: nothing of the details is drawn over Agents or Viewer.
+    for detail_text in ["没有收尾提交", "Completion", "Back Esc"] {
+        assert!(!outside.contains(detail_text), "{detail_text}: {all}");
+    }
+    assert!(all.contains("Input ▸ Queue · Task details"), "{all}");
+}
+
+#[test]
+fn task_details_present_each_contract_section_without_inventing_values() {
+    // Current: recomputed checks, unknown Git values, warnings and hostile text.
+    let mut value = show_json();
+    value["git"]["range_commits"] = serde_json::Value::Null;
+    value["git"]["unavailable_reasons"]["range_commits"] = "git_query_failed".into();
+    value["warnings"] =
+        serde_json::json!([{"code":"snapshot_changed","sources":["tasks.state","git_refs"]}]);
+    value["task"]["body"] = "safe \u{1b}[31mred\u{7} text".into();
+    value["completion"]["rows"][0]["why"] = "没有收尾提交 \u{1b}]0;title\u{7}".into();
+    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
+    open_detail(&mut q, Some(value));
+    let out = text(&render_queue(&mut q, 70, 120));
+    for expected in [
+        "T4",
+        "Running",
+        "41m",
+        "Detail target 任务",
+        "Completion checks",
+        "recomputed now",
+        "✗ Completion marker",
+        "✓ Main advanced",
+        "? Branches merged",
+        "· Check command",
+        "没有收尾提交",
+        "Git query failed",
+        "not only this task",
+        "Last check",
+        "Missing",
+        "not mean it never ran",
+        "重",
+        "cross review",
+        "current task file",
+        "task body not recorded",
+        "Suggested",
+        "inferred",
+        "saddle/main",
+        "changed during read",
+        "tasks.state",
+        "safe [31mred text",
+    ] {
+        assert!(out.contains(expected), "missing {expected}: {out}");
+    }
+    assert!(!out.contains('\u{1b}') && !out.contains('\u{7}'));
+    assert!(
+        !out.contains("Commits      0") && !out.contains(" 0 commits"),
+        "{out}"
+    );
+    let narrow = text(&render_queue(&mut q, 34, 200));
+    assert!(narrow.contains("Completion checks"), "{narrow}");
+
+    // Awaiting: the recorded done stands apart from today's recomputation.
+    let mut value = show_json();
+    value["task"]["location"] = "awaiting".into();
+    value["task"]["status"] = "done".into();
+    value["timing"]["ended_at"] = 1790363000.into();
+    value["timing"]["elapsed_seconds"] = 1598.into();
+    value["timing"]["release_wait_seconds"] = 20.into();
+    value["attention"] = serde_json::json!({"state":"awaiting_release","reason":"awaiting_release","unmet_rows":[],"agent":null,"inference":false});
+    let mut q =
+        detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务", "at":"awaiting"}));
+    open_detail(&mut q, Some(value));
+    let out = text(&render_queue(&mut q, 70, 120));
+    for expected in ["Awaiting release", "recorded done stands", "20s so far"] {
+        assert!(out.contains(expected), "missing {expected}: {out}");
+    }
+
+    // History: nothing current is applied; the cache is a retained sample.
+    let mut value = show_json();
+    value["task"]["location"] = "history".into();
+    value["task"]["status"] = "done".into();
+    value["timing"]["ended_at"] = 1790363000.into();
+    value["timing"]["released_at"] = 1790363030.into();
+    value["timing"]["release_wait_seconds"] = 30.into();
+    value["git"]["main_commits_since_start"] = serde_json::Value::Null;
+    value["git"]["unavailable_reasons"] =
+        serde_json::json!({"main_commits_since_start":"completion_main_not_recorded"});
+    value["completion"] = serde_json::json!({"scope":"recorded_history","rows":null,"unavailable_reason":"completion_snapshot_not_recorded"});
+    value["last_check"] = serde_json::json!({"status":"stale","applicable":true,"scope":"retained_sample","checked_at":null,"ok":null,
+        "record":{"task":"T4","main":"abc","cmd":"cargo test","why":"2 failed","ok":false,"t":1790362900},
+        "stale_reasons":["main_changed"],"unavailable_reason":null});
+    value["hold"] =
+        serde_json::json!({"enabled":true,"scope":"task_end_events","unavailable_reason":null});
+    value["attention"] = serde_json::json!({"state":"not_applicable","reason":"historical_task","unmet_rows":[],"agent":null,"inference":false});
+    let mut q = detail_queue(
+        serde_json::json!({"id":"T4", "title":"Detail target 任务", "status":"done", "at":"history"}),
+    );
+    open_detail(&mut q, Some(value));
+    let out = text(&render_queue(&mut q, 70, 120));
+    for expected in [
+        "Done",
+        "completion snapshot not recorded",
+        "not applied",
+        "main at completion not recorded",
+        "Stale",
+        "main changed",
+        "Retained sample",
+        "cargo test",
+        "failed",
+        "2 failed",
+        "Released",
+        "Hold",
+        "On",
+    ] {
+        assert!(out.contains(expected), "missing {expected}: {out}");
+    }
+    for absent in ["recomputed now", "Completion marker", "Suggested"] {
+        assert!(!out.contains(absent), "unexpected {absent}: {out}");
+    }
+}
+
+#[test]
+fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
+    let key = open_detail(&mut q, None);
+    let out = text(&render_queue(&mut q, 60, 30));
+    assert!(
+        out.contains("Loading details") && out.contains("Detail target 任务"),
+        "{out}"
+    );
+    assert!(
+        !out.contains("Completion checks") && !out.contains("Elapsed"),
+        "{out}"
+    );
+    q.absorb_detail(
+        &key,
+        Err(anyhow::anyhow!("drover show: task_not_found: 没有该任务")),
+    );
+    let out = text(&render_queue(&mut q, 60, 30));
+    assert!(
+        out.contains("task_not_found") && out.contains("Retrying"),
+        "{out}"
+    );
+    assert!(!out.contains("Completion checks"), "{out}");
+
+    let mut value = show_json();
+    value["task"]["body"] = (0..80)
+        .map(|i| format!("body line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into();
+    let detail: saddle::drover::Detail = serde_json::from_value(value).unwrap();
+    q.absorb_detail(&key, Ok(detail.clone()));
+    render_queue(&mut q, 60, 30);
+    for _ in 0..3 {
+        q.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    }
+    let scrolled = text(&render_queue(&mut q, 60, 30));
+    assert!(!scrolled.contains("Detail target 任务"), "{scrolled}");
+    q.absorb_detail(&key, Ok(detail));
+    assert_eq!(text(&render_queue(&mut q, 60, 30)), scrolled);
+    let (x, y) = find(&render_queue(&mut q, 60, 30), "body line").unwrap();
+    q.wheel(x, y, -1);
+    assert_ne!(text(&render_queue(&mut q, 60, 30)), scrolled);
+
+    q.absorb_detail(&key, Err(anyhow::anyhow!("show cancelled or timed out")));
+    let out = text(&render_queue(&mut q, 60, 200));
+    for expected in ["timed out", "stale", "Completion checks", "Retrying"] {
+        assert!(out.contains(expected), "missing {expected}: {out}");
+    }
 }

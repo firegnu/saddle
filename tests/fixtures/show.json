@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "ok": true,
+  "observed_at": 1790363879.5,
+  "task": {"id": "T4", "title": "Detail target 任务", "body": "原始正文\n第二行", "key": "Detail target 任务", "start": "6829963aecf94a2a3035eb3504e7988f7a2db27d", "main": "6829963aecf94a2a3035eb3504e7988f7a2db27d", "t0": 1790361402, "status": "doing", "location": "current"},
+  "timing": {"started_at": 1790361402, "ended_at": null, "released_at": null, "elapsed_seconds": 2477.5, "release_wait_seconds": null},
+  "git": {"start_head": "6829963aecf94a2a3035eb3504e7988f7a2db27d", "start_main": "6829963aecf94a2a3035eb3504e7988f7a2db27d", "end_head": null, "observed_head": "00572024ba070e8aaf57904f01a13f6948566568", "observed_main": "00572024ba070e8aaf57904f01a13f6948566568", "range_commits": 7, "main_commits_since_start": 7, "main_tip_committed_at": 1790363798, "unavailable_reasons": {"end_head": "end_head_not_recorded"}},
+  "completion": {"scope": "current_repository", "rows": [
+    {"id": "completion_marker", "ok": false, "state": "unmet", "reason": "marker_not_found", "why": "没有收尾提交"},
+    {"id": "main_advanced", "ok": true, "state": "met", "reason": "criterion_met", "why": "6829963 → 0057202"},
+    {"id": "branches_merged", "ok": null, "state": "unavailable", "reason": "git_query_failed", "why": "Git 不可用"},
+    {"id": "check_command", "ok": null, "state": "not_run", "reason": "check_not_run", "why": "本次只读查询不执行验收命令"}
+  ], "unavailable_reason": null},
+  "last_check": {"status": "missing", "applicable": true, "scope": "current_identity", "checked_at": null, "ok": null, "record": null, "stale_reasons": [], "unavailable_reason": "cache_missing"},
+  "routing": {"source": "task_file_now", "tier": "重", "cross": true, "overridden": false},
+  "hold": {"enabled": null, "scope": "current_events", "unavailable_reason": "task_body_not_recorded"},
+  "attention": {"state": "suggested", "reason": "idle_with_unmet_criteria", "unmet_rows": ["completion_marker"], "agent": {"name": "saddle/main", "state": "idle", "last_input_source": "send", "idle_for": 300}, "inference": true},
+  "warnings": []
+}

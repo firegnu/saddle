@@ -187,6 +187,10 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
             }
         }
     }
+    if view.focus == Focus::Queue && matches!(view.queue.page, crate::queue::Page::Detail(_)) {
+        target = "Queue · Task details".into();
+        help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  Esc Back  Ctrl-] Agents";
+    }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
         help = " y Stop  Any other key cancels";

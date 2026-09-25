@@ -428,7 +428,9 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"\r");
     h.see("detail line 0");
     h.send(b"\x1b[6~\x1b[6~");
-    h.see("detail line 30");
+    // PgDn pages through the details inside the Tasks area.
+    h.see("detail line 20");
+    assert!(!h.screen.screen().contents().contains("detail line 0"));
     h.see("Back Esc");
     h.send(b"\x1b");
     h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
@@ -1031,4 +1033,61 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
         "{events}"
     );
     assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
+fn clicking_a_task_opens_refreshing_details_in_the_tasks_area_until_back() {
+    let show = include_str!("fixtures/show.json").replace('\n', " ");
+    let script = format!(
+        r#"#!/usr/bin/env python3
+import json, sys
+from pathlib import Path
+root = Path(__file__).parent
+args = sys.argv[1:]
+with (root / 'queue-events').open('a') as f:
+    f.write(json.dumps(args) + '\n')
+if args == ['list', '--json']:
+    print(json.dumps(dict(mode=dict(loop=False, gate=True), paused=False, awaiting=None,
+        current=dict(id='T4', title='Detail target 任务', body='list body'),
+        pending=[dict(id='T5', title='Queued next', body='')],
+        history=[dict(id='T3', title='Older done', status='done')])))
+elif args == ['show', 'T4', '--json', '--with-agent-status']:
+    print({show:?})
+else:
+    print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
+    sys.exit(99)
+"#
+    );
+    let mut h = Harness::start_with_queue(&script);
+    h.see("Synthetic title");
+    h.see("Detail target 任务");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let shows = |h: &Harness| h.log("queue-events").matches("\"show\"").count();
+    h.click("Detail target");
+    h.see("Completion checks");
+    h.see("Back Esc");
+    h.see("Viewer · p/a");
+    h.see("Input ▸ Queue");
+    assert_eq!(shows(&h), 1);
+    // Detail keys stay in Tasks while an agent is attached in Viewer.
+    h.send(b"jk\x1b[6~\x1b[5~gnpla");
+    h.until(|h| shows(h) >= 2); // About five seconds later, one at a time.
+    assert!(!h.log("events").contains("input p/a"));
+    let queue = h.log("queue-events");
+    assert!(
+        queue.lines().all(|l| l == r#"["list", "--json"]"#
+            || l == r#"["show", "T4", "--json", "--with-agent-status"]"#),
+        "{queue}"
+    );
+    h.send(b"\x1b");
+    h.see("Details ↵");
+    h.until(|h| !h.screen.screen().contents().contains("Completion checks"));
+    let after_back = shows(&h);
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    assert_eq!(shows(&h), after_back, "returning to the list stops details");
+    h.quit();
 }

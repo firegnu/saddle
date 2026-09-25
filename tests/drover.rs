@@ -358,3 +358,147 @@ printf '{"mode":{},"paused":false,"current":{"title":"not pending"},"awaiting":n
     let error = format!("{:#}", results[1].1.as_ref().unwrap_err());
     assert!(error.contains("synthetic unreadable queue"), "{error}");
 }
+
+#[test]
+fn task_detail_reads_public_show_json_and_rejects_failures_or_unknown_schemas() {
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+[ $# = 4 ] && [ "$1 $2 $3 $4" = "show T4 --json --with-agent-status" ] || exit 99
+[ -f project-marker ] || exit 98
+cat response
+exit $(cat code)
+"#,
+    );
+    std::fs::write(temp.path().join("project-marker"), "").unwrap();
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let respond = |body: &str, code: i32| {
+        std::fs::write(temp.path().join("response"), body).unwrap();
+        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
+    };
+    let cancel = AtomicBool::new(false);
+    let good: serde_json::Value = serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
+    respond(&good.to_string(), 0);
+    let detail = client.show("T4", &cancel).unwrap();
+    assert_eq!(
+        (detail.task.id.as_str(), detail.task.location.as_str()),
+        ("T4", "current")
+    );
+    assert_eq!(detail.task.body, "原始正文\n第二行");
+    assert_eq!(detail.timing.release_wait_seconds, None);
+    assert_eq!(detail.git.range_commits, Some(7));
+    assert_eq!(detail.git.end_head, None);
+    assert_eq!(
+        detail.git.unavailable_reasons["end_head"],
+        "end_head_not_recorded"
+    );
+    let rows = detail.completion.rows.as_ref().unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.state.as_str()).collect::<Vec<_>>(),
+        ["unmet", "met", "unavailable", "not_run"]
+    );
+    assert_eq!(detail.last_check.status, "missing");
+    assert_eq!(detail.hold.enabled, None);
+    assert_eq!(detail.attention.unmet_rows, ["completion_marker"]);
+    assert_eq!(
+        detail.attention.agent.as_ref().unwrap().idle_for,
+        Some(300.0)
+    );
+
+    let mut newer = good.clone();
+    newer["schema_version"] = 2.into();
+    respond(&newer.to_string(), 0);
+    let error = format!("{:#}", client.show("T4", &cancel).unwrap_err());
+    assert!(error.contains("schema_version"), "{error}");
+
+    respond(
+        r#"{"schema_version":1,"ok":false,"observed_at":1,"error":{"code":"task_not_found","why":"没有该任务"}}"#,
+        2,
+    );
+    let error = format!("{:#}", client.show("T4", &cancel).unwrap_err());
+    assert!(
+        error.contains("task_not_found") && error.contains("没有该任务"),
+        "{error}"
+    );
+
+    let mut partial = good.clone();
+    partial.as_object_mut().unwrap().remove("completion");
+    respond(&partial.to_string(), 0);
+    assert!(client.show("T4", &cancel).is_err());
+
+    respond(&good.to_string(), 3);
+    assert!(client.show("T4", &cancel).is_err());
+
+    respond("Traceback: synthetic crash", 1);
+    let error = format!("{:#}", client.show("T4", &cancel).unwrap_err());
+    assert!(error.contains("synthetic crash"), "{error}");
+}
+
+#[test]
+fn detail_worker_queries_one_at_a_time_and_stops_when_dropped() {
+    use saddle::drover::DetailWorker;
+    use std::time::{Duration, Instant};
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        temp.path().join("response"),
+        include_str!("fixtures/show.json"),
+    )
+    .unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+echo start >> calls
+[ -f hang ] && exec sleep 30
+sleep 0.1
+echo end >> calls
+cat response
+"#,
+    );
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let calls = || std::fs::read_to_string(temp.path().join("calls")).unwrap_or_default();
+    let worker = DetailWorker::start(client.clone(), "T4".into(), Duration::from_millis(50));
+    for _ in 0..3 {
+        let detail = worker
+            .updates
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        assert_eq!(detail.task.id, "T4");
+    }
+    let started = Instant::now();
+    drop(worker);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let log = calls();
+    assert!(
+        log.lines()
+            .collect::<Vec<_>>()
+            .chunks(2)
+            .all(|pair| pair == ["start", "end"] || pair == ["start"]),
+        "queries overlapped: {log}"
+    );
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(calls(), log, "a dropped worker must not query again");
+
+    // A hung query is cancelled instead of blocking whoever drops the worker.
+    std::fs::write(temp.path().join("hang"), "").unwrap();
+    std::fs::remove_file(temp.path().join("calls")).unwrap();
+    let worker = DetailWorker::start(client, "T4".into(), Duration::from_millis(50));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while calls().is_empty() {
+        assert!(Instant::now() < deadline, "query never started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let started = Instant::now();
+    drop(worker);
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
