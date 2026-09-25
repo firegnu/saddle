@@ -1,6 +1,17 @@
 # 交接
 
-## 2026-09-26：T11 Agents Git 摘要完成（最新状态）
+## 2026-09-26：T4 Tasks 状态与过程详情完成（最新状态）
+
+- T4 开发 `643233e` 经主控及 Codex 只读交叉审查通过，无必须改项，合并 `88e0815`，已推送 main。点击任务在 Tasks 区域内切换详情，Back/Esc 返回；右侧终端保持原样。打开即查询，之后每次返回约 5 秒再刷新，返回列表停止详情查询。支持已记录的状态、判据、上次验收、Git 进展与开始/完成/放行记录。
+- drover schema 1 已交付且本机公开 show 命令可用；saddle 只消费公开接口。设计见 `docs/DESIGN.md` 第 26 节，完成记录见 `docs/任务/T4-任务状态与过程详情.md`，逐项裁决见 `docs/任务/T4-主控与交叉审查.md`。
+- 主控完整标准测试 102 passed、2 ignored，clippy、差异检查通过；交叉审查三个定向检查通过。三条非阻挡建议中，文档校验承诺已收窄；测试成功夹具与目标错配、routing=null 原因文案两项保留建议，后续是否另做由用户决定。本轮没有返工。
+- release 构建完成，已原子替换并校验 `target/release/saddle`；用户重启后生效，当前实例未重启。真实终端字体和操作观感待用户查看。本 release 也包含已完成的 effort 间距与按档位配色调整 `6829963`。
+- 两个 T4 worktree、`t4-task-details` 分支均清理；工作目录已删，一并关闭自有 `saddle/dev-t4-details-1`、`saddle/dev-t4-review-1`。收尾空提交 `145098c`。当前只有 main worktree；仍开着 corral/main、drover/main、saddle/main，各在对应主仓库，未操作其他用户 agent。
+- 下一步执行 `drover done T4`，核对完成待放行；不执行 go/next。pending 仅 T2（tab/split），仍待用户补充，禁止开始设计或实现。
+- 其他既有悬项沿用下方记录；current 退回 pending 按用户决定不做。T4 没有阻挡项，既有 runner 的特殊包装器后代限制见审查文件，不在此扩展实现。
+
+
+## 2026-09-26：T11 Agents Git 摘要完成
 
 - T11 已按批准方案完成，开发提交 `2b60ab1` 经主控与 Codex 两轮增量交叉复核通过，合并提交 `a61ab3a`，实现及审查记录已推送 main。每个 agent 按公开 cwd 展示分支、相对基准提交数、未提交增删与未跟踪文件数。设计和限制见 `docs/DESIGN.md` 第 25 节，完成记录见 `docs/任务/T11-AgentsGit摘要.md`，完整裁决见 `docs/任务/T11-主控与交叉审查.md`。
 - 必须改 1–4 均已关闭，最终复核无阻挡。初审标准测试 89 passed、2 ignored；第一轮主控相关回归 40 passed；第二轮 Git/git_env 8 passed、交叉复核子模块定向测试 1 passed，clippy 与 diff 检查通过。
