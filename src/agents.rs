@@ -1,0 +1,131 @@
+use crate::corral::Agent;
+use std::collections::{HashMap, HashSet};
+
+#[derive(Default)]
+pub struct Panel {
+    pub agents: Vec<Agent>,
+    pub selected: Option<String>,
+    pub by_state: bool,
+    pub show_reply: bool,
+    pub reply_top: usize,
+    pub top: usize,
+    pub follow: bool,
+    pub unread: HashSet<String>,
+    pub first_seen: HashMap<String, f64>,
+    pub message: String,
+    pub confirm: Option<String>,
+}
+impl Panel {
+    pub fn absorb(&mut self, agents: Vec<Agent>, showing: Option<&str>, now: f64) {
+        for a in &agents {
+            self.first_seen.entry(a.name.clone()).or_insert(now);
+            if let Some(old) = self.agents.iter().find(|old| old.name == a.name) {
+                if old.instance != a.instance {
+                    self.unread.remove(&a.name);
+                    self.first_seen.insert(a.name.clone(), now);
+                } else if a.state.as_deref() == Some("idle")
+                    && (old.state.as_deref() == Some("working")
+                        || (a.turn_started.is_some() && a.turn_started != old.turn_started))
+                {
+                    self.unread.insert(a.name.clone());
+                }
+            }
+        }
+        for old in &self.agents {
+            if !agents.iter().any(|a| a.name == old.name) {
+                self.unread.remove(&old.name);
+                self.first_seen.remove(&old.name);
+                if self.confirm.is_none() {
+                    self.message = format!("{} exited", old.name);
+                }
+            }
+        }
+        self.agents = agents;
+        if !self
+            .agents
+            .iter()
+            .any(|a| Some(&a.name) == self.selected.as_ref())
+        {
+            self.select(self.ordered(now).first().map(|a| a.name.clone()));
+        }
+        if let Some(name) = &self.selected {
+            self.unread.remove(name);
+        }
+        if let Some(name) = showing {
+            self.unread.remove(name);
+        }
+    }
+
+    pub fn select(&mut self, name: Option<String>) {
+        if self.selected != name {
+            self.reply_top = 0;
+        }
+        if let Some(name) = &name {
+            self.unread.remove(name);
+        }
+        self.selected = name;
+        self.follow = true;
+    }
+
+    pub fn move_selection(&mut self, step: isize, now: f64) {
+        let ordered = self.ordered(now);
+        if ordered.is_empty() {
+            return;
+        }
+        let current = ordered
+            .iter()
+            .position(|a| Some(&a.name) == self.selected.as_ref())
+            .unwrap_or(0);
+        let at = current.saturating_add_signed(step).min(ordered.len() - 1);
+        self.select(Some(ordered[at].name.clone()));
+    }
+
+    pub fn ordered(&self, now: f64) -> Vec<&Agent> {
+        let mut agents: Vec<_> = self.agents.iter().collect();
+        agents.sort_by(|a, b| {
+            group(&a.name)
+                .cmp(group(&b.name))
+                .then_with(|| {
+                    if self.by_state {
+                        self.rank(a, now).cmp(&self.rank(b, now))
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        agents
+    }
+
+    pub fn suspect(&self, a: &Agent, now: f64) -> bool {
+        match a.state.as_deref() {
+            Some("working") => a.last_output.is_some_and(|last| now - last >= 120.0),
+            Some("starting") => {
+                now - a
+                    .started
+                    .or_else(|| self.first_seen.get(&a.name).copied())
+                    .unwrap_or(now)
+                    >= 60.0
+            }
+            _ if a.starting => now - self.first_seen.get(&a.name).copied().unwrap_or(now) >= 60.0,
+            _ => false,
+        }
+    }
+    fn rank(&self, a: &Agent, now: f64) -> u8 {
+        if self.suspect(a, now) {
+            return 1;
+        }
+        match a.state.as_deref() {
+            Some("blocked") => 0,
+            Some("working") => 2,
+            Some("starting") => 3,
+            Some("idle") => 5,
+            _ if a.starting => 3,
+            _ => 4,
+        }
+    }
+}
+
+pub fn group(name: &str) -> &str {
+    name.find('/').map(|i| &name[..=i]).unwrap_or("")
+}
