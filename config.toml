@@ -33,12 +33,12 @@ danger = "red"               # Destructive actions and agent error details.
 unread = "magenta"
 
 # Shared Agents / Queue status and Queue action-feedback colors.
-agent_working = "#7fb4ee"
-agent_idle = "#9cbd80"
-agent_blocked = "#e6b566"
-agent_stalled = "#e79b65"
-agent_error = "#ef8174"
-agent_starting = "#b0a1d8"
+agent_working = "#7fb4ee"    # Tasks: Current heading, Running.
+agent_idle = "#9cbd80"       # Tasks: Done.
+agent_blocked = "#e6b566"    # Tasks: Awaiting heading and status.
+agent_stalled = "#e79b65"    # Tasks: Dropped.
+agent_error = "#ef8174"      # Tasks: Failed.
+agent_starting = "#b0a1d8"   # Tasks: Pending heading and status.
 
 # Agent type accents.
 claude = "#d97757"
