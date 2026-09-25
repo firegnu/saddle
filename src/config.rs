@@ -15,14 +15,14 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Queue {
-    pub command: Vec<String>,
+    pub drover: String,
     pub cwd: Option<String>,
 }
 
 impl Default for Queue {
     fn default() -> Self {
         Self {
-            command: vec!["drover".into(), "board".into()],
+            drover: "drover".into(),
             cwd: None,
         }
     }
@@ -49,12 +49,8 @@ impl Config {
         ensure!(config.refresh_ms > 0, "refresh_ms must be positive");
         ensure!(!config.corral.trim().is_empty(), "corral cannot be empty");
         ensure!(
-            config
-                .queue
-                .command
-                .first()
-                .is_some_and(|s| !s.trim().is_empty()),
-            "queue.command needs a program"
+            !config.queue.drover.trim().is_empty(),
+            "queue.drover cannot be empty"
         );
         Ok(config)
     }

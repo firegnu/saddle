@@ -19,6 +19,7 @@ pub struct Hits {
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
+    pub queue_rows: Vec<(u16, usize)>,
 }
 
 pub struct View<'a> {
@@ -26,27 +27,17 @@ pub struct View<'a> {
     pub focus: Focus,
     pub showing: Option<&'a str>,
     pub viewer: Option<&'a Session>,
-    pub queue: Option<&'a Session>,
+    pub queue: &'a mut crate::queue::Panel,
     pub viewer_note: &'a str,
-    pub queue_note: &'a str,
     pub reply: &'a str,
     pub now: f64,
 }
 
 pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
-    let hits = draw_agents(frame, panel, &view);
-    draw_terminal(
-        frame,
-        view.panes.queue,
-        if view.queue.is_some() && !view.queue_note.is_empty() {
-            view.queue_note
-        } else {
-            "Queue"
-        },
-        view.focus == Focus::Queue,
-        view.queue,
-        view.queue_note,
-    );
+    let mut hits = draw_agents(frame, panel, &view);
+    hits.queue_rows = view
+        .queue
+        .draw(frame, view.panes.queue, view.focus == Focus::Queue);
     let title = view
         .showing
         .map(|name| format!("Viewer · {name}"))

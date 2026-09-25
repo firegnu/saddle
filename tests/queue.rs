@@ -40,3 +40,22 @@ fn native_queue_selects_details_and_creates_tasks_without_an_external_editor() {
     );
     assert!(matches!(panel.page, Page::List));
 }
+
+#[test]
+fn failed_add_retains_the_native_draft_and_prevents_duplicate_submission() {
+    let mut panel = Panel::default();
+    panel.key(key(K::Char('a')));
+    panel.paste("Task with 中文");
+    panel.key(key(K::Tab));
+    panel.paste("first\nsecond");
+    let save = KeyEvent::new(K::Char('s'), M::CONTROL);
+    let Some(Request::Run(op)) = panel.key(save) else {
+        panic!("missing add request");
+    };
+    assert!(panel.key(save).is_none());
+    panel.complete(&op, Err(anyhow::anyhow!("write failed")));
+    assert!(panel.message.contains("write failed"));
+    assert!(
+        matches!(panel.key(save),Some(Request::Run(Operation::Add{title,body})) if title=="Task with 中文" && body=="first\nsecond")
+    );
+}

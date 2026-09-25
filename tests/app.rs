@@ -11,15 +11,11 @@ use std::{
 fn three_pane_app_starts_and_restores_terminal_after_quit() {
     let temp = tempfile::tempdir().unwrap();
     let corral = common::script(temp.path(), "corral", "#!/bin/sh\necho '{\"agents\":[]}'\n");
-    let queue = common::script(
-        temp.path(),
-        "queue",
-        "#!/usr/bin/env python3\nimport time\nprint('FAKE QUEUE READY',flush=True)\ntime.sleep(30)\n",
-    );
+    let queue = common::script(temp.path(), "drover", include_str!("fixtures/drover.py"));
     let config = temp.path().join("config.toml");
     std::fs::write(
         &config,
-        format!("corral = {corral:?}\n[queue]\ncommand = [{queue:?}]\n"),
+        format!("corral = {corral:?}\n[queue]\ndrover = {queue:?}\n"),
     )
     .unwrap();
     let pair = native_pty_system()
@@ -53,7 +49,7 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     let mut output = Vec::new();
     let mut answered_cursor = false;
     let mut screen = vt100::Parser::new(30, 120, 0);
-    while !screen.screen().contents().contains("FAKE QUEUE READY") && Instant::now() < deadline {
+    while !screen.screen().contents().contains("Native queue task") && Instant::now() < deadline {
         if let Ok(bytes) = rx.recv_timeout(Duration::from_millis(100)) {
             screen.process(&bytes);
             output.extend(bytes);
@@ -82,7 +78,7 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     };
     output.extend(rx.try_iter().flatten());
     let text = String::from_utf8_lossy(&output);
-    assert!(snapshot.contains("FAKE QUEUE READY"), "{snapshot}");
+    assert!(snapshot.contains("Native queue task"), "{snapshot}");
     assert!(
         snapshot.contains("Agents") && snapshot.contains("Viewer"),
         "{text}"

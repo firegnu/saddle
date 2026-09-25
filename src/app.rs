@@ -2,9 +2,11 @@ use crate::{
     agents::Panel,
     config::{Config, expand_home},
     corral::{Client, Poller},
+    drover,
     input::{Focus, Route, encode_key, encode_mouse, encode_paste},
     layout::Panes,
     pty::Session,
+    queue,
     terminal::Size,
     ui::{self, Hits, View},
     viewer::Viewer,
@@ -125,9 +127,8 @@ struct App {
     poller: Poller,
     actions: Actions,
     viewer: Viewer,
-    queue: Option<Session>,
-    queue_note: String,
-    queue_started: bool,
+    queue: queue::Panel,
+    queue_worker: drover::Worker,
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
@@ -139,6 +140,19 @@ impl App {
         let client = Client {
             program: expand_home(&config.corral).to_string_lossy().into_owned(),
         };
+        let queue_client = drover::Client {
+            program: expand_home(&config.queue.drover)
+                .to_string_lossy()
+                .into_owned(),
+            cwd: config
+                .queue
+                .cwd
+                .as_deref()
+                .map(expand_home)
+                .unwrap_or_else(|| std::path::PathBuf::from(".")),
+        };
+        let queue_worker =
+            drover::Worker::start(queue_client, Duration::from_millis(config.refresh_ms));
         Self {
             poller: Poller::start(client.clone(), Duration::from_millis(config.refresh_ms)),
             actions: Actions::new(client.clone()),
@@ -149,9 +163,8 @@ impl App {
                 ..Default::default()
             },
             focus: Focus::Agents,
-            queue: None,
-            queue_note: String::new(),
-            queue_started: false,
+            queue: queue::Panel::default(),
+            queue_worker,
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
@@ -179,9 +192,8 @@ impl App {
                         focus: self.focus,
                         showing: self.viewer.showing.as_deref(),
                         viewer: self.viewer.session.as_ref(),
-                        queue: self.queue.as_ref(),
+                        queue: &mut self.queue,
                         viewer_note: &self.viewer.note,
-                        queue_note: &self.queue_note,
                         reply,
                         now: now(),
                     },
@@ -244,21 +256,16 @@ impl App {
             }
         }
         self.viewer.tick(size_of(panes.viewer))?;
-        if !self.queue_started {
-            self.queue_started = true;
-            let cwd = self.config.queue.cwd.as_deref().map(expand_home);
-            let mut command = self.config.queue.command.clone();
-            command[0] = expand_home(&command[0]).to_string_lossy().into_owned();
-            match Session::spawn(&command, cwd.as_deref(), size_of(panes.queue)) {
-                Ok(session) => self.queue = Some(session),
-                Err(error) => self.queue_note = format!("Queue: {error:#}"),
+        for update in self.queue_worker.updates.try_iter() {
+            match update {
+                drover::Update::Snapshot(Ok(snapshot)) => self.queue.absorb(*snapshot),
+                drover::Update::Snapshot(Err(error)) => {
+                    self.queue.message = format!("{error:#} · 检查 queue.cwd")
+                }
+                drover::Update::Feedback(operation, result) => {
+                    self.queue.complete(&operation, result)
+                }
             }
-        }
-        if let Some(queue) = &mut self.queue {
-            if queue.poll_exit()? {
-                self.queue_note = "Queue · exited".into();
-            }
-            queue.resize(size_of(panes.queue))?;
         }
         if self.panel.show_reply
             && !self.reply_busy
@@ -308,6 +315,15 @@ impl App {
                 match self.focus.route(key) {
                     Route::Quit => return Ok(true),
                     Route::Panel => self.panel_key(key),
+                    Route::Queue => {
+                        if key.code == KeyCode::Char('q')
+                            && !matches!(self.queue.page, queue::Page::Add { .. })
+                        {
+                            self.focus = Focus::Agents;
+                        } else if let Some(request) = self.queue.key(key) {
+                            self.queue_worker.request(request);
+                        }
+                    }
                     Route::Terminal => {
                         if let Some(session) = self.focused_session() {
                             let mode = *session.screen.lock().unwrap().term.mode();
@@ -323,7 +339,9 @@ impl App {
                 }
             }
             Event::Paste(text) => {
-                if let Some(session) = self.focused_session() {
+                if self.focus == Focus::Queue {
+                    self.queue.paste(&text);
+                } else if let Some(session) = self.focused_session() {
                     let bracketed = session
                         .screen
                         .lock()
@@ -351,11 +369,37 @@ impl App {
                         }
                     } else if panes.queue.contains(point) {
                         self.focus = Focus::Queue;
+                        if let Some((_, index)) = self
+                            .hits
+                            .queue_rows
+                            .iter()
+                            .find(|(row, _)| *row == mouse.row)
+                        {
+                            self.queue.select(*index);
+                        }
+                        return Ok(false);
                     } else if panes.viewer.contains(point) {
                         self.focus = Focus::Viewer;
                     }
                 }
-                if panes.agents.contains(point)
+                if panes.queue.contains(point)
+                    && matches!(
+                        mouse.kind,
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                    )
+                {
+                    let delta = if mouse.kind == MouseEventKind::ScrollUp {
+                        -1
+                    } else {
+                        1
+                    };
+                    if matches!(self.queue.page, queue::Page::List) {
+                        self.queue
+                            .select(self.queue.selected.saturating_add_signed(delta));
+                    } else {
+                        self.queue.scroll = self.queue.scroll.saturating_add_signed(delta);
+                    }
+                } else if panes.agents.contains(point)
                     && matches!(
                         mouse.kind,
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
@@ -373,11 +417,7 @@ impl App {
                         self.panel.follow = false;
                     }
                 } else if let Some(session) = self.focused_session() {
-                    let area = ui::inner(if self.focus == Focus::Queue {
-                        panes.queue
-                    } else {
-                        panes.viewer
-                    });
+                    let area = ui::inner(panes.viewer);
                     let mode = *session.screen.lock().unwrap().term.mode();
                     if let Err(error) = session.send(encode_mouse(mouse, area, mode)) {
                         self.panel.message = error.to_string();
@@ -427,7 +467,7 @@ impl App {
     fn focused_session(&self) -> Option<&Session> {
         match self.focus {
             Focus::Agents => None,
-            Focus::Queue => self.queue.as_ref(),
+            Focus::Queue => None,
             Focus::Viewer => self.viewer.session.as_ref(),
         }
     }

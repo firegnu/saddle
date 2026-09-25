@@ -55,5 +55,9 @@ elif verb == 'attach':
             break
         log('input ' + name + ' ' + data.hex())
         os.write(1, b'INPUT RECEIVED\r\n')
+        if data == b'F':
+            log('flood ' + name)
+            while True:
+                os.write(1, b'output ' * 512 + b'\r\n')
 else:
     raise RuntimeError('unexpected command ' + verb)

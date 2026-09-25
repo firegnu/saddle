@@ -10,6 +10,7 @@ pub enum Focus {
 pub enum Route {
     Ignore,
     Panel,
+    Queue,
     Terminal,
     Quit,
 }
@@ -24,8 +25,11 @@ impl Focus {
             *self = Self::Agents;
             return Route::Ignore;
         }
-        if *self != Self::Agents {
+        if *self == Self::Viewer {
             return Route::Terminal;
+        }
+        if *self == Self::Queue {
+            return Route::Queue;
         }
         match key.code {
             KeyCode::Tab if key.modifiers.is_empty() => {

@@ -26,7 +26,7 @@ fn configured_three_panes_fill_the_window_and_resize() {
 #[test]
 fn defaults_and_invalid_configuration_are_explicit() {
     let default = Config::parse("").unwrap();
-    assert_eq!(default.queue.command, ["drover", "board"]);
+    assert_eq!(default.queue.drover, "drover");
     assert_eq!(default.left_width, 52);
     for invalid in [
         "left_split = 0.0",
@@ -35,8 +35,13 @@ fn defaults_and_invalid_configuration_are_explicit() {
         "left_width = 0",
         "refresh_ms = 0",
         "corral = ''",
-        "[queue]\ncommand = []",
+        "[queue]\ndrover = ''",
     ] {
         assert!(Config::parse(invalid).is_err(), "accepted {invalid}");
     }
+}
+
+#[test]
+fn external_queue_ui_commands_are_rejected() {
+    assert!(Config::parse("[queue]\ncommand = ['drover', 'board']").is_err());
 }

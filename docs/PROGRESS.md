@@ -1,61 +1,37 @@
 # 进度
 
-## 第 1 步：实现完成，待真实终端目视验收
+## 第 1 步（原生 UI 修订版）：实现与自动验收完成
 
-2026-09-25，在 main 开发；未推送，未修改 corral/drover 仓库。用户明确要求不启动真实 agent，因此原型和所有自动测试只使用合成流、临时目录中的假 corral/queue。
+2026-09-25，直接在 main 分步提交，未推送。按用户后续要求，原来的「Queue 先嵌入 drover board」方案已经作废。
 
-已完成：
+### 当前实现
 
-- Rust stable 项目、默认/自定义 TOML 配置、参数校验、三窗格布局与缩放。
-- 原生 Agents：每秒后台 ls/status、按项目前缀分组、项目内按状态排序、完整字段和窄屏身份折行、状态/未读标记、选中名字保持、滚动条与上下隐藏数量。
-- reply 默认隐藏，开启后按需请求、分页和滚轮；x/y 确认 stop，其他键取消；公开 CLI 的错误和超时可见。
-- Viewer/Queue：portable-pty 独立读写线程，alacritty_terminal 解析网格；真彩/256 色、宽字符、光标、鼠标、粘贴、应用光标键和修饰 Enter。
-- Ctrl-] 回 Agents；Agents 中 Tab 到 Queue、Shift-Tab 到 Viewer；鼠标选 agent / 切焦点。
-- attach 前现查 ATT，已有其他接入时拒绝；切换只 SIGINT 本程序的 attach PID，等待退出后再启动新 attach，3 秒后可强制结束该 PID；agent 消失后不自动接入其他人。
-- 快速切换时以最新选择为准；Queue 命令退出保留最后输出；正常退出恢复外层终端并清理本程序的子进程。
-- README 含运行方法、配置、按键与验证边界。
+- Agents：ratatui 原生面板。公开 ls/status 每秒后台刷新；项目分组、状态排序、完整字段和窄屏折行、选中项保持、未读标记、滚动条/隐藏数量、回复分页、x/y 停止确认。
+- Queue：ratatui 原生列表、详情、帮助、操作反馈、标题/正文新增表单。公开 `drover list --json` 提供 mode、paused、current、awaiting、pending、history；g/n/p/l/a 通过公开 CLI 执行放行、下一件、暂停/恢复、循环和新增。失败保留新增草稿，执行中不重复提交。
+- Viewer：唯一使用 PTY 的窗格，仅运行公开 `corral attach`。Rust/alacritty_terminal 解析、ratatui 绘制颜色、中文、光标、鼠标和粘贴；切换等待旧 attach 退出，再接入最新选择。已有其他 attach 时拒绝接入，agent 消失后不自动换人。
+- 所有 saddle UI 都是 Rust。生产代码没有 `board` 或 Python UI 调用；不启动外部编辑器。测试中的 Python 文件只是假的 CLI/字节流边界，不作为 UI 实现。
+- Queue 的 `queue.command` 已删除并在解析时拒绝；新配置为 `queue.drover` 和可选 `queue.cwd`。cwd 默认启动目录，不读取 drover 内部项目注册表。
+- TOML 配置、三窗格缩放、焦点路由、后台命令取消/超时、终端退出恢复、README 和 `--help` 已同步。
 
-## 设计决定
+### 验证
 
-- 按用户确认将第 10 节真实 Claude Code 原型改为合成流比较。`examples/compare_parsers.rs` 同时运行 alacritty_terminal 0.26 和 vt100 0.16；颜色、中文、光标、清屏、滚动区结果一致，选择前者是因为它能通过事件回传终端查询。vt100 只作开发依赖。
-- 第 5 节落实焦点按键；第 4 节明确窄屏左列最多占一半。
-- 实现前完整读取 corral/tools/board；只通过公开 ls/status/reply 核对真实 JSON，未 attach、输入、启动或停止任何真实 agent。
+全部通过：
 
-## 自动验证
-
-最终检查均通过：
-
-- `cargo test --all-targets`：20 项测试通过。
+- `cargo test --all-targets`：27 项通过；依赖本机 drover 的 1 项默认忽略，已单独执行通过。
+- `SADDLE_DROVER_BIN=/Users/firegnu/.local/bin/drover cargo test --test workflow installed_drover_cli -- --ignored`：真实公开 CLI 在隔离 HOME/临时项目中驱动原生 Queue，验证正文、暂停/恢复、循环开关、多行中文新增和缩放。不调用外部看板，不启动真实 agent。
 - `cargo clippy --all-targets -- -D warnings`
 - `cargo fmt --check`
-- `cargo run --example compare_parsers`
-- `cargo build --release`：可执行文件 `target/release/saddle`。
+- `cargo build --release`：可直接运行 `target/release/saddle`。
 - `git diff --check`
+- 生产调用点检查：仅 `src/viewer.rs` 调用 `Session::spawn`；无 `board`、`python`、`queue.command` 调用。
 
-RED→GREEN 的行为检查包含：布局分配、非法配置、公开 JSON 合并、刷新后选中项保持、焦点路由、UTF-8/控制键编码、PTY 输入、鼠标本地坐标、网格绘制。整程序回归进一步发现并修复：
+已有合成原型 `cargo run --example compare_parsers` 对比 alacritty_terminal 与 vt100 的中文、真彩/256 色、光标、清屏和滚动区；选择前者的理由是终端查询的事件回传能力。
 
-- 传统 Ctrl-] 的 0x1d 被 crossterm 解码为 Ctrl-5，最初错误传入终端；同时修复其他传统控制字符的数字别名。
-- 修饰 Enter 最初被当作普通提交键。
-- Queue 退出时最初清空最后报错。
-- 从 A 切去 B 尚未结束时重新选 A，最初仍会接入 B。
+RED→GREEN 包括布局、配置、公开 JSON、刷新选中项保持、输入路由/编码、PTY 输入、鼠标坐标和网格绘制；整程序回归覆盖接入/切换顺序、ATT、状态变化/新增/消失、回复、停止确认与取消、输出压力和退出恢复。原生 Queue 新增 RED→GREEN 覆盖公开数据/动作、选择/新增状态机、拒绝外部 UI 配置、禁止 Queue 按键进入 PTY。
 
-外层 PTY 完整流程覆盖：键盘和鼠标接入、中文粘贴、Viewer/Queue 输入、ATT 显示、旧 attach 退出后才启动新 attach、agent 新增/状态变化/消失、回复分页、停止确认与取消、拒绝已有其他 attach、双 PTY resize、持续输出时响应退出、退出恢复和模拟 agent 继续存在。测试不将模拟结果当作真实 corral 生命周期的证明。
+### 边界与记录
 
-## 尚需用户验收
-
-在真实终端运行 `./target/release/saddle`，按 DESIGN 第 11 节确认真实 Claude Code / drover 显示与操作、真实 ATT 和断开后 agent 继续运行。本轮按用户要求不执行这部分，也不录屏。
-
-第 2、3 步尚未开始；左下仍运行配置命令（默认 drover board）。没有待用户裁定的设计问题。
-
-## 范围修订：原生 Queue（进行中）
-
-用户明确要求所有看板 UI 都由 Rust UI 库实现，拒绝 Python 看板。左上 Agents 已是 ratatui 原生；左下取消 PTY/`drover board`，改为原生任务、详情、帮助、新增表单及公开 CLI 操作。DESIGN 已先行更新。
-
-公开 CLI 在隔离 HOME/临时项目中验证：`drover list --json` 提供任务正文、当前/待放行/待办/历史和模式，足以实现原生队列。禁止读取内部注册文件，项目由 queue.cwd 指定。
-
-### 原生 Queue 模块
-
-- 新增公开 drover JSON/动作客户端、可取消后台 worker，复用 corral 已有的进程超时边界。
-- ratatui 原生列表、详情、帮助、操作反馈及标题/正文表单；提交直接传参给 drover add，不启动编辑器或其他 UI。
-- RED→GREEN：数据从空快照改为公开 JSON，动作从空反馈改为真实参数调用，选择/新增状态机从无行为改为可用。
-- 临时 HOME/项目中的真实 drover CLI 已验证原生 UI 的读取、详情、暂停/恢复、循环切换、新增多行中文任务和缩放；未调用 drover board、未启动真实 agent。
+- 按用户约束，未启动、attach、输入或停止任何真实 agent；真实 Claude Code 显示与真实 corral 生命周期未验证，不用合成测试代替该结论。
+- 本机 Terminal GUI 控制被工具拒绝，没有绕过限制；交互验收在独立 PTY 中完成，没有录屏。
+- 核对 CLI 时误将 `drover init --help` 当成帮助命令。确认创建时间及精确内容后，已删除它意外创建的 saddle 配置、空的 `--help` 交接目录和末尾新增登记项，并恢复 `.gitignore`；后续所有 drover 写入测试都使用隔离 HOME/临时项目。
+- 无待用户拍板的实现问题。原生 Queue 只显示公开 JSON 已有字段；更细的判据数据若将来需要，应由 drover 增加公开 API，saddle 不读取内部文件补齐。

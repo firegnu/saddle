@@ -19,7 +19,7 @@ struct Harness {
 }
 impl Harness {
     fn start() -> Self {
-        Self::start_with_queue(include_str!("fixtures/queue.py"))
+        Self::start_with_queue(include_str!("fixtures/drover.py"))
     }
     fn start_with_queue(queue_script: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
@@ -33,7 +33,7 @@ impl Harness {
         let config = dir.path().join("config.toml");
         std::fs::write(
             &config,
-            format!("corral = {corral:?}\nrefresh_ms = 100\n[queue]\ncommand = [{queue:?}]\n"),
+            format!("corral = {corral:?}\nrefresh_ms = 100\n[queue]\ndrover = {queue:?}\n"),
         )
         .unwrap();
         let pair = native_pty_system()
@@ -145,7 +145,7 @@ impl Drop for Harness {
 #[test]
 fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     let mut h = Harness::start();
-    h.see("QUEUE READY");
+    h.see("Native queue task");
     h.see("Synthetic title");
     assert!(!h.log("events").contains("reply "));
     h.send(b"\r");
@@ -179,17 +179,12 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         .unwrap();
     h.screen.screen_mut().set_size(44, 160);
     h.event("size p/b 106x42");
-    h.until(|h| h.log("queue-events").contains("size 50x20"));
-    // Queue receives its own q and Tab, neither is intercepted.
-    h.send(b"\x1d\t");
-    h.send(b"q\t");
-    h.until(|h| {
-        h.log("queue-events")
-            .lines()
-            .filter_map(|line| line.strip_prefix("input "))
-            .collect::<String>()
-            .contains("7109")
-    });
+    h.until(|h| h.screen.screen().cell(22, 0).unwrap().contents() == "┌");
+    h.see("Native queue task");
+    // Native Queue translates actions into public CLI calls, never a PTY.
+    h.send(b"\x1d\tp");
+    h.until(|h| h.log("queue-events").contains("[\"pause\"]"));
+    h.see("Paused");
     // Agent disappearance returns to the prompt, without selecting another viewer.
     std::fs::write(
         h.dir.path().join("agents.json"),
@@ -223,36 +218,159 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     let agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
     assert!(agents.get("p/new").is_some());
     assert!(agents.get("p/taken").is_some());
-    assert!(h.log("queue-events").contains("stopped"));
+    assert!(!h.log("queue-events").contains("board"));
 }
 
 #[test]
 fn mouse_selection_attaches_and_quit_remains_responsive_during_output_flood() {
     let mut h = Harness::start();
-    h.see("QUEUE READY");
+    h.see("Native queue task");
     h.see("Synthetic title");
     // One-based SGR coordinates: first agent headline is screen row 3.
     h.send(b"\x1b[<0;5;3M");
     h.see("p/a READY");
-    h.send(b"\x1d\tF");
-    h.until(|h| h.log("queue-events").contains("flood"));
+    h.send(b"F");
+    h.event("flood p/a");
     let start = Instant::now();
     h.quit();
     assert!(start.elapsed() < Duration::from_secs(3));
     let log = h.log("events");
     assert!(log.contains("detached p/a"));
     assert!(!log.contains("stop "));
-    assert!(h.log("queue-events").contains("stopped"));
+    assert!(!h.log("queue-events").contains("board"));
     assert!(!h.dir.path().join("p-a").exists());
     let agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
     assert_eq!(agents.as_object().unwrap().len(), 3);
 }
 
 #[test]
-fn exited_queue_keeps_its_error_output_visible() {
+fn failed_queue_data_request_keeps_actionable_error_visible() {
     let mut h =
         Harness::start_with_queue("#!/bin/sh\necho 'QUEUE FAILED: missing project'\nexit 2\n");
     h.see("QUEUE FAILED: missing project");
-    h.see("Queue · exited");
+    h.see("检查 queue.cwd");
     h.quit();
+}
+
+#[test]
+fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
+    let mut h = Harness::start();
+    h.see("Native queue task");
+    h.send(b"\t?");
+    h.see("Queue 原生看板");
+    h.send(b"\x1b");
+    h.see("Native queue task");
+    h.send(b"\r");
+    h.see("detail line 0");
+    h.send(b"\x1b[6~");
+    h.see("detail line 15");
+    h.send(b"\x1b");
+    h.see("Native queue task");
+    h.send(b"a");
+    h.see("Ctrl-S");
+    h.send("\x1b[200~新增任务\x1b[201~".as_bytes());
+    h.send(b"\t");
+    h.send("\x1b[200~正文一\n正文二\x1b[201~".as_bytes());
+    h.send(b"\x13");
+    h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
+    h.see("新增任务");
+    h.until(|h| {
+        h.log("queue-events")
+            .contains("[\"add\", \"新增任务\", \"正文一\\n正文二\"]")
+    });
+    h.send(b"p");
+    h.see("Paused");
+    h.send(b"p");
+    h.see("Manual");
+    h.send(b"l");
+    h.see("loop on");
+    h.send(b"g");
+    h.see("checked public criteria");
+    h.send(b"\x1b");
+    h.see("Native queue task");
+    h.send(b"n");
+    h.see("next request accepted");
+    h.quit();
+    assert!(!h.log("queue-events").contains("board"));
+    assert!(!h.log("events").contains("attach "));
+}
+
+#[test]
+#[ignore = "requires installed drover CLI; no external UI, real queues, or agents"]
+fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
+    use std::process::Command;
+    let drover = std::env::var("SADDLE_DROVER_BIN").expect("set SADDLE_DROVER_BIN");
+    let sandbox = tempfile::tempdir().unwrap();
+    let home = sandbox.path().join("home");
+    let repo = sandbox.path().join("repo");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&repo).unwrap();
+    assert!(
+        Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let cli = |args: &[&str]| {
+        let out = Command::new(&drover)
+            .args(args)
+            .env("HOME", &home)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    cli(&["init", "saddle-native-acceptance"]);
+    cli(&["add", "Synthetic native task", "隔离验收正文"]);
+    let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+    let wrapper = format!(
+        "#!/bin/sh\nexport HOME={}\ncd {}\nexec {} \"$@\"\n",
+        quote(home.to_str().unwrap()),
+        quote(repo.to_str().unwrap()),
+        quote(&drover)
+    );
+    let mut h = Harness::start_with_queue(&wrapper);
+    h.see("Synthetic native task");
+    h.send(b"\t\r");
+    h.see("隔离验收正文");
+    h.send(b"p");
+    h.see("Paused");
+    let state: serde_json::Value = serde_json::from_str(&cli(&["list", "--json"])).unwrap();
+    assert_eq!(state["paused"], true);
+    h.send(b"p");
+    h.see("Manual");
+    h.send(b"l");
+    h.see("loop on");
+    h.send(b"l");
+    h.see("loop off");
+    h.send(b"a");
+    h.see("Ctrl-S");
+    h.send("\x1b[200~原生新增\x1b[201~".as_bytes());
+    h.send(b"\t");
+    h.send("\x1b[200~第一行\n第二行\x1b[201~".as_bytes());
+    h.send(b"\x13");
+    h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
+    h.see("原生新增");
+    let state: serde_json::Value = serde_json::from_str(&cli(&["list", "--json"])).unwrap();
+    assert_eq!(state["pending"][1]["body"], "第一行\n第二行");
+    h.master
+        .resize(PtySize {
+            rows: 50,
+            cols: 180,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    h.screen.screen_mut().set_size(50, 180);
+    h.until(|h| h.screen.screen().cell(25, 0).unwrap().contents() == "┌");
+    h.see("原生新增");
+    h.quit();
+    assert!(!h.log("events").contains("attach "));
 }

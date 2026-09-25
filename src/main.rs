@@ -16,7 +16,7 @@ fn run() -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("--config needs a path"))?,
         Some("--help" | "-h") => {
             println!(
-                "saddle [--config PATH]\n\nAgents: ↑↓/j/k select, Enter attach, r reply, PgUp/PgDn scroll, s sort, x then y stop, q quit.\nFocus: Ctrl-] returns to Agents; Tab opens Queue, Shift-Tab opens Viewer. Mouse clicks switch panes.\nDefault config: ~/.config/saddle/config.toml"
+                "saddle [--config PATH]\n\nAgents: ↑↓/j/k select, Enter attach, r reply, PgUp/PgDn scroll, s sort, x then y stop, q quit.\nFocus: Ctrl-] returns to Agents; Tab opens Queue, Shift-Tab opens Viewer. Mouse clicks switch panes.\nQueue (native): Enter details, Esc list, ? help, a add (Ctrl-S save), r refresh, g release, n next, p pause/resume, l loop, q back.\nDefault config: ~/.config/saddle/config.toml"
             );
             return Ok(());
         }
