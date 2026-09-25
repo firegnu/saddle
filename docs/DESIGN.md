@@ -171,3 +171,10 @@ drover = "drover"
 - SOURCE 简写为 VIA。路径去掉 DIR 标签，只显示最后两级目录（较长路径用 …/ 开头）；标题去掉 TITLE 标签，标题正文保留。类型/实例/ATT/VIA 仍跟随每个条目显示；活动和错误仍可见。
 - 继续按现有公开 agent 名称的项目前缀分组，以 repo 为树根；同 repo 下各 agent 用 ├─/└─，附加行延续 │ 或缩进。repo 名称用青色、身份信息用低饱和蓝色、标题用正文色、路径与连接线弱化。根节点滚出视口时，面板标题保留顶部条目所属 repo。排序和键盘/鼠标选择规则不变。
 - r 的 Last reply 仍是独立区，不替换树中任何 agent 的信息。验证多 repo/多 agent、状态排序、窄屏折行、选中底色及原有点击/回复行为。
+
+## 16. Agent 类型标识
+
+- 主行已有的类型名增加同色字符标识：`✳ claude`（陶土橙 #d97757）、`>_ codex`（白 #ffffff）、`π pi`（白 #ffffff）、`π omp`（紫 #a855f7）。字符是适合单行终端的近似标识，不宣称是官方图形 logo，不依赖 Nerd Font 或图像协议。
+- 颜色参考 [Claude 官网样式](https://claude.com)、[OpenAI 品牌页](https://openai.com/brand/)、[Pi 官网样式](https://pi.dev/style.css) 和 [OMP 官方 logo](https://github.com/can1357/oh-my-pi/blob/main/assets/hero.png)；OMP 从渐变取代表性紫色。
+- 只修饰主行类型名；树、状态、连接标记、选中底色与附加信息配色不变。未知类型保留原名和中性色，不借用其他品牌标识。沿用现有宽窗显示类型、窄窗在附加信息保留类型的布局规则；增加标识后的宽度按显示列计算，不挤掉右侧状态和连接信息。
+- 用 Ratatui Buffer 验证四种类型的标识/颜色、未知类型、选中背景及中窄窗口布局；不启动真实 agent。
