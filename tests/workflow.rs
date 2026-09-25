@@ -765,3 +765,57 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
             .all(|line| line == "[\"list\", \"--json\"]")
     );
 }
+
+#[test]
+#[ignore = "requires drover CLI; synthetic history and fake agents only"]
+fn installed_drover_complete_history_reaches_saddle_and_scrolls_both_ends() {
+    use std::process::Command;
+    let drover = std::env::var("SADDLE_DROVER_BIN").expect("set SADDLE_DROVER_BIN");
+    let sandbox = tempfile::tempdir().unwrap();
+    let repo = sandbox.path().join("repo");
+    let data = sandbox.path().join("data");
+    for dir in [&repo, &data] {
+        std::fs::create_dir(dir).unwrap();
+    }
+    assert!(
+        Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success()
+    );
+    std::fs::write(
+        repo.join(".drover.conf"),
+        format!("HANDOFF_DIR={}\nTASK_GATE=1\n", data.display()),
+    )
+    .unwrap();
+    let records: String = (1..=40).map(|i| {
+        format!("{}\n", serde_json::json!({"ev":"drop", "id":format!("T{i}"), "title":format!("Complete-history-{i:02}"), "reason":"Synthetic", "t":i}))
+    }).collect();
+    let state = data.join("tasks.state");
+    std::fs::write(&state, &records).unwrap();
+    let fake_corral = common::script(sandbox.path(), "corral", "#!/bin/sh\nexit 99\n");
+    let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+    let wrapper = format!(
+        "#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = list ] && [ \"$2\" = --json ] || exit 98\nexport DROVER_CORRAL_BIN={}\ncd {}\nexec {} \"$@\"\n",
+        quote(&fake_corral),
+        quote(repo.to_str().unwrap()),
+        quote(&drover)
+    );
+    let mut h = Harness::start_with_queue(&wrapper);
+    h.see("40 tasks");
+    h.see("Complete-history-01"); // Older than the former ten-record API limit.
+    h.send("\x1b[<65;12;32M".repeat(5).as_bytes());
+    h.send(b"s");
+    h.see("Name s");
+    assert!(!h.screen.screen().contents().contains("Complete-history-01"));
+    h.send("\x1b[<65;51;32M".repeat(80).as_bytes());
+    h.see("Complete-history-40");
+    h.see("/40 · End");
+    h.send("\x1b[<64;12;32M".repeat(80).as_bytes());
+    h.see("Complete-history-01");
+    h.quit();
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), records);
+    assert!(!h.log("events").contains("attach "));
+}
