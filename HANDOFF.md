@@ -1,6 +1,14 @@
 # 交接
 
-## 2026-09-25：T1 启动配置与颜色配置完成（最新状态）
+## 2026-09-26：T3 Tasks 状态文字颜色区分完成（最新状态）
+
+- T3 经用户确认解除占位限制，已由 saddle/dev-t3-colors-1 实现、主控审查并合并到 main。Current/Running 蓝，Awaiting 琥珀，Pending 紫；History 标题中性，历史行 Done 绿、Failed 红、Dropped 橙，未知值原样中性显示。配置沿用 T1 现有字段，无需修改用户配置；设计和理由见 DESIGN 第 21 节。
+- 开发者完成 UI 16 项、配置检查和 Clippy；主控检查完整 diff 与渲染检查，diff 检查通过，按纯视觉预算不重跑套件。release 构建通过，已更新 target/release/saddle；用户下次重启生效，本轮未重启运行中的界面。
+- t3-task-colors 分支及 worktree 已清理；工作目录已删，一并关闭本主控开的 saddle/dev-t3-colors-1，其他 agent 未动。已补收尾空提交 286054f，主控审查见任务文件。
+- 下一步按用户调整的顺序为 T4（核查并补齐完成后的状态与过程详情）、T2（tab/split，仍待用户补充）。T3 收尾后等待放行，不自动开始下一件。T4 应先核查公开接口与显示差异，不预判遗漏原因。
+- 旧遗留 --help 的 r reply、Queue 普通列表 PgUp/PgDn、drover 完整历史修复的远端发布情况未在 T3 处理。
+
+## 2026-09-25：T1 启动配置与颜色配置完成
 
 - T1 已由 saddle/dev-t1-config-1 实现，主控审查并合并到 main。27 项颜色通过启动配置进入界面，已有布局、刷新、命令路径配置保留；使用方式见 README 配置节和根目录 config.toml，设计见 DESIGN 第 8 节。
 - 主控复跑标准检查：64 项通过，2 项依赖真实 drover 的既有测试忽略；Clippy 无警告，diff 检查通过。release 已构建，并更新本仓库 target/release/saddle；没有重启用户当前界面，下次启动加载新配置。
