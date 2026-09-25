@@ -477,7 +477,7 @@ fn agent_rows(
                     .max()
                     .unwrap_or(8);
                 // Reserve tree/status icon, type, effort, state and the right-hand activity badge.
-                let reserved = if effort_column { 37 } else { 33 };
+                let reserved = if effort_column { 36 } else { 33 };
                 name_width = longest.clamp(8, width.saturating_sub(reserved).max(8));
             }
             rows.push(Row {
@@ -688,27 +688,26 @@ fn agent_brand(t: &Theme, kind: &str) -> (String, Color) {
     (format!("{mark} {kind}"), color)
 }
 
-// Wi-Fi style strength staircase in braille dots for the delegated effort label; unknown stays
-// blank. Unlit slots keep only a baseline dot so each tier has its own shape, and colors do not
-// follow selection, so a selected row reads the same tier as an unselected one.
+// Pack the first two bars into one braille cell to keep the staircase compact. Each tier has
+// its own shape and theme color; neither changes with selection. Unknown stays blank.
 fn effort_bars(t: &Theme, effort: Option<Effort>) -> Vec<Span<'static>> {
-    let lit = match effort {
-        Some(Effort::Medium) => 1,
-        Some(Effort::High) => 2,
-        Some(Effort::Xhigh) => 3,
-        None => return vec![Span::raw("   ")],
+    let (first, last, color) = match effort {
+        Some(Effort::Medium) => ("⣄", "⡀", t.agent_idle),
+        Some(Effort::High) => ("⣴", "⡀", t.agent_working),
+        Some(Effort::Xhigh) => ("⣴", "⡇", t.agent_starting),
+        None => return vec![Span::raw("  ")],
     };
-    ["⡄", "⡆", "⡇"]
-        .into_iter()
-        .enumerate()
-        .map(|(i, bar)| {
-            if i < lit {
-                Span::styled(bar, Style::default().fg(t.text))
+    vec![
+        Span::styled(first, Style::default().fg(color)),
+        Span::styled(
+            last,
+            Style::default().fg(if effort == Some(Effort::Xhigh) {
+                color
             } else {
-                Span::styled("⡀", Style::default().fg(t.dim))
-            }
-        })
-        .collect()
+                t.dim
+            }),
+        ),
+    ]
 }
 
 // Git state of the agent's directory: a missing entry is still loading, `None` is unavailable,

@@ -946,7 +946,7 @@ fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
     use saddle::theme;
     let (mut a, mut q) = fixture();
     let (before, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
-    assert!(!text(&before).contains('⡄')); // no labels: layout unchanged, no icon column
+    assert!(!text(&before).contains(['⣄', '⣴'])); // no labels: no icon column
     a.agents = [
         ("medium", Some("medium")),
         ("high", Some("high")),
@@ -987,21 +987,30 @@ fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
                 .unwrap()
                 .0;
             let line: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
-            let found = (0..width).find(|x| buffer[(*x, y)].symbol() == "⡄");
+            let found = (0..width).find(|x| matches!(buffer[(*x, y)].symbol(), "⣄" | "⣴"));
             if lit == 0 {
                 assert!(found.is_none(), "{line}");
                 continue;
             }
             let x = found.expect(&line);
             columns.push(x);
-            // Each tier has its own shape: lit bars climb, unlit slots keep only a baseline dot.
-            let icon: String = (x..x + 3).map(|x| buffer[(x, y)].symbol()).collect();
-            assert_eq!(icon, ["⡄⡀⡀", "⡄⡆⡀", "⡄⡆⡇"][lit - 1], "{line}");
-            for i in 0..3 {
+            // Three bars occupy two cells, with distinct shapes and theme colors for each tier.
+            let icon: String = (x..x + 2).map(|x| buffer[(x, y)].symbol()).collect();
+            assert_eq!(icon, ["⣄⡀", "⣴⡀", "⣴⡇"][lit - 1], "{line}");
+            let color = [
+                theme::AGENT_IDLE,
+                theme::AGENT_WORKING,
+                theme::AGENT_STARTING,
+            ][lit - 1];
+            for i in 0..2 {
                 let fg = buffer[(x + i as u16, y)].fg;
                 assert_eq!(
                     fg,
-                    if i < lit { theme::TEXT } else { theme::DIM },
+                    if i == 0 || lit == 3 {
+                        color
+                    } else {
+                        theme::DIM
+                    },
                     "{name} bar {i}: {line}"
                 );
             }
@@ -1028,7 +1037,7 @@ fn selecting_an_agent_keeps_its_effort_icon_tier() {
             ..Default::default()
         })
         .collect();
-    // The three icon cells sit right before " idle" on the agent's main row.
+    // The two icon cells sit right before " idle" on the agent's main row.
     let icon = |a: &mut agents::Panel, q: &mut queue::Panel, focus| {
         let (buffer, hits) = render(160, 48, a, q, focus);
         let y = hits
@@ -1042,7 +1051,7 @@ fn selecting_an_agent_keeps_its_effort_icon_tier() {
                 (0..4).all(|i| buffer[(x + i, y)].symbol() == &"idle"[i as usize..=i as usize])
             })
             .unwrap();
-        (x - 4..x - 1)
+        (x - 3..x - 1)
             .map(|x| (buffer[(x, y)].symbol().to_owned(), buffer[(x, y)].fg))
             .collect::<Vec<_>>()
     };
