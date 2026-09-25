@@ -7,7 +7,7 @@
 - 主控完整标准测试 102 passed、2 ignored，clippy、差异检查通过；交叉审查三个定向检查通过。三条非阻挡建议中，文档校验承诺已收窄；测试成功夹具与目标错配、routing=null 原因文案两项保留建议，后续是否另做由用户决定。本轮没有返工。
 - release 构建完成，已原子替换并校验 `target/release/saddle`；用户重启后生效，当前实例未重启。真实终端字体和操作观感待用户查看。本 release 也包含已完成的 effort 间距与按档位配色调整 `6829963`。
 - 两个 T4 worktree、`t4-task-details` 分支均清理；工作目录已删，一并关闭自有 `saddle/dev-t4-details-1`、`saddle/dev-t4-review-1`。收尾空提交 `145098c`。当前只有 main worktree；仍开着 corral/main、drover/main、saddle/main，各在对应主仓库，未操作其他用户 agent。
-- 下一步执行 `drover done T4`，核对完成待放行；不执行 go/next。pending 仅 T2（tab/split），仍待用户补充，禁止开始设计或实现。
+- `drover done T4` 已核对通过（退出码 8）：current 为空、awaiting 为 T4/done，完成待用户放行；未执行 go/next。pending 仅 T2（tab/split），仍待用户补充，禁止开始设计或实现。
 - 其他既有悬项沿用下方记录；current 退回 pending 按用户决定不做。T4 没有阻挡项，既有 runner 的特殊包装器后代限制见审查文件，不在此扩展实现。
 
 
