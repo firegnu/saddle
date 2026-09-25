@@ -257,3 +257,25 @@ drover = "drover"
 - 目标固定：打开弹层时保存整份 pending 基线和位置，弹层只显示这份快照；后台刷新和选中项变化不改变目标。确认后调用 `drover drop --pos <位置> "Deleted in saddle"`（直接参数，不启动 shell，固定原因写进放弃历史），执行前按第 20 节重新 `list --json` 核对整份 pending，变化则报过期错误、不写入。同样没有可用于 `--expect` 的公开指纹，不声称原子保护。
 - 执行中弹层保留、按钮禁用、显示 Deleting task…；成功回列表并刷新，选中落到同一位置的下一项（没有则上一项；已无待办时跟到 History 里的 Dropped 记录）；失败按其他动作显示 Action result 错误。底部输入提示为 Confirm delete。
 - 不做 current 退回 pending（公开 CLI 没有对应状态转换，需 drover 侧评估）；All pending 汇总仍只读。
+
+## 25. Agents Git 摘要（T11）
+
+用户要求：想知道有没有提交以及 diff 情况，而且不只在主控的分支显示。主控调查后给出方案，用户批准。
+
+- 范围：每个 agent 都显示它公开 cwd（`corral ls` 的 `cwd`）所在 worktree 的 Git 状态，不限于主控分支。cwd 只取公开数据，不从进程或终端推断 agent 之后 cd 到哪里；没有 cwd 的 agent 不显示这一行。
+- 显示：目录行下面加一行，窄窗按显示宽度折行，例如 `dev-t12 · C2(main) · +18 -4 · ?1`。
+  - 分支：当前分支；detached 显示 `HEAD detached`，读不出来显示 `—`。
+  - `C2(main)`：开发分支比本仓库本地 `main`（`refs/heads/main`）多几个提交；当前分支是 `main` 时，相对它配置的上游（如 `origin/main`）计数并显示上游名，表示尚未推送的提交。没有本地 main、没有上游、detached 或没有 HEAD 时显示 `C—`，不猜基准。这是相对基准的提交差值，不是 agent 的历史提交数或本轮提交数。
+  - `+18 -4`：未提交的增删行数，暂存与未暂存一起相对 HEAD 计算（工作区对 HEAD）；提交后归零。`+` 用 `agent_idle` 绿，`-` 用 `agent_error` 红。按 Git 内建 attributes（text/eol/working-tree-encoding/binary 等）规范化后比较，所以已提交的 CRLF 文件只改时间戳不算改动。二进制等没有行数的文件不计入行数，另以 `N binary` 标出。按路径统计、不做重命名检测：纯改名算旧路径全删、新路径全增。没有 HEAD、改动文件要靠被阻止的外部 filter 才能比较（见下）或读取失败时显示 `+— -—`。
+  - `?1`：未跟踪（且未被忽略）文件数，不混入增删行；读不出来显示 `?—`。
+  - 尚未取回显示 `git …`；非 Git 目录、目录已删除、git 不可用或超时显示 `git unavailable`。都不冒充零值。
+- 归属：数字属于目录，不属于 agent。多个 agent 共用同一 worktree 时显示相同数字；不同 worktree（包括同一仓库的不同 worktree）分别统计，不按公共 Git 目录合并。
+- 读取：一个后台线程，约每 5 秒一轮。每轮对每个不同 cwd 先 `git rev-parse --show-toplevel` 找到 worktree 根，同一根只查一次，在根目录运行：`symbolic-ref --quiet --short HEAD`、确认基准（main 上 `rev-parse --abbrev-ref --symbolic-full-name @{upstream}`，其他分支 `rev-parse --verify --quiet refs/heads/main^{commit}`）、`rev-list --count <基准>..HEAD`、列出已配置的 filter 驱动 `config -z --name-only --get-regexp ^filter\.`、`diff-index --numstat -z --ignore-submodules=dirty HEAD`、`ls-files --others --exclude-standard -z`。agent 名单变化时立即唤醒重查。每条命令超时 5 秒，退出时取消并等线程结束；Git 慢或失败不影响 corral 刷新、界面输入和接入。一轮查完所有目录才一起送出结果，下一轮在其后约 5 秒，所以慢仓库会让所有目录的实际刷新周期变长。
+- 只读与不跑外部程序（T11 第一轮返工修订，取代原 `--attr-source=<空树>` 做法：它漏掉 `$GIT_DIR/info/attributes` 和 `core.attributesFile` 里的 filter，又抹掉内建 text/eol 语义，已提交的 CRLF 文件只改时间戳就会被报成增删）：
+  - 都用 Git CLI，不解析 `.git`。全部命令加 `--no-lazy-fetch`（部分克隆缺对象时不补取，也就不联网、不写对象库）、`--no-optional-locks`（不顺带刷新写索引）、`-c core.fsmonitor=false`；diff 另加 `--no-ext-diff --no-textconv`。不 fetch。
+  - filter：attributes 照常读取（工作区、info、全局都算），保留内建转换。在 diff 前用 `git config` 列出各配置层已定义的 filter 驱动，对每个驱动传 `-c filter.<名>.clean= -c filter.<名>.smudge= -c filter.<名>.process= -c filter.<名>.required=true`。无论哪个 attributes 文件指定了它，Git 都不会启动外部程序，而是报 filter 失败，这一轮的增删行显示 `+— -—`。不改仓库配置和 attributes 文件。没改动或 stat 未变的文件不需要 filter，照常统计。刚写入、与索引同一秒的文件（racy）也要比较内容，同样可能暂时显示未知。驱动名含 `=`、无法用 `-c` 覆盖时，增删行同样显示未知。
+  - 子模块（第二轮返工）：上面的覆盖只针对当前仓库的配置，而 diff-index 默认会进入子模块工作区查脏状态，这时会执行子模块自己配置的 filter。所以 diff 加 `--ignore-submodules=dirty`：父仓库的摘要不进入子模块工作区，子模块里未提交的改动不计入父仓库；子模块 HEAD 前进仍算父仓库的 gitlink 变化（按路径 `+1 -1`）。子模块本身作为 agent 的 cwd 时，按它自己的 worktree 和配置正常统计。
+  - 环境：Git 子进程不继承任何 `GIT_*` 变量（`GIT_DIR`、`GIT_WORK_TREE`、`GIT_INDEX_FILE`、对象目录、`GIT_CONFIG_*` 注入、`GIT_TRACE*` 等），只在 Git 调用处去掉，corral/drover 的运行环境不变。仓库一律由 cwd 决定。
+  - 版本：`--no-lazy-fetch` 从 Git 2.45 起有；更旧的 Git 把它当未知选项拒绝，第一步定位就失败，整行显示 `git unavailable`，不降级成允许补取。
+- 结果归属：每轮结果按 cwd 带回，写入 Agents 面板的独立表（与 corral 状态分开），只接受当前名单里仍存在的 cwd，并删掉已不在名单里的条目；agent 换了 cwd 就按新 cwd 查找，旧目录的结果不会显示在它名下。
+- 不做：Git 写操作、diff 详情页、配置项、提交归属或完成判定。

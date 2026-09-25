@@ -15,6 +15,8 @@ pub struct Panel {
     pub message: String,
     pub confirm: Option<String>,
     pub stopping: bool,
+    /// Git summaries by public cwd, kept apart from corral data; a missing key is still loading.
+    pub git: HashMap<String, Option<crate::git::Summary>>,
 }
 impl Panel {
     pub fn absorb(&mut self, agents: Vec<Agent>, showing: Option<&str>, now: f64) {
@@ -54,6 +56,22 @@ impl Panel {
         }
         if let Some(name) = showing {
             self.unread.remove(name);
+        }
+    }
+
+    /// Keeps results only for directories agents use now, so a late result for a directory an
+    /// agent has left is never shown under it.
+    pub fn absorb_git(&mut self, batch: crate::git::Batch) {
+        let current: HashSet<&str> = self
+            .agents
+            .iter()
+            .filter_map(|a| a.cwd.as_deref())
+            .collect();
+        self.git.retain(|cwd, _| current.contains(cwd.as_str()));
+        for (cwd, summary) in batch {
+            if current.contains(cwd.as_str()) {
+                self.git.insert(cwd, summary);
+            }
         }
     }
 
