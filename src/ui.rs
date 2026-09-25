@@ -423,6 +423,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     hits
 }
 fn scrollbar(frame: &mut Frame, area: Rect, len: usize, top: usize) {
+    // Ratatui's position range must match viewport offsets, not the number of rendered rows.
     frame.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .begin_symbol(None)
@@ -445,9 +446,27 @@ fn agent_rows(
     let ordered = panel.ordered(now);
     let mut rows = Vec::new();
     let mut previous = None;
+    let wide = width >= 46;
+    let mut name_width = 8;
     for (index, a) in ordered.iter().enumerate() {
         let prefix = group(&a.name);
         if previous != Some(prefix) {
+            if wide {
+                let longest = ordered[index..]
+                    .iter()
+                    .take_while(|agent| group(&agent.name) == prefix)
+                    .map(|agent| {
+                        agent
+                            .name
+                            .strip_prefix(prefix)
+                            .unwrap_or(&agent.name)
+                            .width()
+                    })
+                    .max()
+                    .unwrap_or(8);
+                // Reserve tree/status icon, type, state and the right-hand activity badge.
+                name_width = longest.clamp(8, width.saturating_sub(33).max(8));
+            }
             rows.push(Row {
                 line: {
                     let count = ordered[index..]
@@ -486,8 +505,6 @@ fn agent_rows(
         };
         let tree_color = if selected { t::MUTED } else { t::DIM };
         let (icon, state, color) = state(a, panel, now);
-        let wide = width >= 46;
-        let name_width = 8;
         let (brand_label, brand_color) = agent_brand(a.kind.as_deref().unwrap_or(""));
         let name = a.name.strip_prefix(prefix).unwrap_or(&a.name);
         let mut spans = vec![
@@ -554,8 +571,12 @@ fn agent_rows(
         let mut details = vec![
             (
                 format!(
-                    "{} {} · ATT {} · VIA {}",
-                    a.kind.as_deref().unwrap_or("—"),
+                    "{}{} · ATT {} · VIA {}",
+                    if wide && brand_label.width() <= 8 {
+                        String::new()
+                    } else {
+                        format!("{} ", a.kind.as_deref().unwrap_or("—"))
+                    },
                     a.instance
                         .as_deref()
                         .unwrap_or("—")
@@ -565,13 +586,19 @@ fn agent_rows(
                     a.attached,
                     a.last_input_source.as_deref().unwrap_or("—")
                 ),
-                t::WORKING,
+                Style::default().fg(t::WORKING),
             ),
-            (short_path(a.cwd.as_deref().unwrap_or("—")), t::MUTED),
-            (a.title.as_deref().unwrap_or("—").to_owned(), t::TEXT),
+            (
+                short_path(a.cwd.as_deref().unwrap_or("—")),
+                Style::default().fg(t::MUTED).add_modifier(Modifier::DIM),
+            ),
+            (
+                a.title.as_deref().unwrap_or("—").to_owned(),
+                Style::default().fg(t::TEXT),
+            ),
         ];
         if name.width() > name_width {
-            details.insert(0, (name.to_owned(), t::TEXT));
+            details.insert(0, (name.to_owned(), Style::default().fg(t::TEXT)));
         }
         if matches!(a.state.as_deref(), Some("working" | "blocked")) {
             details.push((
@@ -580,19 +607,19 @@ fn agent_rows(
                     a.last_tool.as_deref().unwrap_or("thinking"),
                     seconds(a.turn_started.map(|v| now - v))
                 ),
-                color,
+                Style::default().fg(color),
             ));
         }
         if let Some(error) = &a.error {
-            details.push((format!("ERROR {error}"), t::DANGER));
+            details.push((format!("ERROR {error}"), Style::default().fg(t::DANGER)));
         }
         if a.incompatible {
             details.push((
                 format!("Incompatible protocol {}", a.proto.unwrap_or(0)),
-                t::DANGER,
+                Style::default().fg(t::DANGER),
             ));
         }
-        for (detail, color) in details {
+        for (detail, detail_style) in details {
             for line in reply_lines(&detail, width.saturating_sub(6)) {
                 rows.push(Row {
                     line: Line::from(vec![
@@ -600,13 +627,20 @@ fn agent_rows(
                             if last { "      " } else { " │    " },
                             Style::default().fg(tree_color),
                         ),
-                        Span::styled(line.to_string(), Style::default().fg(color)),
+                        Span::styled(line.to_string(), detail_style),
                     ])
                     .style(style),
                     name: Some(a.name.clone()),
                     headline: false,
                 });
             }
+        }
+        if index + 1 < ordered.len() {
+            rows.push(Row {
+                line: Line::styled(if last { "" } else { " │" }, Style::default().fg(t::DIM)),
+                name: None,
+                headline: false,
+            });
         }
     }
     rows

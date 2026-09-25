@@ -721,6 +721,10 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
             > refreshes + 1
     });
     assert!(h.screen.screen().contents().contains("worker-07"));
+    h.send("\x1b[<64;51;4M".repeat(60).as_bytes());
+    h.see("worker-00");
+    h.send("\x1b[<65;12;4M".repeat(60).as_bytes());
+    h.see("worker-07");
     assert!(!h.log("events").contains("attach "));
     h.quit();
 }

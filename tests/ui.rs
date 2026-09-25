@@ -458,3 +458,71 @@ fn agents_scrollbar_reaches_the_bottom_when_the_last_row_is_visible() {
         );
     }
 }
+
+#[test]
+fn multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent() {
+    let (mut a, mut q) = fixture();
+    a.agents = [
+        ("claude-demo-1", "claude"),
+        ("omp-demo-1", "omp"),
+        ("pi-demo-1", "pi"),
+    ]
+    .into_iter()
+    .map(|(name, kind)| Agent {
+        name: format!("demo/{name}"),
+        kind: Some(kind.into()),
+        state: Some("idle".into()),
+        instance: Some("abcdef123".into()),
+        cwd: Some("/tmp/demo".into()),
+        title: Some(format!("{kind} demo ready")),
+        last_input_source: Some("human".into()),
+        ..Default::default()
+    })
+    .collect();
+    a.selected = Some("demo/claude-demo-1".into());
+    for width in [160, 80] {
+        let (buffer, hits) = render(width, 100, &mut a, &mut q, Focus::Agents);
+        let output = text(&buffer);
+        let mut previous_end = None;
+        for agent in &a.agents {
+            let rows: Vec<_> = hits
+                .agents
+                .iter()
+                .filter(|(_, name)| name == &agent.name)
+                .map(|(y, _)| *y)
+                .collect();
+            let info: String = rows
+                .iter()
+                .map(|y| {
+                    (hits.list.x + 6..hits.list.right())
+                        .map(|x| buffer[(x, *y)].symbol())
+                        .collect::<String>()
+                })
+                .collect();
+            for field in [
+                agent.kind.as_deref().unwrap(),
+                "abcdef",
+                "ATT 0",
+                "VIA human",
+                "/tmp/demo",
+                agent.title.as_deref().unwrap(),
+            ] {
+                assert!(
+                    info.replace(' ', "").contains(&field.replace(' ', "")),
+                    "missing {field}: {info}"
+                );
+            }
+            if width == 160 {
+                let name = agent.name.strip_prefix("demo/").unwrap();
+                assert!(output.lines().nth(rows[0] as usize).unwrap().contains(name));
+                assert_eq!(info.matches(name).count(), 1);
+                assert_eq!(rows.len(), 4);
+            }
+            if let Some(end) = previous_end {
+                assert_eq!(rows[0], end + 2); // Exactly one unselected, non-clickable spacer.
+                assert!(!hits.agents.iter().any(|(y, _)| *y == end + 1));
+            }
+            previous_end = rows.last().copied();
+        }
+    }
+}

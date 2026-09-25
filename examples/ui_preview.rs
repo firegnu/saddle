@@ -28,6 +28,7 @@ fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&dir)?;
     for (name, w, h, focus, overlay) in [
         ("wide", 160, 48, Focus::Agents, ""),
+        ("many-agents", 160, 100, Focus::Agents, "many"),
         ("medium", 120, 36, Focus::Queue, ""),
         ("narrow-agents", 80, 24, Focus::Agents, ""),
         ("narrow-queue", 80, 24, Focus::Queue, ""),
@@ -73,6 +74,24 @@ fn main() -> anyhow::Result<()> {
             None,
             150.0,
         );
+        if overlay == "many" {
+            for (name, kind) in [
+                ("claude-demo-1", "claude"),
+                ("omp-demo-1", "omp"),
+                ("pi-demo-1", "pi"),
+            ] {
+                a.agents.push(Agent {
+                    name: format!("saddle/{name}"),
+                    kind: Some(kind.into()),
+                    state: Some("idle".into()),
+                    instance: Some("abcdef123".into()),
+                    cwd: Some("~/Developer/saddle".into()),
+                    title: Some(format!("{kind} demo is ready")),
+                    last_output: Some(140.0),
+                    ..Default::default()
+                });
+            }
+        }
         a.select(Some("saddle/main".into()));
         a.unread.insert("corral/main".into());
         let mut q = queue::Panel::default();
