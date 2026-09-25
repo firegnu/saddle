@@ -112,11 +112,11 @@ impl Pointer {
 pub fn draw(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
     draw_bar(frame, area, buttons, false, false)
 }
-pub fn draw_top(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
-    draw_bar(frame, area, buttons, true, false)
-}
 pub fn draw_compact(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
     draw_bar(frame, area, buttons, false, true)
+}
+pub fn draw_compact_top(frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
+    draw_bar(frame, area, buttons, true, true)
 }
 fn draw_bar(
     frame: &mut Frame,

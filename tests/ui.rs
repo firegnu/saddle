@@ -102,6 +102,16 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
             "{output}"
         );
         assert!(!hits.queue_rows.is_empty());
+        for label in [
+            "‹Refresh r›",
+            "‹Project c›",
+            "‹Details ↵›",
+            "‹Add a›",
+            "‹Help ?›",
+        ] {
+            assert!(output.contains(label), "missing {label}: {output}");
+        }
+        assert!(!output.contains('╭'), "{output}");
         let row = hits.queue_rows[0].0;
         let panes = Panes::with_queue(buffer.area, &Config::default(), true);
         assert_eq!(
@@ -525,4 +535,44 @@ fn multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent() {
             previous_end = rows.last().copied();
         }
     }
+}
+
+#[test]
+fn queue_history_scrollbar_reaches_the_end_with_the_last_task_visible() {
+    let (mut a, mut q) = fixture();
+    q.absorb(Snapshot {
+        history: (0..40)
+            .map(|i| Task {
+                id: Some(format!("T{i}")),
+                title: format!("History item {i:02}"),
+                status: Some("done".into()),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    });
+    q.select(39);
+    let (buffer, hits) = render(160, 60, &mut a, &mut q, Focus::Queue);
+    assert!(
+        text(&buffer).contains("History item 00"),
+        "{}",
+        text(&buffer)
+    );
+    let last = hits.queue_rows.last().unwrap().0;
+    assert_eq!(buffer[(50, last)].symbol(), "█");
+    q.select(0);
+    let (_, hits) = render(160, 60, &mut a, &mut q, Focus::Queue);
+    let before = q.top;
+    q.wheel(10, hits.queue_rows[0].0, 3);
+    render(160, 60, &mut a, &mut q, Focus::Queue);
+    assert_eq!(q.selected, 0);
+    assert_eq!(q.top, before + 3);
+    q.absorb(q.snapshot.clone().unwrap());
+    render(160, 60, &mut a, &mut q, Focus::Queue);
+    assert_eq!(q.top, before + 3);
+    q.wheel(0, 0, 10); // Outside the list.
+    assert_eq!(q.top, before + 3);
+    q.select(0);
+    let (buffer, _) = render(160, 60, &mut a, &mut q, Focus::Queue);
+    assert!(text(&buffer).contains("History item 39"));
 }

@@ -494,14 +494,15 @@ impl App {
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
                     )
                 {
-                    self.queue.key(KeyEvent::new(
+                    self.queue.wheel(
+                        mouse.column,
+                        mouse.row,
                         if mouse.kind == MouseEventKind::ScrollUp {
-                            KeyCode::Up
+                            -1
                         } else {
-                            KeyCode::Down
+                            1
                         },
-                        crossterm::event::KeyModifiers::NONE,
-                    ));
+                    );
                 } else if panes.agents.contains(point)
                     && matches!(
                         mouse.kind,

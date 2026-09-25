@@ -344,15 +344,15 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
         );
     let mut h = Harness::start_with_projects(&script, true);
     h.see("Queue project-one");
-    h.click(" Project c ");
+    h.click("Project c");
     h.see("选择项目");
     h.click("project-two");
     h.see("Queue project-two");
-    h.click(" Pause p ");
+    h.click("Pause p");
     h.see("Paused");
     assert!(!h.dir.path().join("project-one/queue-state.json").exists());
     assert!(h.dir.path().join("project-two/queue-state.json").exists());
-    h.click(" Project c ");
+    h.click("Project c");
     h.click("project-one");
     h.see("Queue project-one");
     h.see("Manual");
@@ -366,19 +366,19 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.see("Native queue task");
     h.see("Synthetic title");
     h.click("Stop x");
-    h.click(" Cancel Esc ");
+    h.click("Cancel Esc");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
-    h.click(" Details ↵ ");
+    h.click("Details ↵");
     h.see("detail line 0");
-    h.click(" Back Esc ");
-    h.see(" Details ↵ ");
-    h.click(" Add a ");
+    h.click("Back Esc");
+    h.see("Details ↵");
+    h.click("Add a");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
     h.click("正文");
     h.send("正文内容".as_bytes());
-    h.click(" Save ^s ");
+    h.click("Save ^s");
     h.see("鼠标新增");
     h.until(|h| {
         h.log("queue-events")
@@ -409,17 +409,17 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Native queue task");
     h.send(b"\t?");
     h.see("Queue 原生看板");
-    h.see(" Back Esc ");
+    h.see("Back Esc");
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains(" Back Esc "));
+    h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
     h.see("Native queue task");
     h.send(b"\r");
     h.see("detail line 0");
     h.send(b"\x1b[6~\x1b[6~");
     h.see("detail line 30");
-    h.see(" Back Esc ");
+    h.see("Back Esc");
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains(" Back Esc "));
+    h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
     h.see("Native queue task");
     h.send(b"a");
     h.see("Ctrl-S");
@@ -442,7 +442,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"g");
     h.see("checked public criteria");
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains(" Back Esc "));
+    h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
     h.see("Native queue task");
     h.send(b"n");
     h.see("next request accepted");
@@ -538,7 +538,7 @@ fn buttons_require_release_on_the_same_target() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.press_button(" Pause p ");
+    h.press_button("Pause p");
     let deadline = Instant::now() + Duration::from_millis(400);
     while Instant::now() < deadline {
         h.pump();
@@ -586,7 +586,7 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     );
     assert!(!h.log("events").contains("stop "));
     h.send(b"\tc");
-    h.see(" Path e ");
+    h.see("Path e");
     h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
@@ -601,11 +601,11 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.screen.screen_mut().set_size(24, 80);
     h.see(" Agents  Queue ");
     h.click("Queue");
-    h.see(" Path e "); // The suspended project picker resumes.
+    h.see("Path e"); // The suspended project picker resumes.
     h.send(b"\x1b");
     h.see("Input ▸ Queue");
     h.see("Native queue task");
-    h.click(" Pause p ");
+    h.click("Pause p");
     h.see("Paused");
     h.click("Agents");
     h.see("Input ▸ Agents");
@@ -727,4 +727,41 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
     h.see("worker-07");
     assert!(!h.log("events").contains("attach "));
     h.quit();
+}
+
+#[test]
+fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
+    let mut h = Harness::start();
+    let history: Vec<_> = (0..40).map(|i| serde_json::json!({"id":format!("H{i}"),"title":format!("History-{i:02}"),"status":"done"})).collect();
+    std::fs::write(
+        h.dir.path().join("queue-state.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "mode":{"gate":true,"loop":false},"paused":false,"pending":[],"history":history
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    h.see("History-39");
+    // Wheel over the task list, while keyboard focus remains in Agents.
+    h.send("\x1b[<65;12;32M".repeat(3).as_bytes());
+    h.send(b"s");
+    h.see("Name s"); // Barrier: all three wheel events have been processed.
+    assert!(
+        !h.screen.screen().contents().contains("History-39"),
+        "{}",
+        h.screen.screen().contents()
+    );
+    h.send("\x1b[<65;51;32M".repeat(80).as_bytes());
+    h.see("History-00");
+    let refreshes = h.log("queue-events").lines().count();
+    h.until(|h| h.log("queue-events").lines().count() > refreshes + 1);
+    assert!(h.screen.screen().contents().contains("History-00"));
+    h.send("\x1b[<64;12;32M".repeat(80).as_bytes());
+    h.see("History-39");
+    h.quit();
+    assert!(
+        h.log("queue-events")
+            .lines()
+            .all(|line| line == "[\"list\", \"--json\"]")
+    );
 }

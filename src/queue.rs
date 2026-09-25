@@ -29,6 +29,8 @@ pub struct Panel {
     pub snapshot: Option<Snapshot>,
     pub selected: usize,
     pub top: usize,
+    pub(crate) manual_scroll: bool,
+    pub(crate) list_area: ratatui::layout::Rect,
     pub scroll: usize,
     pub page: Page,
     pub message: String,
@@ -116,6 +118,17 @@ impl Panel {
     pub fn select(&mut self, index: usize) {
         self.selected = index.min(self.tasks().len().saturating_sub(1));
         self.scroll = 0;
+        self.manual_scroll = false;
+    }
+    pub fn wheel(&mut self, column: u16, row: u16, delta: isize) {
+        if !self.overlay_open() && self.list_area.contains((column, row).into()) {
+            if self.read_error.is_some() {
+                self.scroll = self.scroll.saturating_add_signed(delta);
+            } else {
+                self.top = self.top.saturating_add_signed(delta);
+                self.manual_scroll = true;
+            }
+        }
     }
     pub fn paste(&mut self, text: &str) {
         if self.busy {
@@ -355,6 +368,7 @@ impl Panel {
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
+        self.list_area = Rect::default();
         if area.is_empty() {
             return Vec::new();
         }
@@ -385,14 +399,14 @@ impl Panel {
             .unwrap_or_default()
             .to_string_lossy();
         let inline = inside.width >= 40;
-        let controls_width = 27.min(inside.width);
+        let controls_width = 23.min(inside.width);
         let controls = Rect::new(
             inside.right() - controls_width,
             inside.y + u16::from(!inline),
             controls_width,
-            inside.height.saturating_sub(u16::from(!inline)).min(3),
+            inside.height.saturating_sub(u16::from(!inline)).min(1),
         );
-        let (_, project_hits) = buttons::draw_top(
+        let (_, project_hits) = buttons::draw_compact_top(
             frame,
             controls,
             &[
@@ -421,12 +435,12 @@ impl Panel {
         );
         if inline {
             frame.render_widget(
-                Paragraph::new(ui::clip(&self.project, usize::from(name_width)))
+                Paragraph::new(ui::clip(&self.project, usize::from(inside.width)))
                     .style(Style::default().fg(t::DIM)),
-                Rect::new(inside.x, inside.y + 1, name_width, 1),
+                Rect::new(inside.x, inside.y + 1, inside.width, 1),
             );
         }
-        let header_height = if inline { 4 } else { 5 };
+        let header_height = 3;
         let mode = if self.read_error.is_some() {
             "读取失败".into()
         } else {
@@ -471,7 +485,7 @@ impl Panel {
         let (remaining, action_hits) = if self.read_error.is_some() {
             (remaining, Vec::new())
         } else {
-            buttons::draw_top(
+            buttons::draw_compact_top(
                 frame,
                 remaining,
                 &[
@@ -491,7 +505,7 @@ impl Panel {
             )
         };
         self.buttons.extend(action_hits);
-        let (mut body, task_hits) = buttons::draw(
+        let (mut body, task_hits) = buttons::draw_compact(
             frame,
             remaining,
             &[
@@ -557,7 +571,7 @@ impl Panel {
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
-        let (mut body, hits) = buttons::draw(frame, inside, &self.controls());
+        let (mut body, hits) = buttons::draw_compact(frame, inside, &self.controls());
         self.buttons = hits;
         if !self.message.is_empty() && body.height > 3 {
             let lines = wrap_text(&self.message, body.width);
@@ -588,6 +602,7 @@ impl Panel {
         let page = if list { &Page::List } else { &self.page };
         match page {
             Page::List => {
+                self.list_area = body;
                 if let Some(error) = &self.read_error {
                     let text = format!(
                         "{error}\n\n检查 queue.cwd，或点击项目按钮切换。\nPgUp/PgDn 滚动完整错误。\n\n当前目录：{}",
@@ -617,6 +632,7 @@ impl Panel {
                     );
                     return hits;
                 }
+                let text_width = body.width.saturating_sub(1);
                 let mut rows = Vec::new();
                 let mut section = "";
                 for (index, (group, task)) in tasks.iter().enumerate() {
@@ -653,7 +669,7 @@ impl Panel {
                     let id = task.id.as_deref().unwrap_or("·");
                     let id_width = unicode_width::UnicodeWidthStr::width(id).min(8);
                     let title_width =
-                        usize::from(body.width).saturating_sub(id_width + status_width + 3);
+                        usize::from(text_width).saturating_sub(id_width + status_width + 3);
                     let spans = vec![
                         Span::styled(
                             if index == self.selected { "▎" } else { " " },
@@ -674,16 +690,18 @@ impl Panel {
                     .position(|(i, _)| *i == Some(self.selected))
                     .unwrap_or(0);
                 let height = usize::from(body.height);
-                self.top = self
-                    .top
-                    .max((selected_row + 1).saturating_sub(height))
-                    .min(selected_row)
-                    .min(rows.len().saturating_sub(height));
+                if !self.manual_scroll {
+                    self.top = self
+                        .top
+                        .max((selected_row + 1).saturating_sub(height))
+                        .min(selected_row);
+                }
+                self.top = self.top.min(rows.len().saturating_sub(height));
                 for (i, (index, line)) in rows.iter().skip(self.top).take(height).enumerate() {
                     let y = body.y + i as u16;
                     frame.render_widget(
                         Paragraph::new(line.clone()).style(line.style),
-                        Rect::new(body.x, y, body.width, 1),
+                        Rect::new(body.x, y, text_width, 1),
                     );
                     if let Some(index) = index {
                         hits.push((y, *index));
@@ -698,7 +716,7 @@ impl Panel {
                             .thumb_style(Style::default().fg(t::MUTED))
                             .track_style(Style::default().fg(t::BORDER)),
                         body,
-                        &mut ScrollbarState::new(rows.len())
+                        &mut ScrollbarState::new(rows.len().saturating_sub(height) + 1)
                             .viewport_content_length(height)
                             .position(self.top),
                     );
