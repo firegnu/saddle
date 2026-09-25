@@ -2,15 +2,13 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use serde_json::Value;
 use std::{
-    io::Read,
-    process::{Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -41,52 +39,8 @@ pub struct Client {
 }
 impl Client {
     pub fn json(&self, args: &[&str], timeout: Duration, cancel: &AtomicBool) -> Result<Value> {
-        let mut child = Command::new(&self.program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| format!("starting {} {}", self.program, args.join(" ")))?;
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        let (tx, rx) = mpsc::channel();
-        for (is_stdout, mut pipe) in [
-            (true, Box::new(stdout) as Box<dyn Read + Send>),
-            (false, Box::new(stderr)),
-        ] {
-            let tx = tx.clone();
-            thread::spawn(move || {
-                let mut bytes = Vec::new();
-                let result = pipe.read_to_end(&mut bytes).map(|_| bytes);
-                let _ = tx.send((is_stdout, result));
-            });
-        }
-        drop(tx);
-        let deadline = Instant::now() + timeout;
-        let status = loop {
-            if let Some(status) = child.try_wait()? {
-                break status;
-            }
-            if cancel.load(Ordering::Relaxed) || Instant::now() >= deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                bail!("{} cancelled or timed out", args.join(" "));
-            }
-            thread::sleep(Duration::from_millis(10));
-        };
-        let mut output = Vec::new();
-        let mut errors = Vec::new();
-        for _ in 0..2 {
-            let (is_stdout, bytes) = rx
-                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                .context("command output timed out")?;
-            if is_stdout {
-                output = bytes?;
-            } else {
-                errors = bytes?;
-            }
-        }
+        let result = crate::command::run(&self.program, args, None, timeout, cancel)?;
+        let (status, output, errors) = (result.status, result.stdout, result.stderr);
         let value: Value = serde_json::from_slice(&output).with_context(|| {
             format!(
                 "{}: invalid JSON ({})",

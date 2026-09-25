@@ -52,3 +52,10 @@ RED→GREEN 的行为检查包含：布局分配、非法配置、公开 JSON �
 用户明确要求所有看板 UI 都由 Rust UI 库实现，拒绝 Python 看板。左上 Agents 已是 ratatui 原生；左下取消 PTY/`drover board`，改为原生任务、详情、帮助、新增表单及公开 CLI 操作。DESIGN 已先行更新。
 
 公开 CLI 在隔离 HOME/临时项目中验证：`drover list --json` 提供任务正文、当前/待放行/待办/历史和模式，足以实现原生队列。禁止读取内部注册文件，项目由 queue.cwd 指定。
+
+### 原生 Queue 模块
+
+- 新增公开 drover JSON/动作客户端、可取消后台 worker，复用 corral 已有的进程超时边界。
+- ratatui 原生列表、详情、帮助、操作反馈及标题/正文表单；提交直接传参给 drover add，不启动编辑器或其他 UI。
+- RED→GREEN：数据从空快照改为公开 JSON，动作从空反馈改为真实参数调用，选择/新增状态机从无行为改为可用。
+- 临时 HOME/项目中的真实 drover CLI 已验证原生 UI 的读取、详情、暂停/恢复、循环切换、新增多行中文任务和缩放；未调用 drover board、未启动真实 agent。
