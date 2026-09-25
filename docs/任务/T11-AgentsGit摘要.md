@@ -112,3 +112,10 @@ dev-t12 · C2(main) · +18 -4 · ?1
     - child 作为 cwd 时增删未知，无标记。
   - `cargo test --test git --test git_env`（8 passed）、`cargo clippy --all-targets -- -D warnings`、`git diff --check` 通过；按预算没跑其他套件。
 - 取舍：只采用主控接受的最小方案，不做递归扫描或子模块详情，也不忽略全部子模块变化。
+
+## 主控审查
+
+- 2026-09-26：主控审查与 Codex gpt-6-astra / xhigh 交叉审查通过，第二轮增量复核关闭剩余子模块 filter 缺口，必须改 1–4 全部解决；实现提交 `2b60ab1` 已合并 main。完整意见、证据及逐项取舍见 `T11-主控与交叉审查.md`。
+- 初审标准测试 89 passed、2 ignored，clippy 通过；第一轮主控相关回归 40 passed，第二轮 Git/git_env 8 passed、clippy 与 diff 检查通过；第二轮交叉审查子模块定向测试 1 passed。未重复无关全套。
+- 接受按 worktree 归属、保守未知值、Git 2.45 能力门槛，以及父仓库跳过子模块未提交改动但保留 gitlink 变化。慢仓库延长整轮刷新、纯重命名按路径增删、罕见包装器后代清理等既有取舍维持，说明见 DESIGN 第 25 节。
+- 按用户授权更新 release 并收尾，队列仅将 T11 标完成待放行；不自动开始 T4/T2。
