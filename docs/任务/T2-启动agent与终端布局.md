@@ -68,3 +68,10 @@
 - RED → GREEN：新增 workflow 回归先记录到 `input p/a 5a`、发给 B 的粘贴和鼠标字节也落到 A，输入判断修复后通过。新增 pending 阶段回归先记录 `attach p/a → detaching p/a → detached p/a → attach p/b`（此时已预留 C），修复后 A 回收期间不再启动 B，C 随后正常接入。新增未接收 spawn 的同项回归先记录 `target=Some(1), input=true, reaped=false`，修复后即使 C 的 status 失败，旧 B 也不再是目标／输入 session，并完成回收。三个检查均先因目标缺陷失败，再通过；用假 CLI 事件和待退出文件控制阶段，未以产品延时掩盖问题，也未强制延迟 OS spawn。
 - 增量验证：`CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo test --test workflow --test viewer --test terminals` 通过（34 passed、0 failed、2 ignored；忽略项仍是既有 installed-drover 集成测试），其中包含保留的重选 A、tab／split、关闭与表单焦点回归；同一共享 target 的 `cargo clippy --all-targets -- -D warnings` 及 `git diff --check` 通过。没有重复全部标准测试，没有修改或删除任何已有断言。
 - 8 项已认可实现取舍全部保留，未改布局、New 交互、命令参数或 Tasks 业务；未改主仓库审查文件、设计或其他任务文件。仅用假 CLI、临时目录、合成数据，全部命令前台完成；无真实 agent／队列操作、无新委派、无合并或推送。无新增待裁决事项，交主控增量复核。
+
+## 主控审查
+
+- 初审标准检查 116 passed、2 ignored，Clippy 与差异检查通过；独立交叉审查发现待接入输入误路由、过期接入未取消两项必须改，主控认可后交回原开发者。
+- `46d8abb` 修复两项，主控增量检查 34 passed、2 ignored、Clippy 与 diff 检查通过；原审查者在该 SHA 复核原两份探针及过期 spawn 回收检查，三项均通过，无剩余阻挡或新增建议。
+- 结论：通过，已合并 main。tab 布局、等分、窄窗折叠、后台尺寸、直接 argv、目录轮换、失败预留空窗格、最后空 tab 八项取舍均认可；详细证据和逐项裁决见 `T2-主控与交叉审查.md`。
+- 按用户授权继续推送和清理收尾，公开 T2 标为完成待用户放行，不自动 go/next。真实终端观感由用户体验。
