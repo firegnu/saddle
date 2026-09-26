@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：用户批准位置优先布局，已委派开发（以本节为准）
+
+- 用户认可 New，指出 Show 在鼠标点选即接入的流程中没有实际作用；已批准右侧 Split/顶部加号先选位置后选 agent 的方案。设计与任务提交 039b8d8；具体交互和理由见 DESIGN 第 29 节、docs/任务/终端布局位置优先.md。
+- 已开自有 saddle/dev-pane-placement-1（Claude Code，opus[1m] / xhigh），worktree ../saddle-worktrees/pane-placement，分支 pane-placement。本轮涉及已有会话移动与异步归属，路由重；主控定碰要害、需独立交叉审查。
+- 下一步：开发 DONE 后读状态、回复、任务完成记录，按预算主控审查及一次标准检查；通过后另开 Codex 重档在 detached review worktree 独立审查。逐项裁决，有必须改项交原开发者返工并仅增量复核；通过后合并推送、更新 release、清理自有 worktree/分支/agent、空提交和交接。
+- New/Show 和 Agents 样式旧任务已完整收尾，无需重复审查。当前实现尚未完成、未发布；保留现有 New 和 Agents 样式。原 T2 已放行，不操作队列、不执行 go/next。其他项目 agent 不是本任务所有，不干扰。
+
 ## 2026-09-26：Agents 选中样式合并收尾完成（以本节为准）
 
 - 第二阶段开发 ff728a2 已实现去掉 Agents 首行短竖线、选中名称亮色加粗；主控纯视觉审查通过，无必须改或新增建议项。审查提交 7729b85，功能和记录已推送 main；详细完成/审查记录见 docs/任务/Agents选中样式.md，设计理由见 DESIGN 第 28 节。
