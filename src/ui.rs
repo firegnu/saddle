@@ -176,6 +176,27 @@ pub fn draw_workspace(
         )
         .collect();
     view.pointer.paint(t, frame, &controls);
+    // Tab bodies and their close targets share one visual frame, but keep separate hits.
+    if let Some(point) = view.pointer.hover {
+        use crate::terminals::Control;
+        for pair in hits.terminal.windows(2) {
+            let [
+                (body, Control::Tab(id)),
+                (close, Control::CloseTab(close_id)),
+            ] = pair
+            else {
+                continue;
+            };
+            let area = body.area.union(close.area);
+            if id == close_id && area.contains(point) {
+                // Extend the actual hover/pressed colour already painted by Pointer.
+                let color = frame.buffer_mut()[(point.x, point.y)].fg;
+                frame
+                    .buffer_mut()
+                    .set_style(area, Style::default().fg(color));
+            }
+        }
+    }
     if !view.panes.tabs.is_empty() {
         frame.render_widget(
             Paragraph::new(Line::from(vec![

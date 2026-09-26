@@ -1503,3 +1503,108 @@ fn selected_agent_has_no_side_marker_but_bold_name_and_background_on_every_line(
         assert_eq!(buffer[(1, other)].bg, Color::Reset);
     }
 }
+
+#[test]
+fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{layout::Position, style::Color};
+    use saddle::terminals::{Control, Place, Terminals};
+    let (mut panel, mut queue) = fixture();
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    let first = terminals.reserve(Place::Current, Some("p/a".into()));
+    let second = terminals.reserve(Place::Tab, Some("p/b".into()));
+    terminals.focus(first.pane);
+    let colors = saddle::theme::Theme::default();
+    let mut render = |pointer: &Pointer| {
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        let mut hits = ui::Hits::default();
+        terminal
+            .draw(|frame| {
+                hits = ui::draw_workspace(
+                    frame,
+                    &mut panel,
+                    View {
+                        colors: &colors,
+                        panes: Panes::new(frame.area(), &Config::default()),
+                        focus: Focus::Viewer,
+                        showing: None,
+                        viewer: None,
+                        queue: &mut queue,
+                        viewer_note: "",
+                        reply: "",
+                        now: 100.0,
+                        pointer,
+                    },
+                    Some(ui::Workspace {
+                        terminals: &terminals,
+                        placement: None,
+                        form: None,
+                        program: "unused-fake-corral",
+                    }),
+                );
+            })
+            .unwrap();
+        (terminal.backend().buffer().clone(), hits)
+    };
+    let (_, hits) = render(&Pointer::default());
+    let body = hits
+        .terminal
+        .iter()
+        .find(|(_, c)| matches!(c, Control::Tab(id) if *id == second.pane))
+        .unwrap()
+        .0
+        .clone();
+    let close = hits
+        .terminal
+        .iter()
+        .find(|(_, c)| matches!(c, Control::CloseTab(id) if *id == second.pane))
+        .unwrap()
+        .0
+        .clone();
+    let targets: Vec<_> = hits
+        .terminal
+        .iter()
+        .map(|(h, _)| (Focus::Viewer, h.clone()))
+        .collect();
+    for target in [&body, &close] {
+        let point = Position::new(target.area.x, target.area.y + 1);
+        let mut pointer = Pointer::default();
+        pointer.hover = Some(point);
+        for pressed in [false, true] {
+            if pressed {
+                pointer.event(
+                    MouseEvent {
+                        kind: MouseEventKind::Down(MouseButton::Left),
+                        column: point.x,
+                        row: point.y,
+                        modifiers: KeyModifiers::NONE,
+                    },
+                    &targets,
+                );
+            }
+            let (buffer, after) = render(&pointer);
+            for y in body.area.y..body.area.bottom() {
+                for x in body.area.x..close.area.right() {
+                    assert_eq!(
+                        buffer[(x, y)].fg,
+                        if pressed { colors.focus } else { colors.bright },
+                        "split highlight at {x},{y}"
+                    );
+                    assert_eq!(buffer[(x, y)].bg, Color::Reset);
+                }
+            }
+            assert!(
+                after
+                    .terminal
+                    .iter()
+                    .any(|(h, c)| h == &body && matches!(c, Control::Tab(_)))
+            );
+            assert!(
+                after
+                    .terminal
+                    .iter()
+                    .any(|(h, c)| h == &close && matches!(c, Control::CloseTab(_)))
+            );
+        }
+    }
+}
