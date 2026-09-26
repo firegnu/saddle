@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：T2 第一轮返工主控通过，交叉增量复核中（以本节为准）
+
+- 开发修复 `46d8abb` 已处理待接入输入隔离与旧 pending/spawn 取消；原开发 agent saddle/dev-t2-terminal-1 空闲，保留原 worktree 等结果。
+- 主控仅审 c35daa2..46d8abb，增量检查 34 passed、2 ignored，Clippy 与 diff 检查通过。裁决及取舍见 docs/任务/T2-主控与交叉审查.md，无新增范围。
+- detached 审查 worktree ../saddle-worktrees/review-t2-terminal-layout 已实际更新到 46d8abb，交原 saddle/dev-t2-review-1 仅复核必须改 1、2 和修复引入的问题；这是第一轮交叉复核。
+- 下一步看复核结论，通过后合并、推送、清理两个 worktree/开发分支及自有 agent，补收尾和交接。尚未合并、更新安装版本或标记完成；T2 仍 current，不自动 go/next。
+
 ## 2026-09-26：T2 交叉审查发现两项阻挡，返工中（以本节为准）
 
 - 独立审查 c35daa2 结论「改完再合并」：必须改 1 是重复选择等待 status 的 B 后可能把输入给旧 A；必须改 2 是等待 A 断开期间改选 C 后，已过期 B 仍接入。主控核对探针与调用路径，接受两项；8 项实现取舍仍通过，无建议项。
