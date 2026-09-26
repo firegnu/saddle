@@ -234,8 +234,16 @@ impl Terminals {
             .map(|p| p.id)
     }
     pub fn activate_existing(&mut self, name: &str) -> Result<bool> {
-        let Some(id) = self.find(name) else {
+        let Some(id) = self.claim(name)? else {
             return Ok(false);
+        };
+        self.focus(id);
+        Ok(true)
+    }
+    /// The pane holding `name`, keeping it there instead of any pending replacement.
+    fn claim(&mut self, name: &str) -> Result<Option<u64>> {
+        let Some(id) = self.find(name) else {
+            return Ok(None);
         };
         let pane = self.get_mut(id).unwrap();
         if pane.requested.as_deref() != Some(name) {
@@ -246,20 +254,79 @@ impl Terminals {
                 pane.viewer.select(name.into())?;
             }
         }
+        Ok(Some(id))
+    }
+    /// Shows `name` in a new tab or beside pane `anchor`. An agent already open elsewhere
+    /// keeps its pane, so its session, output and pending request move with it; otherwise the
+    /// returned ticket reserves a new pane. `place` is `Tab` or a split direction.
+    pub fn place(&mut self, anchor: u64, place: Place, name: &str) -> Result<Option<Ticket>> {
+        if let Some(id) = self.claim(name)? {
+            // A pane cannot split itself; it stays where it is.
+            if id != anchor || place == Place::Tab {
+                let pane = self.take(id).unwrap();
+                self.insert(anchor, place, pane);
+            }
+            self.focus(id);
+            return Ok(None);
+        }
+        Ok(Some(self.reserve_at(anchor, place, Some(name.into()))))
+    }
+    /// Detaches a pane from its tab, dropping the tab once it holds no panes.
+    fn take(&mut self, id: u64) -> Option<Pane> {
+        let index = self
+            .tabs
+            .iter()
+            .position(|t| t.panes.iter().any(|p| p.id == id))?;
+        let tab = &mut self.tabs[index];
+        let at = tab.panes.iter().position(|p| p.id == id).unwrap();
+        let pane = tab.panes.remove(at);
+        if tab.panes.is_empty() {
+            let old = self.tabs.remove(index).id;
+            if self.active == old && !self.tabs.is_empty() {
+                self.active = self.tabs[index.min(self.tabs.len() - 1)].id;
+            }
+        } else {
+            tab.tree = std::mem::replace(&mut tab.tree, Node::Leaf(0))
+                .remove(id)
+                .unwrap();
+            if tab.active == id {
+                tab.active = tab.panes[0].id;
+            }
+        }
+        Some(pane)
+    }
+    fn insert(&mut self, anchor: u64, place: Place, pane: Pane) {
+        let id = pane.id;
+        if place == Place::Tab {
+            self.next_id += 1;
+            self.tabs.push(Tab {
+                id: self.next_id,
+                active: id,
+                tree: Node::Leaf(id),
+                panes: vec![pane],
+            });
+        } else {
+            let tab = self
+                .tabs
+                .iter_mut()
+                .find(|t| t.panes.iter().any(|p| p.id == anchor))
+                .unwrap();
+            tab.tree.split(anchor, id, place);
+            tab.panes.push(pane);
+        }
         self.focus(id);
-        Ok(true)
     }
     pub fn reserve(&mut self, place: Place, name: Option<String>) -> Ticket {
+        self.reserve_at(self.tab().active, place, name)
+    }
+    fn reserve_at(&mut self, anchor: u64, place: Place, name: Option<String>) -> Ticket {
         let id = match place {
-            Place::Current => self.tab().active,
+            Place::Current => anchor,
             Place::Tab => self.new_tab(),
             _ => {
                 let pane = self.pane();
                 let id = pane.id;
-                let tab = self.tabs.iter_mut().find(|t| t.id == self.active).unwrap();
-                tab.tree.split(tab.active, id, place);
-                tab.panes.push(pane);
-                tab.active = id;
+                self.insert(anchor, place, pane);
                 id
             }
         };
@@ -294,26 +361,13 @@ impl Terminals {
         Ok(true)
     }
     pub fn close_pane(&mut self, id: u64) -> Result<()> {
-        let Some(index) = self
-            .tabs
-            .iter()
-            .position(|t| t.panes.iter().any(|p| p.id == id))
-        else {
+        let Some(mut pane) = self.take(id) else {
             return Ok(());
         };
-        if self.tabs[index].panes.len() == 1 {
-            return self.close_tab(self.tabs[index].id);
-        }
-        let tab = &mut self.tabs[index];
-        let at = tab.panes.iter().position(|p| p.id == id).unwrap();
-        let mut pane = tab.panes.remove(at);
         pane.viewer.close()?;
         self.retiring.push(pane.viewer);
-        tab.tree = std::mem::replace(&mut tab.tree, Node::Leaf(0))
-            .remove(id)
-            .unwrap();
-        if tab.active == id {
-            tab.active = tab.panes[0].id;
+        if self.tabs.is_empty() {
+            self.new_tab();
         }
         Ok(())
     }
@@ -384,6 +438,11 @@ pub enum Control {
     Pane(u64),
     Previous,
     Next,
+    /// Placement popup: open the side menu for a pane, pick a side, a candidate, or cancel.
+    Split(u64),
+    Side(Place),
+    Pick(usize),
+    Cancel,
 }
 pub type Hit = (crate::buttons::Hit, Control);
 pub fn draw(
@@ -505,29 +564,42 @@ pub fn draw(
             Control::Pane(id),
             active,
         );
-        if active && rect.width >= 27 && rect.height >= 2 {
-            button(
-                frame,
-                Rect::new(rect.right() - 26, rect.bottom() - 1, 12, 1),
-                " Close pane ",
-                Control::ClosePane(id),
-                false,
-            );
-            button(
-                frame,
-                Rect::new(rect.right() - 13, rect.bottom() - 1, 12, 1),
-                " Close tab  ",
-                Control::CloseTab(terminals.active),
-                false,
-            );
-        } else if active && rect.width >= 3 && rect.height >= 2 {
-            button(
-                frame,
-                Rect::new(rect.right() - 2, rect.bottom() - 1, 1, 1),
-                "×",
-                Control::ClosePane(id),
-                false,
-            );
+        // The widest set that fits the bottom border, laid out from its right corner.
+        let split = (" Split ▾ ", Control::Split(id));
+        let close = (" Close pane ", Control::ClosePane(id));
+        let sets = [
+            vec![
+                split,
+                close,
+                (" Close tab  ", Control::CloseTab(terminals.active)),
+            ],
+            vec![split, close],
+            vec![split, ("×", Control::ClosePane(id))],
+            vec![("×", Control::ClosePane(id))],
+        ];
+        let width = |set: &Vec<(&str, Control)>| {
+            set.iter()
+                .map(|(label, _)| unicode_width::UnicodeWidthStr::width(*label) as u16)
+                .sum::<u16>()
+                + set.len() as u16
+                + 1
+        };
+        if active
+            && rect.height >= 2
+            && let Some(set) = sets.iter().find(|set| width(set) <= rect.width)
+        {
+            let mut end = rect.right() - 1;
+            for (label, control) in set.iter().rev() {
+                let w = unicode_width::UnicodeWidthStr::width(*label) as u16;
+                button(
+                    frame,
+                    Rect::new(end - w, rect.bottom() - 1, w, 1),
+                    label,
+                    *control,
+                    false,
+                );
+                end -= w + 1;
+            }
         }
     }
     hits
