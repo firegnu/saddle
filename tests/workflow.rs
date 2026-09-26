@@ -1036,6 +1036,36 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
 }
 
 #[test]
+fn task_detail_mouse_edit_saves_and_returns_through_the_task_overlay() {
+    let mut h = Harness::start();
+    h.see("T1 Native queue task");
+    h.click("Native queue task");
+    h.see("Task t");
+    h.click("Task t");
+    h.see("Input ▸ Queue · Task text");
+    h.see("detail line 0");
+    h.click("Edit e");
+    h.see("Edit task");
+    h.send(b" revised\x13");
+    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
+    h.see("Input ▸ Queue · Task text");
+    h.see("Native queue task revised");
+    h.click("Back Esc");
+    h.see("Input ▸ Queue · Task details");
+    h.click("Edit e");
+    h.see("Edit task");
+    h.click("Cancel Esc");
+    h.see("Input ▸ Queue · Task details");
+    h.click("Back Esc");
+    h.see("Details ↵");
+    h.see("T1 Native queue task revised");
+    h.quit();
+    let events = h.log("queue-events");
+    assert_eq!(events.matches("[\"edit\"").count(), 1, "{events}");
+    assert!(!h.log("events").contains("input p/a"));
+}
+
+#[test]
 fn clicking_a_task_opens_refreshing_details_in_the_tasks_area_until_back() {
     let show = include_str!("fixtures/show.json").replace('\n', " ");
     let script = format!(
@@ -1072,7 +1102,12 @@ else:
     assert_eq!(shows(&h), 1);
     // Detail keys stay in Tasks while an agent is attached in Viewer.
     h.send(b"jk\x1b[6~\x1b[5~gnpla");
+    h.click("Task t");
+    h.see("Input ▸ Queue · Task text");
+    h.see("list body");
     h.until(|h| shows(h) >= 2); // About five seconds later, one at a time.
+    h.send(b"e\x1b"); // Running task stays read-only; Esc returns to its detail pane.
+    h.see("Input ▸ Queue · Task details");
     assert!(!h.log("events").contains("input p/a"));
     let queue = h.log("queue-events");
     assert!(

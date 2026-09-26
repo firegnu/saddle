@@ -8,6 +8,135 @@ fn key(code: K) -> KeyEvent {
 }
 
 #[test]
+fn pending_detail_opens_task_text_and_edits_without_returning_to_the_list() {
+    let mut panel = Panel::default();
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "current": null, "awaiting": null, "history": [],
+            "pending": [{"id":"T2", "title":"Second", "body":"second body"}]
+        }))
+        .unwrap(),
+    );
+    panel.open(0);
+    panel.key(key(K::Char('t')));
+    assert!(
+        panel.overlay_open(),
+        "Task must open the original text overlay"
+    );
+    panel.key(key(K::Char('e')));
+    assert!(matches!(&panel.page, Page::Edit { title, body, .. }
+        if title == "Second" && body == "second body"));
+    panel.paste(" discarded");
+    panel.key(key(K::Esc));
+    assert!(
+        panel.overlay_open(),
+        "Cancel returns to the task text overlay"
+    );
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::Detail(_)));
+
+    panel.key(key(K::Char('e')));
+    assert!(
+        matches!(panel.page, Page::Edit { .. }),
+        "Detail has a direct Edit entry"
+    );
+    panel.paste(" revised");
+    let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
+        panic!("Edit must submit a public operation");
+    };
+    assert_eq!(op.args(), ["edit", "1", "Second revised", "second body"]);
+    panel.complete(&op, Ok("saved".into()));
+    let mut fresh = panel.snapshot.clone().unwrap();
+    fresh.pending[0].title = "Second revised".into();
+    panel.absorb(fresh);
+    assert!(
+        matches!(panel.page, Page::Detail(_)),
+        "Save returns to detail"
+    );
+    panel.key(key(K::Char('e')));
+    assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Second revised"));
+}
+
+#[test]
+fn detail_edit_tracks_identity_and_preserves_the_form_on_failure() {
+    let mut panel = Panel::default();
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "history": [],
+            "pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second"}]
+        }))
+        .unwrap(),
+    );
+    panel.open(1);
+    panel.key(key(K::Char('t')));
+    let mut fresh = panel.snapshot.clone().unwrap();
+    fresh.pending.swap(0, 1);
+    panel.absorb(fresh.clone());
+    panel.select(1); // Selection cannot retarget an already open detail.
+    panel.key(key(K::Char('e')));
+    panel.paste(" changed");
+    let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
+        panic!("missing edit");
+    };
+    assert_eq!(op.args(), ["edit", "1", "Second changed", ""]);
+    panel.key(key(K::Esc));
+    assert!(
+        matches!(panel.page, Page::Edit { .. }),
+        "Busy form stays open"
+    );
+    panel.complete(&op, Err(anyhow::anyhow!("pending changed")));
+    assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Second changed"));
+    fresh.current = Some(fresh.pending.remove(0));
+    panel.absorb(fresh);
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::Task(_)));
+    let target = panel.detail_key().unwrap();
+    assert_eq!(target.id, "T2");
+    panel.absorb_detail(&target, Ok(show("T2", "current", "doing")));
+    for c in ['e', 'g', 'n', 'p', 'l', 'a', 'A', 'c', 'u', 'd', 'x', 'r'] {
+        assert!(panel.key(key(K::Char(c))).is_none());
+        assert!(matches!(panel.page, Page::Task(_)), "{c}");
+    }
+    panel.key(key(K::Esc));
+    assert_eq!(panel.detail_key(), Some(target));
+    assert_eq!(opened(&panel).data.as_ref().unwrap().task.id, "T2");
+    panel.key(key(K::Char('e')));
+    assert!(matches!(panel.page, Page::Detail(_)));
+}
+
+#[test]
+fn saving_task_text_edit_updates_unnumbered_target_and_returns_to_the_overlay() {
+    let mut panel = Panel::default();
+    panel.absorb(Snapshot {
+        pending: vec![saddle::drover::Task {
+            title: "Original".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    panel.open(0);
+    panel.key(key(K::Char('t')));
+    panel.key(key(K::Char('e')));
+    panel.paste(" revised");
+    let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
+        panic!("missing edit");
+    };
+    panel.complete(&op, Ok("saved".into()));
+    assert!(matches!(panel.page, Page::Task(_)));
+    let mut fresh = panel.snapshot.clone().unwrap();
+    fresh.pending[0].title = "Original revised".into();
+    panel.absorb(fresh);
+    panel.key(key(K::Char('e')));
+    assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Original revised"));
+    panel.key(key(K::Esc));
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::Detail(_)));
+    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::List));
+    assert_eq!(panel.tasks()[panel.selected].1.title, "Original revised");
+}
+
+#[test]
 fn selected_pending_edit_prefills_and_saves_the_native_form() {
     let mut panel = Panel::default();
     panel.absorb(

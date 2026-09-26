@@ -134,6 +134,8 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Project picker | Enter / click, e, r | Open project, enter a path, reload registry |
 | Path form | Ctrl-U / Enter / Esc | Clear / apply / cancel |
 | Task details | Esc / Back | Return to the list |
+| Task details | t / Task | Open the full task text in a dialog |
+| Task details / task text | e / Edit | Edit the task while it is pending |
 | Task details / result | ↑↓ / j k / Mouse wheel / PgUp / PgDn | Scroll content |
 | Queue | r / g / n | Refresh / check and release / send next task |
 | Queue | p / l | Pause or resume / toggle loop |
@@ -156,7 +158,7 @@ Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies
 - routing from the current task file, hold, and the attention hint (an inference, not proof that work stopped);
 - start, finish, and release times, and the body.
 
-Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their page shows the list's title, body, and status; a pending task switches to full details once it starts. Queue actions work from the list, not from the details page.
+Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their page shows the list's title, body, and status; a pending task switches to full details once it starts. **Task t** opens the full title and body in a dialog; closing it restores the detail reading position. Pending tasks have **Edit e** in both the detail pane and the text dialog. Saving or cancelling returns to the view that opened the editor. Other queue actions work from the list.
 
 Select a pending task to use **Edit**, **Move up**, or **Move down**; other task states cannot be edited or reordered. Edit prefills the title and multiline body. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, saddle rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
 

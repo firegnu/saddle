@@ -7,12 +7,14 @@ pub enum Page {
     #[default]
     List,
     Detail(Box<crate::detail::TaskDetail>),
+    Task(Box<crate::detail::TaskDetail>),
     Help,
     Feedback(String),
     Projects,
     Project(String),
     AllPending,
     Edit {
+        return_to: Option<Box<Page>>,
         pending: Vec<Task>,
         index: usize,
         title: String,
@@ -28,6 +30,22 @@ pub enum Page {
         pending: Vec<Task>,
         index: usize,
     },
+}
+impl Page {
+    fn detail(&self) -> Option<&crate::detail::TaskDetail> {
+        match self {
+            Self::Detail(detail) | Self::Task(detail) => Some(detail),
+            Self::Edit { return_to, .. } => return_to.as_ref()?.detail(),
+            _ => None,
+        }
+    }
+    fn detail_mut(&mut self) -> Option<&mut crate::detail::TaskDetail> {
+        match self {
+            Self::Detail(detail) | Self::Task(detail) => Some(detail),
+            Self::Edit { return_to, .. } => return_to.as_mut()?.detail_mut(),
+            _ => None,
+        }
+    }
 }
 #[derive(Default)]
 pub struct Panel {
@@ -89,6 +107,17 @@ impl Panel {
         use crate::buttons::Button as B;
         use KeyCode as K;
         match self.page {
+            Page::Task(_) => {
+                let mut controls = vec![B::new("Back Esc", K::Esc, true)];
+                if self.pending_index().is_some() {
+                    controls.push(B::new(
+                        "Edit e",
+                        K::Char('e'),
+                        !self.busy && self.read_error.is_none(),
+                    ));
+                }
+                controls
+            }
             Page::Add { .. } | Page::Edit { .. } => vec![
                 B::control(
                     "Save ^s",
@@ -138,6 +167,12 @@ impl Panel {
     }
     fn pending_index(&self) -> Option<usize> {
         let s = self.snapshot.as_ref()?;
+        if let Some(detail) = self.page.detail() {
+            let (group, task) = self.live(detail)?;
+            return (group == "Pending")
+                .then(|| s.pending.iter().position(|t| t == task))
+                .flatten();
+        }
         let index = self
             .selected
             .checked_sub(usize::from(s.current.is_some()) + usize::from(s.awaiting.is_some()))?;
@@ -157,9 +192,7 @@ impl Panel {
     /// The `drover show` target of the open detail page. Pending and unnumbered tasks are not
     /// covered by show; a pending task becomes a target once it starts.
     pub fn detail_key(&self) -> Option<DetailKey> {
-        let Page::Detail(detail) = &self.page else {
-            return None;
-        };
+        let detail = self.page.detail()?;
         let id = detail.task.id.as_ref().filter(|id| {
             id.strip_prefix('T')
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
@@ -185,7 +218,7 @@ impl Panel {
         if self.detail_key().as_ref() != Some(key) {
             return;
         }
-        if let Page::Detail(detail) = &mut self.page {
+        if let Some(detail) = self.page.detail_mut() {
             match result {
                 Ok(data) => {
                     detail.data = Some(Box::new(data));
@@ -204,6 +237,36 @@ impl Panel {
         if let Some((group, task)) = self.tasks().get(self.selected) {
             let detail = crate::detail::TaskDetail::new(group, (*task).clone());
             self.page = Page::Detail(Box::new(detail));
+        }
+    }
+    fn edit(&mut self) {
+        if self.busy || self.read_error.is_some() {
+            return;
+        }
+        if let Some(index) = self.pending_index() {
+            let pending = self.snapshot.as_ref().unwrap().pending.clone();
+            let task = &pending[index];
+            let title = task.title.clone();
+            let body = task.body.clone();
+            let return_to = if matches!(self.page, Page::Detail(_) | Page::Task(_)) {
+                Some(Box::new(std::mem::take(&mut self.page)))
+            } else {
+                None
+            };
+            self.page = Page::Edit {
+                return_to,
+                pending,
+                index,
+                title,
+                body,
+                body_focus: false,
+            };
+            self.message.clear();
+        }
+    }
+    fn finish_edit(&mut self) {
+        if let Page::Edit { return_to, .. } = std::mem::take(&mut self.page) {
+            self.page = return_to.map(|page| *page).unwrap_or_default();
         }
     }
     pub fn absorb(&mut self, snapshot: Snapshot) {
@@ -299,7 +362,18 @@ impl Panel {
                         task.body = body.clone();
                         (*index, task)
                     });
-                    self.page = Page::List;
+                    if let Some((_, task)) = &self.selection_after_write {
+                        if let Some(detail) = self.page.detail_mut() {
+                            detail.task = task.clone();
+                        }
+                        if let Some(snapshot) = &mut self.snapshot
+                            && let Some(old) = snapshot.pending.get_mut(*index)
+                            && Some(&*old) == pending.get(*index)
+                        {
+                            *old = task.clone();
+                        }
+                    }
+                    self.finish_edit();
                     self.manual_scroll = false;
                 } else if matches!(operation, Operation::Add { .. }) {
                     self.page = Page::List;
@@ -373,9 +447,33 @@ impl Panel {
             }
             return None;
         }
+        if matches!(self.page, Page::Task(_)) {
+            match key.code {
+                KeyCode::Esc => {
+                    if let Page::Task(detail) = std::mem::take(&mut self.page) {
+                        self.page = Page::Detail(detail);
+                    }
+                }
+                KeyCode::Char('e') => self.edit(),
+                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
+                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
+                _ => {}
+            }
+            return None;
+        }
         if let Page::Detail(detail) = &mut self.page {
             match key.code {
                 KeyCode::Esc => self.page = Page::List,
+                KeyCode::Char('t') => {
+                    if let Page::Detail(detail) = std::mem::take(&mut self.page) {
+                        self.page = Page::Task(detail);
+                        self.scroll = 0;
+                        self.message.clear();
+                    }
+                }
+                KeyCode::Char('e') => self.edit(),
                 KeyCode::Up | KeyCode::Char('k') => detail.scroll_by(-1),
                 KeyCode::Down | KeyCode::Char('j') => detail.scroll_by(1),
                 KeyCode::PageUp => detail.scroll_by(-detail.page()),
@@ -447,7 +545,7 @@ impl Panel {
                 return None;
             }
             match key.code {
-                KeyCode::Esc => self.page = Page::List,
+                KeyCode::Esc => self.finish_edit(),
                 KeyCode::Tab | KeyCode::BackTab => *body_focus = !*body_focus,
                 KeyCode::Enter if !*body_focus => *body_focus = true,
                 KeyCode::Enter => body.push('\n'),
@@ -559,18 +657,7 @@ impl Panel {
             KeyCode::Char('e')
                 if matches!(self.page, Page::List) && !self.busy && self.read_error.is_none() =>
             {
-                if let Some(index) = self.pending_index() {
-                    let pending = self.snapshot.as_ref().unwrap().pending.clone();
-                    let task = &pending[index];
-                    self.page = Page::Edit {
-                        title: task.title.clone(),
-                        body: task.body.clone(),
-                        body_focus: false,
-                        pending,
-                        index,
-                    };
-                    self.message.clear();
-                }
+                self.edit();
             }
             KeyCode::Char('x')
                 if matches!(self.page, Page::List) && !self.busy && self.read_error.is_none() =>
@@ -806,9 +893,21 @@ impl Panel {
             )
         };
         self.buttons.extend(action_hits);
-        let detail = matches!(self.page, Page::Detail(_));
+        let detail = self.page.detail().is_some();
         let task_controls = if detail {
-            vec![B::new("Back Esc", K::Esc, true)]
+            let enabled = !self.overlay_open();
+            let mut controls = vec![
+                B::new("Back Esc", K::Esc, enabled),
+                B::new("Task t", K::Char('t'), enabled),
+            ];
+            if self.pending_index().is_some() {
+                controls.push(B::new(
+                    "Edit e",
+                    K::Char('e'),
+                    enabled && !self.busy && self.read_error.is_none(),
+                ));
+            }
+            controls
         } else {
             let mut controls = vec![
                 B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
@@ -874,14 +973,14 @@ impl Panel {
         };
         self.list_area = body;
         let queried = self.detail_key().is_some();
-        let Page::Detail(detail) = &self.page else {
+        let Some(detail) = self.page.detail() else {
             return;
         };
         let width = body.width.saturating_sub(1);
         let lines = detail.lines(t, self.live(detail), queried, usize::from(width));
         let height = usize::from(body.height);
         let max = lines.len().saturating_sub(height);
-        let Page::Detail(detail) = &mut self.page else {
+        let Some(detail) = self.page.detail_mut() else {
             return;
         };
         detail.view = (height, max);
@@ -920,6 +1019,7 @@ impl Panel {
             Page::Project(_) => " Project path ",
             Page::Add { .. } => " Add task ",
             Page::Edit { .. } => " Edit task ",
+            Page::Task(_) => " Task ",
             Page::Help => " Help ",
             Page::Feedback(_) => " Action result ",
             Page::AllPending => " All pending ",
@@ -1314,7 +1414,18 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list or details\nUp/Down / j k: Select task or project\nEnter / click a task: Details; Esc: Back\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit selected pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list or details\nUp/Down / j k: Select task or project\nEnter / click a task: Details; Esc: Back\nt: Task text (in Details)\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task (also in Details / Task)\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Task(detail) => {
+                        let (title, text) = if let Some((_, task)) = self.live(detail) {
+                            (&task.title, &task.body)
+                        } else if let Some(data) = &detail.data {
+                            (&data.task.title, &data.task.body)
+                        } else {
+                            (&detail.task.title, &detail.task.body)
+                        };
+                        format!("{} {}\n\n{}{}", detail.task.id.as_deref().unwrap_or("·"), title,
+                            if self.live(detail).is_none() { "No longer in the list; showing saved task text.\n\n" } else { "" }, text)
+                    }
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),

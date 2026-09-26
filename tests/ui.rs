@@ -1243,6 +1243,63 @@ fn task_details_replace_the_list_inside_the_queue_pane_only() {
 }
 
 #[test]
+fn detail_task_and_edit_buttons_work_with_mouse_and_restore_reading_positions() {
+    use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers};
+    let (mut a, mut q) = fixture();
+    q.snapshot.as_mut().unwrap().pending[0].body = (0..90)
+        .map(|i| format!("Original body line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    q.open(0);
+    render(160, 48, &mut a, &mut q, Focus::Queue);
+    q.key(KeyEvent::new(K::PageDown, KeyModifiers::NONE));
+    let (before, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    let (x, y) = find(&before, "Task t").expect("fixed Task button");
+    q.click(x, y);
+    let (overlay, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    assert!(text(&overlay).contains("Original body line 0"));
+    assert!(q.overlay_open());
+    q.key(KeyEvent::new(K::PageDown, KeyModifiers::NONE));
+    let (overlay, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    let (x, y) = find(&overlay, "Edit e").expect("Task overlay Edit button");
+    q.click(x, y);
+    let (editor, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    assert!(text(&editor).contains("Edit task"));
+    let (x, y) = find(&editor, "Cancel Esc").unwrap();
+    q.click(x, y);
+    assert_eq!(
+        text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
+        text(&overlay)
+    );
+    let (x, y) = find(&overlay, "Back Esc").unwrap();
+    q.click(x, y);
+    assert_eq!(
+        text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
+        text(&before)
+    );
+    let (x, y) = find(&before, "Edit e").expect("fixed detail Edit button");
+    q.click(x, y);
+    assert!(matches!(q.page, queue::Page::Edit { .. }));
+    q.key(KeyEvent::new(K::Esc, KeyModifiers::NONE));
+    assert_eq!(
+        text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
+        text(&before)
+    );
+
+    // Once the task starts, both detail and Task overlay lose the editing entry.
+    let mut fresh = q.snapshot.clone().unwrap();
+    fresh.current = Some(fresh.pending.remove(0));
+    q.absorb(fresh);
+    for (w, h) in [(160, 48), (60, 24)] {
+        let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
+        assert!(find(&buffer, "Task t").is_some());
+        assert!(find(&buffer, "Edit e").is_none());
+    }
+    q.key(KeyEvent::new(K::Char('t'), KeyModifiers::NONE));
+    assert!(find(&render(160, 48, &mut a, &mut q, Focus::Queue).0, "Edit e").is_none());
+}
+
+#[test]
 fn task_details_present_each_contract_section_without_inventing_values() {
     // Current: recomputed checks, unknown Git values, warnings and hostile text.
     let mut value = show_json();

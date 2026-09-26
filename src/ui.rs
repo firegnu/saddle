@@ -181,6 +181,10 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                 target = "All pending".into();
                 help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  Ctrl-] Agents";
             }
+            crate::queue::Page::Task(_) => {
+                target = "Queue · Task text".into();
+                help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  e Edit pending  Esc Back";
+            }
             _ => {
                 target = "Queue · Details / Result".into();
                 help = " Wheel / PgUp/PgDn Scroll  Esc Back  Ctrl-] Agents";
@@ -189,7 +193,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     }
     if view.focus == Focus::Queue && matches!(view.queue.page, crate::queue::Page::Detail(_)) {
         target = "Queue · Task details".into();
-        help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  Esc Back  Ctrl-] Agents";
+        help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  t Task  e Edit pending  Esc Back";
     }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
