@@ -6,7 +6,7 @@
 - 两项阻挡均关闭，无新增建议：待接入输入误路由、过期 pending/spawn 未取消。初审标准检查 116 passed、2 ignored；返工主控增量 34 passed、2 ignored；交叉复核三项通过。Clippy、差异检查与 release 构建通过，不重复已完成全套。
 - 本机共享 target release 与仓库 target/release/saddle 已更新并核对 SHA-256 一致；默认 saddle 命令解析到共享 target 的 release。当前实例未重启，用户重新启动 saddle 后体验 New n、Open o、tab 与分屏；真实终端观感仍待用户查看。
 - 开发与 detached 审查 worktree、t2-terminal-layout 分支全部清理；工作目录已删，一并关闭自有 saddle/dev-t2-terminal-1、saddle/dev-t2-review-1。当前仅 main worktree 和 saddle/main agent。收尾空提交 ad47b7b。
-- 下一步通过公开 drover done T2 标记完成待用户放行，随后核对并追加最终队列状态；不执行 go/next。没有等待开发或审查的工作。
+- `drover done T2` 核对通过（退出码 8）：收尾记号、main 前进、分支合入检查通过；drover 未配置 CHECK_CMD，测试依据为上方实际 Cargo 记录。公开列表确认 current=null、awaiting=T2/done、pending=[]，loop=false、gate=true；等待用户放行，未执行 go/next。没有等待开发或审查的工作。
 - 既有无关建议保持原状，不在本轮扩展。历史章节中的占位、审查阻挡、未合并等均为当时状态，不覆盖本节。
 
 ## 2026-09-26：T2 第一轮返工主控通过，交叉增量复核中（以本节为准）
