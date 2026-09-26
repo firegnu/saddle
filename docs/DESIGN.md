@@ -432,7 +432,7 @@ Already open? Jump to its existing pane.
 ### 实现取舍（2026-09-26）
 
 - 入口：删除 Agents 的 Show in…/`o` 与旧 Show 弹框；Enter/点击行沿用接入或跳转。标签条 `‹+ Tab›` 文案不变，改为打开新 tab 的候选列表。活动窗格底边在 Close 按钮左侧加 ` Split ▾ `，从右下角往左排能放下的那一组：≥37 列 Split + Close pane + Close tab，≥24 列 Split + Close pane，≥13 列 Split + ×，更窄只留 ×。原 27–36 列显示两个 Close 的窗格因此改为 Split + Close pane，Close tab 仍可用标签条上的 ×。
-- 弹框：两步都用同一个小框（焦点色边框、底部复用紧凑 `‹Cancel Esc›`），分屏时贴在发起窗格右下角内侧、Split 按钮上方，新 tab 时在 Viewer 左上、标签条下方，放不下时收进屏幕。方向四键排成 2×2，方向键即快捷键；候选按名称排序，最多 12 行，↑↓/j k/滚轮移动选择并随之滚动，Enter 或单击打开，已打开的行右侧标青色 `Move here`；无候选显示 `No agents to open here.`。弹框打开时只有它可点击，按键、粘贴、其余鼠标都不透传，底层终端不设光标。Esc/Cancel 回 Viewer（入口在 Viewer），Ctrl-] 回 Agents；选定前不改布局，所以取消无需恢复。
+- 弹框：两步都用同一个小框（焦点色边框、底部复用紧凑 `‹Cancel Esc›`），分屏时贴在发起窗格右下角内侧、Split 按钮上方，新 tab 时在 Viewer 左上、标签条下方，放不下时收进屏幕。方向四键排成 2×2，方向键即快捷键；候选按名称排序，最多 12 行，↑↓/j k/滚轮移动选择并随之滚动，Enter 或单击打开（单击绑定按下时该行的名字，松开时该行仍是同一名字才打开；刷新让别的 agent 占了这一行或它已消失时取消这次点击，列表保留），已打开的行右侧标青色 `Move here`；无候选显示 `No agents to open here.`。弹框打开时只有它可点击，按键、粘贴、其余鼠标都不透传，底层终端不设光标。Esc/Cancel 回 Viewer（入口在 Viewer），Ctrl-] 回 Agents；选定前不改布局，所以取消无需恢复。
 - 候选：corral ls 的全部 agent。分屏时排除 `find` 落在发起窗格上的名字（该窗格正在显示、正在接入或正在替换的都算），新 tab 不排除——选当前窗格的 agent 即把它移到新 tab。
 - 移动：`Terminals::place` 先按原「重新打开」规则认领持有该 agent 的窗格（取消该窗格上改接别的 agent 的请求），再把整个 Pane——稳定 ID、Viewer 与 PTY 会话、屏幕内容、请求修订号和待定目标——从原 tab 的分割树摘下，插到目标位置并聚焦；不 attach、不发 SIGINT、不 stop。异步 status/start/PTY 结果按窗格 ID 与修订号归属，因此仍在接入中的 agent 移动后结果落在移动后的窗格。来源只做最小整理：原分屏按关闭窗格的同一规则合并，tab 被搬空就删除该 tab，不留空 tab；`close_pane` 复用同一个摘除函数。
 - 新 agent：选定后才预留窗格（相对发起窗格分屏或新 tab），仍走公开 status 检查再 attach；status 失败或已在别处接入时沿用第 27 节，预留窗格留空并显示原提示。

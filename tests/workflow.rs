@@ -215,8 +215,8 @@ impl Harness {
             .collect::<Vec<_>>()
             .join("\n")
     }
-    /// Clicks the row of the `title` popup that shows `label`.
-    fn click_in(&mut self, title: &str, label: &str) {
+    /// Screen position of `label` on its row inside the `title` popup.
+    fn row_in(&mut self, title: &str, label: &str) -> (u16, u16) {
         self.see(title);
         self.until(|h| h.popup(title).contains(label));
         let (left, top, _, _) = self.boxed(title);
@@ -227,7 +227,14 @@ impl Harness {
             .find(|(_, line)| line.contains(label))
             .map(|(i, line)| (top + i as u16, line.to_owned()))
             .unwrap();
-        let col = left + text[..text.find(label).unwrap()].chars().count() as u16;
+        (
+            left + text[..text.find(label).unwrap()].chars().count() as u16,
+            row,
+        )
+    }
+    /// Clicks the row of the `title` popup that shows `label`.
+    fn click_in(&mut self, title: &str, label: &str) {
+        let (col, row) = self.row_in(title, label);
         let (x, y) = (col + 1, row + 1);
         self.send(format!("\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m").as_bytes());
     }
@@ -1789,6 +1796,62 @@ fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     assert!(!h.contents().contains("Attaching p/b"));
     h.quit();
     let events = h.log("events");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/b").count(), 1);
+    assert!(!events.contains("stop "));
+}
+
+#[test]
+fn a_candidate_click_opens_only_the_agent_it_was_pressed_on() {
+    const TITLE: &str = "Open agent in a new tab";
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.click("+ Tab");
+    let (col, row) = h.row_in(TITLE, "p/b");
+    let fg = |h: &Harness| h.screen.screen().cell(row, col).unwrap().fgcolor();
+    let press = |h: &mut Harness, down: bool| {
+        let kind = if down { 'M' } else { 'm' };
+        h.send(format!("\x1b[<0;{};{}{kind}", col + 1, row + 1).as_bytes());
+    };
+    // Press p/b; a public ls refresh then puts p/aa on that row before the release.
+    let idle = fg(&h);
+    press(&mut h, true);
+    h.until(|h| fg(h) != idle); // The pressed paint shows the press was handled.
+    let pressed = fg(&h);
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/aa":"idle","p/b":"working","p/taken":"idle"}"#,
+    )
+    .unwrap();
+    h.until(|h| h.locate("p/aa", row) == Some((col, row)));
+    press(&mut h, false);
+    h.until(|h| fg(h) != pressed); // The release was handled.
+    println!("REFRESHED under press:\n{}", h.contents());
+    assert!(
+        h.contents().contains(TITLE) && h.popup(TITLE).contains("p/aa"),
+        "the release must not open the agent that replaced the pressed row:\n{}",
+        h.contents()
+    );
+    // A refresh that leaves the pressed name on its row still opens it.
+    let (col, row) = h.row_in(TITLE, "p/b");
+    let fg = |h: &Harness| h.screen.screen().cell(row, col).unwrap().fgcolor();
+    let idle = fg(&h);
+    h.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
+    h.until(|h| fg(h) != idle);
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/aa":"idle","p/b":"working","p/c":"idle","p/taken":"idle"}"#,
+    )
+    .unwrap();
+    h.until(|h| h.popup(TITLE).contains("p/c"));
+    assert_eq!(h.locate("p/b", row), Some((col, row)));
+    h.send(format!("\x1b[<0;{};{}m", col + 1, row + 1).as_bytes());
+    h.see("p/b READY");
+    h.send(b"Z");
+    h.event("input p/b 5a");
+    h.quit();
+    let events = h.log("events");
+    assert!(!events.contains("attach p/aa"), "{events}");
+    assert!(!events.contains("input p/aa"), "{events}");
     assert_eq!(events.lines().filter(|l| *l == "attach p/b").count(), 1);
     assert!(!events.contains("stop "));
 }

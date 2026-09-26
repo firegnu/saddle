@@ -737,6 +737,7 @@ mod tests {
             pane: terminals.active_pane().id,
             place: None,
             selected: 0,
+            pressed: None,
         };
         terminal
             .draw(|frame| {

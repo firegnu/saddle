@@ -474,22 +474,25 @@ impl App {
             self.panel.message = format!("attaching {name}…");
         }
     }
-    /// Opens the chosen candidate at the placement's location; the popup's input is modal,
-    /// so its originating pane is still open here.
+    /// Opens the candidate the pick is bound to at the placement's location, only if row
+    /// `index` still shows it; otherwise the pick is cancelled and the list stays open. The
+    /// popup's input is modal, so its originating pane is still open here.
     fn pick(&mut self, index: usize) {
-        let Some(placement) = &self.placement else {
+        let Some(placement) = &mut self.placement else {
             return;
         };
         let Some(place) = placement.place else {
             return;
         };
-        let anchor = placement.pane;
-        let Some((name, _)) = placement::candidates(&self.panel.agents, &self.viewer, placement)
+        let bound = placement.pressed.take();
+        let shown = placement::candidates(&self.panel.agents, &self.viewer, placement)
             .into_iter()
             .nth(index)
-        else {
+            .map(|(name, _)| name);
+        let Some(name) = bound.filter(|name| shown.as_ref() == Some(name)) else {
             return;
         };
+        let anchor = placement.pane;
         self.placement = None;
         match self.viewer.place(anchor, place, &name) {
             Ok(Some(ticket)) => {
@@ -513,9 +516,8 @@ impl App {
             self.focus = Focus::Agents;
             return Ok(());
         }
-        let last = placement::candidates(&self.panel.agents, &self.viewer, placement)
-            .len()
-            .saturating_sub(1);
+        let candidates = placement::candidates(&self.panel.agents, &self.viewer, placement);
+        let last = candidates.len().saturating_sub(1);
         let control = match (placement.place, key.code) {
             (_, KeyCode::Esc) => Some(Control::Cancel),
             (None, code) => placement::side(code).map(Control::Side),
@@ -527,7 +529,11 @@ impl App {
                 placement.selected = (placement.selected + 1).min(last);
                 None
             }
-            (Some(_), KeyCode::Enter) => Some(Control::Pick(placement.selected.min(last))),
+            (Some(_), KeyCode::Enter) => {
+                let index = placement.selected.min(last);
+                placement.pressed = candidates.get(index).map(|(name, _)| name.clone());
+                Some(Control::Pick(index))
+            }
             _ => None,
         };
         if let Some(control) = control {
@@ -543,6 +549,7 @@ impl App {
                     pane: self.viewer.active_pane().id,
                     place: Some(Place::Tab),
                     selected: 0,
+                    pressed: None,
                 });
             }
             Control::Split(id) => {
@@ -551,6 +558,7 @@ impl App {
                     pane: id,
                     place: None,
                     selected: 0,
+                    pressed: None,
                 });
             }
             Control::Side(place) => {
@@ -680,6 +688,26 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
+                if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+                    && let Some(placement) = &mut self.placement
+                {
+                    // Bind the press to the name its row shows in the list just drawn; the
+                    // release opens only that name.
+                    placement.pressed = match self
+                        .hits
+                        .terminal
+                        .iter()
+                        .find(|(hit, _)| hit.area.contains(point))
+                    {
+                        Some((_, Control::Pick(index))) => {
+                            placement::candidates(&self.panel.agents, &self.viewer, placement)
+                                .into_iter()
+                                .nth(*index)
+                                .map(|(name, _)| name)
+                        }
+                        _ => None,
+                    };
+                }
                 let controls: Vec<_> = self
                     .hits
                     .buttons

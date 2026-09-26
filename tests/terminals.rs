@@ -234,6 +234,7 @@ fn placement_popups_stay_inside_small_screens_and_show_an_empty_list() {
             pane,
             place,
             selected: 0,
+            pressed: None,
         };
         for (width, height) in [(160, 48), (80, 24), (15, 6), (5, 3), (1, 1), (0, 0)] {
             let area = Rect::new(0, 0, width, height);

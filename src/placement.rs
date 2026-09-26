@@ -22,6 +22,9 @@ pub struct Placement {
     /// `None` while the side menu is open.
     pub place: Option<Place>,
     pub selected: usize,
+    /// The candidate a pick is bound to when it starts (mouse press or Enter). A refresh can
+    /// put another agent on the same row before the release, which must not open it.
+    pub pressed: Option<String>,
 }
 
 const SIDES: [(&str, KeyCode, Place); 4] = [
