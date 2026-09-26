@@ -103,7 +103,7 @@ pub fn draw_workspace(
             modal,
         );
         let content = inner(modal);
-        let (body, buttons) = crate::buttons::draw(
+        let (body, buttons) = crate::buttons::draw_compact(
             t,
             frame,
             content,

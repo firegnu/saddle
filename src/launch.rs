@@ -362,7 +362,7 @@ impl Form {
         program: &str,
         projects: &[String],
     ) -> Vec<buttons::Hit> {
-        let area = crate::theme::centered(frame.area(), 104, if self.advanced { 38 } else { 22 });
+        let area = crate::theme::centered(frame.area(), 104, if self.advanced { 40 } else { 24 });
         frame.render_widget(Clear, area);
         frame.render_widget(
             t.block(" New agent ", true).style(t.base().bg(t.overlay)),
@@ -415,7 +415,7 @@ impl Form {
         }
         if self.choosing_project {
             self.project_index = self.project_index.min(projects.len().saturating_sub(1));
-            let (mut list, controls) = buttons::draw_compact_top(
+            let (mut list, controls) = buttons::draw_outlined_top(
                 t,
                 frame,
                 body,
@@ -474,13 +474,14 @@ impl Form {
             }
             return hits;
         }
-        let mut sections = vec![(PROJECT, 3)];
+        // Outlined buttons take three rows.
+        let mut sections = vec![(PROJECT, 5)];
         if self.edit_path {
             sections.push((0, 3));
         }
-        sections.extend([(CODEX, 2), (1, 4), (ADVANCED, 1)]);
+        sections.extend([(CODEX, 4), (1, 4), (ADVANCED, 3)]);
         if self.advanced {
-            sections.extend([(2, 4), (3, 6), (4, 2), (PREVIEW, 4)]);
+            sections.extend([(2, 4), (3, 6), (4, 4), (PREVIEW, 4)]);
         }
         let focus = sections
             .iter()
@@ -530,7 +531,7 @@ impl Form {
                             &name
                         }
                     );
-                    let (rest, controls) = buttons::draw_compact_top(
+                    let (rest, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
                         rect,
@@ -576,7 +577,7 @@ impl Form {
                         Rect::new(rect.x, rect.y, rect.width, 1),
                     );
                     if rect.height > 1 {
-                        let (_, controls) = buttons::draw_compact_top(
+                        let (_, controls) = buttons::draw_outlined_top(
                             t,
                             frame,
                             Rect::new(rect.x, rect.y + 1, rect.width, rect.height - 1),
@@ -589,7 +590,7 @@ impl Form {
                     }
                 }
                 ADVANCED => {
-                    let (_, controls) = buttons::draw_compact_top(
+                    let (_, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
                         rect,
@@ -607,7 +608,7 @@ impl Form {
                 }
                 4 => {
                     let label = format!("Open in: {} (←/→)", Place::ALL[self.place].label());
-                    let (_, controls) = buttons::draw_compact_top(
+                    let (_, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
                         rect,
@@ -700,9 +701,10 @@ impl Form {
                     let selected = id != CODEX
                         || hit.key.code == KeyCode::F(if self.field == CODEX { 2 } else { 3 });
                     if selected {
+                        // Outline and label turn to the focus colour; the frame stays unfilled.
                         frame
                             .buffer_mut()
-                            .set_style(hit.area, Style::default().fg(t.focus).bg(t.selected));
+                            .set_style(hit.area, Style::default().fg(t.focus));
                     }
                 }
             }
@@ -784,7 +786,7 @@ mod tests {
                 crate::theme::centered(
                     buffer.area,
                     if new { 104 } else { 76 },
-                    if new { 22 } else { 20 }
+                    if new { 24 } else { 20 }
                 )
                 .bottom()
                     - 1
@@ -807,7 +809,7 @@ mod tests {
         assert_eq!(text(buffer, back[0].area), "‹Back Esc›");
         assert_eq!(
             back[0].area.bottom(),
-            crate::theme::centered(buffer.area, 104, 22).bottom() - 1
+            crate::theme::centered(buffer.area, 104, 24).bottom() - 1
         );
     }
 
@@ -958,5 +960,82 @@ mod tests {
             press(&mut form, KeyCode::Tab);
         }
         assert_eq!(visited, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn inner_controls_are_unfilled_outlines_matching_their_targets() {
+        use ratatui::{Terminal, backend::TestBackend, style::Color};
+        let t = Theme::default();
+        let mut form = Form::new("/tmp/demo".into());
+        press(&mut form, KeyCode::F(4));
+        form.key(
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
+            &[],
+        );
+        press(&mut form, KeyCode::F(2));
+        let mut terminal = Terminal::new(TestBackend::new(106, 42)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| hits = form.draw(&t, frame, "corral", &[]))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<String> = (0..42)
+            .map(|y| (0..106).map(|x| buffer[(x, y)].symbol()).collect())
+            .collect();
+        println!("{}", rows.join("\n"));
+        let inner: Vec<_> = hits
+            .iter()
+            .filter(|h| h.area.height == 3)
+            .map(|h| h.key)
+            .collect();
+        let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+        let plain = |c| KeyEvent::new(c, KeyModifiers::NONE);
+        assert_eq!(
+            inner,
+            [
+                ctrl('p'),
+                ctrl('e'),
+                plain(KeyCode::F(2)),
+                plain(KeyCode::F(3)),
+                plain(KeyCode::F(4)),
+                plain(KeyCode::F(5)),
+            ],
+            "every inner control, all fully visible"
+        );
+        assert_eq!(
+            hits.len(),
+            inner.len() + 2,
+            "Create and Cancel stay compact"
+        );
+        for hit in hits.iter().filter(|h| h.area.height == 3) {
+            let a = hit.area;
+            assert_eq!(buffer[(a.x, a.y)].symbol(), "╭");
+            assert_eq!(buffer[(a.right() - 1, a.bottom() - 1)].symbol(), "╯");
+            // Codex has keyboard focus: focus colour, still no fill.
+            let focused = hit.key.code == KeyCode::F(2);
+            assert_eq!(
+                buffer[(a.x, a.y)].fg,
+                if focused { t.focus } else { t.muted }
+            );
+            for y in a.y..a.bottom() {
+                for x in a.x..a.right() {
+                    assert_eq!(buffer[(x, y)].bg, Color::Reset);
+                }
+            }
+            for other in hits.iter().filter(|o| o.area != a) {
+                assert!(!a.intersects(other.area));
+            }
+        }
+        assert!(rows.iter().any(|r| r.contains("│ ● Codex │ │ ○ Claude │")));
+
+        form.key(ctrl('p'), &[]);
+        terminal
+            .draw(|frame| hits = form.draw(&t, frame, "corral", &["/tmp/demo".into()]))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let edit = hits.iter().find(|h| h.key == ctrl('e')).unwrap();
+        assert_eq!(edit.area.height, 3);
+        assert_eq!(buffer[(edit.area.x, edit.area.y)].symbol(), "╭");
+        assert!(form.project_hits[0].0.y >= edit.area.bottom());
     }
 }

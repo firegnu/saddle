@@ -76,7 +76,7 @@ pub fn draw(
             (
                 name.map_or(" Split pane ".into(), |n| format!(" Split {n} ")),
                 26,
-                6,
+                9,
             )
         }
         Some(place) => {
@@ -109,7 +109,10 @@ pub fn draw(
             pane.right().saturating_sub(width + 1),
             pane.bottom().saturating_sub(height + 1),
         ),
-        None => (viewer.x, viewer.y + viewer.height.min(1)),
+        None => (
+            viewer.x,
+            viewer.y + viewer.height.min(crate::terminals::STRIP),
+        ),
     };
     let area = Rect::new(
         x.clamp(screen.x, screen.right() - width),
@@ -131,7 +134,7 @@ pub fn draw(
             .iter()
             .map(|(label, key, _)| Button::new(label, *key, true))
             .collect();
-        let (_, sides) = buttons::draw_compact_top(t, frame, body, &buttons);
+        let (_, sides) = buttons::draw_outlined_top(t, frame, body, &buttons);
         hits.extend(sides.into_iter().filter_map(|h| {
             let place = side(h.key.code)?;
             Some((h, Control::Side(place)))

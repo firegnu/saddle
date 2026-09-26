@@ -475,7 +475,7 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.see("Input ▸ Agents");
     // Narrow-window tabs expose Agents; hit targets must follow the new rows.
     h.click("Stop x");
-    h.click(" Stop y ");
+    h.click("‹Stop y›");
     h.event("stop p/a");
     h.quit();
 }
@@ -738,7 +738,7 @@ fn overlays_capture_input_and_narrow_tabs_keep_the_viewer_attached() {
     h.send(b"\t");
     h.event("input p/a 09"); // Viewer keeps Tab; never changes management focus.
     h.send(b"\x1dx");
-    h.see(" Stop y ");
+    h.see("‹Stop y›");
     let input_before = h
         .log("events")
         .lines()
