@@ -53,3 +53,41 @@
 ## 做完
 
 在本文件追加「## 完成记录」并提交：改了什么、RED/GREEN 与验证、实际输入框/光标观察、取舍、未做事项。回复这些内容和提交 SHA、是否有待主控裁决的事。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+2026-09-26，saddle/dev-t2-new-form 完成；待主控审查，本分支不合并、不推送。
+
+### 改动
+
+- New 默认当前 Tasks 项目和 Codex，可直接点击 Create agent；项目选择列表及 Edit path 分开呈现，另选目录不改变 Tasks 项目。可切 Codex／Claude，名称自动建议且支持手改；建议名带 `--unique`，手改名精确提交，实际创建名继续读取 start 返回结果。
+- 四个文本框加入标签、框线、占位示例、焦点高亮及真实插入光标。支持点击定位、左右键、Home／End、Backspace／Delete、Ctrl-U 与光标处粘贴；中文宽字符第二格点击归到字符前，不破坏 UTF-8。首条消息支持多行、上下移动及 Enter 换行。
+- Advanced 默认折叠，收纳完整命令、首条消息、六项打开位置及完整预览；明确选择 Codex／Claude 才重置命令，手填值标示 Custom command。收起／展开和无关焦点切换保留高级值。
+- 小窗口随焦点／滚轮显示字段，底部固定创建／取消；无效字段就地提示，提交时定位到字段。New 打开时不显示底层 Viewer 光标。保留异步 start 接线、忙时编辑／提交保护及失败草稿。
+- 修改 New 所需的 launch/app/ui，新增仅供 New 使用的 `src/launch_edit.rs`；更新相关检查、中英文 README 和 DESIGN 第 27 节本次修订取舍。
+
+### RED → GREEN 与验证
+
+命令使用共享 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，均前台等待结束。
+
+1. `cargo test --lib launch::tests::text_edits_at_the_cursor_without_corrupting_wide_characters -- --exact`：RED 得到 `a中b文`，预期 `a中文b`，证明原实现忽略左移而末尾追加；加入插入位置编辑后 GREEN，继续验证中文删除、Home／End。
+2. `cargo test --test workflow new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor -- --exact --nocapture`：RED 为点击后终端光标仍隐藏；修复后 GREEN，并扩充为下面的完整可观察合成终端检查。
+3. `cargo test --lib launch::tests::default_project_and_codex_can_create_without_typing_a_command -- --exact`：RED 为默认名称为空、无法构造调用；自动名称／默认命令实现后 GREEN。
+4. 局部检查通过：项目与 agent 选择、手改名称保护、高级值折叠后保留、多行编辑及滚动点击、40×12 下四个输入框和创建／取消入口可达。假 CLI 工作流验证默认创建、选择其他项目及 Claude、Tasks 项目不变。原有工作流只调整新表单操作步骤，保留原断言。
+5. 标准 `cargo test --all-targets` 一次通过：126 passed，2 ignored（原有要求安装 drover 的集成测试）；其中失败重试草稿、重复提交、关闭启动目标、隐藏 tab 启动及其他异步隔离回归全部通过。
+6. 标准 `cargo clippy --all-targets -- -D warnings` 一次通过，无警告。最终 `git diff --check` 通过。
+
+### 实际输入框／光标观察
+
+通过真实 saddle 子进程、PTY、vt100 解析屏幕和假 corral/drover，在 140×40 合成终端直接观察：默认页显示 Project、● Codex／○ Claude、建议名称、Advanced、Create agent／Cancel；Name 输入框聚焦后为粗框 `┏…┓ / ┗…┛`。将内容改为 `a中b`，点击“中”的第二个终端格，光标可见并落在其前（该次屏幕 1 起算第 17 行、第 22 列）。再插入“文”、右移、Delete，界面得到 `a文中`；编辑阶段没有 start，点击 Create 后假 CLI 收到名称 `a文中` 和默认 `codex`，并显示返回的 `a文中-actual READY`。检查打印实际屏幕及 argv，可用上述单测命令复查。
+
+另一路默认创建未手改名称，假 CLI 收到 `project-one/codex --unique -- codex`；从 Project 选 project-two、点击 Claude 后收到 `project-two/claude --unique -- claude`，Tasks 仍显示 project-one。
+
+### 取舍与未做事项
+
+- 保持终端原生样式与现有主题／按钮；只做四个 New 字段的局部编辑辅助，不搭通用表单框架，不新增依赖。
+- 长行横向滚动、不软换行；多行消息按真实换行纵向滚动。Tab 字符显示四格。自动名目录末段仅保留 ASCII 字母、数字、下划线和连字符，其余替为连字符，空结果回退 project。
+- Advanced 内预览可滚动；失败错误显示末尾最多三行以露出具体原因。小窗口验证限一项 40×12 自动检查，未做多尺寸矩阵或录屏。
+- 未启动／操作真实 agent，未修改真实队列、用户配置、安装版本，未读 corral/drover 内部文件或仓库；测试只用临时目录与假 CLI。
+- 未改 terminals/viewer/pty 状态机、其他表单、Tasks、tab/split 或 HANDOFF；未增加模型／effort／权限选择器。
+- 无待主控裁决的设计分歧；按任务约定交主控审查，不合并、不推送。

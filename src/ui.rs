@@ -76,7 +76,7 @@ pub fn draw_workspace(
             frame,
             view.panes.viewer,
             terminals,
-            view.focus == Focus::Viewer,
+            view.focus == Focus::Viewer && form.is_none(),
         );
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
@@ -130,7 +130,7 @@ pub fn draw_workspace(
         view.queue.project_rows.clear();
     }
     if let Some(form) = form.as_mut() {
-        hits.buttons = form.draw(t, frame, program);
+        hits.buttons = form.draw(t, frame, program, &view.queue.projects);
         hits.agents.clear();
         hits.queue_rows.clear();
         view.queue.buttons.clear();
@@ -250,11 +250,8 @@ pub fn draw_workspace(
         help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  t Task  e Edit pending  Esc Back";
     }
     if let Some(form) = &form {
-        target = format!(
-            "New agent · {}",
-            ["Directory", "Name", "Command", "First message", "Open in"][form.field]
-        );
-        help = " Tab Field  Ctrl-S Start  Ctrl-P Projects  PgUp/Dn Preview  Esc Back";
+        target = format!("New agent · {}", form.label());
+        help = " Tab/Shift-Tab Field  ←→ Home/End Move  Backspace/Delete Erase  Ctrl-U Clear";
     } else if open_agent.is_some() {
         target = "Open agent".into();
         help = " 1 Current  2 Tab  3 Left  4 Right  5 Up  6 Down  Esc Cancel";

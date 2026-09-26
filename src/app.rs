@@ -520,7 +520,10 @@ impl App {
                                 form.error.clear();
                                 self.actions.start(Action::Start(args, ticket));
                             }
-                            Err(error) => form.error = format!("{error:#}"),
+                            Err(error) => {
+                                form.error = format!("{error:#}");
+                                form.reveal_invalid();
+                            }
                         }
                     }
                     return Ok(false);
@@ -655,18 +658,11 @@ impl App {
                 }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
                     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                        if let Some((_, field)) =
-                            form.field_hits.iter().find(|(r, _)| r.contains(point))
-                        {
-                            form.field = *field;
-                            if *field == 4 {
-                                form.place = (form.place + 1) % 6;
-                            }
-                        }
+                        form.click(point, &self.queue.projects);
                     } else if mouse.kind == MouseEventKind::ScrollDown {
-                        form.preview_top = form.preview_top.saturating_add(3);
+                        form.scroll(true);
                     } else if mouse.kind == MouseEventKind::ScrollUp {
-                        form.preview_top = form.preview_top.saturating_sub(3);
+                        form.scroll(false);
                     }
                     return Ok(false);
                 }
