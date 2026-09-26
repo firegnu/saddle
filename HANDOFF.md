@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-26：点击身份修复主控通过，第一轮交叉增量复核（以本节为准）
+
+- 开发 73b3d88 在 placement 局部绑定按下目标名字，松开换人则取消；主控仅审 48a5a48 后增量，通过。lib 6、terminals 6 及受影响候选/取消/移动回归通过，Clippy/diff 通过。
+- 混合 workflow 35 passed、1 failed、2 ignored；失败为未改动且不打开 placement 的 Queue/Stop 用例 Ctrl-] 等待，单独复跑通过，根因未定。已如实记录为范围外偶发问题建议另查，不能称全套全绿；交叉者仅核对增量关联性，不扩旧任务。
+- detached ../saddle-worktrees/review-pane-placement 已实际更新至 73b3d88；通知原 saddle/dev-pane-review-1（Codex 重档）第一轮交叉增量复核唯一必须改 1 及修复引入问题。主仓库 docs/任务/终端布局主控与交叉审查.md 有完整证据、裁决及预算。
+- saddle/dev-pane-placement-1 原开发 worktree/分支保留。尚未合并发布；复核通过后按规矩合并推送、release、清理两个 worktree/分支及自有 agent、空提交和交接。
+- New/Agents 旧任务不重审，T14 仅待办；原 T2 已放行，不操作队列、不执行 go/next。
+
 ## 2026-09-26：交叉初审发现候选点击目标漂移，增量返工中（以本节为准）
 
 - 独立审查 48a5a48 结论改完再合并：交叉必须改 1 为按下候选行后遇 ls 刷新，原处松开会选中换位后的另一个 agent。假 CLI 探针实际出现错误 attach 和输入；主控核对后接受阻挡，9 条可以不改全部接受，无建议项。
