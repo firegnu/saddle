@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：T2 用户反馈，New 表单改进开发中（以本节为准）
+
+- 用户实际体验后表示 New 不知如何操作，并明确输入框不显眼、点击没有光标；已同意继续简化为选项目/选 Codex 或 Claude/创建，名称自动生成可改，完整命令收进高级设置。范围只含 New，不扩展 tab/split 或其他弹框。设计见 DESIGN 第 27 节末尾用户体验修订，任务见 docs/任务/T2-New表单体验改进.md，准备提交 8a2b4ea。
+- 已新开 saddle/dev-t2-new-form-1（Codex，gpt-6-astra / high），在 ../saddle-worktrees/t2-new-agent-form、分支 t2-new-agent-form 开发。路由常规；交叉/影响面拿不准，主控按局部表单行为判为改行为、不做交叉审查，不改已修复的 PTY 生命周期。
+- 下一步收到 DONE 后看 diff/完成记录并按预算做主控审查，特别核对输入框轮廓、点击光标和编辑的可观察结果。通过后按规矩合并推送、更新 release、清理自有 worktree/分支/agent、补收尾。
+- 公开队列仍 current=null、awaiting=T2/done、pending=[]，loop=false、gate=true；本次是 T2 体验反馈改进，不执行 go/next 或改写队列。旧版 T2 已完成状态保留，本次改进尚未发布；当前只有上述开发 agent 和 saddle/main。
+
 ## 2026-09-26：T2 合并与清理完成（以本节为准）
 
 - T2 已实现 saddle 内 New 启动 agent、右侧终端 tab 和四向分屏；开发 c35daa2、返工 46d8abb，经主控和独立交叉复核通过，合并 ebea609，功能与审查已推送 main。详细设计见 DESIGN 第 27 节，完成和审查记录见 docs/任务/T2-启动agent与终端布局.md、T2-主控与交叉审查.md。
