@@ -1204,6 +1204,10 @@ fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     h.send(b"n");
     h.see("review-draft");
     h.send(b"\x1b");
+    // The status line can still be the stale one from before `n`; only Esc hides the draft.
+    // Clicking before Esc is read would merge them into one read, and crossterm parses the
+    // ESC ESC as a single Esc, turning the rest of the mouse report into plain characters.
+    h.until(|h| !h.contents().contains("review-draft"));
     h.see("Input ▸ Agents");
     for cancel in [b"\x1b".as_slice(), b"", b"\x1d"] {
         h.click("+ Tab");
