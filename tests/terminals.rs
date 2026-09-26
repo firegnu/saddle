@@ -9,25 +9,25 @@ fn four_directions_split_relative_to_the_active_pane_and_close_collapses_it() {
     for (place, old_rect, new_rect) in [
         (
             Place::Left,
-            Rect::new(25, 1, 25, 20),
-            Rect::new(0, 1, 25, 20),
+            Rect::new(25, 3, 25, 20),
+            Rect::new(0, 3, 25, 20),
         ),
         (
             Place::Right,
-            Rect::new(0, 1, 25, 20),
-            Rect::new(25, 1, 25, 20),
+            Rect::new(0, 3, 25, 20),
+            Rect::new(25, 3, 25, 20),
         ),
-        (Place::Up, Rect::new(0, 11, 50, 10), Rect::new(0, 1, 50, 10)),
+        (Place::Up, Rect::new(0, 13, 50, 10), Rect::new(0, 3, 50, 10)),
         (
             Place::Down,
-            Rect::new(0, 1, 50, 10),
-            Rect::new(0, 11, 50, 10),
+            Rect::new(0, 3, 50, 10),
+            Rect::new(0, 13, 50, 10),
         ),
     ] {
         let mut terminals = Terminals::new("unused-fake-corral".into());
         let old = terminals.active_pane().id;
         let ticket = terminals.reserve(place, None);
-        let rects = terminals.rects(Rect::new(0, 0, 50, 21));
+        let rects = terminals.rects(Rect::new(0, 0, 50, 23));
         assert_eq!(rects.iter().find(|(id, _)| *id == old).unwrap().1, old_rect);
         assert_eq!(
             rects.iter().find(|(id, _)| *id == ticket.pane).unwrap().1,
@@ -36,8 +36,8 @@ fn four_directions_split_relative_to_the_active_pane_and_close_collapses_it() {
         terminals.close_pane(ticket.pane).unwrap();
         assert!(!terminals.valid(ticket));
         assert_eq!(
-            terminals.rects(Rect::new(0, 0, 50, 21)),
-            vec![(old, Rect::new(0, 1, 50, 20))]
+            terminals.rects(Rect::new(0, 0, 50, 23)),
+            vec![(old, Rect::new(0, 3, 50, 20))]
         );
     }
 }
@@ -172,7 +172,7 @@ fn reserving_a_new_target_reaps_an_unreceived_spawn_even_if_status_fails() {
 #[test]
 fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
     let mut terminals = Terminals::new("unused-fake-corral".into());
-    let area = Rect::new(0, 0, 50, 21);
+    let area = Rect::new(0, 0, 50, 23);
     let a = terminals.reserve(Place::Current, Some("p/a".into()));
     let b = terminals.place(a.pane, Place::Tab, "p/b").unwrap().unwrap();
     assert_eq!(terminals.tabs.len(), 2);
@@ -190,8 +190,8 @@ fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
     assert_eq!(
         terminals.rects(area),
         vec![
-            (a.pane, Rect::new(0, 1, 25, 20)),
-            (b.pane, Rect::new(25, 1, 25, 20))
+            (a.pane, Rect::new(0, 3, 25, 20)),
+            (b.pane, Rect::new(25, 3, 25, 20))
         ]
     );
     // A pane is never split beside itself.
@@ -213,12 +213,12 @@ fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
     assert_eq!(terminals.active_pane().id, b.pane);
     assert_eq!(
         terminals.rects(area),
-        vec![(b.pane, Rect::new(0, 1, 50, 20))]
+        vec![(b.pane, Rect::new(0, 3, 50, 20))]
     );
     terminals.focus(a.pane);
     assert_eq!(
         terminals.rects(area),
-        vec![(a.pane, Rect::new(0, 1, 50, 20))]
+        vec![(a.pane, Rect::new(0, 3, 50, 20))]
     );
     assert!(terminals.valid(a) && terminals.valid(b));
 }
@@ -260,7 +260,7 @@ fn placement_popups_stay_inside_small_screens_and_show_an_empty_list() {
                 assert!(text.contains("‹Cancel Esc›"), "{text}");
                 assert!(
                     text.contains(if place.is_none() {
-                        "‹Right →›"
+                        "│ Right → │"
                     } else {
                         "No agents to open here."
                     }),
@@ -268,5 +268,86 @@ fn placement_popups_stay_inside_small_screens_and_show_an_empty_list() {
                 );
             }
         }
+    }
+}
+
+#[test]
+fn tab_strip_and_split_sides_are_outlined_buttons_matching_their_targets() {
+    use ratatui::style::{Color, Modifier};
+    use saddle::{
+        placement::{self, Placement},
+        terminals::{self, Control},
+        theme,
+    };
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    terminals.new_tab();
+    let t = Theme::default();
+    let area = Rect::new(0, 0, 60, 20);
+    let mut screen = Terminal::new(TestBackend::new(60, 20)).unwrap();
+    let mut hits = Vec::new();
+    screen
+        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
+        .unwrap();
+    let buffer = screen.backend().buffer();
+    let row = |y: u16| -> String { (0..60).map(|x| buffer[(x, y)].symbol()).collect() };
+    println!("{}\n{}\n{}\n{}", row(0), row(1), row(2), row(3));
+    assert_eq!(
+        row(1).trim_end(),
+        "│ + Tab │  ‹  ›  │ Tab 1 × │ │ Tab 2 × │"
+    );
+    assert!(row(3).starts_with("┏"), "panes start below the strip");
+    fn find(hits: &[terminals::Hit], f: impl Fn(&Control) -> bool) -> Vec<Rect> {
+        hits.iter()
+            .filter(|(_, c)| f(c))
+            .map(|(h, _)| h.area)
+            .collect()
+    }
+    let new = find(&hits, |c| matches!(c, Control::NewTab));
+    let tabs = find(&hits, |c| matches!(c, Control::Tab(_)));
+    let closes = find(&hits, |c| matches!(c, Control::CloseTab(_)));
+    assert_eq!(new, vec![Rect::new(0, 0, 9, 3)]);
+    assert_eq!(tabs, vec![Rect::new(17, 0, 8, 3), Rect::new(29, 0, 8, 3)]);
+    assert_eq!(
+        closes[..2],
+        [Rect::new(25, 0, 3, 3), Rect::new(37, 0, 3, 3)]
+    );
+    for (tab, close) in tabs.iter().zip(&closes) {
+        assert_eq!(buffer[(close.x, 1)].symbol(), "×");
+        assert_eq!(buffer[(tab.x, 0)].symbol(), "╭");
+        assert_eq!(buffer[(close.right() - 1, 0)].symbol(), "╮");
+    }
+    // Tab 2 is current: grey-white frame and bold bright name; Tab 1 stays dim.
+    assert_eq!(buffer[(17, 0)].fg, theme::BORDER);
+    assert_eq!(buffer[(29, 0)].fg, theme::MUTED);
+    assert_eq!(buffer[(31, 1)].fg, theme::BRIGHT);
+    assert!(buffer[(31, 1)].modifier.contains(Modifier::BOLD));
+    assert!(!buffer[(19, 1)].modifier.contains(Modifier::BOLD));
+    for y in 0..3 {
+        for x in 0..60 {
+            assert_eq!(buffer[(x, y)].bg, Color::Reset, "no fill at {x},{y}");
+        }
+    }
+
+    let placement = Placement {
+        pane: terminals.active_pane().id,
+        place: None,
+        selected: 0,
+        pressed: None,
+    };
+    screen
+        .draw(|frame| hits = placement::draw(&t, frame, area, &terminals, &placement, &[]))
+        .unwrap();
+    let buffer = screen.backend().buffer();
+    let sides = find(&hits, |c| matches!(c, Control::Side(_)));
+    let cancel = find(&hits, |c| matches!(c, Control::Cancel));
+    assert_eq!(sides.len(), 4);
+    assert!(sides.iter().all(|s| s.height == 3));
+    assert_eq!((sides[0].y, sides[1].y), (sides[2].y - 3, sides[3].y - 3));
+    assert_eq!(sides[0].y, sides[1].y, "2×2 layout");
+    assert_eq!(cancel[0].height, 1);
+    assert_eq!(cancel[0].y, sides[2].bottom(), "Cancel sits right below");
+    for s in &sides {
+        assert_eq!(buffer[(s.x, s.y)].symbol(), "╭");
+        assert_eq!(buffer[(s.x, s.y)].fg, theme::MUTED);
     }
 }

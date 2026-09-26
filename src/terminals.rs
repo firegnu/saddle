@@ -388,12 +388,12 @@ impl Terminals {
     }
     pub fn rects(&self, area: Rect) -> Vec<(u64, Rect)> {
         let mut result = Vec::new();
-        // One row of native controls; everything below belongs to the split tree.
+        // The tab strip; everything below belongs to the split tree.
         let area = Rect::new(
             area.x,
-            area.y + area.height.min(1),
+            area.y + area.height.min(STRIP),
             area.width,
-            area.height.saturating_sub(1),
+            area.height.saturating_sub(STRIP),
         );
         self.tab().tree.rects(area, self.tab().active, &mut result);
         result
@@ -429,6 +429,8 @@ impl Terminals {
     }
 }
 
+/// Rows taken by the outlined tab strip above the panes.
+pub const STRIP: u16 = 3;
 #[derive(Clone, Copy)]
 pub enum Control {
     NewTab,
@@ -453,8 +455,94 @@ pub fn draw(
     focused: bool,
 ) -> Vec<Hit> {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{style::Style, widgets::Paragraph};
+    use ratatui::{
+        style::{Modifier, Style},
+        text::{Line, Span},
+        widgets::{Block, BorderType, Paragraph},
+    };
     let mut hits = Vec::new();
+    let target = |area: Rect, control: Control| {
+        (
+            crate::buttons::Hit {
+                area,
+                danger: false,
+                key: KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
+            },
+            control,
+        )
+    };
+    // Tabs and "+ Tab" are unfilled rounded outlines; the current tab only gets a lighter
+    // frame and a bold name. Controls that do not fit whole are left out.
+    if area.height >= STRIP {
+        let mut x = area.x;
+        let outline = |frame: &mut ratatui::Frame, x: u16, spans: Vec<Span<'static>>, border| {
+            let width = spans.iter().map(Span::width).sum::<usize>() as u16 + 2;
+            if x + width > area.right() {
+                return None;
+            }
+            let rect = Rect::new(x, area.y, width, STRIP);
+            let block = Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(border));
+            frame.render_widget(Paragraph::new(Line::from(spans)).block(block), rect);
+            Some(rect)
+        };
+        let label = Span::styled(" + Tab ", Style::default().fg(t.text));
+        if let Some(rect) = outline(frame, x, vec![label], t.border) {
+            hits.push(target(rect, Control::NewTab));
+            x = rect.right() + 1;
+        }
+        for (label, control) in [(" ‹ ", Control::Previous), (" › ", Control::Next)] {
+            if x + 3 > area.right() {
+                break;
+            }
+            let rect = Rect::new(x, area.y + 1, 3, 1);
+            frame.render_widget(
+                Paragraph::new(label).style(Style::default().fg(t.text)),
+                rect,
+            );
+            hits.push(target(rect, control));
+            x += 3;
+        }
+        x += 1;
+        let slots = (area.right().saturating_sub(x) / 12).max(1) as usize;
+        let active = terminals
+            .tabs
+            .iter()
+            .position(|t| t.id == terminals.active)
+            .unwrap();
+        let start = active.saturating_sub(slots - 1);
+        for (i, tab) in terminals.tabs.iter().enumerate().skip(start).take(slots) {
+            let current = tab.id == terminals.active;
+            let name = Style::default().fg(t.text);
+            let spans = vec![
+                Span::styled(
+                    format!(" Tab {} ", i + 1),
+                    if current {
+                        name.fg(t.bright).add_modifier(Modifier::BOLD)
+                    } else {
+                        name
+                    },
+                ),
+                Span::styled("× ", Style::default().fg(t.muted)),
+            ];
+            let border = if current { t.muted } else { t.border };
+            let Some(rect) = outline(frame, x, spans, border) else {
+                break;
+            };
+            // "×" with its padding and the right edge closes; the rest switches.
+            let close = Rect::new(rect.right() - 3, rect.y, 3, rect.height);
+            hits.push(target(
+                Rect {
+                    width: rect.width - 3,
+                    ..rect
+                },
+                Control::Tab(tab.id),
+            ));
+            hits.push(target(close, Control::CloseTab(tab.id)));
+            x = rect.right() + 1;
+        }
+    }
     let mut button = |frame: &mut ratatui::Frame,
                       rect: Rect,
                       label: &str,
@@ -467,56 +555,8 @@ pub fn draw(
             Paragraph::new(label).style(Style::default().fg(if active { t.focus } else { t.text })),
             rect,
         );
-        hits.push((
-            crate::buttons::Hit {
-                area: rect,
-                danger: false,
-                key: KeyEvent::new(KeyCode::Null, KeyModifiers::NONE),
-            },
-            control,
-        ));
+        hits.push(target(rect, control));
     };
-    if !area.is_empty() {
-        let mut x = area.x;
-        for (label, control) in [
-            ("‹+ Tab›", Control::NewTab),
-            (" ‹ ", Control::Previous),
-            (" › ", Control::Next),
-        ] {
-            let w = (unicode_width::UnicodeWidthStr::width(label) as u16)
-                .min(area.right().saturating_sub(x));
-            button(frame, Rect::new(x, area.y, w, 1), label, control, false);
-            x += w;
-        }
-        let available = area.right().saturating_sub(x);
-        let slots = (available / 11).max(1) as usize;
-        let active = terminals
-            .tabs
-            .iter()
-            .position(|t| t.id == terminals.active)
-            .unwrap();
-        let start = active.saturating_sub(slots - 1);
-        for (i, tab) in terminals.tabs.iter().enumerate().skip(start).take(slots) {
-            let w = 8.min(area.right().saturating_sub(x));
-            button(
-                frame,
-                Rect::new(x, area.y, w, 1),
-                &format!("‹Tab {}›", i + 1),
-                Control::Tab(tab.id),
-                tab.id == terminals.active,
-            );
-            x += w;
-            let w = 3.min(area.right().saturating_sub(x));
-            button(
-                frame,
-                Rect::new(x, area.y, w, 1),
-                " × ",
-                Control::CloseTab(tab.id),
-                false,
-            );
-            x += w;
-        }
-    }
     for (id, rect) in terminals.rects(area) {
         if rect.is_empty() {
             continue;

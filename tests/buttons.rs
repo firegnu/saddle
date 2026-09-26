@@ -128,9 +128,14 @@ fn outlined_buttons_use_terminal_background_in_every_pointer_state() {
                 }
             }
             let corner = &terminal.backend().buffer()[(hits[0].1.area.x, hits[0].1.area.y)];
+            // Dialog outlines rest grey-white; compact brackets keep the dim border.
             assert_eq!(
                 corner.fg,
-                [theme::BORDER, theme::BRIGHT, theme::FOCUS][phase]
+                [
+                    if compact { theme::BORDER } else { theme::MUTED },
+                    theme::BRIGHT,
+                    theme::FOCUS
+                ][phase]
             );
         }
     }

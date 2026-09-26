@@ -109,6 +109,15 @@ impl Pointer {
 pub fn draw(t: &Theme, frame: &mut Frame, area: Rect, buttons: &[Button<'_>]) -> (Rect, Vec<Hit>) {
     draw_bar(t, frame, area, buttons, false, false)
 }
+/// Outlined buttons inside a dialog: rounded grey-white frames sized to their labels, no fill.
+pub fn draw_outlined_top(
+    t: &Theme,
+    frame: &mut Frame,
+    area: Rect,
+    buttons: &[Button<'_>],
+) -> (Rect, Vec<Hit>) {
+    draw_bar(t, frame, area, buttons, true, false)
+}
 pub fn draw_compact(
     t: &Theme,
     frame: &mut Frame,
@@ -192,7 +201,7 @@ fn draw_bar(
         let border = if !button.enabled {
             t.dim
         } else if matches!(button.kind, Kind::Secondary) {
-            t.border
+            if compact { t.border } else { t.muted }
         } else {
             foreground
         };
