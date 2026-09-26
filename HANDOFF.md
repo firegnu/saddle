@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：追加 Agents 选中样式，先建议后串行实施（以本节为准）
+
+- 用户截图反馈选中 agent 只有背景色，首行最左侧的小白竖线不好看；要求另排 agent 去掉它，并评估选中块左侧主题色长条会不会更清楚或显乱。新任务 docs/任务/Agents选中样式.md，先做只读建议阶段。
+- New 已由 saddle/dev-t2-new-form-1 提交 d78ad30（126 passed、2 ignored，待主控核验），同一 agent 正在处理已排队送达的 Open 用途/Cancel 一致性补充；两部分完成后再一起主控审查，不能仅据 New 的旧 DONE 合并。
+- Agents 样式与 New/Open 都涉及 src/ui.rs，按 corral-dispatch 串行修改代码：新的样式 agent 先在独立 worktree 出建议，待 New/Open 合并后由主控更新样式分支基线，再通知其实施。样式建议阶段不改功能代码。
+- New/Open 完成后还要继续 Agents 样式，不能因前一项收尾而遗漏。原 T2 已放行 History；不自动操作队列或重开 T2。
+
 ## 2026-09-26：同轮追加 Open 易用性与弹框一致性（以本节为准）
 
 - 用户在 New 改进进行中补充：Open agent 用途晦涩，Esc/Cancel 与其他弹框的设计语言不一致。范围现扩展为同一轮 New + Open 交互改进，New 输入框/光标优先要求保留；tab/split 接入语义和状态机仍不改。
