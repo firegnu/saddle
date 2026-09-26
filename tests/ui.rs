@@ -1469,3 +1469,42 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
         assert!(out.contains(expected), "missing {expected}: {out}");
     }
 }
+
+#[test]
+fn selected_agent_has_no_side_marker_but_bold_name_and_background_on_every_line() {
+    use ratatui::style::{Color, Modifier};
+    use saddle::theme;
+    let (mut a, mut q) = fixture();
+    a.agents[0].title = Some("long title that must wrap ".repeat(12));
+    a.agents.push(Agent {
+        name: "demo/review".into(),
+        state: Some("idle".into()),
+        ..Default::default()
+    });
+    a.selected = Some("demo/main".into());
+    for focus in [Focus::Agents, Focus::Queue] {
+        let (buffer, hits) = render(160, 60, &mut a, &mut q, focus);
+        let rows = |name: &str| -> Vec<u16> {
+            hits.agents
+                .iter()
+                .filter(|(_, n)| n == name)
+                .map(|(y, _)| *y)
+                .collect()
+        };
+        let selected = rows("demo/main");
+        // Headline, identity, path, Git, and a title wrapped over several lines.
+        assert!(selected.len() >= 6, "{selected:?}");
+        for &y in &selected {
+            assert_eq!(buffer[(1, y)].symbol(), " ");
+            assert_eq!(buffer[(1, y)].bg, theme::AGENT_SELECTED);
+        }
+        assert_eq!(buffer[(2, selected[1])].symbol(), "│");
+        let gap = selected.last().unwrap() + 1;
+        assert_eq!(buffer[(1, gap)].bg, Color::Reset);
+        assert!(buffer[(7, selected[0])].modifier.contains(Modifier::BOLD));
+        assert_eq!(buffer[(7, selected[0])].fg, theme::BRIGHT);
+        let other = rows("demo/review")[0];
+        assert!(!buffer[(7, other)].modifier.contains(Modifier::BOLD));
+        assert_eq!(buffer[(1, other)].bg, Color::Reset);
+    }
+}

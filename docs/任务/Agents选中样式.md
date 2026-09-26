@@ -87,3 +87,14 @@
 - 只修改第二阶段边界内必要文件，保留刚合入的 New/Show 功能。DESIGN 已有最终规则，不重复追加；确有实现取舍再在对应节小幅补充。
 - 验证预算不变：git diff --check，加一项直接体现选中/未选中、名称加粗和多行背景的合成渲染检查；不跑全套、不做录屏或矩阵、不操作真实 agent。Cargo 使用共享 target。
 - 在本任务末尾追加「完成记录」，说明修改、直接观察/验证结果、取舍和未做事项并提交本分支。不合并、不推送、不更新 release、不改 HANDOFF。所有命令在前台完成，回复提交 SHA、是否有待裁决事项，最后一行 DONE。
+
+## 完成记录（2026-09-26）
+
+saddle/dev-agent-selection-1 按第二阶段通知实施了方案 A。DESIGN 第 28 节已写好最终规则，这次没有取舍需要补充，所以 DESIGN 没改。
+
+- 修改：`src/ui.rs` agent_rows 主行第 0 列固定输出空格，去掉 `▎`；因此不再需要的 `focused` 参数一并删除（draw_agents 仍用它画边框）。选中名称在 `bright` 上再加粗。背景、树线、状态、类型、effort、Git、◉/new 颜色，以及 New/Show 相关代码都没动。
+- 验证：
+  - `tests/ui.rs` 新增一项合成渲染检查 `selected_agent_has_no_side_marker_but_bold_name_and_background_on_every_line`。用两个同 repo 的 agent，选中非末项，标题很长、会折成多行，在 Agents 有焦点和 Queue 有焦点两种情况下各渲染一次。检查内容：选中项每行第 0 列都是空格，并且铺着 `agent_selected` 背景；附加行第 1 列仍是树线 `│`；条目后的空行没有背景；选中名称是亮色加粗；未选中项名称不加粗、没有背景。
+  - 实施前运行这项检查，按预期失败在第 0 列出现 `▎`；实施后通过。`git diff --check` 通过。
+- 没做的：按预算没跑全套测试和 clippy，没录屏，没启动真实 agent。Queue 的 `▎` 不在范围内，没动。
+- 待裁决：无。

@@ -387,14 +387,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         list,
         ..Default::default()
     };
-    let rows = agent_rows(
-        t,
-        panel,
-        view.showing,
-        usize::from(list.width),
-        view.now,
-        focused,
-    );
+    let rows = agent_rows(t, panel, view.showing, usize::from(list.width), view.now);
     let selected_rows: Vec<_> = rows
         .iter()
         .enumerate()
@@ -517,14 +510,7 @@ fn scrollbar(t: &Theme, frame: &mut Frame, area: Rect, len: usize, top: usize) {
             .position(top),
     );
 }
-fn agent_rows(
-    t: &Theme,
-    panel: &Panel,
-    showing: Option<&str>,
-    width: usize,
-    now: f64,
-    focused: bool,
-) -> Vec<Row> {
+fn agent_rows(t: &Theme, panel: &Panel, showing: Option<&str>, width: usize, now: f64) -> Vec<Row> {
     let ordered = panel.ordered(now);
     let mut rows = Vec::new();
     let mut previous = None;
@@ -593,10 +579,7 @@ fn agent_rows(
         let (brand_label, brand_color) = agent_brand(t, a.kind.as_deref().unwrap_or(""));
         let name = a.name.strip_prefix(prefix).unwrap_or(&a.name);
         let mut spans = vec![
-            Span::styled(
-                if selected { "▎" } else { " " },
-                Style::default().fg(if focused { t.focus } else { t.muted }),
-            ),
+            Span::raw(" "),
             Span::styled(
                 if last { "└─ " } else { "├─ " },
                 Style::default().fg(tree_color),
@@ -604,7 +587,11 @@ fn agent_rows(
             Span::styled(format!("{icon} "), Style::default().fg(color)),
             Span::styled(
                 pad(&clip(name, name_width), name_width),
-                Style::default().fg(if selected { t.bright } else { t.text }),
+                if selected {
+                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(t.text)
+                },
             ),
         ];
         if wide {
