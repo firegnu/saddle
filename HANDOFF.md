@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：位置优先布局返工复核通过，进入交叉审查（以本节为准）
+
+- 开发修复 48a5a48 仅在取消回归增加等待草稿消失，保留所有原断言；主控只审增量，workflow 35 passed、2 ignored，diff 检查通过，必须改 1 已关闭。此前 Clippy 和其他测试目标通过，不重复全套。
+- 审查任务与逐项裁决在 docs/任务/终端布局主控与交叉审查.md；准备独立 Codex 重档（gpt-6-astra / xhigh），detached ../saddle-worktrees/review-pane-placement 固定 48a5a48，唯一可写主仓库该审查文件。开发者 saddle/dev-pane-placement-1 和 pane-placement worktree/分支保留等待可能返工。
+- 下一步收到交叉审查 DONE 后逐项裁决，认可必须改交原开发者；复核只看增量并先更新审查 worktree SHA。通过后合并推送、release、清理自有环境、空提交和交接。尚未合并/发布。
+- New/Agents旧任务不重审，T14仅待办；原 T2 已放行，不操作队列、不执行 go/next。
+
 ## 2026-09-26：位置优先布局主控发现一项检查失败，返工中（以本节为准）
 
 - 开发 4e9d1fa 已完成，主控初审范围/取舍通过，但最终标准套件 133 passed、1 failed、2 ignored；取消与 New 草稿回归等待 + Tab 候选弹框超时，单独复跑通过，时序根因尚未定位。Clippy 与 diff 检查通过。
