@@ -299,8 +299,13 @@ fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
         "{output}"
     );
     assert!(output.contains("…/work/demo"), "{output}");
-    for button in ["‹Attached›", "‹Open o›", "‹New n›", "‹Sort s›", "‹Stop x›"]
-    {
+    for button in [
+        "‹Attached›",
+        "‹Show in… o›",
+        "‹New n›",
+        "‹Sort s›",
+        "‹Stop x›",
+    ] {
         assert!(output.contains(button), "{output}");
     }
     assert!(!output.contains("Reply r"));

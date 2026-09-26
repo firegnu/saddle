@@ -14,29 +14,67 @@ use ratatui::{
 };
 
 pub fn draw_open(t: &Theme, frame: &mut Frame, name: &str) -> Vec<buttons::Hit> {
-    let area = crate::theme::centered(frame.area(), 64, 16);
+    let area = crate::theme::centered(frame.area(), 76, 20);
     frame.render_widget(Clear, area);
     frame.render_widget(
-        t.block(" Open agent ", true).style(t.base().bg(t.overlay)),
+        t.block(" Show agent ", true).style(t.base().bg(t.overlay)),
         area,
     );
-    let labels: Vec<_> = Place::ALL
-        .iter()
-        .enumerate()
-        .map(|(i, p)| format!("{} {}", p.label(), i + 1))
-        .collect();
-    let mut buttons: Vec<_> = labels
-        .iter()
-        .enumerate()
-        .map(|(i, label)| Button::new(label, KeyCode::Char(char::from(b'1' + i as u8)), true))
-        .collect();
-    buttons.push(Button::new("Cancel Esc", KeyCode::Esc, true));
-    let (body, hits) = buttons::draw(t, frame, crate::ui::inner(area), &buttons);
+    let (mut body, mut hits) = buttons::draw_compact(
+        t,
+        frame,
+        crate::ui::inner(area),
+        &[Button::new("Cancel Esc", KeyCode::Esc, true)],
+    );
+    let intro = crate::queue::wrap_text(
+        &format!("Choose where to show this existing agent.\nAgent: {name}"),
+        body.width,
+    );
+    let height = (intro.len() as u16).min(body.height);
     frame.render_widget(
-        Paragraph::new(format!(
-            "{name}\nChoose where to open. Already open agents jump to their existing pane."
-        ))
-        .wrap(Default::default()),
+        Paragraph::new(intro),
+        Rect::new(body.x, body.y, body.width, height),
+    );
+    body.y += height;
+    body.height -= height;
+    let (rest, actions) = buttons::draw_compact_top(
+        t,
+        frame,
+        body,
+        &[
+            Button::new("Replace current pane 1", KeyCode::Char('1'), true),
+            Button::new("Open in new tab 2", KeyCode::Char('2'), true),
+        ],
+    );
+    hits.extend(actions);
+    body = rest;
+    let split = crate::queue::wrap_text(
+        "\nSplit current pane\nDirections are relative to the active terminal pane.",
+        body.width,
+    );
+    let height = (split.len() as u16).min(body.height);
+    frame.render_widget(
+        Paragraph::new(split),
+        Rect::new(body.x, body.y, body.width, height),
+    );
+    body.y += height;
+    body.height -= height;
+    let (body, actions) = buttons::draw_compact_top(
+        t,
+        frame,
+        body,
+        &[
+            Button::new("← Left 3", KeyCode::Char('3'), true),
+            Button::new("Right → 4", KeyCode::Char('4'), true),
+            Button::new("↑ Above 5", KeyCode::Char('5'), true),
+            Button::new("Below ↓ 6", KeyCode::Char('6'), true),
+        ],
+    );
+    hits.extend(actions);
+    frame.render_widget(
+        Paragraph::new("\nAlready open? Jump to its existing pane.")
+            .style(Style::default().fg(t.muted))
+            .wrap(Default::default()),
         body,
     );
     hits
@@ -413,7 +451,15 @@ impl Form {
                     enabled && !self.choosing_project,
                 )
                 .primary(),
-                Button::new("Cancel Esc", KeyCode::Esc, true),
+                Button::new(
+                    if self.choosing_project {
+                        "Back Esc"
+                    } else {
+                        "Cancel Esc"
+                    },
+                    KeyCode::Esc,
+                    true,
+                ),
             ],
         );
         self.field_hits.clear();
@@ -440,10 +486,11 @@ impl Form {
                 t,
                 frame,
                 body,
-                &[
-                    Button::control("Edit path Ctrl-E", KeyCode::Char('e'), true),
-                    Button::new("Back Esc", KeyCode::Esc, true),
-                ],
+                &[Button::control(
+                    "Edit path Ctrl-E",
+                    KeyCode::Char('e'),
+                    true,
+                )],
             );
             hits.extend(controls);
             if list.height > 0 {
@@ -735,6 +782,116 @@ impl Form {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn show_new_and_queue_use_the_same_bottom_cancel_and_show_maps_all_six_actions() {
+        use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
+        fn text(buffer: &Buffer, area: Rect) -> String {
+            (area.y..area.bottom())
+                .map(|y| {
+                    (area.x..area.right())
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        let t = Theme::default();
+        let mut terminal = Terminal::new(TestBackend::new(100, 32)).unwrap();
+        let mut hits = Vec::new();
+        terminal
+            .draw(|frame| hits = draw_open(&t, frame, "demo/existing"))
+            .unwrap();
+        let cancel = hits.iter().find(|h| h.key.code == KeyCode::Esc).unwrap();
+        assert_eq!(
+            cancel.area.height, 1,
+            "Cancel must use the existing compact toolbar"
+        );
+        let buffer = terminal.backend().buffer();
+        let output = text(buffer, buffer.area);
+        println!("SHOW synthetic render:\n{output}");
+        assert!(output.contains("Choose where to show this existing agent."));
+        assert!(output.contains("demo/existing"));
+        assert!(output.contains("Split current pane"));
+        assert!(output.contains("active terminal pane"));
+        assert!(output.contains("Already open? Jump to its existing pane."));
+        assert_eq!(text(buffer, cancel.area), "‹Cancel Esc›");
+        assert_eq!(
+            cancel.area.bottom(),
+            crate::theme::centered(buffer.area, 76, 20).bottom() - 1
+        );
+        let style: Vec<_> = (cancel.area.x..cancel.area.right())
+            .map(|x| buffer[(x, cancel.area.y)].clone())
+            .collect();
+        for (key, label, place) in [
+            ('1', "Replace current pane 1", Place::Current),
+            ('2', "Open in new tab 2", Place::Tab),
+            ('3', "← Left 3", Place::Left),
+            ('4', "Right → 4", Place::Right),
+            ('5', "↑ Above 5", Place::Up),
+            ('6', "Below ↓ 6", Place::Down),
+        ] {
+            let hit = hits
+                .iter()
+                .find(|h| h.key.code == KeyCode::Char(key))
+                .unwrap();
+            assert_eq!(text(buffer, hit.area), format!("‹{label}›"));
+            assert_eq!(Place::ALL[key as usize - '1' as usize], place);
+            assert!(hit.area.bottom() < cancel.area.y);
+        }
+        let mut form = Form::new("/tmp/demo".into());
+        let mut queue = crate::queue::Panel::default();
+        queue.page = crate::queue::Page::Project("/tmp/demo".into());
+        for new in [true, false] {
+            terminal
+                .draw(|frame| {
+                    if new {
+                        hits = form.draw(&t, frame, "corral", &[]);
+                    } else {
+                        queue.draw_overlay(&t, frame);
+                        hits = queue.buttons.clone();
+                    }
+                })
+                .unwrap();
+            let cancel = hits.iter().find(|h| h.key.code == KeyCode::Esc).unwrap();
+            let buffer = terminal.backend().buffer();
+            println!(
+                "{} synthetic render:\n{}",
+                if new { "NEW" } else { "QUEUE Project path" },
+                text(buffer, buffer.area)
+            );
+            assert_eq!(cancel.area.height, 1);
+            assert_eq!(
+                cancel.area.bottom(),
+                crate::theme::centered(
+                    buffer.area,
+                    if new { 104 } else { 76 },
+                    if new { 22 } else { 20 }
+                )
+                .bottom()
+                    - 1
+            );
+            let cells: Vec<_> = (cancel.area.x..cancel.area.right())
+                .map(|x| buffer[(x, cancel.area.y)].clone())
+                .collect();
+            assert_eq!(cells, style, "same label, border, text and shortcut colors");
+        }
+        form.key(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &[],
+        );
+        terminal
+            .draw(|frame| hits = form.draw(&t, frame, "corral", &[]))
+            .unwrap();
+        let back: Vec<_> = hits.iter().filter(|h| h.key.code == KeyCode::Esc).collect();
+        assert_eq!(back.len(), 1, "project picker has one bottom return action");
+        let buffer = terminal.backend().buffer();
+        assert_eq!(text(buffer, back[0].area), "‹Back Esc›");
+        assert_eq!(
+            back[0].area.bottom(),
+            crate::theme::centered(buffer.area, 104, 22).bottom() - 1
+        );
+    }
 
     #[test]
     fn default_project_and_codex_can_create_without_typing_a_command() {

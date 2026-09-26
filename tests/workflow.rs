@@ -1129,13 +1129,54 @@ else:
 }
 
 #[test]
+fn show_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Native queue task");
+    h.see("Synthetic title");
+    h.send(b"n");
+    h.click("Name");
+    h.send(b"\x15review-draft");
+    h.see("review-draft");
+    h.click("Project:");
+    h.see("Choose project");
+    h.click("Back Esc");
+    h.see("review-draft");
+    h.click("Cancel Esc");
+    h.see("Input ▸ Agents");
+    h.send(b"n");
+    h.see("review-draft");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    for cancel in [b"\x1b".as_slice(), b"", b"\x1d"] {
+        h.click("‹Show in… o›"); // Match the button, not the status-bar hint.
+        h.see("Agent: p/a");
+        h.see("Replace current pane");
+        h.see("Split current pane");
+        if cancel.is_empty() {
+            h.click("Cancel Esc");
+        } else {
+            h.send(cancel);
+        }
+        h.see("Input ▸ Agents");
+    }
+    h.quit();
+    let events = h.log("events");
+    assert!(
+        !events.contains("attach "),
+        "Cancel/Esc/Ctrl-] must not attach: {events}"
+    );
+    assert!(!events.contains("start "));
+    assert!(!events.contains("stop "));
+}
+
+#[test]
 fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     let mut h = Harness::start();
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
     h.send(b"\x1djo");
-    h.see("Input ▸ Open agent");
+    h.see("Input ▸ Show agent");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     let deadline = Instant::now() + Duration::from_millis(300);
@@ -1147,8 +1188,8 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
         "Ctrl-] must close the menu without choosing a split"
     );
     h.send(b"o");
-    h.see("Open agent");
-    h.click("Split right");
+    h.see("Show agent");
+    h.click("Right →");
     h.see("p/b READY");
     h.send(b"B");
     h.event("input p/b 42");

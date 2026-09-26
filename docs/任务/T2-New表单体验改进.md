@@ -91,3 +91,17 @@
 - 未启动／操作真实 agent，未修改真实队列、用户配置、安装版本，未读 corral/drover 内部文件或仓库；测试只用临时目录与假 CLI。
 - 未改 terminals/viewer/pty 状态机、其他表单、Tasks、tab/split 或 HANDOFF；未增加模型／effort／权限选择器。
 - 无待主控裁决的设计分歧；按任务约定交主控审查，不合并、不推送。
+
+### 同轮补充完成：Open 用途与弹框一致性
+
+2026-09-26，在 New 提交 `d78ad3045c0e65b1c2a78c62a37884cf044cb3df` 后继续同一任务、worktree 和分支，完成主仓库 `/Users/firegnu/Developer/personal_projs/saddle/docs/任务/T2-NewOpen交互补充.md` 及主仓库 DESIGN 第 27 节「同轮补充：Open 的用途和弹框一致性」。未复制或修改主仓库文件。
+
+- Agents 入口改为 `Show in… o`，弹框标题 `Show agent`；直接说明选择已有 agent 的显示位置，并展示所选名称。
+- 动作分组为 `Replace current pane 1`、`Open in new tab 2`，以及 `Split current pane` 下的 `← Left 3`、`Right → 4`、`↑ Above 5`、`Below ↓ 6`。明确方向相对于当前活动终端窗格，已打开的 agent 跳到已有窗格。沿用原数字映射和接入行为，无额外确认步骤。
+- Open 使用现有 `buttons::draw_compact` 底部独立次要 `Cancel Esc`，动作使用同系列紧凑控件。New 主表单原已使用相同样式；将其项目选择页的 `Back Esc` 从顶部移至底部，并去掉重复返回入口。Esc 返回该子页前的草稿，主表单 Cancel／Esc 隐藏草稿；Ctrl-] 既有返回行为保持。
+- 合成渲染实际观察了 Show、New、现有 Queue Project path 三个弹框：全部是紧凑单行 `‹Cancel Esc›`，位于各自弹框内底行，边界字符、文字及快捷键颜色逐格相同；Show 的取消独立于动作分组。检查还确认 New 项目选择页只有一个底部 `‹Back Esc›`。
+- 布局检查先 RED：旧 Open 取消按钮高度实际 3，预期 1；改用既有紧凑控件后 GREEN。六个按钮的文案、数字键及对应 Place 均保留逐项断言。
+- 假 CLI 端到端检查验证 Show 的 Esc、点击 Cancel、Ctrl-] 均不产生 attach/start/stop；New 的项目选择返回及取消／重新打开保持手改名称。测试入口使用完整 `‹Show in… o›` 定位，避免状态栏同名提示成为点击目标。
+- 原有分屏输入、鼠标不透传、去重接入、关闭只结束自有 attach 的工作流断言全部保留，仅调整文案和点击目标，并通过增量运行。
+- 依补充预算，不重复原已通过的全套。增量前台检查全部通过：`cargo test --lib launch`（6 项，含原 New 输入／光标／小窗口检查）、`cargo test --test workflow show_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft -- --exact`、`cargo test --test workflow terminal_tabs_and_splits_route_input_and_close_only_owned_attaches -- --exact`、`cargo test --test ui repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent -- --exact`，以及 `cargo clippy --all-targets -- -D warnings`、`git diff --check`。Cargo 均沿用共享 target。
+- 未改 tab/split、PTY、viewer 状态机或其他弹框；未操作真实 agent／队列；中英文 README 已同步。本轮原 New 与 Open 补充均完成，无待主控裁决事项；仅当前分支提交，未合并、未推送。
