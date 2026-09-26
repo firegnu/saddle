@@ -24,12 +24,13 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 - **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states. When an agent was started with a public corral `effort` label, a small dotted signal icon shows it: `⣄⡀`, `⣴⡀`, or `⣴⡇` for medium, high, or xhigh (three bars packed into two character cells, using the theme’s idle/working/starting colors—soft green/blue/purple by default; unlit bars keep only baseline dots, and selection does not change the icon). Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
 - **Git summary per agent:** below each agent's directory, a line such as `dev-t12 · C2(main) · +18 -4 · ?1` describes the worktree at the agent's public corral `cwd`: the current branch; commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together, after Git's built-in text/eol attributes (so a committed CRLF file whose timestamp changed is not counted), per path with no rename detection (a pure rename counts as all lines deleted and added); and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only; a slow repository delays the round for every directory. It never fetches or lazily fetches missing objects, and it runs no external diff, textconv, fsmonitor hook or clean/smudge/process filter from any attributes source. When a changed file would need such a filter, the line counts show `+— -—` instead. A parent repository's line does not look inside submodule worktrees: uncommitted changes inside a submodule are not counted, while a submodule whose commit moved counts as a changed gitlink (`+1 -1`). It also skips optional index writes and ignores inherited `GIT_*` variables such as `GIT_DIR`. It does not follow an agent that later `cd`s elsewhere.
 - **Queue:** current, awaiting, pending, and historical tasks. Click a task for its status and progress details, add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
-- **Viewer:** the selected agent's live `corral attach` session, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
+- **New agents:** start a corral agent from a native form with a directory, name, command, optional first message, and a preview of the exact call.
+- **Viewer tabs and splits:** each tab holds a group of terminals, with left/right/up/down splits. Each pane runs a live `corral attach` with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
 - **Responsive layout:** three panes in a wide terminal; Agents and Queue become tabs in a narrow window.
 - **Terminal-native appearance:** transparent panel backgrounds, semantic state colors, and English interface labels. Task text and agent output keep their original language.
 
-Agents and Queue are native Rust widgets. Only Viewer runs a child PTY; saddle does not embed external board interfaces.
+Agents and Queue are native Rust widgets. Only Viewer panes run child PTYs; saddle does not embed external board interfaces.
 
 ## Getting started
 
@@ -57,7 +58,7 @@ cargo install --path . --locked
 saddle
 ```
 
-Start your agents with corral and register your queue projects with drover separately. saddle displays existing sessions and projects; it does not create agents or initialize queue projects.
+Use **New** in Agents to start an agent, or attach an existing corral session. Register queue projects with drover separately; saddle does not initialize queue projects.
 
 ### First session
 
@@ -65,7 +66,11 @@ Start your agents with corral and register your queue projects with drover separ
 2. Type directly in Viewer to work with that agent.
 3. Press **Ctrl-]** to return to Agents. Viewer stays connected.
 4. Press **Tab** to focus Queue, or click the pane. Use **Project** to choose a registered project.
-5. To exit from anywhere, press **Ctrl-]**, then **q**. Exiting disconnects saddle's viewer; the agents keep running.
+5. To exit from anywhere, press **Ctrl-]**, then **q**. Exiting disconnects all of saddle's viewers; the agents keep running.
+
+**New** defaults to the current Tasks project directory. Enter the full agent command, including any desired model or permission flags; saddle adds none. Quoted arguments are parsed with shell-style quoting and passed directly to `corral start <name> --cwd <directory> [--prompt <message>] -- <command...>`; shell expansions, pipelines, and redirections are not evaluated. The optional first message supports Enter and multiline paste. Review the preview, then press **Ctrl-S** or click **Start**. Failed starts keep the draft. **Esc** or **Ctrl-]** returns to Agents; **n** reopens the draft, including an in-flight start.
+
+**Open** offers current pane, new tab, and left/right/up/down splits relative to the active pane. An agent already open anywhere is focused instead of attached twice. The **+ Tab** control creates a blank tab; the arrow controls reach tabs beyond the visible strip. Click a terminal's content or title to focus it. Closing a pane collapses its split; closing the final tab leaves an empty tab. Tab changes keep background attaches running. A start or attach belongs to the pane reserved at submission: switching tabs does not redirect it, and closing or replacing that target discards its attachment result without stopping a newly created agent. A failed start can leave its reserved pane empty. Tiny windows temporarily show only one branch where a split cannot fit, retaining the full layout for expansion; an empty terminal content area receives no input. Layouts last only for the current saddle run.
 
 If another terminal is attached to an agent, detach there before attaching through saddle. Stopping an agent is a separate, confirmed action.
 
@@ -120,7 +125,15 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Context | Input | Action |
 |---|---|---|
 | Agents | ↑↓ / j k | Select an agent |
-| Agents | Enter / click a row | Attach and focus Viewer |
+| Agents | Enter / click a row | Attach in the active pane, or jump to the agent's existing pane |
+| Agents | n / New | Open the new-agent form |
+| Agents | o / Open | Choose current pane, new tab, or a split direction |
+| New-agent form | Tab / Shift-Tab, Ctrl-U | Switch field, clear field |
+| New-agent form | Ctrl-P / Next project | Cycle registered directories; the directory is also editable |
+| New-agent form | Left/Right in Open in | Choose current pane, new tab (default), or a split direction |
+| New-agent form | Ctrl-S / Start, PgUp/PgDn, Esc | Submit, scroll the full preview, or return while keeping the draft |
+| Viewer chrome | + Tab / tab / pane title / × | Add an empty tab, select a tab/pane, close a tab |
+| Viewer chrome | Close pane / Close tab | Disconnect the pane or every pane in the tab |
 | Agents | Mouse wheel / trackpad | Scroll the list without changing selection |
 | Agents | Tab / Shift-Tab | Focus Queue / Viewer |
 | Agents | PgUp / PgDn | Scroll the agent list |

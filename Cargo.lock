@@ -1309,6 +1309,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "shell-words",
  "tempfile",
  "toml",
  "unicode-width",

@@ -8,10 +8,12 @@ pub mod detail;
 pub mod drover;
 pub mod git;
 pub mod input;
+mod launch;
 pub mod layout;
 pub mod pty;
 pub mod queue;
 pub mod terminal;
+pub mod terminals;
 pub mod ui;
 pub mod viewer;
 

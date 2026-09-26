@@ -49,3 +49,12 @@
 ## 做完
 
 在本文件末尾追加「## 完成记录」并提交：做了什么、验证结果与 RED/GREEN、实现取舍、没做的事，各几句话。回复只写这些、提交 SHA、有没有要主控决定的事。全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 已实现 New 原生启动表单（当前 Tasks 目录、已登记目录轮换／手填、名称、带参数命令、可选多行首条消息、六种打开位置、完整可滚动调用预览）。显式提交后异步调用公开 corral start，使用返回 name 再做 status 检查并接入；失败保留草稿，忙碌时禁用重复提交。Agents 的 Enter／点击接入当前窗格，Open 菜单可新 tab 或四向分屏，已打开的 agent 跳回现有位置。
+- 新增内存中的 tab／递归等分布局，每个窗格独立 Viewer／PTY；可点击标签、标题、内容、关闭控件，键盘／粘贴只进入活动窗格。标签切换保留接入，关闭窗格／tab／退出只断开自有 attach。稳定窗格 ID 与修订号隔离启动／接入结果；目标关闭、替换或重新选择原 agent 后，旧结果不会重定向。后台启动完成不抢 Tasks 表单焦点。Tasks 原文与编辑入口回归通过，Queue 唯一改动是将已有文本换行函数设为 crate 可见供新表单复用，业务规则未变。
+- RED/GREEN：`terminal_tabs_and_splits_route_input_and_close_only_owned_attaches` 初次因 Open 菜单缺失失败，`new_agent_previews_exact_arguments_and_keeps_failed_draft` 初次因 New 表单缺失失败，均在实现后通过。自查补到的 `reselecting_the_displayed_agent_cancels_an_inflight_replacement` 先观察到 A 被断开、字符 41 进入 B，再修正请求失效逻辑转绿；打开菜单的 Ctrl-] 也先复现为误选向上分屏，再优先处理 Ctrl-]/Ctrl-5 并限制纯数字选择，原检查转绿。未做缺陷注入。
+- 验证：带共享 target 的 `cargo test --all-targets` 已通过（115 passed、2 ignored，原有 installed-drover 手动集成项未运行）。随后自查时序修复的受影响目标 `cargo test --test workflow --test viewer --test terminals` 通过（31 passed、2 ignored，新增第 116 个自动化检查）；最后菜单 Ctrl-] 修复的完整 tab／split／输入／关闭目标检查再次通过。`cargo clippy --all-targets -- -D warnings`、`cargo fmt --all --check`、`git diff --check` 通过。已有 UI 断言仅随新增按钮换行、右侧新增一行 tab 和异步 PTY 创建更新；异步流程检查等待可见的表单完成状态后再点击。布局合成检查覆盖四个方向、关闭合并、嵌套及 160×48／120×36／80×24／极小尺寸。
+- 实现取舍：新增 `terminals.rs` 管布局与请求归属，`launch.rs` 管 New／Open 原生交互，保留单 Viewer 和现有静态预览入口。命令通过 shell-words（原 lock 已有的成熟库，增加直接依赖）拆 argv，不经 shell、不追加权限参数；目录以 Ctrl-P 轮换登记项。提交时预留显示目标，失败可留下空窗格；最后一个 tab 关闭后保留一个空 tab。过窄／过矮时暂时只绘制一支，放大恢复；后台 PTY 保留最后尺寸。细节、键位及理由已写入 DESIGN 第 27 节，中英文 README 已同步。
+- 全部使用假 corral／drover、临时目录与合成数据；只读取公开 corral 帮助。未启动真实 agent、未操作用户 agent 或真实队列、未读 corral／drover 内部数据，未录屏、未更新安装版本，未改 HANDOFF 或其他任务文件。未合并、未推送；仅在 t2-terminal-layout 提交。无须主控新增设计裁决，交主控审查。

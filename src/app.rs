@@ -7,9 +7,8 @@ use crate::{
     layout::Panes,
     pty::Session,
     queue,
-    terminal::Size,
+    terminals::{Control, Place, Terminals, Ticket},
     ui::{self, Hits, View},
-    viewer::Viewer,
 };
 use anyhow::Result;
 use crossterm::{
@@ -35,9 +34,10 @@ use std::{
 
 #[derive(Clone)]
 enum Action {
-    Attach(String, u64),
+    Attach(String, Ticket),
     Reply(String),
     Stop(String),
+    Start(Vec<String>, Ticket),
 }
 struct ActionResult {
     action: Action,
@@ -67,12 +67,22 @@ impl Actions {
         let sender = self.sender.clone();
         let cancel = self.cancel.clone();
         self.workers.push(thread::spawn(move || {
-            let (verb, name, timeout) = match &action {
-                Action::Attach(name, _) => ("status", name, 15),
-                Action::Reply(name) => ("reply", name, 15),
-                Action::Stop(name) => ("stop", name, 120),
+            let result = match &action {
+                Action::Start(args, _) => client.json(
+                    &args.iter().map(String::as_str).collect::<Vec<_>>(),
+                    Duration::from_secs(120),
+                    &cancel,
+                ),
+                _ => {
+                    let (verb, name, timeout) = match &action {
+                        Action::Attach(name, _) => ("status", name, 15),
+                        Action::Reply(name) => ("reply", name, 15),
+                        Action::Stop(name) => ("stop", name, 120),
+                        Action::Start(..) => unreachable!(),
+                    };
+                    client.json(&[verb, name], Duration::from_secs(timeout), &cancel)
+                }
             };
-            let result = client.json(&[verb, name], Duration::from_secs(timeout), &cancel);
             let _ = sender.send(ActionResult { action, result });
         }));
     }
@@ -127,7 +137,7 @@ struct App {
     poller: Poller,
     git: git::Poller,
     actions: Actions,
-    viewer: Viewer,
+    viewer: Terminals,
     queue: queue::Panel,
     queue_worker: drover::Worker,
     pending_load: Option<drover::PendingLoad>,
@@ -135,7 +145,10 @@ struct App {
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
-    attach_sequence: u64,
+    open_agent: Option<String>,
+    native_mouse: bool,
+    new_agent: Option<crate::launch::Form>,
+    viewer_area: Rect,
     hits: Hits,
     pointer: crate::buttons::Pointer,
     left_queue: bool,
@@ -183,7 +196,7 @@ impl App {
             poller: Poller::start(client.clone(), Duration::from_millis(config.refresh_ms)),
             git: git::Poller::start("git".into(), Duration::from_secs(5)),
             actions: Actions::new(client.clone()),
-            viewer: Viewer::new(client.program),
+            viewer: Terminals::new(client.program),
             config,
             panel: Panel {
                 follow: true,
@@ -202,7 +215,10 @@ impl App {
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
-            attach_sequence: 0,
+            open_agent: None,
+            native_mouse: false,
+            new_agent: None,
+            viewer_area: Rect::default(),
             hits: Hits::default(),
             pointer: Default::default(),
             left_queue: false,
@@ -227,21 +243,27 @@ impl App {
                 .map(|(_, text)| text.as_str())
                 .unwrap_or("loading…");
             terminal.draw(|frame| {
-                self.hits = ui::draw(
+                self.hits = ui::draw_workspace(
                     frame,
                     &mut self.panel,
                     View {
                         colors: &self.config.colors,
                         panes,
                         focus: self.focus,
-                        showing: self.viewer.showing.as_deref(),
-                        viewer: self.viewer.session.as_ref(),
+                        showing: self.viewer.active_pane().viewer.showing.as_deref(),
+                        viewer: self.viewer.active_pane().viewer.session.as_ref(),
                         queue: &mut self.queue,
-                        viewer_note: &self.viewer.note,
+                        viewer_note: &self.viewer.active_pane().viewer.note,
                         reply,
                         now: now(),
                         pointer: &self.pointer,
                     },
+                    Some(ui::Workspace {
+                        terminals: &self.viewer,
+                        open_agent: self.open_agent.as_deref(),
+                        form: self.new_agent.as_mut().filter(|f| f.visible),
+                        program: &self.actions.client.program,
+                    }),
                 );
             })?;
             if event::poll(Duration::from_millis(30))? && self.event(event::read()?, panes)? {
@@ -251,13 +273,17 @@ impl App {
         Ok(())
     }
     fn tick(&mut self, panes: Panes) -> Result<()> {
+        self.viewer_area = panes.viewer;
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
                     self.viewer
                         .disappeared(&agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>())?;
-                    self.panel
-                        .absorb(agents, self.viewer.showing.as_deref(), now());
+                    self.panel.absorb(
+                        agents,
+                        self.viewer.active_pane().viewer.showing.as_deref(),
+                        now(),
+                    );
                     let mut cwds: Vec<_> = self
                         .panel
                         .agents
@@ -274,22 +300,76 @@ impl App {
         for batch in self.git.updates.try_iter() {
             self.panel.absorb_git(batch);
         }
-        for result in self.actions.receiver.try_iter() {
+        let results: Vec<_> = self.actions.receiver.try_iter().collect();
+        for result in results {
             match result.action {
-                Action::Attach(name, seq) if seq == self.attach_sequence => match result.result {
+                Action::Attach(name, ticket) if self.viewer.valid(ticket) => match result.result {
                     Ok(status) if status["attached"].as_u64().unwrap_or(0) > 0 => {
+                        self.viewer.complete(ticket, None)?;
                         self.panel.message =
                             format!("{name} is attached elsewhere; Ctrl-] there first")
                     }
                     Ok(_) => {
-                        self.viewer.select(name)?;
+                        self.viewer.complete(ticket, Some(name))?;
                         self.panel.message.clear();
-                        if self.focus == Focus::Agents && self.panel.confirm.is_none() {
+                        if self.focus == Focus::Agents
+                            && self.panel.confirm.is_none()
+                            && self.open_agent.is_none()
+                            && !self.new_agent.as_ref().is_some_and(|f| f.visible)
+                            && self.viewer.active_pane().id == ticket.pane
+                        {
                             self.focus = Focus::Viewer;
                         }
                     }
-                    Err(error) => self.panel.message = format!("{error:#}"),
+                    Err(error) => {
+                        self.viewer.complete(ticket, None)?;
+                        self.panel.message = format!("{error:#}");
+                    }
                 },
+                Action::Start(_, ticket) => {
+                    let result = result.result.and_then(|value| {
+                        value["name"]
+                            .as_str()
+                            .filter(|n| !n.is_empty())
+                            .map(str::to_owned)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "corral start returned no name; check Agents before retrying"
+                                )
+                            })
+                    });
+                    match result {
+                        Ok(name) => {
+                            let visible = self.new_agent.as_ref().is_some_and(|f| f.visible);
+                            self.new_agent = None;
+                            self.panel.message = format!("Started {name}");
+                            self.poller.refresh();
+                            if self.viewer.valid(ticket) {
+                                if let Some(id) = self.viewer.find(&name) {
+                                    self.viewer.complete(ticket, None)?;
+                                    if visible {
+                                        self.viewer.focus(id);
+                                    }
+                                } else {
+                                    self.viewer.expect(ticket, name.clone());
+                                    self.actions.start(Action::Attach(name, ticket));
+                                }
+                            } else {
+                                self.panel
+                                    .message
+                                    .push_str("; target closed or replaced. Open it from Agents.");
+                            }
+                        }
+                        Err(error) => {
+                            self.viewer.complete(ticket, None)?;
+                            self.panel.message = format!("{error:#}");
+                            if let Some(form) = &mut self.new_agent {
+                                form.busy = None;
+                                form.error = format!("{error:#}");
+                            }
+                        }
+                    }
+                }
                 Action::Reply(name) => {
                     self.reply_busy = false;
                     self.reply = Some((
@@ -315,7 +395,7 @@ impl App {
                 _ => {}
             }
         }
-        self.viewer.tick(size_of(panes.viewer))?;
+        self.viewer.tick(panes.viewer)?;
         for update in self.queue_worker.updates.try_iter() {
             match update {
                 drover::Update::Snapshot(Ok(snapshot)) => self.queue.absorb(*snapshot),
@@ -375,25 +455,94 @@ impl App {
         Ok(())
     }
     fn attach(&mut self) {
-        if let Some(name) = &self.panel.selected {
-            self.attach_sequence += 1;
-            if self.viewer.showing.as_ref() == Some(name) {
-                if let Err(error) = self.viewer.select(name.clone()) {
-                    self.panel.message = error.to_string();
+        self.attach_at(Place::Current);
+    }
+    fn attach_at(&mut self, place: Place) {
+        if let Some(name) = self.panel.selected.clone() {
+            match self.viewer.activate_existing(&name) {
+                Ok(true) => {
+                    self.panel.message.clear();
+                    self.focus = Focus::Viewer;
+                    return;
                 }
-                self.focus = Focus::Viewer;
-                return;
+                Err(error) => {
+                    self.panel.message = format!("{error:#}");
+                    return;
+                }
+                Ok(false) => {}
             }
-            self.actions
-                .start(Action::Attach(name.clone(), self.attach_sequence));
+            let ticket = self.viewer.reserve(place, Some(name.clone()));
+            self.actions.start(Action::Attach(name.clone(), ticket));
             self.panel.message = format!("attaching {name}…");
         }
+    }
+    fn terminal_control(&mut self, control: Control) -> Result<()> {
+        match control {
+            Control::NewTab => {
+                self.viewer.new_tab();
+            }
+            Control::Tab(id) => self.viewer.active = id,
+            Control::Pane(id) => self.viewer.focus(id),
+            Control::CloseTab(id) => self.viewer.close_tab(id)?,
+            Control::ClosePane(id) => self.viewer.close_pane(id)?,
+            Control::Previous | Control::Next => {
+                let index = self
+                    .viewer
+                    .tabs
+                    .iter()
+                    .position(|t| t.id == self.viewer.active)
+                    .unwrap();
+                let count = self.viewer.tabs.len();
+                let next = if matches!(control, Control::Previous) {
+                    (index + count - 1) % count
+                } else {
+                    (index + 1) % count
+                };
+                self.viewer.active = self.viewer.tabs[next].id;
+            }
+        }
+        self.focus = Focus::Viewer;
+        Ok(())
     }
     fn event(&mut self, event: Event, panes: Panes) -> Result<bool> {
         match event {
             Event::Key(key) => {
                 self.pointer.cancel();
                 if key.kind == KeyEventKind::Release {
+                    return Ok(false);
+                }
+                if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
+                    if form.key(key, &self.queue.projects) {
+                        match form.args() {
+                            Ok(args) => {
+                                let ticket = self.viewer.reserve(Place::ALL[form.place], None);
+                                form.busy = Some(ticket);
+                                form.error.clear();
+                                self.actions.start(Action::Start(args, ticket));
+                            }
+                            Err(error) => form.error = format!("{error:#}"),
+                        }
+                    }
+                    return Ok(false);
+                }
+                if self.open_agent.is_some() {
+                    if key
+                        .modifiers
+                        .contains(crossterm::event::KeyModifiers::CONTROL)
+                        && matches!(key.code, KeyCode::Char(']' | '5'))
+                    {
+                        self.open_agent = None;
+                        self.focus = Focus::Agents;
+                        return Ok(false);
+                    }
+                    match key.code {
+                        KeyCode::Esc => self.open_agent = None,
+                        KeyCode::Char(c @ '1'..='6') if key.modifiers.is_empty() => {
+                            self.panel.select(self.open_agent.take());
+                            self.attach_at(Place::ALL[c as usize - '1' as usize]);
+                        }
+                        _ => {}
+                    }
                     return Ok(false);
                 }
                 if self.focus == Focus::Agents
@@ -441,6 +590,13 @@ impl App {
                 }
             }
             Event::Paste(text) => {
+                if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
+                    form.paste(&text);
+                    return Ok(false);
+                }
+                if self.open_agent.is_some() {
+                    return Ok(false);
+                }
                 if self.focus == Focus::Queue {
                     self.queue.paste(&text);
                 } else if let Some(session) = self.focused_session() {
@@ -471,16 +627,50 @@ impl App {
                             .cloned()
                             .map(|h| (Focus::Queue, h)),
                     )
+                    .chain(
+                        self.hits
+                            .terminal
+                            .iter()
+                            .map(|(hit, _)| (Focus::Viewer, hit.clone())),
+                    )
                     .collect();
                 let captured = self.pointer.captured();
                 if let Some((focus, key)) = self.pointer.event(mouse, &controls) {
+                    if focus == Focus::Viewer {
+                        if let Some((_, action)) = self
+                            .hits
+                            .terminal
+                            .iter()
+                            .find(|(hit, _)| hit.area.contains(point))
+                        {
+                            self.terminal_control(*action)?;
+                        }
+                        return Ok(false);
+                    }
                     self.focus = focus;
                     return self.event(Event::Key(key), panes);
                 }
                 if captured || self.pointer.captured() {
                     return Ok(false);
                 }
-                if self.panel.confirm.is_some() {
+                if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
+                    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+                        if let Some((_, field)) =
+                            form.field_hits.iter().find(|(r, _)| r.contains(point))
+                        {
+                            form.field = *field;
+                            if *field == 4 {
+                                form.place = (form.place + 1) % 6;
+                            }
+                        }
+                    } else if mouse.kind == MouseEventKind::ScrollDown {
+                        form.preview_top = form.preview_top.saturating_add(3);
+                    } else if mouse.kind == MouseEventKind::ScrollUp {
+                        form.preview_top = form.preview_top.saturating_sub(3);
+                    }
+                    return Ok(false);
+                }
+                if self.panel.confirm.is_some() || self.open_agent.is_some() {
                     return Ok(false);
                 }
                 if self.focus == Focus::Queue && self.queue.overlay_open() {
@@ -504,6 +694,12 @@ impl App {
                     return Ok(false);
                 }
 
+                if self.native_mouse {
+                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                        self.native_mouse = false;
+                    }
+                    return Ok(false);
+                }
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                     if panes.tabs.contains(point) {
                         self.focus = if mouse.column - panes.tabs.x < 9 {
@@ -541,6 +737,21 @@ impl App {
                         return Ok(false);
                     } else if panes.viewer.contains(point) {
                         self.focus = Focus::Viewer;
+                        if let Some((id, rect)) = self
+                            .viewer
+                            .rects(panes.viewer)
+                            .into_iter()
+                            .find(|(_, r)| r.contains(point))
+                        {
+                            self.viewer.focus(id);
+                            if !ui::inner(rect).contains(point) {
+                                self.native_mouse = true;
+                                return Ok(false);
+                            }
+                        } else {
+                            self.native_mouse = true;
+                            return Ok(false);
+                        }
                     }
                 }
                 if panes.queue.contains(point)
@@ -586,7 +797,13 @@ impl App {
                         self.panel.follow = false;
                     }
                 } else if let Some(session) = self.focused_session() {
-                    let area = ui::inner(panes.viewer);
+                    let area = self
+                        .viewer
+                        .rects(panes.viewer)
+                        .into_iter()
+                        .find(|(id, _)| *id == self.viewer.active_pane().id)
+                        .map(|(_, r)| ui::inner(r))
+                        .unwrap_or_default();
                     let mode = *session.screen.lock().unwrap().term.mode();
                     if let Err(error) = session.send(encode_mouse(mouse, area, mode)) {
                         self.panel.message = error.to_string();
@@ -604,6 +821,13 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.panel.move_selection(-1, now()),
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
+            KeyCode::Char('o') => self.open_agent = self.panel.selected.clone(),
+            KeyCode::Char('n') => {
+                self.reload_projects();
+                self.new_agent
+                    .get_or_insert_with(|| crate::launch::Form::new(self.queue.project.clone()))
+                    .visible = true;
+            }
             KeyCode::Char('s') => {
                 self.panel.by_state = !self.panel.by_state;
                 self.panel.follow = true;
@@ -695,15 +919,24 @@ impl App {
         match self.focus {
             Focus::Agents => None,
             Focus::Queue => None,
-            Focus::Viewer => self.viewer.session.as_ref(),
+            Focus::Viewer => {
+                let id = self.viewer.active_pane().id;
+                if !self
+                    .viewer
+                    .rects(self.viewer_area)
+                    .iter()
+                    .any(|(pane, rect)| *pane == id && !ui::inner(*rect).is_empty())
+                {
+                    return None;
+                }
+                self.viewer
+                    .active_pane()
+                    .viewer
+                    .session
+                    .as_ref()
+                    .filter(|s| !s.is_stopping())
+            }
         }
-    }
-}
-fn size_of(area: Rect) -> Size {
-    let area = ui::inner(area);
-    Size {
-        rows: area.height.max(1),
-        cols: area.width.max(2),
     }
 }
 fn now() -> f64 {

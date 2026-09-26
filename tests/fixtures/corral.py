@@ -22,6 +22,19 @@ def agents():
 log(verb + ' ' + name)
 if verb == 'ls':
     print(json.dumps({'agents': [dict(name=n, cwd='/tmp/demo', instance='abcdef123', kind='claude') for n in agents()]}))
+elif verb == 'start':
+    with (root / 'start-args').open('a') as f:
+        f.write(json.dumps(sys.argv[1:]) + '\n')
+    while (root / 'hold-start').exists():
+        time.sleep(0.01)
+    if (root / 'fail-start').exists():
+        print(json.dumps(dict(ok=False, error='synthetic start failed')))
+        sys.exit(1)
+    name += '-actual'
+    state = agents()
+    state[name] = 'idle'
+    (root / 'agents.json').write_text(json.dumps(state))
+    print(json.dumps(dict(ok=True, name=name)))
 elif verb == 'status':
     while (root / 'hold-status').exists():
         time.sleep(0.01)

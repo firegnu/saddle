@@ -30,8 +30,9 @@ while True: time.sleep(1)
     viewer.tick(size).unwrap();
     let events = temp.path().join("events");
     let deadline = Instant::now() + Duration::from_secs(3);
-    while !events.exists() {
+    while !events.exists() || viewer.showing.as_deref() != Some("p/a") {
         assert!(Instant::now() < deadline);
+        viewer.tick(size).unwrap();
         thread::sleep(Duration::from_millis(10));
     }
     viewer.select("p/b".into()).unwrap();
