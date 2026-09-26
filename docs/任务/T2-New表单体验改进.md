@@ -105,3 +105,13 @@
 - 原有分屏输入、鼠标不透传、去重接入、关闭只结束自有 attach 的工作流断言全部保留，仅调整文案和点击目标，并通过增量运行。
 - 依补充预算，不重复原已通过的全套。增量前台检查全部通过：`cargo test --lib launch`（6 项，含原 New 输入／光标／小窗口检查）、`cargo test --test workflow show_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft -- --exact`、`cargo test --test workflow terminal_tabs_and_splits_route_input_and_close_only_owned_attaches -- --exact`、`cargo test --test ui repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent -- --exact`，以及 `cargo clippy --all-targets -- -D warnings`、`git diff --check`。Cargo 均沿用共享 target。
 - 未改 tab/split、PTY、viewer 状态机或其他弹框；未操作真实 agent／队列；中英文 README 已同步。本轮原 New 与 Open 补充均完成，无待主控裁决事项；仅当前分支提交，未合并、未推送。
+
+## 主控审查
+
+2026-09-26，审查 d02094c50e98a6930e59b93553447e30e2b9b842（含 New d78ad30 和 Open 补充），结论：通过，无必须改或新增建议项，按「改行为」预算不另做交叉审查。
+
+- 范围核对通过：仅 New 局部编辑、Show 展示和必要接线；保留原异步回归断言，未改 tab/split/PTY 状态机。合并时仅 DESIGN 同位置追加冲突，保留 New 实现取舍、Open 补充及第 28 节，源代码无冲突。
+- 主控最终全套 128 passed、0 failed、2 ignored；Clippy `--all-targets -- -D warnings`、diff 检查通过。比 New 阶段 126 项多两项 Open 检查，数量与补充一致。
+- 直接核对合成 PTY 的实际屏幕：Name 明确框线、聚焦粗框，点击 `a中b` 的宽字第二格显示插入光标；插入文、右移、Delete 后显示 `a文中`，假 CLI 收到相同名称和 codex。另核对 Show/New/现有 Queue 三个弹框底部 Cancel 的逐格样式一致及六种位置映射；正常编辑、取消保留草稿与取消无接入副作用均通过。
+- 逐项接受取舍：四字段局部编辑器不加依赖；长行横滚、多行按换行纵滚和 Tab 四格；ASCII 目录建议名及手改保护；预览滚动、失败末三行和固定底部入口；仅一项小窗口检查、不扩大矩阵。接受 Show 明确动作分组与复用紧凑取消控件，不增加接入行为。没有需要返工的取舍。
+- 用户原 T2 已放行，本次是反馈改进；不操作该队列条目，不执行 go/next。详细完成记录随本文件保留在 main。
