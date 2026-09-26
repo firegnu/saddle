@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-26：Agents 选中样式合并收尾完成（以本节为准）
+
+- 第二阶段开发 ff728a2 已实现去掉 Agents 首行短竖线、选中名称亮色加粗；主控纯视觉审查通过，无必须改或新增建议项。审查提交 7729b85，功能和记录已推送 main；详细完成/审查记录见 docs/任务/Agents选中样式.md，设计理由见 DESIGN 第 28 节。
+- 按预算核对 diff 和开发合成渲染证据：非末项、多行折行、两种焦点下的空格/背景/树线/空行/名称样式检查通过，diff 检查通过；没有重跑全套或 Clippy。New/Show 不重复审查，Queue 和交互未改。
+- release 构建通过；共享 target 与仓库 target/release/saddle 已同步，SHA-256 均为 d00c8efb11c1a9f882b6692b5e34cdcfa2989c8b7204522c440e855993980f2c。默认 saddle 使用共享 release，用户当前实例未重启，重新运行即可体验 New/Show 和选中样式全部改进。
+- agents-selection-style worktree/分支已清理；工作目录已删，一并关闭自有 saddle/dev-agent-selection-1。收尾空提交 f32a374。New/Show 的自有开发环境此前已清理，当前仅 main worktree，没有等待结果的自有开发/审查 agent。
+- 本轮反馈改进全部完成，暂无已知待完成工作；后续等待用户体验反馈，不自动排新任务。原 T2 已放行，本轮未操作队列、不执行 go/next。历史章节中的“开发中/等待”均已被本节覆盖。
+
 ## 2026-09-26：New/Show 已合并收尾，接续 Agents 样式（以本节为准）
 
 - New 输入框轮廓、点击光标与编辑、默认项目/agent 创建及 Show 用途/取消一致性已完成；开发最终 d02094c，主控按预算审查通过，合并 b6f4c10、审查 8998486 已推送。最终全套 128 passed、2 ignored；Clippy、diff 检查通过，另直接核对合成 PTY 的中文点击光标/编辑屏幕及三弹框 Cancel 渲染。详细记录在 docs/任务/T2-New表单体验改进.md。
