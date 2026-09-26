@@ -76,7 +76,7 @@ pub fn draw_workspace(
             frame,
             view.panes.viewer,
             terminals,
-            view.focus == Focus::Viewer,
+            view.focus == Focus::Viewer && form.is_none(),
         );
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
@@ -130,7 +130,7 @@ pub fn draw_workspace(
         view.queue.project_rows.clear();
     }
     if let Some(form) = form.as_mut() {
-        hits.buttons = form.draw(t, frame, program);
+        hits.buttons = form.draw(t, frame, program, &view.queue.projects);
         hits.agents.clear();
         hits.queue_rows.clear();
         view.queue.buttons.clear();
@@ -193,7 +193,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  o Open  n New  Tab Queue  q Quit",
+            " ↑↓ Select  ↵ Attach  o Show in…  n New  Tab Queue  q Quit",
         ),
         Focus::Queue => (
             "Queue".to_string(),
@@ -250,14 +250,11 @@ pub fn draw_workspace(
         help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  t Task  e Edit pending  Esc Back";
     }
     if let Some(form) = &form {
-        target = format!(
-            "New agent · {}",
-            ["Directory", "Name", "Command", "First message", "Open in"][form.field]
-        );
-        help = " Tab Field  Ctrl-S Start  Ctrl-P Projects  PgUp/Dn Preview  Esc Back";
+        target = format!("New agent · {}", form.label());
+        help = " Tab/Shift-Tab Field  ←→ Home/End Move  Backspace/Delete Erase  Ctrl-U Clear";
     } else if open_agent.is_some() {
-        target = "Open agent".into();
-        help = " 1 Current  2 Tab  3 Left  4 Right  5 Up  6 Down  Esc Cancel";
+        target = "Show agent".into();
+        help = " Choose where to show the selected agent  Esc Cancel  Ctrl-] Agents";
     }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
@@ -359,7 +356,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 K::Enter,
                 selected && !connected,
             ),
-            Button::new("Open o", K::Char('o'), selected),
+            Button::new("Show in… o", K::Char('o'), selected),
             Button::new("New n", K::Char('n'), true),
             Button::new(
                 if panel.by_state { "Name s" } else { "Sort s" },

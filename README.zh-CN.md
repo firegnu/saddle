@@ -72,9 +72,13 @@ saddle
 
 ## 启动 agent、标签页和分屏
 
-Agents 的 **New / n** 打开启动表单：目录默认当前 Tasks 项目，可手填或用 **Next project / Ctrl-P** 轮换已登记目录；填写名称、启动命令和可选首条消息，选择当前窗格、新标签页（默认）或向左／右／上／下分屏。Tab／Shift-Tab 切字段，Ctrl-U 清空当前字段，首条消息支持回车和多行粘贴；打开位置用左右键或点击轮换。命令支持引号分组，直接拆为参数调用公开 `corral start`，不展开 shell 变量、管道或重定向，也不自动追加模型或权限参数。查看完整调用预览（PgUp/PgDn 或滚轮滚动）后，Ctrl-S／Start 才启动；失败保留草稿。Esc／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
+Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为当前 Tasks 项目；在这里另选项目只改变新 agent 的目录，不切换 Tasks。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。名称按 `<项目>/<agent>` 自动建议，手工编辑后不再随选项变化。建议名称用公开 `corral start --unique` 避免重名，手工名称精确传递并保留 CLI 的重名报错；实际名称取 corral 返回值。
 
-**Enter／点击 agent 行** 接入活动窗格；**Open / o** 提供当前窗格、新 tab 和四向分屏（菜单内数字 1–6）。同一 agent 已经打开时跳到现有位置，不重复接入。右上 **+ Tab** 创建空白 tab，左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
+输入框有标签、框线、占位提示、焦点高亮及真实插入光标。点击内容定位光标，Tab／Shift-Tab 切焦点，左右键、Home／End、Backspace／Delete、Ctrl-U 清空及粘贴都按当前位置编辑，支持中文宽字符。长行横向滚动，多行消息还可上下移动、纵向滚动及 Enter 换行；小窗口可切焦点或用滚轮访问字段，底部保留创建和取消入口。
+
+**Advanced / F4** 默认收起，包含完整命令、可选多行首条消息、**Open in** 打开位置（默认新标签页，可选当前窗格或四向分屏）和完整调用预览。明确点击 Codex／Claude 会把命令重置为 `codex`／`claude`；手填命令显示 **Custom command**，切焦点或收起高级设置不会丢弃。命令支持引号分组，直接拆为 argv 调用公开 `corral start`，不展开 shell 变量、管道或重定向，不自动添加模型或权限参数。PgUp／PgDn 或 Preview 聚焦后的滚轮查看完整预览；失败保留草稿。**Cancel / Esc**／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
+
+**Enter／点击 agent 行** 接入活动窗格；**Show in… / o** 选择已有 agent 的显示位置，**New** 用于创建新 agent。**Show agent** 弹框显示所选名称，分为 **Replace current pane**（替换当前窗格）、**Open in new tab**（新标签页）、**Split current pane**（相对当前活动终端窗格向左／右／上／下分屏）。点击动作直接执行，数字 1–6 作为次要快捷键保留。同一 agent 已经打开时跳到现有位置，不重复接入。底部 **Cancel Esc**、Esc 或 Ctrl-] 关闭弹框，不执行接入。右上 **+ Tab** 创建空白 tab，左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
 
 每个 tab 保存自己的分屏和活动窗格，切换 tab 保留接入。**Close pane** 关闭活动窗格并合并分屏；**× / Close tab** 断开该 tab 的所有接入。最后一个 tab 关闭后留一个空 tab。关闭显示或退出 saddle 都只断开自有 attach，agent 继续运行；停止仍走原来的独立确认操作。异步启动／接入始终归属于提交时预留的窗格，目标关闭或被替换后不会接到别处，也不会停止新建 agent。启动失败可能留下预留的空窗格。
 
@@ -132,7 +136,7 @@ agent_selected = "#302a23"
 |---|---|---|
 | Agents | ↑↓ / j k | 选择 agent |
 | Agents | Enter / 点击行 | 接入活动窗格，已打开时跳到现有位置 |
-| Agents | n / New，o / Open | 启动 agent 表单，选择新 tab 或四向分屏 |
+| Agents | n / New，o / Show in… | 创建新 agent，或选择已有 agent 的显示位置 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |
 | Agents | Tab / Shift-Tab | 焦点到 Queue / Viewer |
 | Agents | PgUp / PgDn | 滚动 agent 列表 |

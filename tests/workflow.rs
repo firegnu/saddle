@@ -1129,13 +1129,54 @@ else:
 }
 
 #[test]
+fn show_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Native queue task");
+    h.see("Synthetic title");
+    h.send(b"n");
+    h.click("Name");
+    h.send(b"\x15review-draft");
+    h.see("review-draft");
+    h.click("Project:");
+    h.see("Choose project");
+    h.click("Back Esc");
+    h.see("review-draft");
+    h.click("Cancel Esc");
+    h.see("Input ▸ Agents");
+    h.send(b"n");
+    h.see("review-draft");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    for cancel in [b"\x1b".as_slice(), b"", b"\x1d"] {
+        h.click("‹Show in… o›"); // Match the button, not the status-bar hint.
+        h.see("Agent: p/a");
+        h.see("Replace current pane");
+        h.see("Split current pane");
+        if cancel.is_empty() {
+            h.click("Cancel Esc");
+        } else {
+            h.send(cancel);
+        }
+        h.see("Input ▸ Agents");
+    }
+    h.quit();
+    let events = h.log("events");
+    assert!(
+        !events.contains("attach "),
+        "Cancel/Esc/Ctrl-] must not attach: {events}"
+    );
+    assert!(!events.contains("start "));
+    assert!(!events.contains("stop "));
+}
+
+#[test]
 fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     let mut h = Harness::start();
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
     h.send(b"\x1djo");
-    h.see("Input ▸ Open agent");
+    h.see("Input ▸ Show agent");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     let deadline = Instant::now() + Duration::from_millis(300);
@@ -1147,8 +1188,8 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
         "Ctrl-] must close the menu without choosing a split"
     );
     h.send(b"o");
-    h.see("Open agent");
-    h.click("Split right");
+    h.see("Show agent");
+    h.click("Right →");
     h.see("p/b READY");
     h.send(b"B");
     h.event("input p/b 42");
@@ -1190,13 +1231,124 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
 }
 
 #[test]
+fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Native queue task");
+    h.send(b"n");
+    h.see("New agent");
+    h.see("● Codex");
+    h.see("project-one/codex");
+    h.click("Name");
+    h.send("\x15\x1b[200~a中b\x1b[201~".as_bytes());
+    h.see("a中b");
+    let (col, row) = h.press_button("a中b");
+    h.send(format!("\x1b[<0;{};{}m", col + 1, row + 1).as_bytes());
+    // Click the second terminal cell occupied by 中; insertion belongs before 中.
+    h.send(
+        format!(
+            "\x1b[<0;{};{}M\x1b[<0;{};{}m",
+            col + 3,
+            row + 1,
+            col + 3,
+            row + 1
+        )
+        .as_bytes(),
+    );
+    h.until(|h| {
+        !h.screen.screen().hide_cursor() && h.screen.screen().cursor_position() == (row, col + 1)
+    });
+    assert_eq!(
+        h.screen.screen().cell(row - 1, col - 1).unwrap().contents(),
+        "┏"
+    );
+    assert_eq!(
+        h.screen.screen().cell(row + 1, col - 1).unwrap().contents(),
+        "┗"
+    );
+    println!(
+        "Observed New form after clicking the second cell of 中 (cursor row={}, col={}):\n{}",
+        row + 1,
+        col + 2,
+        h.screen.screen().contents()
+    );
+    h.send("文\x1b[C\x1b[3~".as_bytes()); // Insert before 中, move past 中, delete b.
+    h.see("a文中");
+    assert!(!h.log("events").contains("start "));
+    h.click("Create agent");
+    h.see("a文中-actual READY");
+    let args: Vec<String> = serde_json::from_str(h.log("start-args").trim()).unwrap();
+    assert_eq!(args[1], "a文中");
+    assert_eq!(args.last().unwrap(), "codex");
+    assert!(!args.iter().any(|a| a == "--unique"));
+    println!("Observed edited name a文中 and fake CLI creation: {args:?}");
+    h.quit();
+}
+
+#[test]
+fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() {
+    let script = include_str!("fixtures/drover.py").replace(
+        "title='Native queue task'",
+        "title='Queue ' + Path.cwd().name",
+    );
+    let mut h = Harness::start_with_projects(&script, true);
+    h.see("Queue project-one");
+    h.send(b"n");
+    h.see("project-one/codex");
+    h.click("Create agent");
+    h.see("project-one/codex-actual READY");
+    h.send(b"\x1dn");
+    h.click("Project:");
+    h.click("project-two ·");
+    h.click("Claude");
+    h.see("project-two/claude");
+    h.click("Create agent");
+    h.see("project-two/claude-actual READY");
+    h.see("Queue project-one");
+    let calls: Vec<Vec<String>> = h
+        .log("start-args")
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(calls.len(), 2);
+    for (i, (project, agent)) in [("project-one", "codex"), ("project-two", "claude")]
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            calls[i],
+            vec![
+                "start".to_string(),
+                format!("{project}/{agent}"),
+                "--cwd".into(),
+                h.dir
+                    .path()
+                    .join(project)
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+                "--unique".into(),
+                "--".into(),
+                agent.to_string()
+            ]
+        );
+    }
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
 fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
     let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
     h.see("Native queue task");
     h.send(b"n");
     h.see("New agent");
     h.see("project-one");
-    h.send(b"\tp/new\tcodex --model 'test model'\t");
+    h.click("Name");
+    h.send(b"\x15p/new");
+    h.click("Advanced");
+    h.click("Command");
+    h.send(b"\x15codex --model 'test model'\t");
     h.send("\x1b[200~hello\n世界\x1b[201~".as_bytes());
     h.see("Preview");
     assert!(!h.log("events").contains("start "));
@@ -1279,7 +1431,9 @@ fn closing_a_start_target_keeps_the_created_agent_available_without_attaching() 
     let mut h = Harness::start();
     h.see("Synthetic title");
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
-    h.send(b"n\tp/late\tcodex\x13");
+    h.send(b"n");
+    h.click("Name");
+    h.send(b"\x15p/late\x13");
     h.event("start p/late");
     h.send(b"\x13"); // Busy submit cannot start it twice.
     h.send(b"\x1b"); // Hide form while the public start is running.
@@ -1304,7 +1458,9 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     h.send(b"\r");
     h.see("p/a READY");
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
-    h.send(b"\x1dn\tp/hidden\tcodex\x13");
+    h.send(b"\x1dn");
+    h.click("Name");
+    h.send(b"\x15p/hidden\x13");
     h.event("start p/hidden");
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
