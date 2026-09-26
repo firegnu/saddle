@@ -5,7 +5,7 @@
 - New 输入框轮廓、点击光标与编辑、默认项目/agent 创建及 Show 用途/取消一致性已完成；开发最终 d02094c，主控按预算审查通过，合并 b6f4c10、审查 8998486 已推送。最终全套 128 passed、2 ignored；Clippy、diff 检查通过，另直接核对合成 PTY 的中文点击光标/编辑屏幕及三弹框 Cancel 渲染。详细记录在 docs/任务/T2-New表单体验改进.md。
 - release 已从合并后的 main 构建；默认 saddle 指向共享 target release，仓库 target/release/saddle 同步且 SHA-256 一致。未重启用户当前界面，重新运行 saddle 生效。
 - t2-new-agent-form worktree/分支已删除，住在其中的自有 saddle/dev-t2-new-form-1 一并关闭；收尾空提交 19f86e5。原 T2 已由用户放行，不重开、不操作该队列条目，不执行 go/next。
-- 尚待完成：Agents 选中样式。saddle/dev-agent-selection-1（Claude Code opus[1m] / high）保留在 ../saddle-worktrees/agents-selection-style，当前只有建议提交 9a12077；主控下一步将其分支接上本轮 main，明确通知实施 DESIGN 第 28 节方案 A，并挂完成提醒。
+- 尚待完成：Agents 选中样式。saddle/dev-agent-selection-1（Claude Code opus[1m] / high）保留在 ../saddle-worktrees/agents-selection-style，已由主控 rebase 到 main f90b838（原建议 9a12077 变为 5f5ee68），追加实施通知 bf4f0bc，向同一 agent 送达第二阶段实施要求并挂完成提醒。现在等待实现结果，不能把建议阶段 DONE 当实现完成。
 - 实施预算：纯视觉，git diff --check + 一项合成渲染检查；不跑全套、不另开交叉审查。实现完成后主控看 diff 和记录，通过再合并推送、更新 release、清理该 worktree/分支/agent、空提交和交接。任务 docs/任务/Agents选中样式.md；设计理由见 DESIGN 第 28 节。
 
 ## 2026-09-26：追加 Agents 选中样式，先建议后串行实施（以本节为准）
