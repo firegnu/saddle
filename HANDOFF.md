@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-26：T14 已审查、发布与清理（以本节为准）
+
+- 用户授权实施的弹框内部描边与素雅 Tab 已完成：开发 384339d，合并 b35ae28，主控审查 c93646b。New/Split 内部按钮描边无填充，底栏统一紧凑，Tab 三行且 × 独立命中。取舍与验证详情见 docs/任务/T14-按钮样式实施.md、DESIGN 第 30 节。
+- 纯视觉预算：主控看完整 diff，直接检查 New 和 Tab/Split 合成渲染/命中两条均通过，未重跑套件；开发报告受影响检查与 Clippy 通过。功能状态机未改。旧 Queue/Stop 偶发问题仍未定位，不扩本任务。
+- release 已重建并同步共享 target 与仓库 target/release/saddle，SHA-256 e8fbdbec3ce79abb09d296b146ba485bd808862fae203a3318b36ac6c1943039。默认 saddle 指向共享 release；用户当前实例未重启，重新运行生效。
+- t14-outlined-buttons worktree/分支已正常删除；工作目录已删，一并关闭自有 saddle/dev-t14-buttons-1。当前无自有开发/审查 agent，无未收尾工作树；收尾空提交 22ca0c6，发布记录 d69f9cf。其他用户 agent 未操作。
+- 下一步仅通过公开 drover done T14 核对完成，再停待用户放行，不自动 go/next。原 T2 已放行不重开，T13 不启动。Agents diff 展示按用户最新决定保持现状，不另加任务。
+
 ## 2026-09-26：T14 已获实施授权并委派（以本节为准）
 
 - 用户明确「不要待办，开干吧」，覆盖旧正文“先记录/只探索”。公开队列已核对 T14 current/doing，loop=false、gate=true；不需再次 next 或改写运行中条目，原 T2 不操作。
