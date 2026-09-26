@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：T2 交叉审查发现两项阻挡，返工中（以本节为准）
+
+- 独立审查 c35daa2 结论「改完再合并」：必须改 1 是重复选择等待 status 的 B 后可能把输入给旧 A；必须改 2 是等待 A 断开期间改选 C 后，已过期 B 仍接入。主控核对探针与调用路径，接受两项；8 项实现取舍仍通过，无建议项。
+- 详细证据、主控逐项裁决和返工预算见 docs/任务/T2-主控与交叉审查.md。尚未合并、发布、标记完成。
+- 原开发者 saddle/dev-t2-terminal-1 在 ../saddle-worktrees/t2-terminal-layout 修这两项并补回归；原审查者 saddle/dev-t2-review-1 保留，detached worktree ../saddle-worktrees/review-t2-terminal-layout 仍为 c35daa2。
+- 下一步收到开发 DONE 后，主控看增量并验证受影响检查，将审查 worktree 更新到新 SHA，请原审查者增量复核。复核通过后按项目规矩合并推送和清理收尾，不自动 go/next。
+
 ## 2026-09-26：T2 主控通过，独立交叉审查中（以本节为准）
 
 - 开发提交 c35daa2 已完成 New 表单、终端 tab 和四向分屏；saddle/dev-t2-terminal-1 空闲，保留 ../saddle-worktrees/t2-terminal-layout 等待审查或返工。
