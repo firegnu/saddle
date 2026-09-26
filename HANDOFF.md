@@ -4,7 +4,8 @@
 
 - 用户截图反馈选中 agent 只有背景色，首行最左侧的小白竖线不好看；要求另排 agent 去掉它，并评估选中块左侧主题色长条会不会更清楚或显乱。新任务 docs/任务/Agents选中样式.md，先做只读建议阶段。
 - New 已由 saddle/dev-t2-new-form-1 提交 d78ad30（126 passed、2 ignored，待主控核验），同一 agent 正在处理已排队送达的 Open 用途/Cancel 一致性补充；两部分完成后再一起主控审查，不能仅据 New 的旧 DONE 合并。
-- Agents 样式与 New/Open 都涉及 src/ui.rs，按 corral-dispatch 串行修改代码：已新开 saddle/dev-agent-selection-1（Claude Code，opus[1m] / high），在 ../saddle-worktrees/agents-selection-style、分支 agents-selection-style 先出建议；待 New/Open 合并后由主控更新样式分支基线，再通知其实施。样式建议阶段不改功能代码，路由看得见/不交叉审查；两名 agent 均已挂完成提醒。
+- Agents 样式建议阶段已由 saddle/dev-agent-selection-1（Claude Code，opus[1m] / high）提交 9a12077，目前 idle；位于 ../saddle-worktrees/agents-selection-style、分支 agents-selection-style，仅任务文档变化。主控采纳方案 A：去掉白色短线、保留整块背景、选中名称加粗；长色条与树线叠加显乱，暂不加。Queue 超出本次范围，不要求用户为此另作决定。设计理由已入 DESIGN 第 28 节。
+- 两项都涉及 src/ui.rs，待 New/Open 合并后，主控先将样式分支接上最新 main，再通知原样式 agent 实施方案 A，按纯视觉预算验证；不要将建议阶段 DONE 当实现完成。两名 agent 均已挂提醒，重复提醒先核对这里的已处理状态。
 - New/Open 完成后还要继续 Agents 样式，不能因前一项收尾而遗漏。原 T2 已放行 History；不自动操作队列或重开 T2。
 
 ## 2026-09-26：同轮追加 Open 易用性与弹框一致性（以本节为准）
