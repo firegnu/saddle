@@ -356,3 +356,28 @@ Agent     [● Codex] [○ Claude]
 - 输入体验是本轮重点：每个文本输入有清晰边框、字段标签，空值有占位示例；聚焦后边框明显高亮，并在真实插入位置显示终端光标。鼠标点击输入内容可聚焦并定位光标，Tab/Shift-Tab 可切换；方向键、Home/End、Backspace/Delete 及粘贴按光标位置编辑，不能只在末尾追加。中文和宽字符不能导致点击/光标/删除错位或破坏字符串。首条消息保留多行输入，键位含义在当前界面可见。
 - 创建、取消、选项、展开/收起均有明显可点击入口，不依赖用户记快捷键。初次打开呈现完整可用表单，必填缺失/无效时给就地提示；提交需明确点击 Create agent 或现有 Ctrl-S，编辑/切字段不触发启动。焦点在弹框时只显示当前编辑框的光标，不让底层 Viewer 的光标干扰。
 - 保留执行中禁止重复提交、失败保留草稿、收起后可返回草稿及既有请求归属。只改善 New 内部和必要接线，不同时重做其他弹框、tab/split 或通用表单框架。
+
+### 同轮补充：Open 的用途和弹框一致性
+
+用户补充反馈 Open agent「太晦涩」「没看懂功能怎么用」，并指出其他弹框的 Esc/Cancel 不是这个样式。本条将正在进行的 New 表单改进范围扩展到 Open 的展示与文案，覆盖上一条对其他弹框的范围限制；tab/split 接入语义和状态机不变。
+
+- 主控核对：现有 Queue 弹框用紧凑单行按钮工具栏；Open 当前把六个动作和 Cancel 一起画为三行高圆角按钮，视觉层级和取消入口不一致。本轮复用既有弹框/紧凑按钮帮助函数、配色、快捷键呈现和底部取消位置，不新增一套控件风格，也不改其他已对齐弹框。
+- 用途清楚表达为「将已有 agent 显示到哪里」，显示所选 agent 名称。入口文案可改为 `Show in… o`，弹框标题 `Show agent`；New 用于创建新 agent，Show 用于安排已有 agent 的显示位置。现有 Enter/点击普通接入行为保留。
+- 六项仍是当前窗格、新 tab、左/右/上/下分屏，但用明确动作文字和分组：`Replace current pane`、`Open in new tab`，其余在 `Split current pane` 下显示 Left/Right/Above/Below 和方向符号，说明相对于当前活动终端窗格。数字快捷键可以保留作次要提示，不能让用户仅靠数字或命令名猜用途。
+- 明确已有目标已打开时会跳到已有位置；动作仍可直接点击执行，无额外确认步骤。`Cancel Esc` 作为独立底部次要操作，沿用其他编辑/选择弹框的样式与取消方式；Esc 关闭此弹框、无接入副作用，Ctrl-] 回 Agents 的既有行为保留。New 的取消/返回文案与底部工具栏也统一对齐。
+- 图示仅说明内容和层级，实际英文文案/布局由开发者按现有界面空间微调：
+
+```text
+Show agent · saddle/main
+Choose where to show this agent.
+
+  Replace current pane       Open in new tab
+
+Split current pane
+  ← Left       Right →       ↑ Above       Below ↓
+
+Already open? Jump to its existing pane.
+                                      ‹Cancel Esc›
+```
+
+不扩展拖拽、布局比例、新快捷键体系或接入行为。验证关注功能能从文案看懂，以及 New/Open 的 Cancel/Esc 外观和操作确实与现有弹框一致。

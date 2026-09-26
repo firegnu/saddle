@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：同轮追加 Open 易用性与弹框一致性（以本节为准）
+
+- 用户在 New 改进进行中补充：Open agent 用途晦涩，Esc/Cancel 与其他弹框的设计语言不一致。范围现扩展为同一轮 New + Open 交互改进，New 输入框/光标优先要求保留；tab/split 接入语义和状态机仍不改。
+- 主控核对到 Open 的大块三行按钮与 Queue 紧凑底部工具栏不同；设计已追加至 DESIGN 第 27 节，补充任务为 docs/任务/T2-NewOpen交互补充.md。要求用途文案和动作分组清楚，复用现有 Cancel Esc 控件与行为。
+- 原开发 agent saddle/dev-t2-new-form-1 正在运行，补充安排在其本轮结束后送达，继续原 t2-new-agent-form 分支/worktree。主控收到较早的 DONE 时须核对补充任务是否已执行，未完成 Open 补充前不能合并或收尾；避免旧完成提醒提前触发合并。
+- 队列原 T2 已放行在 History，current/awaiting/pending 均空；本次继续为已授权反馈改进，不改队列。
+
 ## 2026-09-26：T2 用户反馈，New 表单改进开发中（以本节为准）
 
 - 用户实际体验后表示 New 不知如何操作，并明确输入框不显眼、点击没有光标；已同意继续简化为选项目/选 Codex 或 Claude/创建，名称自动生成可改，完整命令收进高级设置。范围只含 New，不扩展 tab/split 或其他弹框。设计见 DESIGN 第 27 节末尾用户体验修订，任务见 docs/任务/T2-New表单体验改进.md，准备提交 8a2b4ea。
