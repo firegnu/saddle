@@ -57,6 +57,9 @@ elif verb == 'attach':
     marker.write_text(str(os.getpid()))
     tty.setraw(0)
     def stop(*_):
+        log('detaching ' + name)
+        while name == 'p/a' and (root / 'hold-detach').exists():
+            time.sleep(0.01)
         log('detached ' + name)
         marker.unlink(missing_ok=True)
         sys.exit(0)

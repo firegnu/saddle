@@ -7,8 +7,9 @@ pub struct Viewer {
     pub showing: Option<String>,
     pub note: String,
     pending: Option<String>,
+    generation: u64,
     corral: String,
-    spawning: Option<(String, JoinHandle<Result<Session>>)>,
+    spawning: Option<(u64, String, JoinHandle<Result<Session>>)>,
 }
 impl Viewer {
     pub fn new(corral: String) -> Self {
@@ -16,6 +17,7 @@ impl Viewer {
             session: None,
             showing: None,
             pending: None,
+            generation: 0,
             corral,
             spawning: None,
             note: "Select an agent on the left, then press Enter or click.".into(),
@@ -30,6 +32,7 @@ impl Viewer {
         {
             return Ok(());
         }
+        self.cancel_pending();
         self.pending = Some(name);
         if let Some(session) = &mut self.session {
             session.interrupt()?;
@@ -42,7 +45,7 @@ impl Viewer {
             .as_ref()
             .is_some_and(|name| !names.contains(&name.as_str()))
         {
-            self.pending = None;
+            self.cancel_pending();
         }
         if self
             .showing
@@ -55,13 +58,15 @@ impl Viewer {
         Ok(())
     }
     pub fn target(&self) -> Option<&str> {
-        self.pending
-            .as_deref()
-            .or_else(|| self.spawning.as_ref().map(|(n, _)| n.as_str()))
-            .or(self.showing.as_deref())
+        self.pending.as_deref().or(self.showing.as_deref())
+    }
+    /// Invalidate pending work without disconnecting the currently displayed session.
+    pub fn cancel_pending(&mut self) {
+        self.pending = None;
+        self.generation += 1;
     }
     pub fn close(&mut self) -> Result<()> {
-        self.pending = None;
+        self.cancel_pending();
         if let Some(session) = &mut self.session {
             session.interrupt()?;
         }
@@ -77,10 +82,10 @@ impl Viewer {
         if let Some(session) = &mut self.session {
             if session.poll_exit()? {
                 self.session = None;
-                self.note = format!(
-                    "{} attach exited. Select an agent on the left to reconnect.",
-                    self.showing.take().unwrap_or_default()
-                );
+                if let Some(name) = self.showing.take() {
+                    self.note =
+                        format!("{name} attach exited. Select an agent on the left to reconnect.");
+                }
             } else if let Some(size) = size {
                 session.resize(size)?;
             }
@@ -88,25 +93,27 @@ impl Viewer {
         if self
             .spawning
             .as_ref()
-            .is_some_and(|(_, worker)| worker.is_finished())
+            .is_some_and(|(_, _, worker)| worker.is_finished())
         {
-            let (name, worker) = self.spawning.take().unwrap();
+            let (generation, name, worker) = self.spawning.take().unwrap();
+            let current = generation == self.generation && self.pending.as_ref() == Some(&name);
             match worker.join().expect("attach worker panicked") {
                 Ok(mut session) => {
-                    if self.pending.as_ref() == Some(&name) {
+                    if current {
                         self.pending = None;
+                        self.showing = Some(name);
                     } else {
+                        // Keep ownership until the stale child exits, without naming it
+                        // as the current agent or allowing it to receive input.
                         session.interrupt()?;
                     }
                     self.session = Some(session);
-                    self.showing = Some(name);
                 }
-                Err(error) => {
-                    if self.pending.as_ref() == Some(&name) {
-                        self.pending = None;
-                    }
+                Err(error) if current => {
+                    self.pending = None;
                     self.note = format!("attach {name}: {error:#}");
                 }
+                Err(_) => {}
             }
         }
         if self.session.is_none()
@@ -117,6 +124,7 @@ impl Viewer {
             let command = vec![self.corral.clone(), "attach".into(), name.clone()];
             let size = size.unwrap_or(Size { rows: 24, cols: 80 });
             self.spawning = Some((
+                self.generation,
                 name,
                 thread::spawn(move || Session::spawn(&command, None, size)),
             ));
@@ -127,7 +135,7 @@ impl Viewer {
 impl Drop for Viewer {
     fn drop(&mut self) {
         // A spawn already in flight still owns its PTY; join and detach it on exit.
-        if let Some((_, worker)) = self.spawning.take() {
+        if let Some((_, _, worker)) = self.spawning.take() {
             let _ = worker.join();
         }
     }

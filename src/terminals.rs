@@ -1,5 +1,5 @@
 //! In-memory tabs. Stable pane ids and revisions bind asynchronous work to its initiator.
-use crate::{terminal::Size, viewer::Viewer};
+use crate::{pty::Session, terminal::Size, viewer::Viewer};
 use anyhow::Result;
 use ratatui::layout::Rect;
 
@@ -43,6 +43,15 @@ pub struct Pane {
     revision: u64,
     requested: Option<String>,
     observed: bool,
+}
+impl Pane {
+    pub fn input_session(&self) -> Option<&Session> {
+        // A pending target may share a pane with a different, still-live session.
+        if self.requested.is_some() || self.viewer.showing.is_none() {
+            return None;
+        }
+        self.viewer.session.as_ref().filter(|s| !s.is_stopping())
+    }
 }
 enum Node {
     Leaf(u64),
@@ -257,6 +266,7 @@ impl Terminals {
         let pane = self.get_mut(id).unwrap();
         pane.revision += 1;
         pane.requested = name;
+        pane.viewer.cancel_pending();
         Ticket {
             pane: id,
             revision: pane.revision,

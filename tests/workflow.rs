@@ -1367,3 +1367,34 @@ fn reselecting_the_displayed_agent_cancels_an_inflight_replacement() {
     assert!(!h.log("events").contains("detached p/a"));
     h.quit();
 }
+
+#[test]
+fn reselecting_a_pending_agent_never_sends_input_to_the_old_session() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\x1dj\r");
+    h.see("attaching p/b");
+    h.send(b"\rZ\x1b[200~pending-b\x1b[201~");
+    h.send(b"\x1b[<0;56;4M\x1b[<0;56;4m");
+    // A visible native page acknowledges that all preceding input was handled.
+    h.send(b"\x1d\t?");
+    h.see("Queue help");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.see("p/b READY");
+    h.send(b"\x1d\x1b[ZB");
+    h.event("input p/b 42");
+    h.quit();
+    let events = h.log("events");
+    assert!(
+        !events.contains("input p/a "),
+        "input for pending B reached old A:\n{events}"
+    );
+    assert_eq!(
+        events.lines().filter(|line| *line == "attach p/b").count(),
+        1
+    );
+    assert!(!events.contains("stop "));
+}

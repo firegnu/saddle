@@ -929,12 +929,7 @@ impl App {
                 {
                     return None;
                 }
-                self.viewer
-                    .active_pane()
-                    .viewer
-                    .session
-                    .as_ref()
-                    .filter(|s| !s.is_stopping())
+                self.viewer.active_pane().input_session()
             }
         }
     }
