@@ -1217,7 +1217,7 @@ fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     h.until(|h| !h.contents().contains("review-draft"));
     h.see("Input ▸ Agents");
     for cancel in [b"\x1b".as_slice(), b"", b"\x1d"] {
-        h.click("+ Tab");
+        h.click("[+]");
         h.see("Open agent in a new tab");
         h.see("p/a");
         if cancel.is_empty() {
@@ -1232,7 +1232,7 @@ fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
         } else {
             "Input ▸ Viewer"
         });
-        assert!(!h.contents().contains("Tab 2"));
+        assert_eq!(h.contents().matches(" ×]").count(), 1);
     }
     h.quit();
     let events = h.log("events");
@@ -1274,9 +1274,9 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     h.click("Viewer · p/a");
     h.send(b"A");
     h.event("input p/a 41");
-    h.click("+ Tab");
+    h.click("[+]");
     h.click_in("Open agent in a new tab", "p/b"); // Moves B's pane into Tab 2.
-    h.see("Tab 2");
+    h.until(|h| h.contents().matches(" ×]").count() == 2);
     h.send(b"\x1dk\r"); // Already open: jump to a's existing pane, no second attach.
     h.see("p/a READY");
     h.send(b"Z");
@@ -1476,16 +1476,16 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.send(b"\r"); // A belongs to Tab 1.
     h.see("attaching p/a");
-    h.click("+ Tab");
+    h.click("[+]");
     h.click_in("Open agent in a new tab", "p/b"); // B belongs to Tab 2.
     h.see("attaching p/b");
-    h.click("Tab 1");
+    h.click("[p/a ");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     h.click("Close tab");
     // Another tab remains active while B finishes in the background; p/taken is attached
     // elsewhere, so its tab stays empty.
-    h.click("+ Tab");
+    h.click("[+]");
     h.click_in("Open agent in a new tab", "p/taken");
     h.send(b"\x1d\ta");
     h.see("Ctrl-S");
@@ -1498,7 +1498,7 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     h.see("operation completed");
     assert!(!h.log("events").contains("attach p/a"));
     assert!(!h.screen.screen().contents().contains("p/b READY"));
-    h.click("Tab 1"); // Original Tab 2 is now first.
+    h.click("[p/b "); // The remaining tab keeps its agent name.
     h.see("p/b READY");
     h.send(b"T");
     h.event("input p/b 54");
@@ -1544,7 +1544,7 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     h.event("start p/hidden");
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.click("Tab 1");
+    h.click("[p/a ");
     h.send(b"A");
     h.event("input p/a 41");
     std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
@@ -1552,7 +1552,7 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     h.send(b"B");
     h.event("input p/a 42");
     assert!(!h.log("events").contains("input p/hidden-actual"));
-    h.click("Tab 2");
+    h.click("[p/hidden-actual ");
     h.see("p/hidden-actual READY");
     h.send(b"H");
     h.event("input p/hidden-actual 48");
@@ -1656,7 +1656,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     h.see("Open agent on the right");
     h.send(b"\x1b");
     h.until(|h| !h.contents().contains("Open agent on the right"));
-    h.click("+ Tab");
+    h.click("[+]");
     h.see("Open agent in a new tab");
     h.click("Cancel Esc");
     h.until(|h| !h.contents().contains("Open agent in a new tab"));
@@ -1665,7 +1665,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     h.send(b"\x1d"); // Ctrl-] closes the menu and returns to Agents.
     h.see("Input ▸ Agents");
     assert!(!h.contents().contains("Left ←"));
-    assert!(!h.contents().contains("Tab 2"), "{}", h.contents());
+    assert_eq!(h.contents().matches(" ×]").count(), 1, "{}", h.contents());
     assert_eq!(
         h.contents().matches("Viewer").count(),
         1,
@@ -1716,7 +1716,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     h.click("Right →");
     h.click_in("Open agent on the right", "p/b");
     h.see("p/b READY");
-    h.click("+ Tab");
+    h.click("[+]");
     h.see("Open agent in a new tab");
     let popup = h.popup("Open agent in a new tab");
     println!("MOVE picker:\n{}", h.contents());
@@ -1728,14 +1728,14 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
         }
     }
     h.click_in("Open agent in a new tab", "p/a");
-    h.see("Tab 2");
+    h.until(|h| h.contents().matches(" ×]").count() == 2);
     h.see("Viewer · p/a");
     // The moved pane keeps its session and output; p/b stays behind in Tab 1.
     assert!(h.contents().contains("INPUT RECEIVED"));
     assert!(!h.contents().contains("Viewer · p/b"));
     h.send(b"Z");
     h.event("input p/a 5a");
-    h.click("Tab 1");
+    h.click("[p/b ");
     h.see("Viewer · p/b");
     assert!(!h.contents().contains("Viewer · p/a"));
     // Moving it back as a split leaves its emptied tab nowhere.
@@ -1749,7 +1749,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     );
     assert!(!popup.contains("p/b"), "{popup}");
     h.click_in("Open agent below", "p/a");
-    h.until(|h| !h.contents().contains("Tab 2"));
+    h.until(|h| h.contents().matches(" ×]").count() == 1);
     h.see("Viewer · p/a");
     let a = h.locate("Viewer · p/a", 0).unwrap();
     let b = h.locate("Viewer · p/b", 0).unwrap();
@@ -1775,7 +1775,7 @@ fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     h.click("Right →");
     h.click_in("Open agent on the right", "p/b");
     h.see("Attaching p/b");
-    h.click("+ Tab");
+    h.click("[+]");
     h.see("Open agent in a new tab");
     let popup = h.popup("Open agent in a new tab");
     assert!(
@@ -1785,12 +1785,12 @@ fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
         "{popup}"
     );
     h.click_in("Open agent in a new tab", "p/b");
-    h.see("Tab 2");
+    h.until(|h| h.contents().matches(" ×]").count() == 2);
     std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
     h.see("p/b READY");
     h.send(b"B");
     h.event("input p/b 42");
-    h.click("Tab 1");
+    h.click("[p/a ");
     h.see("Viewer · p/a");
     h.until(|h| !h.contents().contains("p/b READY"));
     assert!(!h.contents().contains("Attaching p/b"));
@@ -1805,7 +1805,7 @@ fn a_candidate_click_opens_only_the_agent_it_was_pressed_on() {
     const TITLE: &str = "Open agent in a new tab";
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.click("+ Tab");
+    h.click("[+]");
     let (col, row) = h.row_in(TITLE, "p/b");
     let fg = |h: &Harness| h.screen.screen().cell(row, col).unwrap().fgcolor();
     let press = |h: &mut Harness, down: bool| {

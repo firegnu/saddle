@@ -429,8 +429,8 @@ impl Terminals {
     }
 }
 
-/// Rows taken by the outlined tab strip above the panes.
-pub const STRIP: u16 = 3;
+/// Rows taken by the compact tab strip above the panes.
+pub const STRIP: u16 = 1;
 #[derive(Clone, Copy)]
 pub enum Control {
     NewTab,
@@ -458,7 +458,7 @@ pub fn draw(
     use ratatui::{
         style::{Modifier, Style},
         text::{Line, Span},
-        widgets::{Block, BorderType, Paragraph},
+        widgets::Paragraph,
     };
     let mut hits = Vec::new();
     let target = |area: Rect, control: Control| {
@@ -471,70 +471,94 @@ pub fn draw(
             control,
         )
     };
-    // Tabs and "+ Tab" are unfilled rounded outlines; the current tab only gets a lighter
-    // frame and a bold name. Controls that do not fit whole are left out.
+    // Single-row, unfilled boundaries keep the controls quieter than the terminal content.
     if area.height >= STRIP {
         let mut x = area.x;
-        let outline = |frame: &mut ratatui::Frame, x: u16, spans: Vec<Span<'static>>, border| {
-            let width = spans.iter().map(Span::width).sum::<usize>() as u16 + 2;
-            if x + width > area.right() {
-                return None;
-            }
-            let rect = Rect::new(x, area.y, width, STRIP);
-            let block = Block::bordered()
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(border));
-            frame.render_widget(Paragraph::new(Line::from(spans)).block(block), rect);
-            Some(rect)
-        };
-        let label = Span::styled(" + Tab ", Style::default().fg(t.text));
+        let outline =
+            |frame: &mut ratatui::Frame, x: u16, mut spans: Vec<Span<'static>>, border| {
+                let width = spans.iter().map(Span::width).sum::<usize>() as u16 + 2;
+                if x + width > area.right() {
+                    return None;
+                }
+                let rect = Rect::new(x, area.y, width, STRIP);
+                spans.insert(0, Span::styled("[", Style::default().fg(border)));
+                spans.push(Span::styled("]", Style::default().fg(border)));
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                Some(rect)
+            };
+        let label = Span::styled("+", Style::default().fg(t.text));
         if let Some(rect) = outline(frame, x, vec![label], t.border) {
             hits.push(target(rect, Control::NewTab));
             x = rect.right() + 1;
         }
-        for (label, control) in [(" ‹ ", Control::Previous), (" › ", Control::Next)] {
-            if x + 3 > area.right() {
+        for (label, control) in [("‹ ", Control::Previous), ("› ", Control::Next)] {
+            if x + 2 > area.right() {
                 break;
             }
-            let rect = Rect::new(x, area.y + 1, 3, 1);
+            let rect = Rect::new(x, area.y, 2, 1);
             frame.render_widget(
-                Paragraph::new(label).style(Style::default().fg(t.text)),
+                Paragraph::new(label).style(Style::default().fg(t.muted)),
                 rect,
             );
             hits.push(target(rect, control));
-            x += 3;
+            x += 2;
         }
-        x += 1;
-        let slots = (area.right().saturating_sub(x) / 12).max(1) as usize;
+        let available = area.right().saturating_sub(x) as usize;
+        let labels: Vec<_> = terminals
+            .tabs
+            .iter()
+            .map(|tab| {
+                let pane = tab.panes.iter().find(|p| p.id == tab.active).unwrap();
+                let name = pane
+                    .requested
+                    .as_deref()
+                    .or(pane.viewer.target())
+                    .unwrap_or("Empty");
+                crate::ui::clip(name, available.saturating_sub(4).min(20))
+            })
+            .collect();
         let active = terminals
             .tabs
             .iter()
             .position(|t| t.id == terminals.active)
             .unwrap();
-        let start = active.saturating_sub(slots - 1);
-        for (i, tab) in terminals.tabs.iter().enumerate().skip(start).take(slots) {
+        // Account for actual label widths so a long earlier name cannot hide the current tab.
+        let mut start = active;
+        let mut used = unicode_width::UnicodeWidthStr::width(labels[active].as_str()) + 4;
+        while start > 0 {
+            let previous = unicode_width::UnicodeWidthStr::width(labels[start - 1].as_str()) + 5;
+            if used + previous > available {
+                break;
+            }
+            used += previous;
+            start -= 1;
+        }
+        for (tab, label) in terminals.tabs.iter().zip(labels).skip(start) {
+            if label.is_empty() {
+                break;
+            }
             let current = tab.id == terminals.active;
             let name = Style::default().fg(t.text);
             let spans = vec![
                 Span::styled(
-                    format!(" Tab {} ", i + 1),
+                    label,
                     if current {
                         name.fg(t.bright).add_modifier(Modifier::BOLD)
                     } else {
                         name
                     },
                 ),
-                Span::styled("× ", Style::default().fg(t.muted)),
+                Span::styled(" ×", Style::default().fg(t.muted)),
             ];
             let border = if current { t.muted } else { t.border };
             let Some(rect) = outline(frame, x, spans, border) else {
                 break;
             };
-            // "×" with its padding and the right edge closes; the rest switches.
-            let close = Rect::new(rect.right() - 3, rect.y, 3, rect.height);
+            // The close symbol and right boundary close; the label switches tabs.
+            let close = Rect::new(rect.right() - 2, rect.y, 2, rect.height);
             hits.push(target(
                 Rect {
-                    width: rect.width - 3,
+                    width: rect.width - 2,
                     ..rect
                 },
                 Control::Tab(tab.id),
