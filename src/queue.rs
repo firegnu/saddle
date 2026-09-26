@@ -1578,7 +1578,7 @@ pub(crate) fn clean(text: &str) -> String {
         .collect()
 }
 
-fn wrap_text(text: &str, width: u16) -> Vec<ratatui::text::Line<'static>> {
+pub(crate) fn wrap_text(text: &str, width: u16) -> Vec<ratatui::text::Line<'static>> {
     use unicode_width::UnicodeWidthChar;
     if width == 0 {
         return Vec::new();

@@ -19,6 +19,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 #[derive(Default)]
 pub struct Hits {
     pub(crate) buttons: Vec<crate::buttons::Hit>,
+    pub terminal: Vec<crate::terminals::Hit>,
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
@@ -39,6 +40,25 @@ pub struct View<'a> {
 }
 
 pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
+    draw_workspace(frame, panel, view, None)
+}
+
+pub struct Workspace<'a> {
+    pub terminals: &'a crate::terminals::Terminals,
+    pub open_agent: Option<&'a str>,
+    pub form: Option<&'a mut crate::launch::Form>,
+    pub program: &'a str,
+}
+pub fn draw_workspace(
+    frame: &mut Frame,
+    panel: &mut Panel,
+    view: View<'_>,
+    workspace: Option<Workspace<'_>>,
+) -> Hits {
+    let (terminals, open_agent, mut form, program) = match workspace {
+        Some(w) => (Some(w.terminals), w.open_agent, w.form, w.program),
+        None => (None, None, None, "corral"),
+    };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
@@ -50,7 +70,17 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         .showing
         .map(|name| format!("Viewer · {name}"))
         .unwrap_or_else(|| "Viewer".into());
-    draw_terminal(frame, view.panes.viewer, &title, &view);
+    if let Some(terminals) = terminals {
+        hits.terminal = crate::terminals::draw(
+            t,
+            frame,
+            view.panes.viewer,
+            terminals,
+            view.focus == Focus::Viewer,
+        );
+    } else {
+        draw_terminal(frame, view.panes.viewer, &title, &view);
+    }
     let queue_modal = view.focus == Focus::Queue && view.queue.overlay_open();
     if queue_modal {
         view.queue.draw_overlay(t, frame);
@@ -99,6 +129,25 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         view.queue.fields.clear();
         view.queue.project_rows.clear();
     }
+    if let Some(form) = form.as_mut() {
+        hits.buttons = form.draw(t, frame, program);
+        hits.agents.clear();
+        hits.queue_rows.clear();
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
+    }
+    if let Some(name) = open_agent {
+        hits.buttons = crate::launch::draw_open(t, frame, name);
+        hits.agents.clear();
+        hits.queue_rows.clear();
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
+    }
+    if queue_modal || panel.confirm.is_some() || open_agent.is_some() || form.is_some() {
+        hits.terminal.clear();
+    }
     let controls: Vec<_> = hits
         .buttons
         .iter()
@@ -110,6 +159,11 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                 .iter()
                 .cloned()
                 .map(|h| (Focus::Queue, h)),
+        )
+        .chain(
+            hits.terminal
+                .iter()
+                .map(|(hit, _)| (Focus::Viewer, hit.clone())),
         )
         .collect();
     view.pointer.paint(t, frame, &controls);
@@ -139,7 +193,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  PgUp/Dn Scroll  Tab Queue  q Quit",
+            " ↑↓ Select  ↵ Attach  o Open  n New  Tab Queue  q Quit",
         ),
         Focus::Queue => (
             "Queue".to_string(),
@@ -195,6 +249,16 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
         target = "Queue · Task details".into();
         help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  t Task  e Edit pending  Esc Back";
     }
+    if let Some(form) = &form {
+        target = format!(
+            "New agent · {}",
+            ["Directory", "Name", "Command", "First message", "Open in"][form.field]
+        );
+        help = " Tab Field  Ctrl-S Start  Ctrl-P Projects  PgUp/Dn Preview  Esc Back";
+    } else if open_agent.is_some() {
+        target = "Open agent".into();
+        help = " 1 Current  2 Tab  3 Left  4 Right  5 Up  6 Down  Esc Cancel";
+    }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
         help = " y Stop  Any other key cancels";
@@ -206,7 +270,8 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
                 Style::default().fg(t.input_text).bg(t.focus),
             ),
             Span::styled(
-                if panel.confirm.is_some() || queue_modal {
+                if panel.confirm.is_some() || queue_modal || form.is_some() || open_agent.is_some()
+                {
                     help
                 } else if view.focus == Focus::Queue && !view.queue.message.is_empty() {
                     &view.queue.message
@@ -294,6 +359,8 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 K::Enter,
                 selected && !connected,
             ),
+            Button::new("Open o", K::Char('o'), selected),
+            Button::new("New n", K::Char('n'), true),
             Button::new(
                 if panel.by_state { "Name s" } else { "Sort s" },
                 K::Char('s'),

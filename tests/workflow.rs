@@ -225,7 +225,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     h.send("\x1b[200~中文\nhello\x1b[201~".as_bytes());
     h.event("1b5b3230307ee4b8ade696870a68656c6c6f1b5b3230317e");
     h.send(b"\x1b[<0;56;4M");
-    h.event("input p/a 1b5b3c303b333b334d");
+    h.event("input p/a 1b5b3c303b333b324d");
     h.send(b"\x1dj\r");
     h.see("p/b READY");
     let log = h.log("events");
@@ -248,7 +248,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(44, 160);
-    h.event("size p/b 106x41");
+    h.event("size p/b 106x40");
     h.until(|h| h.screen.screen().cell(22, 0).unwrap().contents() == "┌");
     h.see("Native queue task");
     // Native Queue translates actions into public CLI calls, never a PTY.
@@ -455,6 +455,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Loop on");
     h.send(b"g");
     h.see("checked public criteria");
+    h.see("Input ▸ Queue · Details / Result");
     h.send(b"\x1b");
     h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
     h.see("Native queue task");
@@ -1125,4 +1126,275 @@ else:
     }
     assert_eq!(shows(&h), after_back, "returning to the list stops details");
     h.quit();
+}
+
+#[test]
+fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"\x1djo");
+    h.see("Input ▸ Open agent");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    let deadline = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    assert!(
+        !h.log("events").contains("attach p/b"),
+        "Ctrl-] must close the menu without choosing a split"
+    );
+    h.send(b"o");
+    h.see("Open agent");
+    h.click("Split right");
+    h.see("p/b READY");
+    h.send(b"B");
+    h.event("input p/b 42");
+    h.send(b"\x1b[200~paste-b\x1b[201~");
+    h.event("input p/b 1b5b3230307e70617374652d621b5b3230317e");
+    assert!(!h.log("events").contains("detached p/a"));
+    h.click("Viewer · p/a");
+    h.send(b"A");
+    h.event("input p/a 41");
+    h.click("+ Tab");
+    h.see("Tab 2");
+    h.send(b"\x1dk\r"); // Already open: jump to a's existing pane, no second attach.
+    h.see("p/a READY");
+    h.send(b"Z");
+    h.event("input p/a 5a");
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|l| *l == "attach p/a")
+            .count(),
+        1
+    );
+    h.click("Close pane");
+    h.event("detached p/a");
+    h.until(|h| !h.screen.screen().contents().contains("Viewer · p/a"));
+    h.see("p/b READY");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    h.click("Close tab");
+    h.event("detached p/b");
+    h.quit();
+    assert!(
+        !h.log("events").contains("1b5b3c"),
+        "Native controls must not send mouse input"
+    );
+    assert!(!h.log("events").contains("stop "));
+    let agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
+    assert_eq!(agents.as_object().unwrap().len(), 3);
+}
+
+#[test]
+fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Native queue task");
+    h.send(b"n");
+    h.see("New agent");
+    h.see("project-one");
+    h.send(b"\tp/new\tcodex --model 'test model'\t");
+    h.send("\x1b[200~hello\n世界\x1b[201~".as_bytes());
+    h.see("Preview");
+    assert!(!h.log("events").contains("start "));
+    std::fs::write(h.dir.path().join("fail-start"), "").unwrap();
+    h.send(b"\x13");
+    h.see("synthetic start failed");
+    h.see("p/new");
+    h.see("test model");
+    std::fs::remove_file(h.dir.path().join("fail-start")).unwrap();
+    h.send(b"\x13");
+    h.see("p/new-actual READY");
+    let calls: Vec<Vec<String>> = h
+        .log("start-args")
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(calls.len(), 2);
+    let cwd = h
+        .dir
+        .path()
+        .join("project-one")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        calls[1],
+        vec![
+            "start",
+            "p/new",
+            "--cwd",
+            &cwd,
+            "--prompt",
+            "hello\n世界",
+            "--",
+            "codex",
+            "--model",
+            "test model"
+        ]
+    );
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\r"); // A belongs to Tab 1.
+    h.see("attaching p/a");
+    h.send(b"jo2"); // B belongs to Tab 2.
+    h.see("attaching p/b");
+    h.click("Tab 1");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    h.click("Close tab");
+    h.click("+ Tab"); // Empty tab remains active while B finishes in the background.
+    h.send(b"\x1d\ta");
+    h.see("Ctrl-S");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.event("attach p/b");
+    h.send(b"draft");
+    h.send(b"\x13");
+    h.until(|h| h.log("queue-events").contains("draft"));
+    h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
+    h.see("operation completed");
+    assert!(!h.log("events").contains("attach p/a"));
+    assert!(!h.screen.screen().contents().contains("p/b READY"));
+    h.click("Tab 1"); // Original Tab 2 is now first.
+    h.see("p/b READY");
+    h.send(b"T");
+    h.event("input p/b 54");
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn closing_a_start_target_keeps_the_created_agent_available_without_attaching() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    h.send(b"n\tp/late\tcodex\x13");
+    h.event("start p/late");
+    h.send(b"\x13"); // Busy submit cannot start it twice.
+    h.send(b"\x1b"); // Hide form while the public start is running.
+    h.see("Input ▸ Agents");
+    h.click("Close tab");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    h.see("target closed or replaced");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    assert!(!h.log("events").contains("attach p/late"));
+    assert_eq!(h.log("start-args").lines().count(), 1);
+    h.quit();
+    let agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
+    assert!(agents.get("p/late-actual").is_some());
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    h.send(b"\x1dn\tp/hidden\tcodex\x13");
+    h.event("start p/hidden");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.click("Tab 1");
+    h.send(b"A");
+    h.event("input p/a 41");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    h.event("attach p/hidden-actual");
+    h.send(b"B");
+    h.event("input p/a 42");
+    assert!(!h.log("events").contains("input p/hidden-actual"));
+    h.click("Tab 2");
+    h.see("p/hidden-actual READY");
+    h.send(b"H");
+    h.event("input p/hidden-actual 48");
+    h.quit();
+    assert!(h.log("events").contains("detached p/a"));
+    assert!(h.log("events").contains("detached p/hidden-actual"));
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn closing_a_tab_detaches_all_its_splits_and_leaves_an_empty_tab() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"\x1djo6");
+    h.see("p/b READY");
+    h.click("Close tab");
+    h.event("detached p/a");
+    h.event("detached p/b");
+    h.see("Select an agent on the left");
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+    let agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
+    assert_eq!(agents.as_object().unwrap().len(), 3);
+}
+
+#[test]
+fn reselecting_the_displayed_agent_cancels_an_inflight_replacement() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\x1dj\r");
+    h.see("attaching p/b");
+    h.send(b"k\r");
+    h.see("Input ▸ p/a");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    // Let the public status calls finish and the app consume their replies.
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    h.send(b"A");
+    h.event("input p/a 41");
+    assert!(!h.log("events").contains("attach p/b"));
+    assert!(!h.log("events").contains("detached p/a"));
+    h.quit();
+}
+
+#[test]
+fn reselecting_a_pending_agent_never_sends_input_to_the_old_session() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\x1dj\r");
+    h.see("attaching p/b");
+    h.send(b"\rZ\x1b[200~pending-b\x1b[201~");
+    h.send(b"\x1b[<0;56;4M\x1b[<0;56;4m");
+    // A visible native page acknowledges that all preceding input was handled.
+    h.send(b"\x1d\t?");
+    h.see("Queue help");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.see("p/b READY");
+    h.send(b"\x1d\x1b[ZB");
+    h.event("input p/b 42");
+    h.quit();
+    let events = h.log("events");
+    assert!(
+        !events.contains("input p/a "),
+        "input for pending B reached old A:\n{events}"
+    );
+    assert_eq!(
+        events.lines().filter(|line| *line == "attach p/b").count(),
+        1
+    );
+    assert!(!events.contains("stop "));
 }

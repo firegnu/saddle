@@ -24,12 +24,13 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](http
 - **Agents：** 按仓库分组的树形列表，展示实时状态、agent 类型、活动、接入数量、工作目录和标题。用颜色区分工作、空闲、阻塞、停滞和错误。agent 带有 corral 公开标签 `effort` 时显示点阵信号图标：medium `⣄⡀`、high `⣴⡀`、xhigh `⣴⡇`（三根柱压在两个字符内，分别复用主题 idle/working/starting 色，默认为柔绿/蓝/紫；未亮柱只留底点，选中与否图标一致）；没有该标签或是其他值时不显示。图标只反映委派时的标签，不代表运行时实际 effort。
 - **每个 agent 的 Git 摘要：** 目录下面一行，例如 `dev-t12 · C2(main) · +18 -4 · ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支；比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
 - **Queue：** 当前任务、待放行、待办和历史记录。点击任务查看它的状态与过程详情；原生控件支持新增任务、编辑、调整次序和删除待办、汇总查看所有登记项目的待办、切换项目、放行、暂停和循环设置。
-- **Viewer：** 选中 agent 的实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
+- **内置启动：** 原生表单填写目录、名称、命令与首条消息，预览确认后调用公开 corral start。
+- **Viewer 标签页和分屏：** 每个 tab 保存一组可四向分割的窗格，各自运行实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
 - **鼠标与键盘：** 紧凑的可点击按钮、鼠标滚轮、触控板和快捷键。滚动列表不改变选择，正常刷新保留滚动位置。
 - **响应布局：** 宽窗口显示三窗格；窄窗口将 Agents 和 Queue 收为标签。
 - **终端原生外观：** 面板背景透明，状态有语义颜色，界面标签使用英文；任务内容和 agent 输出保留原文。
 
-Agents 和 Queue 均为 Rust 原生控件。只有 Viewer 使用子 PTY，不嵌入外部看板界面。
+Agents 和 Queue 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，不嵌入外部看板界面。
 
 ## 快速开始
 
@@ -57,7 +58,7 @@ cargo install --path . --locked
 saddle
 ```
 
-请先用 corral 启动 agent，并用 drover 登记队列项目。saddle 展示已有会话与项目，不负责创建 agent 或初始化队列项目。
+可在 Agents 的 New 中启动 agent，也可接入已有 corral 会话。队列项目仍需用 drover 登记；saddle 不初始化队列项目。
 
 ### 第一次使用
 
@@ -65,9 +66,19 @@ saddle
 2. 在 Viewer 中直接输入，与 agent 交互。
 3. 按 **Ctrl-]** 回到 Agents，Viewer 保持连接。
 4. 按 **Tab** 或点击 Queue 切换焦点，通过 **Project** 选择已登记项目。
-5. 从任意位置退出：先按 **Ctrl-]**，再按 **q**。退出只断开 saddle 的 Viewer，agent 继续运行。
+5. 从任意位置退出：先按 **Ctrl-]**，再按 **q**。退出只断开 saddle 的全部 Viewer，agent 继续运行。
 
 如果其他终端已经接入某个 agent，请先在那里断开，再通过 saddle 接入。停止 agent 是独立操作，需要确认。
+
+## 启动 agent、标签页和分屏
+
+Agents 的 **New / n** 打开启动表单：目录默认当前 Tasks 项目，可手填或用 **Next project / Ctrl-P** 轮换已登记目录；填写名称、启动命令和可选首条消息，选择当前窗格、新标签页（默认）或向左／右／上／下分屏。Tab／Shift-Tab 切字段，Ctrl-U 清空当前字段，首条消息支持回车和多行粘贴；打开位置用左右键或点击轮换。命令支持引号分组，直接拆为参数调用公开 `corral start`，不展开 shell 变量、管道或重定向，也不自动追加模型或权限参数。查看完整调用预览（PgUp/PgDn 或滚轮滚动）后，Ctrl-S／Start 才启动；失败保留草稿。Esc／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
+
+**Enter／点击 agent 行** 接入活动窗格；**Open / o** 提供当前窗格、新 tab 和四向分屏（菜单内数字 1–6）。同一 agent 已经打开时跳到现有位置，不重复接入。右上 **+ Tab** 创建空白 tab，左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
+
+每个 tab 保存自己的分屏和活动窗格，切换 tab 保留接入。**Close pane** 关闭活动窗格并合并分屏；**× / Close tab** 断开该 tab 的所有接入。最后一个 tab 关闭后留一个空 tab。关闭显示或退出 saddle 都只断开自有 attach，agent 继续运行；停止仍走原来的独立确认操作。异步启动／接入始终归属于提交时预留的窗格，目标关闭或被替换后不会接到别处，也不会停止新建 agent。启动失败可能留下预留的空窗格。
+
+尺寸不足以容纳某处分屏时暂时只画其中一侧，放大后恢复完整关系；内容区为空的终端不接收输入。本轮布局只保存在内存，不做恢复或持久化。
 
 ## 配置
 
@@ -120,7 +131,8 @@ agent_selected = "#302a23"
 | 位置 | 输入 | 操作 |
 |---|---|---|
 | Agents | ↑↓ / j k | 选择 agent |
-| Agents | Enter / 点击行 | 接入并将焦点切到 Viewer |
+| Agents | Enter / 点击行 | 接入活动窗格，已打开时跳到现有位置 |
+| Agents | n / New，o / Open | 启动 agent 表单，选择新 tab 或四向分屏 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |
 | Agents | Tab / Shift-Tab | 焦点到 Queue / Viewer |
 | Agents | PgUp / PgDn | 滚动 agent 列表 |
