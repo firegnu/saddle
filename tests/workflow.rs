@@ -149,9 +149,16 @@ impl Harness {
     }
     fn press_button(&mut self, label: &str) -> (u16, u16) {
         self.see(label);
+        let (col, row) = self
+            .locate(label, 0)
+            .unwrap_or_else(|| panic!("click target not found: {label}"));
+        self.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
+        (col, row)
+    }
+    fn locate(&self, label: &str, first_row: u16) -> Option<(u16, u16)> {
         let screen = self.screen.screen();
         let (rows, cols) = screen.size();
-        for row in 0..rows {
+        for row in first_row..rows {
             for col in 0..cols {
                 if screen.cell(row, col).unwrap().is_wide_continuation() {
                     continue;
@@ -169,12 +176,70 @@ impl Harness {
                     })
                     .collect();
                 if text.starts_with(label) {
-                    self.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
-                    return (col, row);
+                    return Some((col, row));
                 }
             }
         }
-        panic!("click target not found: {label}");
+        None
+    }
+    /// The inner area (left, top, right, bottom) of the box whose top border carries `title`.
+    fn boxed(&self, title: &str) -> (u16, u16, u16, u16) {
+        let (col, row) = self.locate(title, 0).unwrap();
+        let screen = self.screen.screen();
+        let cell = |r: u16, c: u16| screen.cell(r, c).unwrap().contents();
+        let left = (0..col)
+            .rev()
+            .find(|&c| matches!(cell(row, c), "┏" | "┌"))
+            .unwrap();
+        let right = (col..screen.size().1)
+            .find(|&c| matches!(cell(row, c), "┓" | "┐"))
+            .unwrap();
+        let bottom = (row + 1..screen.size().0)
+            .find(|&r| matches!(cell(r, left), "┗" | "└"))
+            .unwrap();
+        (left + 1, row + 1, right, bottom)
+    }
+    /// Text inside the bordered box whose top border carries `title`.
+    fn popup(&self, title: &str) -> String {
+        let (left, top, right, bottom) = self.boxed(title);
+        let screen = self.screen.screen();
+        (top..bottom)
+            .map(|r| {
+                (left..right)
+                    .map(|c| {
+                        let text = screen.cell(r, c).unwrap().contents();
+                        if text.is_empty() { " " } else { text }
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    /// Screen position of `label` on its row inside the `title` popup.
+    fn row_in(&mut self, title: &str, label: &str) -> (u16, u16) {
+        self.see(title);
+        self.until(|h| h.popup(title).contains(label));
+        let (left, top, _, _) = self.boxed(title);
+        let (row, text) = self
+            .popup(title)
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains(label))
+            .map(|(i, line)| (top + i as u16, line.to_owned()))
+            .unwrap();
+        (
+            left + text[..text.find(label).unwrap()].chars().count() as u16,
+            row,
+        )
+    }
+    /// Clicks the row of the `title` popup that shows `label`.
+    fn click_in(&mut self, title: &str, label: &str) {
+        let (col, row) = self.row_in(title, label);
+        let (x, y) = (col + 1, row + 1);
+        self.send(format!("\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m").as_bytes());
+    }
+    fn contents(&self) -> String {
+        self.screen.screen().contents()
     }
     fn event(&mut self, text: &str) {
         self.until(|h| h.log("events").contains(text));
@@ -1129,7 +1194,7 @@ else:
 }
 
 #[test]
-fn show_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
+fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
     h.see("Native queue task");
     h.see("Synthetic title");
@@ -1146,18 +1211,28 @@ fn show_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     h.send(b"n");
     h.see("review-draft");
     h.send(b"\x1b");
+    // The status line can still be the stale one from before `n`; only Esc hides the draft.
+    // Clicking before Esc is read would merge them into one read, and crossterm parses the
+    // ESC ESC as a single Esc, turning the rest of the mouse report into plain characters.
+    h.until(|h| !h.contents().contains("review-draft"));
     h.see("Input ▸ Agents");
     for cancel in [b"\x1b".as_slice(), b"", b"\x1d"] {
-        h.click("‹Show in… o›"); // Match the button, not the status-bar hint.
-        h.see("Agent: p/a");
-        h.see("Replace current pane");
-        h.see("Split current pane");
+        h.click("+ Tab");
+        h.see("Open agent in a new tab");
+        h.see("p/a");
         if cancel.is_empty() {
             h.click("Cancel Esc");
         } else {
             h.send(cancel);
         }
-        h.see("Input ▸ Agents");
+        h.until(|h| !h.contents().contains("Open agent in a new tab"));
+        // Esc and Cancel return to the Viewer that opened it; Ctrl-] returns to Agents.
+        h.see(if cancel == b"\x1d" {
+            "Input ▸ Agents"
+        } else {
+            "Input ▸ Viewer"
+        });
+        assert!(!h.contents().contains("Tab 2"));
     }
     h.quit();
     let events = h.log("events");
@@ -1175,8 +1250,8 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.send(b"\x1djo");
-    h.see("Input ▸ Show agent");
+    h.click("Split ▾");
+    h.see("Input ▸ Split pane");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     let deadline = Instant::now() + Duration::from_millis(300);
@@ -1187,9 +1262,9 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
         !h.log("events").contains("attach p/b"),
         "Ctrl-] must close the menu without choosing a split"
     );
-    h.send(b"o");
-    h.see("Show agent");
+    h.click("Split ▾");
     h.click("Right →");
+    h.click_in("Open agent on the right", "p/b");
     h.see("p/b READY");
     h.send(b"B");
     h.event("input p/b 42");
@@ -1200,6 +1275,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     h.send(b"A");
     h.event("input p/a 41");
     h.click("+ Tab");
+    h.click_in("Open agent in a new tab", "p/b"); // Moves B's pane into Tab 2.
     h.see("Tab 2");
     h.send(b"\x1dk\r"); // Already open: jump to a's existing pane, no second attach.
     h.see("p/a READY");
@@ -1400,13 +1476,17 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.send(b"\r"); // A belongs to Tab 1.
     h.see("attaching p/a");
-    h.send(b"jo2"); // B belongs to Tab 2.
+    h.click("+ Tab");
+    h.click_in("Open agent in a new tab", "p/b"); // B belongs to Tab 2.
     h.see("attaching p/b");
     h.click("Tab 1");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     h.click("Close tab");
-    h.click("+ Tab"); // Empty tab remains active while B finishes in the background.
+    // Another tab remains active while B finishes in the background; p/taken is attached
+    // elsewhere, so its tab stays empty.
+    h.click("+ Tab");
+    h.click_in("Open agent in a new tab", "p/taken");
     h.send(b"\x1d\ta");
     h.see("Ctrl-S");
     std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
@@ -1488,7 +1568,9 @@ fn closing_a_tab_detaches_all_its_splits_and_leaves_an_empty_tab() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.send(b"\x1djo6");
+    h.click("Split ▾");
+    h.click("Below ↓");
+    h.click_in("Open agent below", "p/b");
     h.see("p/b READY");
     h.click("Close tab");
     h.event("detached p/a");
@@ -1552,5 +1634,224 @@ fn reselecting_a_pending_agent_never_sends_input_to_the_old_session() {
         events.lines().filter(|line| *line == "attach p/b").count(),
         1
     );
+    assert!(!events.contains("stop "));
+}
+
+#[test]
+fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layout() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\x1b[<0;5;3M"); // Mouse: the first agent row opens p/a in the current pane.
+    h.see("p/a READY");
+    // Cancelling at either step keeps the single pane and tab.
+    h.click("Split ▾");
+    h.see("Right →");
+    h.see("Below ↓");
+    println!("SPLIT menu:\n{}", h.contents());
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Right →"));
+    h.click("Split ▾");
+    h.see("Right →");
+    h.send(b"\x1b[C"); // The arrow key picks the same side as the button.
+    h.see("Open agent on the right");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Open agent on the right"));
+    h.click("+ Tab");
+    h.see("Open agent in a new tab");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Open agent in a new tab"));
+    h.click("Split ▾");
+    h.see("Left ←");
+    h.send(b"\x1d"); // Ctrl-] closes the menu and returns to Agents.
+    h.see("Input ▸ Agents");
+    assert!(!h.contents().contains("Left ←"));
+    assert!(!h.contents().contains("Tab 2"), "{}", h.contents());
+    assert_eq!(
+        h.contents().matches("Viewer").count(),
+        1,
+        "{}",
+        h.contents()
+    );
+    assert!(!h.log("events").contains("attach p/b"));
+    // The mouse path: Split → Right → agent. The pane's own agent is not a candidate.
+    h.click("Split ▾");
+    h.click("Right →");
+    h.see("Open agent on the right");
+    let popup = h.popup("Open agent on the right");
+    println!("PICKER:\n{}", h.contents());
+    assert!(
+        popup.contains("p/b") && popup.contains("p/taken"),
+        "{popup}"
+    );
+    assert!(!popup.contains("p/a"), "{popup}");
+    assert!(!popup.contains("Move here"), "{popup}");
+    assert!(popup.contains("Cancel Esc"), "{popup}");
+    h.click_in("Open agent on the right", "p/b");
+    h.see("p/b READY");
+    let a = h.locate("Viewer · p/a", 0).unwrap();
+    let b = h.locate("Viewer · p/b", 0).unwrap();
+    assert!(a.1 == b.1 && a.0 < b.0, "p/b must open right of p/a");
+    h.send(b"B");
+    h.event("input p/b 42");
+    h.quit();
+    let events = h.log("events");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
+    assert_eq!(events.lines().filter(|l| *l == "attach p/b").count(), 1);
+    assert!(!events.contains("stop "));
+    assert!(
+        !events.contains("1b5b3c"),
+        "Native controls must not send mouse input"
+    );
+}
+
+#[test]
+fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\x1b[<0;5;3M");
+    h.see("p/a READY");
+    h.send(b"A");
+    h.see("INPUT RECEIVED");
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open agent on the right", "p/b");
+    h.see("p/b READY");
+    h.click("+ Tab");
+    h.see("Open agent in a new tab");
+    let popup = h.popup("Open agent in a new tab");
+    println!("MOVE picker:\n{}", h.contents());
+    for line in popup.lines() {
+        if line.contains("p/a") || line.contains("p/b") {
+            assert!(line.contains("Move here"), "{popup}");
+        } else if line.contains("p/taken") {
+            assert!(!line.contains("Move here"), "{popup}");
+        }
+    }
+    h.click_in("Open agent in a new tab", "p/a");
+    h.see("Tab 2");
+    h.see("Viewer · p/a");
+    // The moved pane keeps its session and output; p/b stays behind in Tab 1.
+    assert!(h.contents().contains("INPUT RECEIVED"));
+    assert!(!h.contents().contains("Viewer · p/b"));
+    h.send(b"Z");
+    h.event("input p/a 5a");
+    h.click("Tab 1");
+    h.see("Viewer · p/b");
+    assert!(!h.contents().contains("Viewer · p/a"));
+    // Moving it back as a split leaves its emptied tab nowhere.
+    h.click("Split ▾");
+    h.click("Below ↓");
+    h.see("Open agent below");
+    let popup = h.popup("Open agent below");
+    assert!(
+        popup.contains("p/a") && popup.contains("Move here"),
+        "{popup}"
+    );
+    assert!(!popup.contains("p/b"), "{popup}");
+    h.click_in("Open agent below", "p/a");
+    h.until(|h| !h.contents().contains("Tab 2"));
+    h.see("Viewer · p/a");
+    let a = h.locate("Viewer · p/a", 0).unwrap();
+    let b = h.locate("Viewer · p/b", 0).unwrap();
+    assert!(a.0 == b.0 && a.1 > b.1, "p/a must move below p/b");
+    assert!(h.contents().contains("INPUT RECEIVED"));
+    h.send(b"Y");
+    h.event("input p/a 59");
+    let events = h.log("events");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
+    assert!(!events.contains("detach"), "{events}");
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\x1b[<0;5;3M");
+    h.see("p/a READY");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open agent on the right", "p/b");
+    h.see("Attaching p/b");
+    h.click("+ Tab");
+    h.see("Open agent in a new tab");
+    let popup = h.popup("Open agent in a new tab");
+    assert!(
+        popup
+            .lines()
+            .any(|l| l.contains("p/b") && l.contains("Move here")),
+        "{popup}"
+    );
+    h.click_in("Open agent in a new tab", "p/b");
+    h.see("Tab 2");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.see("p/b READY");
+    h.send(b"B");
+    h.event("input p/b 42");
+    h.click("Tab 1");
+    h.see("Viewer · p/a");
+    h.until(|h| !h.contents().contains("p/b READY"));
+    assert!(!h.contents().contains("Attaching p/b"));
+    h.quit();
+    let events = h.log("events");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/b").count(), 1);
+    assert!(!events.contains("stop "));
+}
+
+#[test]
+fn a_candidate_click_opens_only_the_agent_it_was_pressed_on() {
+    const TITLE: &str = "Open agent in a new tab";
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.click("+ Tab");
+    let (col, row) = h.row_in(TITLE, "p/b");
+    let fg = |h: &Harness| h.screen.screen().cell(row, col).unwrap().fgcolor();
+    let press = |h: &mut Harness, down: bool| {
+        let kind = if down { 'M' } else { 'm' };
+        h.send(format!("\x1b[<0;{};{}{kind}", col + 1, row + 1).as_bytes());
+    };
+    // Press p/b; a public ls refresh then puts p/aa on that row before the release.
+    let idle = fg(&h);
+    press(&mut h, true);
+    h.until(|h| fg(h) != idle); // The pressed paint shows the press was handled.
+    let pressed = fg(&h);
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/aa":"idle","p/b":"working","p/taken":"idle"}"#,
+    )
+    .unwrap();
+    h.until(|h| h.locate("p/aa", row) == Some((col, row)));
+    press(&mut h, false);
+    h.until(|h| fg(h) != pressed); // The release was handled.
+    println!("REFRESHED under press:\n{}", h.contents());
+    assert!(
+        h.contents().contains(TITLE) && h.popup(TITLE).contains("p/aa"),
+        "the release must not open the agent that replaced the pressed row:\n{}",
+        h.contents()
+    );
+    // A refresh that leaves the pressed name on its row still opens it.
+    let (col, row) = h.row_in(TITLE, "p/b");
+    let fg = |h: &Harness| h.screen.screen().cell(row, col).unwrap().fgcolor();
+    let idle = fg(&h);
+    h.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
+    h.until(|h| fg(h) != idle);
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/aa":"idle","p/b":"working","p/c":"idle","p/taken":"idle"}"#,
+    )
+    .unwrap();
+    h.until(|h| h.popup(TITLE).contains("p/c"));
+    assert_eq!(h.locate("p/b", row), Some((col, row)));
+    h.send(format!("\x1b[<0;{};{}m", col + 1, row + 1).as_bytes());
+    h.see("p/b READY");
+    h.send(b"Z");
+    h.event("input p/b 5a");
+    h.quit();
+    let events = h.log("events");
+    assert!(!events.contains("attach p/aa"), "{events}");
+    assert!(!events.contains("input p/aa"), "{events}");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/b").count(), 1);
     assert!(!events.contains("stop "));
 }

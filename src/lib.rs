@@ -10,6 +10,7 @@ pub mod git;
 pub mod input;
 mod launch;
 pub mod layout;
+pub mod placement;
 pub mod pty;
 pub mod queue;
 pub mod terminal;

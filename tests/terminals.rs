@@ -168,3 +168,105 @@ fn reserving_a_new_target_reaps_an_unreceived_spawn_even_if_status_fails() {
     assert!(events().contains("detached p/b"));
     assert!(!events().contains("stop "));
 }
+
+#[test]
+fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    let area = Rect::new(0, 0, 50, 21);
+    let a = terminals.reserve(Place::Current, Some("p/a".into()));
+    let b = terminals.place(a.pane, Place::Tab, "p/b").unwrap().unwrap();
+    assert_eq!(terminals.tabs.len(), 2);
+    // A moves beside B: same pane and ticket; its emptied tab is dropped.
+    assert!(
+        terminals
+            .place(b.pane, Place::Left, "p/a")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(terminals.tabs.len(), 1);
+    assert!(terminals.valid(a) && terminals.valid(b));
+    assert_eq!(terminals.find("p/a"), Some(a.pane));
+    assert_eq!(terminals.active_pane().id, a.pane);
+    assert_eq!(
+        terminals.rects(area),
+        vec![
+            (a.pane, Rect::new(0, 1, 25, 20)),
+            (b.pane, Rect::new(25, 1, 25, 20))
+        ]
+    );
+    // A pane is never split beside itself.
+    assert!(
+        terminals
+            .place(a.pane, Place::Right, "p/a")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(terminals.rects(area).len(), 2);
+    // Moving B into a new tab collapses the split it left.
+    assert!(
+        terminals
+            .place(a.pane, Place::Tab, "p/b")
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(terminals.tabs.len(), 2);
+    assert_eq!(terminals.active_pane().id, b.pane);
+    assert_eq!(
+        terminals.rects(area),
+        vec![(b.pane, Rect::new(0, 1, 50, 20))]
+    );
+    terminals.focus(a.pane);
+    assert_eq!(
+        terminals.rects(area),
+        vec![(a.pane, Rect::new(0, 1, 50, 20))]
+    );
+    assert!(terminals.valid(a) && terminals.valid(b));
+}
+
+#[test]
+fn placement_popups_stay_inside_small_screens_and_show_an_empty_list() {
+    use saddle::placement::{self, Placement};
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    terminals.reserve(Place::Right, None);
+    let pane = terminals.active_pane().id;
+    for place in [None, Some(Place::Right), Some(Place::Tab)] {
+        let placement = Placement {
+            pane,
+            place,
+            selected: 0,
+            pressed: None,
+        };
+        for (width, height) in [(160, 48), (80, 24), (15, 6), (5, 3), (1, 1), (0, 0)] {
+            let area = Rect::new(0, 0, width, height);
+            let mut screen = Terminal::new(TestBackend::new(width, height)).unwrap();
+            screen
+                .draw(|frame| {
+                    let hits = placement::draw(
+                        &Theme::default(),
+                        frame,
+                        area,
+                        &terminals,
+                        &placement,
+                        &[],
+                    );
+                    for (hit, _) in hits {
+                        assert_eq!(hit.area.intersection(area), hit.area);
+                    }
+                })
+                .unwrap();
+            if width >= 80 {
+                let buffer = screen.backend().buffer();
+                let text: String = buffer.content().iter().map(|c| c.symbol()).collect();
+                assert!(text.contains("‹Cancel Esc›"), "{text}");
+                assert!(
+                    text.contains(if place.is_none() {
+                        "‹Right →›"
+                    } else {
+                        "No agents to open here."
+                    }),
+                    "{text}"
+                );
+            }
+        }
+    }
+}

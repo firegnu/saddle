@@ -5,6 +5,7 @@ use crate::{
     drover, git,
     input::{Focus, Route, encode_key, encode_mouse, encode_paste},
     layout::Panes,
+    placement::{self, Placement},
     pty::Session,
     queue,
     terminals::{Control, Place, Terminals, Ticket},
@@ -145,7 +146,7 @@ struct App {
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
-    open_agent: Option<String>,
+    placement: Option<Placement>,
     native_mouse: bool,
     new_agent: Option<crate::launch::Form>,
     viewer_area: Rect,
@@ -215,7 +216,7 @@ impl App {
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
-            open_agent: None,
+            placement: None,
             native_mouse: false,
             new_agent: None,
             viewer_area: Rect::default(),
@@ -260,7 +261,7 @@ impl App {
                     },
                     Some(ui::Workspace {
                         terminals: &self.viewer,
-                        open_agent: self.open_agent.as_deref(),
+                        placement: self.placement.as_ref(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
                     }),
@@ -314,7 +315,7 @@ impl App {
                         self.panel.message.clear();
                         if self.focus == Focus::Agents
                             && self.panel.confirm.is_none()
-                            && self.open_agent.is_none()
+                            && self.placement.is_none()
                             && !self.new_agent.as_ref().is_some_and(|f| f.visible)
                             && self.viewer.active_pane().id == ticket.pane
                         {
@@ -455,9 +456,6 @@ impl App {
         Ok(())
     }
     fn attach(&mut self) {
-        self.attach_at(Place::Current);
-    }
-    fn attach_at(&mut self, place: Place) {
         if let Some(name) = self.panel.selected.clone() {
             match self.viewer.activate_existing(&name) {
                 Ok(true) => {
@@ -471,16 +469,105 @@ impl App {
                 }
                 Ok(false) => {}
             }
-            let ticket = self.viewer.reserve(place, Some(name.clone()));
+            let ticket = self.viewer.reserve(Place::Current, Some(name.clone()));
             self.actions.start(Action::Attach(name.clone(), ticket));
             self.panel.message = format!("attaching {name}…");
         }
     }
+    /// Opens the candidate the pick is bound to at the placement's location, only if row
+    /// `index` still shows it; otherwise the pick is cancelled and the list stays open. The
+    /// popup's input is modal, so its originating pane is still open here.
+    fn pick(&mut self, index: usize) {
+        let Some(placement) = &mut self.placement else {
+            return;
+        };
+        let Some(place) = placement.place else {
+            return;
+        };
+        let bound = placement.pressed.take();
+        let shown = placement::candidates(&self.panel.agents, &self.viewer, placement)
+            .into_iter()
+            .nth(index)
+            .map(|(name, _)| name);
+        let Some(name) = bound.filter(|name| shown.as_ref() == Some(name)) else {
+            return;
+        };
+        let anchor = placement.pane;
+        self.placement = None;
+        match self.viewer.place(anchor, place, &name) {
+            Ok(Some(ticket)) => {
+                self.actions.start(Action::Attach(name.clone(), ticket));
+                self.panel.message = format!("attaching {name}…");
+            }
+            Ok(None) => self.panel.message.clear(),
+            Err(error) => self.panel.message = format!("{error:#}"),
+        }
+    }
+    fn placement_key(&mut self, key: KeyEvent) -> Result<()> {
+        let Some(placement) = &mut self.placement else {
+            return Ok(());
+        };
+        if key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char(']' | '5'))
+        {
+            self.placement = None;
+            self.focus = Focus::Agents;
+            return Ok(());
+        }
+        let candidates = placement::candidates(&self.panel.agents, &self.viewer, placement);
+        let last = candidates.len().saturating_sub(1);
+        let control = match (placement.place, key.code) {
+            (_, KeyCode::Esc) => Some(Control::Cancel),
+            (None, code) => placement::side(code).map(Control::Side),
+            (Some(_), KeyCode::Up | KeyCode::Char('k')) => {
+                placement.selected = placement.selected.min(last).saturating_sub(1);
+                None
+            }
+            (Some(_), KeyCode::Down | KeyCode::Char('j')) => {
+                placement.selected = (placement.selected + 1).min(last);
+                None
+            }
+            (Some(_), KeyCode::Enter) => {
+                let index = placement.selected.min(last);
+                placement.pressed = candidates.get(index).map(|(name, _)| name.clone());
+                Some(Control::Pick(index))
+            }
+            _ => None,
+        };
+        if let Some(control) = control {
+            self.terminal_control(control)?;
+        }
+        Ok(())
+    }
     fn terminal_control(&mut self, control: Control) -> Result<()> {
         match control {
+            // Choosing a place first; the layout changes only when an agent is picked.
             Control::NewTab => {
-                self.viewer.new_tab();
+                self.placement = Some(Placement {
+                    pane: self.viewer.active_pane().id,
+                    place: Some(Place::Tab),
+                    selected: 0,
+                    pressed: None,
+                });
             }
+            Control::Split(id) => {
+                self.viewer.focus(id);
+                self.placement = Some(Placement {
+                    pane: id,
+                    place: None,
+                    selected: 0,
+                    pressed: None,
+                });
+            }
+            Control::Side(place) => {
+                if let Some(placement) = &mut self.placement {
+                    placement.place = Some(place);
+                }
+            }
+            Control::Pick(index) => self.pick(index),
+            Control::Cancel => self.placement = None,
             Control::Tab(id) => self.viewer.active = id,
             Control::Pane(id) => self.viewer.focus(id),
             Control::CloseTab(id) => self.viewer.close_tab(id)?,
@@ -528,24 +615,8 @@ impl App {
                     }
                     return Ok(false);
                 }
-                if self.open_agent.is_some() {
-                    if key
-                        .modifiers
-                        .contains(crossterm::event::KeyModifiers::CONTROL)
-                        && matches!(key.code, KeyCode::Char(']' | '5'))
-                    {
-                        self.open_agent = None;
-                        self.focus = Focus::Agents;
-                        return Ok(false);
-                    }
-                    match key.code {
-                        KeyCode::Esc => self.open_agent = None,
-                        KeyCode::Char(c @ '1'..='6') if key.modifiers.is_empty() => {
-                            self.panel.select(self.open_agent.take());
-                            self.attach_at(Place::ALL[c as usize - '1' as usize]);
-                        }
-                        _ => {}
-                    }
+                if self.placement.is_some() {
+                    self.placement_key(key)?;
                     return Ok(false);
                 }
                 if self.focus == Focus::Agents
@@ -597,7 +668,7 @@ impl App {
                     form.paste(&text);
                     return Ok(false);
                 }
-                if self.open_agent.is_some() {
+                if self.placement.is_some() {
                     return Ok(false);
                 }
                 if self.focus == Focus::Queue {
@@ -617,6 +688,26 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
+                if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+                    && let Some(placement) = &mut self.placement
+                {
+                    // Bind the press to the name its row shows in the list just drawn; the
+                    // release opens only that name.
+                    placement.pressed = match self
+                        .hits
+                        .terminal
+                        .iter()
+                        .find(|(hit, _)| hit.area.contains(point))
+                    {
+                        Some((_, Control::Pick(index))) => {
+                            placement::candidates(&self.panel.agents, &self.viewer, placement)
+                                .into_iter()
+                                .nth(*index)
+                                .map(|(name, _)| name)
+                        }
+                        _ => None,
+                    };
+                }
                 let controls: Vec<_> = self
                     .hits
                     .buttons
@@ -666,7 +757,23 @@ impl App {
                     }
                     return Ok(false);
                 }
-                if self.panel.confirm.is_some() || self.open_agent.is_some() {
+                if self.panel.confirm.is_some() || self.placement.is_some() {
+                    // The wheel moves through a long candidate list; sides take no wheel.
+                    if self.placement.as_ref().is_some_and(|p| p.place.is_some())
+                        && matches!(
+                            mouse.kind,
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                        )
+                    {
+                        self.placement_key(KeyEvent::new(
+                            if mouse.kind == MouseEventKind::ScrollUp {
+                                KeyCode::Up
+                            } else {
+                                KeyCode::Down
+                            },
+                            crossterm::event::KeyModifiers::NONE,
+                        ))?;
+                    }
                     return Ok(false);
                 }
                 if self.focus == Focus::Queue && self.queue.overlay_open() {
@@ -817,7 +924,6 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.panel.move_selection(-1, now()),
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
-            KeyCode::Char('o') => self.open_agent = self.panel.selected.clone(),
             KeyCode::Char('n') => {
                 self.reload_projects();
                 self.new_agent

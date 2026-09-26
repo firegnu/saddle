@@ -45,7 +45,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
 
 pub struct Workspace<'a> {
     pub terminals: &'a crate::terminals::Terminals,
-    pub open_agent: Option<&'a str>,
+    pub placement: Option<&'a crate::placement::Placement>,
     pub form: Option<&'a mut crate::launch::Form>,
     pub program: &'a str,
 }
@@ -55,8 +55,8 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, open_agent, mut form, program) = match workspace {
-        Some(w) => (Some(w.terminals), w.open_agent, w.form, w.program),
+    let (terminals, placement, mut form, program) = match workspace {
+        Some(w) => (Some(w.terminals), w.placement, w.form, w.program),
         None => (None, None, None, "corral"),
     };
     let t = view.colors;
@@ -76,7 +76,7 @@ pub fn draw_workspace(
             frame,
             view.panes.viewer,
             terminals,
-            view.focus == Focus::Viewer && form.is_none(),
+            view.focus == Focus::Viewer && form.is_none() && placement.is_none(),
         );
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
@@ -137,16 +137,25 @@ pub fn draw_workspace(
         view.queue.fields.clear();
         view.queue.project_rows.clear();
     }
-    if let Some(name) = open_agent {
-        hits.buttons = crate::launch::draw_open(t, frame, name);
+    if queue_modal || panel.confirm.is_some() || form.is_some() {
+        hits.terminal.clear();
+    }
+    if let (Some(terminals), Some(placement)) = (terminals, placement) {
+        // Only the popup stays clickable; it replaces the tab and pane controls.
+        hits.terminal = crate::placement::draw(
+            t,
+            frame,
+            view.panes.viewer,
+            terminals,
+            placement,
+            &panel.agents,
+        );
+        hits.buttons.clear();
         hits.agents.clear();
         hits.queue_rows.clear();
         view.queue.buttons.clear();
         view.queue.fields.clear();
         view.queue.project_rows.clear();
-    }
-    if queue_modal || panel.confirm.is_some() || open_agent.is_some() || form.is_some() {
-        hits.terminal.clear();
     }
     let controls: Vec<_> = hits
         .buttons
@@ -193,7 +202,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  o Show in…  n New  Tab Queue  q Quit",
+            " ↑↓ Select  ↵ Attach  n New  Tab Queue  q Quit",
         ),
         Focus::Queue => (
             "Queue".to_string(),
@@ -252,9 +261,18 @@ pub fn draw_workspace(
     if let Some(form) = &form {
         target = format!("New agent · {}", form.label());
         help = " Tab/Shift-Tab Field  ←→ Home/End Move  Backspace/Delete Erase  Ctrl-U Clear";
-    } else if open_agent.is_some() {
-        target = "Show agent".into();
-        help = " Choose where to show the selected agent  Esc Cancel  Ctrl-] Agents";
+    } else if let Some(placement) = placement {
+        (target, help) = if placement.place.is_some() {
+            (
+                "Open agent".into(),
+                " ↑↓ Select  Enter Open  Esc Cancel  Ctrl-] Agents",
+            )
+        } else {
+            (
+                "Split pane".into(),
+                " ←→↑↓ Choose side  Esc Cancel  Ctrl-] Agents",
+            )
+        };
     }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
@@ -267,8 +285,7 @@ pub fn draw_workspace(
                 Style::default().fg(t.input_text).bg(t.focus),
             ),
             Span::styled(
-                if panel.confirm.is_some() || queue_modal || form.is_some() || open_agent.is_some()
-                {
+                if panel.confirm.is_some() || queue_modal || form.is_some() || placement.is_some() {
                     help
                 } else if view.focus == Focus::Queue && !view.queue.message.is_empty() {
                     &view.queue.message
@@ -356,7 +373,6 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 K::Enter,
                 selected && !connected,
             ),
-            Button::new("Show in… o", K::Char('o'), selected),
             Button::new("New n", K::Char('n'), true),
             Button::new(
                 if panel.by_state { "Name s" } else { "Sort s" },
