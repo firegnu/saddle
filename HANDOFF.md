@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-26：T2 已委派开发（以本节为准）
+
+- 公开队列当前为 T2「支持saddle内部打开corral start」，用户已补充需求并在讨论方案后明确「委派codex去做吧」。旧章节中 T2 占位、等待补充的状态已过时；本轮未操作队列推进。
+- 设计及理由见 docs/DESIGN.md 第 27 节，任务文件为 docs/任务/T2-启动agent与终端布局.md；准备提交 `b5366ee`。当前 main 保留管理文档，功能开发在 t2-terminal-layout 分支。
+- 自有开发 agent：saddle/dev-t2-terminal-1（Codex，gpt-6-astra / xhigh），worktree：../saddle-worktrees/t2-terminal-layout。路由为重 / 交叉审查要 / 碰要害。
+- 下一步：开发回复 DONE 后核对状态、完成记录和 diff，主控按预算跑标准检查，再开 detached worktree 做独立 Codex 只读交叉审查。通过后按 AGENTS.md 合并、推送、清理、补收尾；本轮尚未完成实现、审查或发布。
+- 本轮只开上述开发 agent；saddle/main 保留。既有非阻挡建议沿用下方记录，不扩展本任务。
+
 ## 2026-09-26：主控结束前交接（以本节为准）
 
 ### 当前状态
