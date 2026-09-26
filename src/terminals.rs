@@ -474,24 +474,20 @@ pub fn draw(
     // Keep the rounded outlines, with no extra horizontal padding.
     if area.height >= STRIP {
         let mut x = area.x;
-        let outline =
-            |frame: &mut ratatui::Frame, x: u16, spans: Vec<Span<'static>>, border, current| {
-                let width = spans.iter().map(Span::width).sum::<usize>() as u16 + 2;
-                if x + width > area.right() {
-                    return None;
-                }
-                let rect = Rect::new(x, area.y, width, STRIP);
-                let mut block = Block::bordered()
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(border));
-                if current {
-                    block = block.title(Line::from("●").centered());
-                }
-                frame.render_widget(Paragraph::new(Line::from(spans)).block(block), rect);
-                Some(rect)
-            };
-        let label = Span::styled("+", Style::default().fg(t.text));
-        if let Some(rect) = outline(frame, x, vec![label], t.border, false) {
+        let outline = |frame: &mut ratatui::Frame, x: u16, spans: Vec<Span<'static>>, border| {
+            let width = spans.iter().map(Span::width).sum::<usize>() as u16 + 2;
+            if x + width > area.right() {
+                return None;
+            }
+            let rect = Rect::new(x, area.y, width, STRIP);
+            let block = Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(border));
+            frame.render_widget(Paragraph::new(Line::from(spans)).block(block), rect);
+            Some(rect)
+        };
+        let label = Span::styled(" + ", Style::default().fg(t.text));
+        if let Some(rect) = outline(frame, x, vec![label], t.border) {
             hits.push(target(rect, Control::NewTab));
             x = rect.right() + 1;
         }
@@ -554,8 +550,8 @@ pub fn draw(
                 ),
                 Span::styled(" ×", Style::default().fg(t.muted)),
             ];
-            let border = if current { t.bright } else { t.border };
-            let Some(rect) = outline(frame, x, spans, border, current) else {
+            let border = if current { t.focus } else { t.border };
+            let Some(rect) = outline(frame, x, spans, border) else {
                 break;
             };
             // The close symbol and right boundary close; the label switches tabs.

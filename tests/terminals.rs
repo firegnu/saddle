@@ -292,7 +292,7 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let buffer = screen.backend().buffer();
     let row = |y: u16| -> String { (0..60).map(|x| buffer[(x, y)].symbol()).collect() };
     println!("{}\n{}\n{}\n{}", row(0), row(1), row(2), row(3));
-    assert_eq!(row(1).trim_end(), "│+│ ‹ › │p/a ×│ │p/b ×│");
+    assert_eq!(row(1).trim_end(), "│ + │ ‹ › │p/a ×│ │p/b ×│");
     assert!(row(3).starts_with("┏"), "panes start below the strip");
     fn find(hits: &[terminals::Hit], f: impl Fn(&Control) -> bool) -> Vec<Rect> {
         hits.iter()
@@ -303,35 +303,30 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let new = find(&hits, |c| matches!(c, Control::NewTab));
     let tabs = find(&hits, |c| matches!(c, Control::Tab(_)));
     let closes = find(&hits, |c| matches!(c, Control::CloseTab(_)));
-    assert_eq!(new, vec![Rect::new(0, 0, 3, 3)]);
-    assert_eq!(tabs, vec![Rect::new(8, 0, 5, 3), Rect::new(16, 0, 5, 3)]);
+    assert_eq!(new, vec![Rect::new(0, 0, 5, 3)]);
+    assert_eq!(tabs, vec![Rect::new(10, 0, 5, 3), Rect::new(18, 0, 5, 3)]);
     assert_eq!(
         closes[..2],
-        [Rect::new(13, 0, 2, 3), Rect::new(21, 0, 2, 3)]
+        [Rect::new(15, 0, 2, 3), Rect::new(23, 0, 2, 3)]
     );
     for (tab, close) in tabs.iter().zip(&closes) {
         assert_eq!(buffer[(close.x, 1)].symbol(), "×");
         assert_eq!(buffer[(tab.x, 0)].symbol(), "╭");
         assert_eq!(buffer[(close.right() - 1, 0)].symbol(), "╮");
     }
-    // The current agent has a grey-white boundary and bold name; the other stays dim.
-    assert_eq!(buffer[(8, 0)].fg, theme::BORDER);
-    assert_eq!(buffer[(16, 0)].fg, theme::BRIGHT);
-    assert_eq!(buffer[(17, 1)].fg, theme::BRIGHT);
-    assert!(buffer[(17, 1)].modifier.contains(Modifier::BOLD));
-    assert!(!buffer[(9, 1)].modifier.contains(Modifier::BOLD));
+    // The current agent has an accent boundary and bold name; the other stays dim.
+    assert_eq!(buffer[(10, 0)].fg, theme::BORDER);
+    assert_eq!(buffer[(18, 0)].fg, theme::FOCUS);
+    assert_eq!(buffer[(19, 1)].fg, theme::BRIGHT);
+    assert!(buffer[(19, 1)].modifier.contains(Modifier::BOLD));
+    assert!(!buffer[(11, 1)].modifier.contains(Modifier::BOLD));
     for y in 0..3 {
         for x in 0..60 {
             assert_eq!(buffer[(x, y)].bg, Color::Reset, "no fill at {x},{y}");
         }
     }
 
-    assert_eq!(row(0).matches('●').count(), 1);
-    assert_eq!(
-        buffer[(19, 0)].symbol(),
-        "●",
-        "only the active tab has a marker"
-    );
+    assert!(!row(0).contains('●'), "no decoration on the border");
 
     let second = terminals.active_pane().id;
     terminals.focus(terminals.tabs[0].active);
@@ -339,17 +334,8 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
         .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
         .unwrap();
     let buffer = screen.backend().buffer();
-    assert_eq!(
-        buffer[(11, 0)].symbol(),
-        "●",
-        "marker follows the selected tab"
-    );
-    assert_eq!(
-        buffer[(19, 0)].symbol(),
-        "─",
-        "previous tab loses its marker"
-    );
-    assert_eq!(buffer[(16, 0)].fg, theme::BORDER);
+    assert_eq!(buffer[(10, 0)].fg, theme::FOCUS, "accent follows selection");
+    assert_eq!(buffer[(18, 0)].fg, theme::BORDER);
     terminals.focus(second);
 
     // A split follows its focused agent, and long Unicode names stay inside their hit area.
