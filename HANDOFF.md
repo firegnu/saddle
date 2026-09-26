@@ -6,7 +6,7 @@
 - 纯视觉预算：主控看完整 diff，直接检查 New 和 Tab/Split 合成渲染/命中两条均通过，未重跑套件；开发报告受影响检查与 Clippy 通过。功能状态机未改。旧 Queue/Stop 偶发问题仍未定位，不扩本任务。
 - release 已重建并同步共享 target 与仓库 target/release/saddle，SHA-256 e8fbdbec3ce79abb09d296b146ba485bd808862fae203a3318b36ac6c1943039。默认 saddle 指向共享 release；用户当前实例未重启，重新运行生效。
 - t14-outlined-buttons worktree/分支已正常删除；工作目录已删，一并关闭自有 saddle/dev-t14-buttons-1。当前无自有开发/审查 agent，无未收尾工作树；收尾空提交 22ca0c6，发布记录 d69f9cf。其他用户 agent 未操作。
-- 下一步仅通过公开 drover done T14 核对完成，再停待用户放行，不自动 go/next。原 T2 已放行不重开，T13 不启动。Agents diff 展示按用户最新决定保持现状，不另加任务。
+- 公开 drover done T14 已核对通过（退出 8 为放行模式正常等待）：main 前进、分支已合并、收尾记号 22ca0c6；未配置额外 CHECK_CMD。T14 已完成待用户放行，下一步等用户体验反馈，不自动 go/next。原 T2 已放行不重开，T13 不启动。Agents diff 展示按用户最新决定保持现状，不另加任务。
 
 ## 2026-09-26：T14 已获实施授权并委派（以本节为准）
 
