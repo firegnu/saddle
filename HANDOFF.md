@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-26：T2 主控通过，独立交叉审查中（以本节为准）
+
+- 开发提交 c35daa2 已完成 New 表单、终端 tab 和四向分屏；saddle/dev-t2-terminal-1 空闲，保留 ../saddle-worktrees/t2-terminal-layout 等待审查或返工。
+- 主控核对 diff、范围和取舍通过，最终代码标准测试 116 passed、2 ignored，Clippy 与差异检查通过。取舍逐项裁决与审查要求见 docs/任务/T2-主控与交叉审查.md；尚未合并、发布或标记完成。
+- 已启动独立只读审查 saddle/dev-t2-review-1（Codex，gpt-6-astra / xhigh），detached worktree ../saddle-worktrees/review-t2-terminal-layout 固定在 c35daa2。审查者只向主仓库上述审查文件追加意见，其他文件只读。
+- 下一步：审查 DONE 后核对状态和回复、逐项裁决；有必须改项交原开发者返工，复核只看增量；通过后按 AGENTS.md 合并推送、清理两个 worktree/开发分支及自有 agent、补收尾并更新交接。T2 仍 current，等待用户放行的边界保留；不自动 go/next。
+
 ## 2026-09-26：T2 已委派开发（以本节为准）
 
 - 公开队列当前为 T2「支持saddle内部打开corral start」，用户已补充需求并在讨论方案后明确「委派codex去做吧」。旧章节中 T2 占位、等待补充的状态已过时；本轮未操作队列推进。
