@@ -1,5 +1,14 @@
 # 交接
 
+## 2026-09-26：位置优先布局合并、发布与收尾完成（以本节为准）
+
+- 用户批准的右侧 Split/+ Tab 先选位置再选 agent 已落地；左侧旧 Show 移除，已打开项明确 Move here 并移动现有会话，取消不留空布局。最终开发 73b3d88，经主控和独立 Codex 增量复核通过，合并 e0a9164、收结 8141474 已推送。
+- 两项阻挡均关闭：取消测试等待旧屏幕问题、候选刷新导致点击误接其他 agent。最后交叉六条定向工作流通过，主控 lib/terminals 与相关工作流、Clippy/diff 通过；未重复旧任务及整套。完整证据、逐项裁决和取舍见 docs/任务/终端布局主控与交叉审查.md、终端布局位置优先.md；设计见 DESIGN 第 29 节。
+- 范围外观察仍未定位：未改动 Queue/Stop 用例在主控混合 workflow 检查中曾于 Ctrl-] 等待失败，单独复跑通过，交叉未发现本次增量直接关联。没有把该次混合检查说成全绿或将偶发问题记为已修复；用户另行要求时再调查，不扩大本任务。
+- release 从合并后 main 构建成功；共享 target 与仓库 target/release/saddle 已同步，SHA-256 同为 5b0a78539fd70928a0523296dbac828271a03e960c43a49356d6c12679bf9103。默认 saddle 指向共享 release；当前用户实例未重启，重新运行生效。
+- 开发 pane-placement、detached review-pane-placement 两个 worktree 与开发分支均已清理；工作目录已删，一并关闭自有 saddle/dev-pane-placement-1、saddle/dev-pane-review-1。收尾空提交 5d0f13f；当前仅 main worktree，没有等待结果的本任务 agent。其他项目 agent 未操作。
+- 本任务已完成，下一步等用户体验反馈。T14「弹框内部按钮改为紧凑描边样式」只记录待办，未实施；本轮没有操作队列。原 T2 已放行，不重开、不执行 go/next。历史章节的开发中/阻挡状态均被本节覆盖。
+
 ## 2026-09-26：点击身份修复主控通过，第一轮交叉增量复核（以本节为准）
 
 - 开发 73b3d88 在 placement 局部绑定按下目标名字，松开换人则取消；主控仅审 48a5a48 后增量，通过。lib 6、terminals 6 及受影响候选/取消/移动回归通过，Clippy/diff 通过。
