@@ -429,8 +429,8 @@ impl Terminals {
     }
 }
 
-/// Rows taken by the compact tab strip above the panes.
-pub const STRIP: u16 = 1;
+/// Rows taken by the outlined tab strip above the panes.
+pub const STRIP: u16 = 3;
 #[derive(Clone, Copy)]
 pub enum Control {
     NewTab,
@@ -458,7 +458,7 @@ pub fn draw(
     use ratatui::{
         style::{Modifier, Style},
         text::{Line, Span},
-        widgets::Paragraph,
+        widgets::{Block, BorderType, Paragraph},
     };
     let mut hits = Vec::new();
     let target = |area: Rect, control: Control| {
@@ -471,23 +471,27 @@ pub fn draw(
             control,
         )
     };
-    // Single-row, unfilled boundaries keep the controls quieter than the terminal content.
+    // Keep the rounded outlines, with no extra horizontal padding.
     if area.height >= STRIP {
         let mut x = area.x;
         let outline =
-            |frame: &mut ratatui::Frame, x: u16, mut spans: Vec<Span<'static>>, border| {
+            |frame: &mut ratatui::Frame, x: u16, spans: Vec<Span<'static>>, border, current| {
                 let width = spans.iter().map(Span::width).sum::<usize>() as u16 + 2;
                 if x + width > area.right() {
                     return None;
                 }
                 let rect = Rect::new(x, area.y, width, STRIP);
-                spans.insert(0, Span::styled("[", Style::default().fg(border)));
-                spans.push(Span::styled("]", Style::default().fg(border)));
-                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                let mut block = Block::bordered()
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(border));
+                if current {
+                    block = block.title(Line::from("●").centered());
+                }
+                frame.render_widget(Paragraph::new(Line::from(spans)).block(block), rect);
                 Some(rect)
             };
         let label = Span::styled("+", Style::default().fg(t.text));
-        if let Some(rect) = outline(frame, x, vec![label], t.border) {
+        if let Some(rect) = outline(frame, x, vec![label], t.border, false) {
             hits.push(target(rect, Control::NewTab));
             x = rect.right() + 1;
         }
@@ -495,7 +499,7 @@ pub fn draw(
             if x + 2 > area.right() {
                 break;
             }
-            let rect = Rect::new(x, area.y, 2, 1);
+            let rect = Rect::new(x, area.y + 1, 2, 1);
             frame.render_widget(
                 Paragraph::new(label).style(Style::default().fg(t.muted)),
                 rect,
@@ -550,8 +554,8 @@ pub fn draw(
                 ),
                 Span::styled(" ×", Style::default().fg(t.muted)),
             ];
-            let border = if current { t.muted } else { t.border };
-            let Some(rect) = outline(frame, x, spans, border) else {
+            let border = if current { t.bright } else { t.border };
+            let Some(rect) = outline(frame, x, spans, border, current) else {
                 break;
             };
             // The close symbol and right boundary close; the label switches tabs.

@@ -9,25 +9,25 @@ fn four_directions_split_relative_to_the_active_pane_and_close_collapses_it() {
     for (place, old_rect, new_rect) in [
         (
             Place::Left,
-            Rect::new(25, 1, 25, 20),
-            Rect::new(0, 1, 25, 20),
+            Rect::new(25, 3, 25, 20),
+            Rect::new(0, 3, 25, 20),
         ),
         (
             Place::Right,
-            Rect::new(0, 1, 25, 20),
-            Rect::new(25, 1, 25, 20),
+            Rect::new(0, 3, 25, 20),
+            Rect::new(25, 3, 25, 20),
         ),
-        (Place::Up, Rect::new(0, 11, 50, 10), Rect::new(0, 1, 50, 10)),
+        (Place::Up, Rect::new(0, 13, 50, 10), Rect::new(0, 3, 50, 10)),
         (
             Place::Down,
-            Rect::new(0, 1, 50, 10),
-            Rect::new(0, 11, 50, 10),
+            Rect::new(0, 3, 50, 10),
+            Rect::new(0, 13, 50, 10),
         ),
     ] {
         let mut terminals = Terminals::new("unused-fake-corral".into());
         let old = terminals.active_pane().id;
         let ticket = terminals.reserve(place, None);
-        let rects = terminals.rects(Rect::new(0, 0, 50, 21));
+        let rects = terminals.rects(Rect::new(0, 0, 50, 23));
         assert_eq!(rects.iter().find(|(id, _)| *id == old).unwrap().1, old_rect);
         assert_eq!(
             rects.iter().find(|(id, _)| *id == ticket.pane).unwrap().1,
@@ -36,8 +36,8 @@ fn four_directions_split_relative_to_the_active_pane_and_close_collapses_it() {
         terminals.close_pane(ticket.pane).unwrap();
         assert!(!terminals.valid(ticket));
         assert_eq!(
-            terminals.rects(Rect::new(0, 0, 50, 21)),
-            vec![(old, Rect::new(0, 1, 50, 20))]
+            terminals.rects(Rect::new(0, 0, 50, 23)),
+            vec![(old, Rect::new(0, 3, 50, 20))]
         );
     }
 }
@@ -172,7 +172,7 @@ fn reserving_a_new_target_reaps_an_unreceived_spawn_even_if_status_fails() {
 #[test]
 fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
     let mut terminals = Terminals::new("unused-fake-corral".into());
-    let area = Rect::new(0, 0, 50, 21);
+    let area = Rect::new(0, 0, 50, 23);
     let a = terminals.reserve(Place::Current, Some("p/a".into()));
     let b = terminals.place(a.pane, Place::Tab, "p/b").unwrap().unwrap();
     assert_eq!(terminals.tabs.len(), 2);
@@ -190,8 +190,8 @@ fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
     assert_eq!(
         terminals.rects(area),
         vec![
-            (a.pane, Rect::new(0, 1, 25, 20)),
-            (b.pane, Rect::new(25, 1, 25, 20))
+            (a.pane, Rect::new(0, 3, 25, 20)),
+            (b.pane, Rect::new(25, 3, 25, 20))
         ]
     );
     // A pane is never split beside itself.
@@ -213,12 +213,12 @@ fn placing_an_open_agent_moves_its_pane_with_the_pending_request() {
     assert_eq!(terminals.active_pane().id, b.pane);
     assert_eq!(
         terminals.rects(area),
-        vec![(b.pane, Rect::new(0, 1, 50, 20))]
+        vec![(b.pane, Rect::new(0, 3, 50, 20))]
     );
     terminals.focus(a.pane);
     assert_eq!(
         terminals.rects(area),
-        vec![(a.pane, Rect::new(0, 1, 50, 20))]
+        vec![(a.pane, Rect::new(0, 3, 50, 20))]
     );
     assert!(terminals.valid(a) && terminals.valid(b));
 }
@@ -292,8 +292,8 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let buffer = screen.backend().buffer();
     let row = |y: u16| -> String { (0..60).map(|x| buffer[(x, y)].symbol()).collect() };
     println!("{}\n{}\n{}\n{}", row(0), row(1), row(2), row(3));
-    assert_eq!(row(0).trim_end(), "[+] ‹ › [p/a ×] [p/b ×]");
-    assert!(row(1).starts_with("┏"), "panes start below the strip");
+    assert_eq!(row(1).trim_end(), "│+│ ‹ › │p/a ×│ │p/b ×│");
+    assert!(row(3).starts_with("┏"), "panes start below the strip");
     fn find(hits: &[terminals::Hit], f: impl Fn(&Control) -> bool) -> Vec<Rect> {
         hits.iter()
             .filter(|(_, c)| f(c))
@@ -303,28 +303,54 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let new = find(&hits, |c| matches!(c, Control::NewTab));
     let tabs = find(&hits, |c| matches!(c, Control::Tab(_)));
     let closes = find(&hits, |c| matches!(c, Control::CloseTab(_)));
-    assert_eq!(new, vec![Rect::new(0, 0, 3, 1)]);
-    assert_eq!(tabs, vec![Rect::new(8, 0, 5, 1), Rect::new(16, 0, 5, 1)]);
+    assert_eq!(new, vec![Rect::new(0, 0, 3, 3)]);
+    assert_eq!(tabs, vec![Rect::new(8, 0, 5, 3), Rect::new(16, 0, 5, 3)]);
     assert_eq!(
         closes[..2],
-        [Rect::new(13, 0, 2, 1), Rect::new(21, 0, 2, 1)]
+        [Rect::new(13, 0, 2, 3), Rect::new(21, 0, 2, 3)]
     );
     for (tab, close) in tabs.iter().zip(&closes) {
-        assert_eq!(buffer[(close.x, 0)].symbol(), "×");
-        assert_eq!(buffer[(tab.x, 0)].symbol(), "[");
-        assert_eq!(buffer[(close.right() - 1, 0)].symbol(), "]");
+        assert_eq!(buffer[(close.x, 1)].symbol(), "×");
+        assert_eq!(buffer[(tab.x, 0)].symbol(), "╭");
+        assert_eq!(buffer[(close.right() - 1, 0)].symbol(), "╮");
     }
     // The current agent has a grey-white boundary and bold name; the other stays dim.
     assert_eq!(buffer[(8, 0)].fg, theme::BORDER);
-    assert_eq!(buffer[(16, 0)].fg, theme::MUTED);
-    assert_eq!(buffer[(17, 0)].fg, theme::BRIGHT);
-    assert!(buffer[(17, 0)].modifier.contains(Modifier::BOLD));
-    assert!(!buffer[(9, 0)].modifier.contains(Modifier::BOLD));
-    for y in 0..1 {
+    assert_eq!(buffer[(16, 0)].fg, theme::BRIGHT);
+    assert_eq!(buffer[(17, 1)].fg, theme::BRIGHT);
+    assert!(buffer[(17, 1)].modifier.contains(Modifier::BOLD));
+    assert!(!buffer[(9, 1)].modifier.contains(Modifier::BOLD));
+    for y in 0..3 {
         for x in 0..60 {
             assert_eq!(buffer[(x, y)].bg, Color::Reset, "no fill at {x},{y}");
         }
     }
+
+    assert_eq!(row(0).matches('●').count(), 1);
+    assert_eq!(
+        buffer[(19, 0)].symbol(),
+        "●",
+        "only the active tab has a marker"
+    );
+
+    let second = terminals.active_pane().id;
+    terminals.focus(terminals.tabs[0].active);
+    screen
+        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
+        .unwrap();
+    let buffer = screen.backend().buffer();
+    assert_eq!(
+        buffer[(11, 0)].symbol(),
+        "●",
+        "marker follows the selected tab"
+    );
+    assert_eq!(
+        buffer[(19, 0)].symbol(),
+        "─",
+        "previous tab loses its marker"
+    );
+    assert_eq!(buffer[(16, 0)].fg, theme::BORDER);
+    terminals.focus(second);
 
     // A split follows its focused agent, and long Unicode names stay inside their hit area.
     let original = terminals.active_pane().id;
@@ -336,12 +362,12 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let mut text = String::new();
     let mut x = 0;
     while x < 60 {
-        let symbol = buffer[(x, 0)].symbol();
+        let symbol = buffer[(x, 1)].symbol();
         text.push_str(symbol);
         x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
     }
     assert!(
-        text.contains("项目/非常长的开发") && text.contains("… ×]"),
+        text.contains("项目/非常长的开发") && text.contains("… ×│"),
         "{text}"
     );
     assert!(!text.contains("Tab "));
@@ -357,9 +383,9 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
         .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
         .unwrap();
     let text: String = (0..60)
-        .map(|x| screen.backend().buffer()[(x, 0)].symbol())
+        .map(|x| screen.backend().buffer()[(x, 1)].symbol())
         .collect();
-    assert!(text.contains("[p/b ×]"), "{text}");
+    assert!(text.contains("│p/b ×│"), "{text}");
     terminals.focus(long.pane);
     let narrow = Rect::new(0, 0, 24, 20);
     screen
