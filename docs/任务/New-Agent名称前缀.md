@@ -54,3 +54,11 @@
 ### 未做 / 待主控决定
 - 是否要让 Name 也拒绝 `/`（避免 `agents/p/new` 这类多段名）——设计要求沿用现有校验，未改。
 - 前缀沿用表单现有生命周期：Esc 隐藏后再打开保留草稿；成功创建或重启 saddle 后回到默认 `agents`，不记住上次用过的前缀（设计要求不增加配置）。如需记住，待主控决定。
+
+## 主控审查（2026-09-27）
+
+- 结论：可以合并。核对 dc8ef9b、a7269e9 完整 diff；改动限于前缀输入、完整名称拼接、直接相关测试和说明。用户要求已达到，无必须返工项。
+- 主控在开发 worktree 重跑标准检查一次：`cargo test --all-targets` 为 146 passed、1 failed、2 ignored；唯一失败仍为既有 `full_workflow_routes_input_switches_safely_and_survives_disappearance` 旧鼠标坐标检查，不经过 New 表单，本任务不扩修。`cargo clippy --all-targets -- -D warnings`、diff 检查通过。开发报告的重复全套运行超过预算，已记录，不再追加验证。
+- 同意 Prefix/Name 并排，复用输入框绘制与编辑逻辑；主控 main 锁定、普通名称草稿、角色标签、默认命令、打开位置规则保持。短窗口输入可达性与假 CLI 创建检查通过。
+- 同意 Name 沿用已有校验，不额外拒绝 `/`；多段名按字面拼接，不扩展名称规范。前缀沿用既有表单生命周期，Esc 保留，成功创建或重启后回到 agents；不新增记忆配置。两项均不是本需求阻塞点。
+- 非阻塞建议：无效 Prefix 的 reveal_invalid 因沿用 field >= 2 条件会顺带展开 Advanced，焦点仍正确落在 Prefix，不影响填写和创建，本轮不扩修。没有操作真实 agent 或队列。
