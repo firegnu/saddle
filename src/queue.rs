@@ -1080,12 +1080,15 @@ impl Panel {
         let shown = self.read_error.is_none() && self.content.is_some();
         let tab = |label, code, view| {
             let button = B::new(label, code, shown);
-            if shown && self.view == view && !outlined {
+            if shown && self.view == view {
                 button.primary()
             } else {
                 button
             }
         };
+        let mark = |view| if self.view == view { "●" } else { "○" };
+        let text_label = format!("{} Task text t", mark(View::Text));
+        let details_label = format!("{} Run details ↵", mark(View::Details));
         let draw_tabs = if outlined {
             buttons::draw_outlined_top
         } else {
@@ -1096,21 +1099,31 @@ impl Panel {
             frame,
             area,
             &[
-                tab("Task text t", K::Char('t'), View::Text),
-                tab("Run details ↵", K::Enter, View::Details),
+                tab(&text_label, K::Char('t'), View::Text),
+                tab(&details_label, K::Enter, View::Details),
             ],
         );
-        if outlined {
-            let selected = if self.view == View::Text {
-                K::Char('t')
+        // The chosen view is bold in focus colour; the other one's label is grey.
+        let selected = if self.view == View::Text {
+            K::Char('t')
+        } else {
+            K::Enter
+        };
+        for hit in &hits {
+            if hit.key.code == selected {
+                frame
+                    .buffer_mut()
+                    .set_style(hit.area, Style::default().add_modifier(Modifier::BOLD));
             } else {
-                K::Enter
-            };
-            if let Some(hit) = hits.iter().find(|hit| hit.key.code == selected) {
-                frame.buffer_mut().set_style(
-                    hit.area,
-                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
+                let label = Rect::new(
+                    hit.area.x + 1,
+                    hit.area.y + u16::from(outlined),
+                    hit.area.width.saturating_sub(2),
+                    1,
                 );
+                frame
+                    .buffer_mut()
+                    .set_style(label, Style::default().fg(t.muted));
             }
         }
         self.buttons.extend(hits);
