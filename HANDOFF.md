@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-27：T21 已由用户触发并派发
+
+- 公开 drover show T21 确认 current/doing，起点d0b2008；任务为把README中英文的effort三档说明整理成表，纯文档，不改产品/设计。任务文件 docs/任务/T21-effort图标对照说明.md，分支t21-effort-docs，worktree ../saddle-worktrees/t21-effort-docs，建分支起点69ca0da。
+- 实现者 saddle/dev-t21-effort-docs-1（a622278c24ea），Codex gpt-5.6-luna / medium；公开role=implementer、model和effort标签与实际启动参数一致，已working/attached=0，完成提醒已挂。无需重复分派。用户可观察绿色medium图标。
+- 用户明确纯文档预算：核对中英文与实现一致、diff检查，不跑全套、不交叉审查、不发布二进制。DONE后主控审查、合并推送、正常清理worktree/分支及自有agent、空提交收尾和更新交接，最后公开drover done T21，等待用户放行，不go/next。清理前如attached非0先确认。
+- 当前其他agent corral/main、drover/main、saddle/main不动；上一任务已完全清理。
+
 ## 2026-09-27：Working 紫色动画已移除并发布收尾
 
 - working 前的紫色盲文动画已删除；左侧蓝色圆点继续旋转，effort 首行位置、字形、颜色、折叠呈现与标签规则全部保留。不显示模型名。设计依据见 DESIGN 第40节末尾；任务、完成记录及主控审查见 docs/任务/Working动画与effort区分.md。
