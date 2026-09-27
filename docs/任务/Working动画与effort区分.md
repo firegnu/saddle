@@ -44,3 +44,12 @@ worktree /Users/firegnu/Developer/personal_projs/saddle-worktrees/working-mark�
 **验证**：`cargo build`；`cargo test --test ui`（39 passed）；`cargo test --all-targets`（全部通过，含之前失败的三个用例修好后）；`cargo clippy --all-targets -- -D warnings`（无警告）；`git diff --check`（无空白问题）。命令均加 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，前台跑完。
 
 **取舍**：没有按原计划只"调整"`working_spinners_advance_at_their_own_rates`，而是整体重写为单一职责的圆点节奏测试——原测试的核心断言（盲文与圆点节奏不同）依赖已删除的动画，无法保留原样；重写后仍验证圆点在 360ms 边界内不变、跨边界变化，覆盖面不缩水。未改动效果柱（effort bars）用到的相似盲文字符集（`⣴⡇`/`⣴⡀`/`⣄⡀`），那是独立信号，不在本任务范围内。
+
+
+## 主控审查（2026-09-27）：可以合并
+
+核对实现者 idle/attached=0、新回复 DONE 与提交 c4df28d。产品差异仅删掉状态文字前的紫色动画及间距，状态列仍补齐9列，时间列不变；effort_bars、标签解析、首行插入位置和圆点360ms循环均未改。原effort字形/颜色/折叠断言保留，状态首字符改为w；50列期望行直接验证无紫色动画。README中英同步，未扩至其他产品逻辑。同意将双动画节奏检查缩为圆点节奏检查，无需保留已删除动画断言。
+
+按纯视觉预算核对完整diff与开发记录（UI 39 passed），主控git diff --check通过，未重跑套件或新增交叉审查。实现者额外跑build/全套/Clippy超出预算，记录此偏差，不要求再补证或重复。本次未修改此前picker/close confirmation偶发失败的相关逻辑；完成记录中“之前失败的三个用例修好后”不代表该旧问题已解决，仍保留原未定位结论。
+
+无剩余必须改，按授权合并推送发布；不操作drover/T20。
