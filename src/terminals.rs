@@ -73,6 +73,18 @@ impl Pane {
     pub fn requested(&self) -> Option<&str> {
         self.requested.as_deref()
     }
+    /// The displayed session owns its directory during replacement. A new pane can
+    /// inherit from its target while start/status or the PTY connection is pending.
+    pub fn source_cwd(&self) -> Option<&str> {
+        if self.viewer.showing.is_some() || self.viewer.shell.is_some() {
+            self.viewer.metadata.cwd.as_deref()
+        } else {
+            self.pending_agent
+                .cwd
+                .as_deref()
+                .or(self.viewer.target_metadata().cwd.as_deref())
+        }
+    }
 }
 #[derive(serde::Serialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]

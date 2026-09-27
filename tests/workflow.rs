@@ -2829,3 +2829,163 @@ fn t20_rework_hidden_busy_agents_draft_keeps_its_own_start_result() {
     h.until(|h| !h.contents().contains("Input ▸ New agent"));
     h.quit();
 }
+
+#[test]
+fn t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    let source_cwd = h.dir.path().join("agent-project");
+    std::fs::create_dir(&source_cwd).unwrap();
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    let start = h.ctl(&[
+        "open",
+        "--relative-to",
+        "active",
+        "--place",
+        "tab",
+        "--focus",
+        "--name",
+        "p/cwd-probe",
+        "--cwd",
+        source_cwd.to_str().unwrap(),
+        "--",
+        "synthetic-program",
+    ]);
+    assert_eq!(start["accepted"], true, "{start}");
+    h.event("start p/cwd-probe");
+    let pane = start["pane"].as_u64().unwrap().to_string();
+    let initial = h.ctl(&["inspect"]);
+    let shell = h.ctl(&[
+        "open",
+        "--relative-to",
+        &pane,
+        "--place",
+        "right",
+        "--shell",
+    ]);
+    assert_eq!(h.operation(&shell)["pty"], "running", "{shell}");
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.see("Create agent");
+    let form_uses_source = h.popup("New agent").contains("Project: agent-project");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    let shell_pane = shell["pane"].as_u64().unwrap().to_string();
+    let instance = shell["instance"].as_str().unwrap();
+    let close = h.ctl(&["close", "--pane", &shell_pane, "--instance", instance]);
+    let confirmed = h.ctl(&[
+        "close",
+        "--pane",
+        &shell_pane,
+        "--instance",
+        instance,
+        "--confirmation",
+        close["confirmation"].as_str().unwrap(),
+        "--confirm-shells",
+    ]);
+    assert_eq!(confirmed["ok"], true, "{confirmed}");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    assert_eq!(h.operation(&start)["state"], "complete");
+    h.quit();
+    assert!(
+        form_uses_source,
+        "location New forgot the pending source directory"
+    );
+    assert_eq!(shell["cwd_source"], "source_pane");
+    assert_eq!(initial["tabs"][1]["panes"][0]["cwd_source"], "pane");
+    assert_eq!(
+        shell["cwd"], start["cwd"],
+        "new shell forgot the source pane's already known agent project"
+    );
+    assert_eq!(
+        initial["tabs"][1]["panes"][0]["cwd"], start["cwd"],
+        "pending pane inspection reports an unrelated Tasks cwd"
+    );
+}
+
+#[test]
+fn t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases() {
+    let mut h = Harness::start();
+    let old_cwd = h.dir.path().join("original-project");
+    std::fs::create_dir(&old_cwd).unwrap();
+    std::fs::write(
+        h.dir.path().join("metadata.json"),
+        serde_json::json!({
+            "p/a": {"cwd":old_cwd,"instance":"abcdef123"}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    h.see("original-project"); // The public listing has absorbed A's known directory.
+    h.send(b"\r");
+    h.see("p/a READY");
+    let before = h.ctl(&["inspect"]);
+    let old_pane = before["active_pane"].as_u64().unwrap().to_string();
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    std::fs::write(h.dir.path().join("hold-detach"), "").unwrap();
+    h.send(b"\x1dn\x13"); // Current-pane New uses the different Tasks project.
+    h.event("start agents/main");
+    h.see("Starting…");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    let during_start = h.ctl(&["inspect"]);
+    assert_eq!(during_start["tabs"][0]["panes"][0]["state"], "starting");
+    let shell = h.ctl(&[
+        "open",
+        "--relative-to",
+        &old_pane,
+        "--place",
+        "right",
+        "--shell",
+        "--focus",
+    ]);
+    assert_eq!(h.operation(&shell)["pty"], "running", "{shell}");
+    h.see("SHELL READY");
+    h.send(b"exit");
+    h.until(|h| h.ctl(&["inspect"])["tabs"][0]["panes"][1]["state"] == "exited");
+    let shell_pane = shell["pane"].as_u64().unwrap().to_string();
+    let closed = h.ctl(&[
+        "close",
+        "--instance",
+        shell["instance"].as_str().unwrap(),
+        "--pane",
+        &shell_pane,
+    ]);
+    assert_eq!(closed["ok"], true, "{closed}");
+
+    // The old attach is still displayed while Viewer waits for it to detach.
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    h.event("detaching p/a");
+    let during_attach = h.ctl(&["inspect"]);
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.see("Create agent");
+    let form_uses_original = h.popup("New agent").contains("Project: original-project");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    std::fs::remove_file(h.dir.path().join("hold-detach")).unwrap();
+    h.see("agents/main-actual READY");
+    let after = h.ctl(&["inspect"]);
+    h.quit();
+
+    assert_eq!(during_attach["tabs"][0]["panes"][0]["state"], "attaching");
+    for snapshot in [during_start, during_attach] {
+        let pane = &snapshot["tabs"][0]["panes"][0];
+        assert_eq!(pane["cwd"], before["tabs"][0]["panes"][0]["cwd"]);
+        assert_eq!(pane["cwd_source"], "pane");
+        assert_eq!(pane["corral_instance"], "abcdef123");
+    }
+    assert_eq!(shell["cwd"], old_cwd.to_str().unwrap());
+    assert_eq!(shell["cwd_source"], "source_pane");
+    assert!(
+        form_uses_original,
+        "location New inherited the replacement's directory"
+    );
+    let args: Vec<String> =
+        serde_json::from_str(h.log("start-args").lines().next().unwrap()).unwrap();
+    assert_eq!(after["tabs"][0]["panes"][0]["cwd"], args[3]);
+    assert_ne!(
+        after["tabs"][0]["panes"][0]["cwd"],
+        before["tabs"][0]["panes"][0]["cwd"]
+    );
+}

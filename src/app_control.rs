@@ -81,7 +81,7 @@ impl App {
                 let kind = if shell.is_some() { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() { "agent" } else { "empty" };
                 json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,
                     "agent":p.requested().or(p.viewer.target()),"corral_instance":p.viewer.metadata.instance,
-                    "cwd":p.viewer.metadata.cwd.as_ref().unwrap_or(&self.queue.project),"cwd_source":if p.viewer.metadata.cwd.is_some() {"pane"} else {"tasks_project"},
+                    "cwd":p.source_cwd().unwrap_or(&self.queue.project),"cwd_source":if p.source_cwd().is_some() {"pane"} else {"tasks_project"},
                     "state":if p.starting {"starting"} else if p.requested().is_some() {"accepted"} else {p.viewer.state()},
                     "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"exit_code":p.viewer.exit_code,"note":p.viewer.note})
             }).collect();
@@ -219,12 +219,7 @@ impl App {
                     self.open_content(anchor, *place, content.clone(), *focus)?;
                 value["pane"] = json!(ticket.pane);
                 value["revision"] = json!(ticket.revision);
-                value["cwd"] = json!(self.viewer.get(ticket.pane).and_then(|p| {
-                    p.pending_agent
-                        .cwd
-                        .as_ref()
-                        .or(p.viewer.metadata.cwd.as_ref())
-                }));
+                value["cwd"] = json!(self.viewer.get(ticket.pane).and_then(|p| p.source_cwd()));
                 value["cwd_source"] = json!(cwd_source);
                 value["state"] = json!(if moved
                     && self.viewer.get(ticket.pane).unwrap().viewer.state() == "running"
@@ -322,13 +317,13 @@ impl App {
         };
         let cwd_source = if explicit.is_some() {
             "explicit"
-        } else if source.viewer.metadata.cwd.is_some() {
+        } else if source.source_cwd().is_some() {
             "source_pane"
         } else {
             "tasks_project"
         };
         let cwd = explicit
-            .or_else(|| source.viewer.metadata.cwd.clone())
+            .or_else(|| source.source_cwd().map(str::to_owned))
             .unwrap_or_else(|| self.queue.project.clone());
         if !matches!(content, Content::Agent { .. }) {
             ensure!(

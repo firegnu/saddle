@@ -445,3 +445,29 @@ fn content_picker_offers_terminal_and_new_agent_even_without_agents() {
         "{text}"
     );
 }
+
+#[test]
+fn pending_source_cwd_survives_the_handoff_without_committing_current_metadata() {
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    assert_eq!(terminals.active_pane().source_cwd(), None);
+    let ticket = terminals.reserve(Place::Tab, Some("p/new".into()));
+    terminals.get_mut(ticket.pane).unwrap().pending_agent = saddle::viewer::AgentMetadata {
+        cwd: Some("/synthetic/agent-project".into()),
+        instance: Some("new-instance".into()),
+    };
+    let pane = terminals.get(ticket.pane).unwrap();
+    assert_eq!(pane.source_cwd(), Some("/synthetic/agent-project"));
+    assert!(pane.viewer.metadata.cwd.is_none());
+    assert!(pane.viewer.metadata.instance.is_none());
+
+    // Public status succeeded. complete hands the target to Viewer, before any
+    // PTY exists; directory inheritance must not depend on finishing the attach.
+    terminals.complete(ticket, Some("p/new".into())).unwrap();
+    let pane = terminals.get(ticket.pane).unwrap();
+    assert_eq!(pane.viewer.state(), "attaching");
+    assert!(pane.requested().is_none());
+    assert!(pane.pending_agent.cwd.is_none());
+    assert!(pane.viewer.metadata.cwd.is_none());
+    assert!(pane.viewer.metadata.instance.is_none());
+    assert_eq!(pane.source_cwd(), Some("/synthetic/agent-project"));
+}

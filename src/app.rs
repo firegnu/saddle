@@ -611,7 +611,7 @@ impl App {
                 let project = self
                     .viewer
                     .get(anchor)
-                    .and_then(|p| p.viewer.metadata.cwd.clone())
+                    .and_then(|p| p.source_cwd().map(str::to_owned))
                     .unwrap_or_else(|| self.queue.project.clone());
                 let mut form = crate::launch::Form::new(project);
                 form.anchor = self.viewer.get(anchor).map(|p| p.ticket());
