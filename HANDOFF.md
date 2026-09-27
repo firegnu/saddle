@@ -6,7 +6,7 @@
 - 实现者 saddle/dev-t20-workspace-1（instance b88a3745035c），Codex gpt-6-astra / xhigh，role=implementer；分支 t20-terminal-workspace，worktree ../saddle-worktrees/t20-terminal-workspace。这是同一件集成任务，不要收到 T20 再开重复实现者。
 - 路由重／交叉审查要／碰要害。实现完成后主控审查及标准测试，再独立 Codex 交叉审查；通过后按项目规则合并推送、清理 worktree／自有 agent、空提交收尾和更新交接。发布时重建 main release 并同步既有两处路径，安装已验证的仓库 skills/saddle 新技能；本轮尚未实现、发布或安装。
 - corral/drover 仓库和现有用户 agent 不动。测试只用假 CLI、隔离 socket 与合成 shell；已有 full_workflow 鼠标坐标基线失败如实记录，T20 允许修正直接受新布局影响的几何／同步，保留断言。
-- T20 已通过公开 drover edit 记录实施授权；本轮 drover next 因主控 working 返回 8、没有送达。将安排一个有界的一次性公开 CLI 续接：主控变 idle 且 T20 仍是首个 pending、无 current/awaiting 时，只尝试一次 drover next。收到正常 T20 正文时沿用此进度，不重复分派；下一轮先核对公开队列。实现者不得操作真实队列。
+- T20 已通过公开 drover next 正常送达，退出 0；实时队列为 current=T20/doing、awaiting=null、pending=[]，起点 57a08a3。一次性续接已完成退出，不再重发 next。收到正常 T20 正文时已核对同一实现者仍 working、暂无完成回复，继续等待原有完成提醒，不重复分派。实现者不得操作真实队列。
 - 自有开发 agent 的完成提醒会送回 saddle/main；收到后先查 status/reply，以 DONE 和提交为准，不把提醒直接当完成。当前用户 agent corral/main、drover/main、saddle/main 均未操作。
 
 ## 2026-09-27：New Agent 名称前缀已发布收尾
