@@ -34,3 +34,24 @@
 
 ## 做完
 本文件末尾追加完成记录并提交，写明改动、验证、取舍与未做事项。回复带提交 SHA 和待主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（saddle/dev-duty-title，2026-09-27）
+
+### 改动
+- `src/corral.rs`：`Role` 增加 `Implementer`、`Reviewer`，公开标签 `role=implementer` / `role=reviewer` 解析为对应职责；仍只认精确小写值，不看名字。
+- `src/ui.rs` `pane_title`：`Implementer` → `Implementer · 名称`，`Reviewer` → `Reviewer · 名称`；Controller / Regular / 无效或无标签 → Agent / 空窗格 → Viewer 规则不变。
+- `tests/ui.rs` `viewer_title_shows_the_public_role_label_or_agent_without_guessing`：原先 `reviewer` 期望 `Agent`，改为期望 `Reviewer`；新增 `implementer` → `Implementer`，未知值改用 `tester` → `Agent`；大小写不符 `Controller` → `Agent`、空标签 → `Agent` 保留。
+- `README.md` / `README.zh-CN.md`：New 段落补一句其他入口带 `role=implementer` / `role=reviewer` 标签的 agent 显示 `Implementer · 名称` / `Reviewer · 名称`。
+
+### 验证
+- `git diff --check`：通过。
+- `CARGO_TARGET_DIR=… cargo test --test ui viewer_title_shows_the_public_role_label_or_agent_without_guessing`：1 passed。
+- 按预算未跑全套测试、clippy 或真实终端录制。
+
+### 取舍
+- New 的角色控件、创建参数、命名等未动；`Role` 新增的两个变体只用于读取标签显示，New 不会产生它们。
+- 空窗格 `Viewer` 回退沿用原实现，本次未改该路径，也未为它另加检查。
+
+### 未做 / 待主控决定
+- 未跑 `cargo clippy --all-targets -- -D warnings` 与全套测试（超出验证预算）；合并前是否补跑由主控定。
+- AGENTS.md 派发标签约定已由主控写入，未改。

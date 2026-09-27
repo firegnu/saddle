@@ -354,6 +354,8 @@ pub fn pane_title(showing: Option<&str>, agents: &[Agent]) -> String {
     let role = match role {
         Some(crate::corral::Role::Controller) => "Controller",
         Some(crate::corral::Role::Regular) => "Regular",
+        Some(crate::corral::Role::Implementer) => "Implementer",
+        Some(crate::corral::Role::Reviewer) => "Reviewer",
         None => "Agent",
     };
     format!("{role} · {name}")
