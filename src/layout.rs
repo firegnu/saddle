@@ -6,8 +6,8 @@ pub struct Panes {
     pub agents: Rect,
     pub viewer: Rect,
     pub status: Rect,
-    /// Where the Tasks popup opens: from the left edge, below the Agents top border that
-    /// carries its entry, covering part of the Viewer. It is drawn only while open.
+    /// Where the Tasks popup opens: centered on the screen, covering part of the Viewer.
+    /// It is drawn only while open.
     pub tasks: Rect,
 }
 impl Panes {
@@ -30,7 +30,12 @@ impl Panes {
             agents: Rect::new(area.x, area.y, left, height),
             viewer: Rect::new(area.x + left, area.y, area.width - left, height),
             status: Rect::new(area.x, area.y + height, area.width, area.height.min(1)),
-            tasks: Rect::new(area.x, area.y + height.min(1), width, tall),
+            tasks: Rect::new(
+                area.x + (area.width - width) / 2,
+                area.y + (area.height - tall) / 2,
+                width,
+                tall,
+            ),
         }
     }
 }

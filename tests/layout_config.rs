@@ -2,17 +2,17 @@ use ratatui::layout::Rect;
 use saddle::{config::Config, layout::Panes};
 
 #[test]
-fn agents_own_the_left_column_and_tasks_open_from_the_left_over_the_viewer() {
+fn agents_own_the_left_column_and_tasks_open_centered_over_the_viewer() {
     // left_split is still accepted for existing configs but no longer splits the column.
     let config = Config::parse("left_width = 40\nleft_split = 0.6").unwrap();
     let panes = Panes::new(Rect::new(0, 0, 120, 40), &config);
     assert_eq!(panes.agents, Rect::new(0, 0, 40, 39));
     assert_eq!(panes.viewer, Rect::new(40, 0, 80, 39));
-    assert_eq!(panes.tasks, Rect::new(0, 1, 102, 34));
+    assert_eq!(panes.tasks, Rect::new(9, 3, 102, 34));
     let small = Panes::new(Rect::new(3, 2, 80, 24), &Config::default());
     assert_eq!(small.agents, Rect::new(3, 2, 34, 23));
     assert_eq!(small.viewer, Rect::new(37, 2, 46, 23));
-    assert_eq!(small.tasks, Rect::new(3, 3, 68, 20));
+    assert_eq!(small.tasks, Rect::new(9, 4, 68, 20));
 }
 
 #[test]

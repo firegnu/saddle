@@ -14,7 +14,7 @@ See your agents, manage the task queue, and work in an agent's live terminal—a
 │                     │  Type, paste, and interact here.    │
 │                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
-  Tasks opens as a large popup from the left, over the Viewer.
+  Tasks opens as a large popup centered on the screen, over the Viewer.
 ```
 
 saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings together [corral](https://github.com/firegnu/corral) agent sessions and the [drover](https://github.com/firegnu/drover) task queue. It does not require tmux or Zellij.

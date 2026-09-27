@@ -14,7 +14,7 @@
 │                     │  在这里输入、粘贴和交互。          │
 │                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
-  Tasks 以大弹窗形式从左侧展开，盖在 Viewer 上。
+  Tasks 以大弹窗形式在屏幕中心打开，盖在 Viewer 上。
 ```
 
 saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](https://github.com/firegnu/corral) 的 agent 会话与 [drover](https://github.com/firegnu/drover) 的任务队列整合起来，不依赖 tmux 或 Zellij。

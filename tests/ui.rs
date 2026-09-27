@@ -588,7 +588,8 @@ fn queue_history_scrollbar_reaches_the_end_with_the_last_task_visible() {
     q.select(0);
     let (_, hits) = render(160, 40, &mut a, &mut q, Focus::Queue);
     let before = q.top;
-    q.wheel(10, hits.queue_rows[0].0, 3);
+    let panes = Panes::new(buffer.area, &Config::default());
+    q.wheel(panes.tasks.x + 10, hits.queue_rows[0].0, 3);
     render(160, 40, &mut a, &mut q, Focus::Queue);
     assert_eq!(q.selected, 0);
     assert_eq!(q.top, before + 3);
@@ -1602,7 +1603,10 @@ fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
     let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
     let screen = text(&buffer);
     let (x, y) = find(&buffer, " Tasks ").expect(&screen);
-    assert!(x <= 2 && y == 1, "popup opens from the left: {x},{y}");
+    assert!(
+        (12..=14).contains(&x) && y == 4,
+        "popup opens centered: {x},{y}"
+    );
     // The list row and the selected task's text are both on screen, side by side.
     let row = screen.lines().find(|l| l.contains("Task text")).unwrap();
     assert!(
