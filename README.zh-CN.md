@@ -7,10 +7,10 @@
 在一个窗口里查看 agent、管理任务队列，并直接使用选中 agent 的实时终端。
 
 ```text
-┌─ Agents ───‹Tasks›──┬─ Viewer ──────────────────────────┐
-│ project/            │                                   │
-│ ├─ main   working   │  选中 agent 的实时终端             │
-│ └─ review idle      │                                   │
+┌ Agents · 2  Tasks ──┬─ Viewer ──────────────────────────┐
+│ project/ ─────── (2)│                                   │
+│ │ ◐ main   working  │  选中 agent 的实时终端             │
+│ │ ○ review idle     │                                   │
 │                     │  在这里输入、粘贴和交互。          │
 │                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
@@ -21,14 +21,14 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](http
 
 ## 功能
 
-- **Agents：** 按仓库分组的树形列表，展示实时状态、agent 类型、活动、接入数量、工作目录和标题。用颜色区分工作、空闲、阻塞、停滞和错误。agent 带有 corral 公开标签 `effort` 时显示点阵信号图标：medium `⣄⡀`、high `⣴⡀`、xhigh `⣴⡇`（三根柱压在两个字符内，分别复用主题 idle/working/starting 色，默认为柔绿/蓝/紫；未亮柱只留底点，选中与否图标一致）；没有该标签或是其他值时不显示。图标只反映委派时的标签，不代表运行时实际 effort。
-- **每个 agent 的 Git 摘要：** 目录下面一行，例如 `dev-t12 · C2(main) · +18 -4 · ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支；比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
+- **Agents：** 按仓库分组（`name/ ──── (n)` 分组标题），每个 agent 左侧一条竖线，首行固定列依次为状态点、名称、agent 类型、状态和时间，下面是标题、活动、Git 行、目录和 实例 · `ATT`（公开接入数）· `VIA`（最近输入来源）。状态：`?` waiting（公开状态 `blocked`，黄）、`!` error（红）、`◐` working（蓝，带盲文转圈）、`○` idle（绿）、`✕` exited（极暗）；`▲` stalled、`◌` starting、`·` unknown 保留各自样式。组内默认需要人处理的在前（waiting → error → working → idle → exited），**s** 切换为按名称。时间前的 `⦿` 表示本 saddle 在任一窗格或标签页中正显示该 agent；`•` 表示有未看的已完成回合。agent 超过 5 个时默认折叠，未选中项只留首行，**z** 切换。不足 50 列时类型列只显示标识（`✳`、`>_`、`π`）。agent 带有 corral 公开标签 `effort` 时，在实例行右端显示点阵信号图标：medium `⣄⡀`、high `⣴⡀`、xhigh `⣴⡇`（三根柱压在两个字符内，分别复用主题 idle/working/starting 色，默认为柔绿/蓝/紫；未亮柱只留底点，选中与否图标一致）；没有该标签或是其他值时不显示。图标只反映委派时的标签，不代表运行时实际 effort。
+- **每个 agent 的 Git 摘要：** 目录上面一行，例如 `⎇ dev-t12 ↑2 main     +18 -4 ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支（与 agent 名称相同时只显示 `⎇`）；`↑n 基准`，即比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；增删放不进分支那一行时整组移到下一行右对齐；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
 - **Tasks：** 点 Agents 顶部的 **Tasks** 入口（或按 **Tab**）打开的大弹窗。弹窗关闭时入口仍以状态色显示当前项目的简短状态：`Awaiting release`、`Running`、`Paused`、待办数量或 `Idle`（尚未读到时为 `Loading…`，读取失败为 `Read failed`），不用打开就知道是否需要处理。顶部是项目和队列操作；左侧列出当前任务、待放行、待办和历史记录，右侧并排显示选中任务的原文或运行详情。原生控件支持新增任务、编辑、调整次序和删除待办、汇总查看所有登记项目的待办、切换项目、放行、暂停和循环设置。
 - **内置启动：** 原生表单填写目录、名称、命令与首条消息，预览确认后调用公开 corral start。
 - **Viewer 标签页和分屏：** 每个 tab 保存一组可四向分割的窗格，各自运行实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
 - **鼠标与键盘：** 紧凑的可点击按钮、鼠标滚轮、触控板和快捷键。滚动列表不改变选择，正常刷新保留滚动位置。
 - **响应布局：** 任何宽度下 Agents 都独占左栏；Tasks 弹窗约占窗口 85%，窄时列表叠在内容上方。
-- **终端原生外观：** 面板背景透明，状态有语义颜色，界面标签使用英文；任务内容和 agent 输出保留原文。
+- **终端原生外观：** 面板背景透明（Agents 使用自己的暖暗配色），状态有语义颜色，界面标签使用英文；任务内容和 agent 输出保留原文。
 
 Agents 和 Tasks 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，不嵌入外部看板界面。
 
@@ -148,12 +148,12 @@ saddle 通过 **`drover list --json`** 获取任务数据。完整历史需要 d
 [colors]
 focus = "light_cyan"
 bg = "default"
-agent_selected = "#302a23"
+agent_selected = "#2b2621"
 ```
 
 颜色支持 `default`（或 `reset`，终端默认色）、`#RRGGBB` 和小写 ANSI 色名：`black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`gray`、`dark_gray`、`light_red`、`light_green`、`light_yellow`、`light_blue`、`light_magenta`、`light_cyan`、`white`。其中 `gray` 是普通 ANSI 白，`dark_gray` 是亮黑，`white` 是亮白；ANSI 色随终端调色板变化。
 
-颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。`agent_*` 状态强调色由 Agents 和 Queue 共用，也用于 Queue 操作反馈。未知字段和无效颜色沿用配置错误报告。修改后下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
+颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。Agents 栏使用自己的 `agents_*` 配色（另加 `agent_selected` 和 agent 类型色）；共用的 `agent_*` 状态强调色用于 Tasks（含 Queue 操作反馈），以及 Agents 的 stalled/starting 状态和 effort 图标。未知字段和无效颜色沿用配置错误报告。修改后下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
 
 ## 操作
 
@@ -167,8 +167,9 @@ agent_selected = "#302a23"
 | Agents | Tab / Shift-Tab | 打开 Tasks / 焦点到 Viewer |
 | 任意位置 | 点击 Agents 顶部的 Tasks | 打开 Tasks；关闭后回到打开前的输入目标 |
 | Agents | PgUp / PgDn | 滚动 agent 列表 |
-| Agents | s | 仓库内按名称 / 状态排序 |
-| Agents | x，然后 y | 停止选中 agent，其他键取消 |
+| Agents | s / Sort | 仓库内按状态（默认）/ 名称排序 |
+| Agents | z / Fold | 折叠未选中的 agent 为一行，或重新展开 |
+| Agents | x / Stop，然后 y | 停止选中 agent，其他键取消 |
 | Agents | q | 退出 saddle |
 | Tasks | ↑↓ / j k / 点击任务 | 选择任务，右侧显示它的原文或运行详情 |
 | Tasks | t / Task text、Enter / Run details | 显示任务原文 / 运行详情 |

@@ -7,10 +7,10 @@ English · [简体中文](README.zh-CN.md)
 See your agents, manage the task queue, and work in an agent's live terminal—all in one window.
 
 ```text
-┌─ Agents ───‹Tasks›──┬─ Viewer ──────────────────────────┐
-│ project/            │                                   │
-│ ├─ main   working   │  The selected agent's terminal     │
-│ └─ review idle      │                                   │
+┌ Agents · 2  Tasks ──┬─ Viewer ──────────────────────────┐
+│ project/ ─────── (2)│                                   │
+│ │ ◐ main   working  │  The selected agent's terminal     │
+│ │ ○ review idle     │                                   │
 │                     │  Type, paste, and interact here.    │
 │                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
@@ -21,14 +21,14 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 
 ## Features
 
-- **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states. When an agent was started with a public corral `effort` label, a small dotted signal icon shows it: `⣄⡀`, `⣴⡀`, or `⣴⡇` for medium, high, or xhigh (three bars packed into two character cells, using the theme’s idle/working/starting colors—soft green/blue/purple by default; unlit bars keep only baseline dots, and selection does not change the icon). Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
-- **Git summary per agent:** below each agent's directory, a line such as `dev-t12 · C2(main) · +18 -4 · ?1` describes the worktree at the agent's public corral `cwd`: the current branch; commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together, after Git's built-in text/eol attributes (so a committed CRLF file whose timestamp changed is not counted), per path with no rename detection (a pure rename counts as all lines deleted and added); and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only; a slow repository delays the round for every directory. It never fetches or lazily fetches missing objects, and it runs no external diff, textconv, fsmonitor hook or clean/smudge/process filter from any attributes source. When a changed file would need such a filter, the line counts show `+— -—` instead. A parent repository's line does not look inside submodule worktrees: uncommitted changes inside a submodule are not counted, while a submodule whose commit moved counts as a changed gitlink (`+1 -1`). It also skips optional index writes and ignores inherited `GIT_*` variables such as `GIT_DIR`. It does not follow an agent that later `cd`s elsewhere.
+- **Agents:** agents grouped by repository (`name/ ──── (n)` headings), each with a gutter and fixed columns for status dot, name, agent type, state, and time, then its title, activity, Git line, directory, and instance · `ATT` (public attach count) · `VIA` (last input source). States: `?` waiting (public `blocked`, yellow), `!` error (red), `◐` working (blue, with a braille spinner), `○` idle (green), `✕` exited (faint); `▲` stalled, `◌` starting and `·` unknown keep their own looks. Within a group, agents needing a person come first (waiting → error → working → idle → exited); **s** switches to name order. `⦿` before the time marks an agent this saddle is displaying in any pane or tab; `•` marks an unseen finished turn. With more than five agents the list folds to one row per unselected agent until **z** toggles it. Below 50 columns the type column shows only its mark (`✳`, `>_`, `π`). When an agent was started with a public corral `effort` label, a small dotted signal icon at the right of its instance line shows it: `⣄⡀`, `⣴⡀`, or `⣴⡇` for medium, high, or xhigh (three bars packed into two character cells, using the theme’s idle/working/starting colors—soft green/blue/purple by default; unlit bars keep only baseline dots, and selection does not change the icon). Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
+- **Git summary per agent:** above each agent's directory, a line such as `⎇ dev-t12 ↑2 main     +18 -4 ?1` describes the worktree at the agent's public corral `cwd`: the current branch (just `⎇` when it matches the agent's name); `↑n base`, the commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together, after Git's built-in text/eol attributes (so a committed CRLF file whose timestamp changed is not counted), per path with no rename detection (a pure rename counts as all lines deleted and added); and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; when the changes do not fit beside the branch, they move as a whole to the next row, right-aligned; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only; a slow repository delays the round for every directory. It never fetches or lazily fetches missing objects, and it runs no external diff, textconv, fsmonitor hook or clean/smudge/process filter from any attributes source. When a changed file would need such a filter, the line counts show `+— -—` instead. A parent repository's line does not look inside submodule worktrees: uncommitted changes inside a submodule are not counted, while a submodule whose commit moved counts as a changed gitlink (`+1 -1`). It also skips optional index writes and ignores inherited `GIT_*` variables such as `GIT_DIR`. It does not follow an agent that later `cd`s elsewhere.
 - **Tasks:** a large popup opened from the **Tasks** entry at the top of Agents (or **Tab**). While closed, the entry keeps the project's short state in its status color — `Awaiting release`, `Running`, `Paused`, the pending count, or `Idle` (`Loading…` / `Read failed` until the queue is read) — so you can tell whether anything needs attention. Project and queue actions sit on top; current, awaiting, pending, and historical tasks are listed on the left with the selected task's text or run details beside them. Add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
 - **New agents:** choose a project and Codex or Claude, then create an agent with an editable suggested name. Advanced settings hold the full command, first message, opening location, and exact call preview.
 - **Viewer tabs and splits:** each tab holds a group of terminals, with left/right/up/down splits. Each pane runs an owned interactive shell or a live `corral attach`, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
 - **Responsive layout:** Agents keep the whole left column at every width; the Tasks popup takes about 85% of the window and stacks its list above the content when narrow.
-- **Terminal-native appearance:** transparent panel backgrounds, semantic state colors, and English interface labels. Task text and agent output keep their original language.
+- **Terminal-native appearance:** transparent panel backgrounds (Agents has its own warm dark palette), semantic state colors, and English interface labels. Task text and agent output keep their original language.
 
 Agents and Tasks are native Rust widgets. Only Viewer panes run child PTYs; saddle does not embed external board interfaces.
 
@@ -142,12 +142,12 @@ saddle gets task data through **`drover list --json`**. Full history requires a 
 [colors]
 focus = "light_cyan"
 bg = "default"
-agent_selected = "#302a23"
+agent_selected = "#2b2621"
 ```
 
 Colors accept `default` (or `reset`), `#RRGGBB`, or lowercase ANSI names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`, `dark_gray`, `light_red`, `light_green`, `light_yellow`, `light_blue`, `light_magenta`, `light_cyan`, `white`. `gray` is normal ANSI white; `dark_gray` is bright black; `white` is bright white. ANSI colors follow the terminal palette.
 
-The table covers backgrounds, selection, borders, focus, text levels, connection/unread indicators, action feedback, agent types, and reply formatting. `agent_*` status accents are shared by Agents and Queue, including Queue action feedback. Invalid colors or unknown settings report a configuration error. Changes apply on the next launch; there is no hot reload. Viewer terminal output keeps its own colors. Font family and size belong to your terminal settings.
+The table covers backgrounds, selection, borders, focus, text levels, connection/unread indicators, action feedback, agent types, and reply formatting. The Agents column uses its own `agents_*` palette (plus `agent_selected` and the agent-type accents); the shared `agent_*` status accents color Tasks, including Queue action feedback, and the Agents stalled/starting states and effort icon. Invalid colors or unknown settings report a configuration error. Changes apply on the next launch; there is no hot reload. Viewer terminal output keeps its own colors. Font family and size belong to your terminal settings.
 
 ## Controls
 
@@ -167,8 +167,9 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Agents | Tab / Shift-Tab | Open Tasks / focus Viewer |
 | Anywhere | Click Tasks (top of Agents) | Open Tasks; closing returns to the previous input target |
 | Agents | PgUp / PgDn | Scroll the agent list |
-| Agents | s | Toggle name / state sorting within repositories |
-| Agents | x, then y | Stop the selected agent; other keys cancel |
+| Agents | s / Sort | Toggle status (default) / name order within repositories |
+| Agents | z / Fold | Fold unselected agents to one row, or expand them again |
+| Agents | x / Stop, then y | Stop the selected agent; other keys cancel |
 | Agents | q | Quit saddle |
 | Tasks | ↑↓ / j k / click a task | Select a task; its text or run details show beside the list |
 | Tasks | t / Task text, Enter / Run details | Show the task text / its run details |

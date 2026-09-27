@@ -259,6 +259,14 @@ impl App {
                 .map(|(_, text)| text.as_str())
                 .unwrap_or("loading…")
                 .to_owned();
+            let local: Vec<String> = self
+                .viewer
+                .tabs
+                .iter()
+                .flat_map(|tab| &tab.panes)
+                .filter(|pane| pane.viewer.session.is_some())
+                .filter_map(|pane| pane.viewer.showing.clone())
+                .collect();
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
                     frame,
@@ -268,6 +276,7 @@ impl App {
                         panes,
                         focus: self.focus,
                         showing: self.viewer.active_pane().viewer.showing.as_deref(),
+                        local: &local,
                         viewer: self.viewer.active_pane().viewer.session.as_ref(),
                         queue: &mut self.queue,
                         viewer_note: &self.viewer.active_pane().viewer.note,
@@ -1149,9 +1158,10 @@ impl App {
                     .visible = true;
             }
             KeyCode::Char('s') => {
-                self.panel.by_state = !self.panel.by_state;
+                self.panel.by_name = !self.panel.by_name;
                 self.panel.follow = true;
             }
+            KeyCode::Char('z') => self.panel.toggle_fold(),
             KeyCode::PageUp | KeyCode::PageDown => {
                 let down = key.code == KeyCode::PageDown;
                 let (offset, height) = if self.panel.show_reply {

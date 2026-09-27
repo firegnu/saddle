@@ -8,7 +8,7 @@ pub const BG: Color = Color::Reset;
 pub const OVERLAY: Color = Color::Reset;
 pub const SELECTED: Color = Color::DarkGray;
 // Subtle warm tint matched to the current Terminal theme.
-pub const AGENT_SELECTED: Color = Color::Rgb(0x30, 0x2a, 0x23);
+pub const AGENT_SELECTED: Color = Color::Rgb(0x2b, 0x26, 0x21);
 pub const AGENT_WORKING: Color = Color::Rgb(0x7f, 0xb4, 0xee);
 pub const AGENT_IDLE: Color = Color::Rgb(0x9c, 0xbd, 0x80);
 pub const AGENT_BLOCKED: Color = Color::Rgb(0xe6, 0xb5, 0x66);
@@ -28,6 +28,21 @@ pub const WARNING: Color = Color::Yellow;
 pub const SUCCESS: Color = Color::Green;
 pub const DANGER: Color = Color::Red;
 pub const UNREAD: Color = Color::Magenta;
+// The Agents panel's own palette (design 3a); other areas keep the shared colors above.
+pub const AGENTS_BG: Color = Color::Rgb(0x1d, 0x1a, 0x16);
+pub const AGENTS_BORDER: Color = Color::Rgb(0x5a, 0x52, 0x47);
+pub const AGENTS_RULE: Color = Color::Rgb(0x3a, 0x35, 0x2e);
+pub const AGENTS_FAINT: Color = Color::Rgb(0x3d, 0x38, 0x30);
+pub const AGENTS_TEXT: Color = Color::Rgb(0xe8, 0xdf, 0xcc);
+pub const AGENTS_BRANCH: Color = Color::Rgb(0xcf, 0xc6, 0xb2);
+pub const AGENTS_DIM: Color = Color::Rgb(0x8c, 0x83, 0x74);
+pub const AGENTS_DIMMER: Color = Color::Rgb(0x75, 0x6c, 0x5e);
+pub const AGENTS_ACCENT: Color = Color::Rgb(0xbd, 0xb8, 0x6a);
+pub const AGENTS_GREEN: Color = Color::Rgb(0xa8, 0xc4, 0x7c);
+pub const AGENTS_RED: Color = Color::Rgb(0xe3, 0x72, 0x64);
+pub const AGENTS_BLUE: Color = Color::Rgb(0x7f, 0xa9, 0xea);
+pub const AGENTS_YELLOW: Color = Color::Rgb(0xd9, 0xb2, 0x5f);
+pub const AGENTS_PURPLE: Color = Color::Rgb(0xa5, 0x8b, 0xdc);
 
 /// Startup palette. Queue deliberately shares the Agents status accents.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
@@ -80,6 +95,34 @@ pub struct Theme {
     #[serde(deserialize_with = "deserialize_color")]
     pub reply_heading: Color,
     #[serde(deserialize_with = "deserialize_color")]
+    pub agents_bg: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_border: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_rule: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_faint: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_text: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_branch: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_dim: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_dimmer: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_accent: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_green: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_red: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_blue: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_yellow: Color,
+    #[serde(deserialize_with = "deserialize_color")]
+    pub agents_purple: Color,
+    #[serde(deserialize_with = "deserialize_color")]
     pub claude: Color,
     #[serde(deserialize_with = "deserialize_color")]
     pub codex: Color,
@@ -115,8 +158,22 @@ impl Default for Theme {
             input_text: Color::Black,
             reply_code: Color::Yellow,
             reply_heading: Color::Cyan,
-            claude: Color::Rgb(0xd9, 0x77, 0x57),
-            codex: Color::Rgb(0x8e, 0xd9, 0xc1),
+            agents_bg: AGENTS_BG,
+            agents_border: AGENTS_BORDER,
+            agents_rule: AGENTS_RULE,
+            agents_faint: AGENTS_FAINT,
+            agents_text: AGENTS_TEXT,
+            agents_branch: AGENTS_BRANCH,
+            agents_dim: AGENTS_DIM,
+            agents_dimmer: AGENTS_DIMMER,
+            agents_accent: AGENTS_ACCENT,
+            agents_green: AGENTS_GREEN,
+            agents_red: AGENTS_RED,
+            agents_blue: AGENTS_BLUE,
+            agents_yellow: AGENTS_YELLOW,
+            agents_purple: AGENTS_PURPLE,
+            claude: Color::Rgb(0xe2, 0x83, 0x5e),
+            codex: Color::Rgb(0x79, 0xd4, 0xb4),
             pi: Color::Rgb(0xff, 0xff, 0xff),
             omp: Color::Rgb(0xa8, 0x55, 0xf7),
         }

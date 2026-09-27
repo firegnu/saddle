@@ -123,7 +123,7 @@ fn default_example_missing_files_and_partial_colors_keep_current_defaults() {
     let partial = Config::parse("[colors]\nfocus = '#12aBcD'\ntext = 'default'").unwrap();
     assert_eq!(partial.colors.focus, Color::Rgb(0x12, 0xab, 0xcd));
     assert_eq!(partial.colors.text, Color::Reset);
-    assert_eq!(partial.colors.agent_selected, Color::Rgb(0x30, 0x2a, 0x23));
+    assert_eq!(partial.colors.agent_selected, Color::Rgb(0x2b, 0x26, 0x21));
     for (name, color) in [
         ("reset", Color::Reset),
         ("black", Color::Black),

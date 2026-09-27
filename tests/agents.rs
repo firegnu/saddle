@@ -35,10 +35,7 @@ fn refresh_keeps_selection_and_marks_unseen_completed_turns() {
 
 #[test]
 fn state_sort_stays_within_projects_and_selection_follows_display_order() {
-    let mut panel = Panel {
-        by_state: true,
-        ..Default::default()
-    };
+    let mut panel = Panel::default();
     panel.absorb(
         vec![
             agent("a/idle", "idle"),
@@ -95,4 +92,78 @@ fn git_results_are_kept_only_for_directories_agents_currently_use() {
     panel.absorb(vec![with_cwd("/w/c")], None, 101.0);
     panel.absorb_git(vec![("/w/a".into(), summary("a"))]);
     assert!(panel.git.is_empty());
+}
+
+#[test]
+fn default_order_puts_agents_needing_people_first_and_s_switches_to_names() {
+    let mut panel = Panel::default();
+    panel.absorb(
+        vec![
+            agent("p/a-idle", "idle"),
+            agent("p/b-exited", "exited"),
+            agent("p/c-working", "working"),
+            Agent {
+                error: Some("status failed".into()),
+                ..agent("p/d-error", "idle")
+            },
+            agent("p/e-waiting", "blocked"),
+            agent("p/f-idle", "idle"),
+            agent("q/a-idle", "idle"),
+        ],
+        None,
+        100.0,
+    );
+    let names = |panel: &Panel| -> Vec<String> {
+        panel
+            .ordered(100.0)
+            .iter()
+            .map(|a| a.name.clone())
+            .collect()
+    };
+    assert_eq!(
+        names(&panel),
+        [
+            "p/e-waiting",
+            "p/d-error",
+            "p/c-working",
+            "p/a-idle",
+            "p/f-idle",
+            "p/b-exited",
+            "q/a-idle"
+        ]
+    );
+    assert_eq!(panel.selected.as_deref(), Some("p/e-waiting"));
+    panel.by_name = true;
+    assert_eq!(
+        names(&panel),
+        [
+            "p/a-idle",
+            "p/b-exited",
+            "p/c-working",
+            "p/d-error",
+            "p/e-waiting",
+            "p/f-idle",
+            "q/a-idle"
+        ]
+    );
+    // Selection follows the agent, not its position.
+    assert_eq!(panel.selected.as_deref(), Some("p/e-waiting"));
+}
+
+#[test]
+fn fold_defaults_on_above_five_agents_until_toggled() {
+    let many = |n: usize| (0..n).map(|i| agent(&format!("p/{i}"), "idle")).collect();
+    let mut panel = Panel::default();
+    panel.absorb(many(5), None, 100.0);
+    assert!(!panel.folded());
+    panel.absorb(many(6), None, 101.0);
+    assert!(panel.folded());
+    panel.toggle_fold();
+    assert!(!panel.folded());
+    // A manual choice outlasts later changes in the agent count.
+    panel.absorb(many(8), None, 102.0);
+    assert!(!panel.folded());
+    panel.toggle_fold();
+    panel.absorb(many(2), None, 103.0);
+    assert!(panel.folded());
 }

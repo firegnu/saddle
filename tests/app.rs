@@ -52,7 +52,11 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     let mut output = Vec::new();
     let mut answered_cursor = false;
     let mut screen = vt100::Parser::new(30, 120, 0);
-    while !screen.screen().contents().contains("‹Tasks") && Instant::now() < deadline {
+    // The first frame can arrive in several reads; wait for both panes, not just the header.
+    while !(screen.screen().contents().contains("Tasks · ")
+        && screen.screen().contents().contains("Viewer"))
+        && Instant::now() < deadline
+    {
         if let Ok(bytes) = rx.recv_timeout(Duration::from_millis(100)) {
             screen.process(&bytes);
             output.extend(bytes);
@@ -81,7 +85,7 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     };
     output.extend(rx.try_iter().flatten());
     let text = String::from_utf8_lossy(&output);
-    assert!(snapshot.contains("‹Tasks"), "{snapshot}");
+    assert!(snapshot.contains("Tasks · "), "{snapshot}");
     assert!(
         snapshot.contains("Agents") && snapshot.contains("Viewer"),
         "{text}"

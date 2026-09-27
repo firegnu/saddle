@@ -19,7 +19,7 @@ drover = "drover"             # Executable name or path; ~/ is supported.
 bg = "default"               # Main surfaces.
 overlay = "default"          # Dialog surfaces.
 selected = "dark_gray"       # Project picker selection.
-agent_selected = "#302a23"   # Selected agent background.
+agent_selected = "#2b2621"   # Selected agent background.
 border = "dark_gray"
 text = "default"
 bright = "white"
@@ -40,9 +40,25 @@ agent_stalled = "#e79b65"    # Tasks: Dropped.
 agent_error = "#ef8174"      # Tasks: Failed.
 agent_starting = "#b0a1d8"   # Tasks: Pending heading and status.
 
+# Agents panel palette (the Agents column only; Tasks keeps the shared colors above).
+agents_bg = "#1d1a16"
+agents_border = "#5a5247"    # Unfocused border; focus still uses `focus`.
+agents_rule = "#3a352e"      # Header and bottom-bar rules.
+agents_faint = "#3d3830"     # Entry gutters, group lines, exited agents, ↑0.
+agents_text = "#e8dfcc"
+agents_branch = "#cfc6b2"
+agents_dim = "#8c8374"       # Paths, upstream names, durations.
+agents_dimmer = "#756c5e"    # Instance / ATT / VIA line, disabled controls.
+agents_accent = "#bdb86a"    # Group names, selected gutter, control keys.
+agents_green = "#a8c47c"     # idle, +lines, ATT > 0, this saddle's ⦿.
+agents_red = "#e37264"       # error, -lines, Stop.
+agents_blue = "#7fa9ea"      # working.
+agents_yellow = "#d9b25f"    # waiting, ↑n > 0.
+agents_purple = "#a58bdc"    # working spinner.
+
 # Agent type accents.
-claude = "#d97757"
-codex = "#8ed9c1"
+claude = "#e2835e"
+codex = "#79d4b4"
 pi = "#ffffff"
 omp = "#a855f7"
 
