@@ -530,3 +530,4 @@ Agents ‹Tasks›             Agent terminal
 - 结构化任务状态复用现有颜色：Running 蓝色 agent_working，Done/检查通过绿色 agent_idle，Awaiting/待处理/未满足条件琥珀色 agent_blocked，失败 agent_error，Dropped 橙色 agent_stalled，Pending/启动中 agent_starting；未知、不可用、未运行或不适用保持 muted/dim。
 - 补齐 Hold、Attention、Unmet、Main agent 等仍用普通文字的状态展示：Hold 开启为琥珀色、关闭/未知中性；Attention 需要处理（suggested）或等待放行（awaiting_release）为琥珀色，其余未知/不适用保持中性；Main agent 的状态沿用 Agents 状态配色，仅给状态文字着色，名称与其他说明保持中性。保留 inferred、历史范围、旧数据等已有说明，不能用颜色暗示尚未发生的状态。
 - 本次只改显示和对应命中区域，不改 CLI 请求、任务/agent 状态语义、焦点和操作规则；不新增颜色配置项，复用现有主题键并服从用户配置。
+- 实现取舍：顶部 Suggested attention 提示同样用 agent_blocked 琥珀色；Hold 未知值用 muted。悬停沿用 bright，但当前页签保留 ● 和加粗；Main agent 仅映射公开返回的 working/blocked/idle/starting 状态，不新增停滞或错误推断。

@@ -40,3 +40,10 @@
 - 验证：`git diff --check`、`cargo fmt --check` 通过；`cargo test --test ui` 29 passed；`cargo test --lib` 9 passed；`cargo test --test queue` 16 passed；`cargo test --test workflow` 36 passed、1 failed、2 ignored，唯一失败为已知 `full_workflow_routes_input_switches_safely_and_survives_disappearance`（tests/workflow.rs:245 旧鼠标坐标，未扩修）；`cargo clippy --all-targets -- -D warnings` 通过。未跑全套矩阵、未录屏，纯显示调整未制造 RED。
 - 取舍：Hold 未知用 muted 而非 text（第 35 节 “未知保持 muted/dim”，仍属中性）；非当前页签只把标签内部刷 muted，不动边框，紧凑样式的 `‹›` 保持 border 色。
 - 未做：未改 buttons.rs、主题系统、其他 UI；未处理 full_workflow 旧问题。
+
+## 主控审查（2026-09-27）
+
+- fef8627 可以合并。页签在描边与紧凑两种样式下用 ●/○ 区分当前项，当前项 focus 色加粗，悬停后仍保留标识；正文切换、CLI 请求与状态语义未改。
+- 详情标题沿用 reply_heading，Hold/Attention/Unmet/Main agent 的结构化状态词使用现有主题色，其他文本保持中性；接受 Suggested attention 顶部提示统一琥珀色、Hold 未知用 muted 两项取舍，均符合 DESIGN 第 35 节。Main agent 不额外推断 stalled/error。
+- 主控核对完整 diff 和开发渲染断言，直接运行 `task_tabs_mark_the_chosen_view_and_details_color_structured_states` 1 条通过，diff 检查通过；按纯视觉预算不重跑套件。开发报告 UI 29、lib 9、queue 16 通过及 Clippy/fmt 通过，workflow 唯一失败仍是记录在案的旧鼠标坐标问题，不称全套全绿。
+- 无阻挡意见。配置项、主题默认值和用户配置均未改，其他界面/队列/agent 不在本次范围。
