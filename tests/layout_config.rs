@@ -168,3 +168,65 @@ fn invalid_colors_report_the_config_path_and_field() {
     }
     assert!(Config::parse("[colors]\nfocsu = 'red'").is_err());
 }
+
+#[test]
+fn agents_palette_takes_nearest_256_colors_unless_the_terminal_announces_truecolor() {
+    use ratatui::style::Color;
+    use saddle::theme::{Theme, nearest_256, truecolor};
+    assert!(truecolor(Some("truecolor")) && truecolor(Some("24bit")));
+    assert!(!truecolor(None) && !truecolor(Some("")) && !truecolor(Some("256")));
+    // xterm cube and gray ramp: warm near-black is gray 234, olive and red are cube entries.
+    assert_eq!(
+        nearest_256(Color::Rgb(0x1d, 0x1a, 0x16)),
+        Color::Indexed(234)
+    );
+    assert_eq!(
+        nearest_256(Color::Rgb(0xbd, 0xb8, 0x6a)),
+        Color::Indexed(143)
+    );
+    assert_eq!(
+        nearest_256(Color::Rgb(0xe3, 0x72, 0x64)),
+        Color::Indexed(167)
+    );
+    assert_eq!(
+        nearest_256(Color::Rgb(0xe8, 0xdf, 0xcc)),
+        Color::Indexed(253)
+    );
+    assert_eq!(nearest_256(Color::Yellow), Color::Yellow);
+    let theme = Theme::default();
+    assert_eq!(theme.clone().for_terminal(true), theme);
+    let reduced = theme.clone().for_terminal(false);
+    for color in [
+        reduced.agents_bg,
+        reduced.agents_border,
+        reduced.agents_rule,
+        reduced.agents_faint,
+        reduced.agents_text,
+        reduced.agents_branch,
+        reduced.agents_dim,
+        reduced.agents_dimmer,
+        reduced.agents_accent,
+        reduced.agents_green,
+        reduced.agents_red,
+        reduced.agents_blue,
+        reduced.agents_yellow,
+        reduced.agents_purple,
+        reduced.agent_selected,
+        reduced.claude,
+        reduced.codex,
+    ] {
+        assert!(matches!(color, Color::Indexed(_)), "{color:?}");
+    }
+    assert_eq!(reduced.agents_bg, Color::Indexed(234));
+    // Colors shared with Tasks and the rest of the interface keep their configured values.
+    assert_eq!(reduced.agent_working, theme.agent_working);
+    assert_eq!(reduced.agent_idle, theme.agent_idle);
+    assert_eq!(reduced.focus, theme.focus);
+    assert_eq!(reduced.bg, theme.bg);
+    // A configured ANSI name stays as the user wrote it.
+    let ansi = Config::parse("[colors]\nagents_text = 'white'")
+        .unwrap()
+        .colors
+        .for_terminal(false);
+    assert_eq!(ansi.agents_text, Color::White);
+}

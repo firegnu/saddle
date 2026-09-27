@@ -41,6 +41,7 @@ agent_error = "#ef8174"      # Tasks: Failed.
 agent_starting = "#b0a1d8"   # Tasks: Pending heading and status.
 
 # Agents panel palette (the Agents column only; Tasks keeps the shared colors above).
+# Without COLORTERM=truecolor/24bit, RGB values here use the nearest 256-color entry.
 agents_bg = "#1d1a16"
 agents_border = "#5a5247"    # Unfocused border; focus still uses `focus`.
 agents_rule = "#3a352e"      # Header and bottom-bar rules.

@@ -79,6 +79,8 @@ impl Harness {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
         cmd.args(["--config", config.to_str().unwrap()]);
         cmd.env("TERM", "xterm-256color");
+        // Color assertions expect the configured 24-bit values.
+        cmd.env("COLORTERM", "truecolor");
         cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
         cmd.env("SADDLE_RUNTIME_DIR", dir.path().join("run"));

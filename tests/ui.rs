@@ -2472,3 +2472,73 @@ fn effort_keeps_its_first_row_slot_when_folded_and_narrow() {
             .contains("dev-t20-workspace-1 >_ codex")
     );
 }
+
+#[test]
+fn paths_show_in_full_when_they_fit_and_lose_leading_levels_only_when_too_wide() {
+    let mut a = agents::Panel::default();
+    let long = "/Users/example/Developer/personal_projs/saddle-worktrees/t20-terminal-workspace";
+    a.absorb(
+        vec![
+            Agent {
+                name: "demo/fits".into(),
+                cwd: Some("/tmp/team/project".into()),
+                ..Default::default()
+            },
+            Agent {
+                name: "demo/long".into(),
+                cwd: Some(long.into()),
+                ..Default::default()
+            },
+            Agent {
+                name: "demo/group".into(),
+                cwd: Some("/tmp/team/demo".into()),
+                ..Default::default()
+            },
+        ],
+        None,
+        100.0,
+    );
+    for (width, long_shown) in [
+        (160, "…/saddle-worktrees/t20-terminal-workspace"),
+        (120, "…/t20-terminal-workspace"),
+    ] {
+        let (buffer, _) = render_panel(width, &mut a, &[]);
+        let lines = agents_lines(&buffer);
+        let path = |start: &str| {
+            lines
+                .iter()
+                .map(|l| l.replace('┃', "│"))
+                .find(|l| l.contains(start))
+                .unwrap_or_else(|| panic!("{start}: {}", lines.join("\n")))
+        };
+        assert!(path("/tmp/team/project").contains("│   /tmp/team/project "));
+        assert!(path(long_shown).contains(&format!("│   {long_shown} ")));
+        // The group's own directory keeps the design's parent-only form.
+        assert!(path("…/team/").contains("│   …/team/ "));
+    }
+}
+
+#[test]
+fn attached_reads_in_text_color_but_offers_no_second_attach_click() {
+    use saddle::theme as t;
+    let mut a = spec_sample();
+    // corral/main is selected and displayed here.
+    let (buffer, hits) = render_panel(160, &mut a, &["corral/main".into()]);
+    let (x, y) = find(&buffer, "[Attached]").unwrap();
+    for i in 0..10 {
+        assert_eq!(buffer[(x + i, y)].fg, t::AGENTS_TEXT);
+    }
+    let enter = |hits: &ui::Hits| {
+        hits.buttons
+            .iter()
+            .filter(|h| h.key.code == crossterm::event::KeyCode::Enter)
+            .count()
+    };
+    assert_eq!(enter(&hits), 0);
+    assert!(hits.buttons.iter().all(|h| !h.area.contains((x, y).into())));
+    // Not displayed: the usual Attach control, clickable.
+    let (buffer, hits) = render_panel(160, &mut a, &[]);
+    let (x, y) = find(&buffer, "↵ Attach").unwrap();
+    assert_eq!(buffer[(x, y)].fg, t::AGENTS_ACCENT);
+    assert_eq!(enter(&hits), 1);
+}

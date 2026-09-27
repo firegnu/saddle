@@ -96,3 +96,82 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     );
     assert!(status.success());
 }
+
+/// Raw output of saddle's first frame, run under `COLORTERM` = `colorterm` (unset for None).
+fn first_frame(colorterm: Option<&str>) -> String {
+    let temp = tempfile::tempdir().unwrap();
+    let corral = common::script(temp.path(), "corral", "#!/bin/sh\necho '{\"agents\":[]}'\n");
+    let queue = common::script(temp.path(), "drover", include_str!("fixtures/drover.py"));
+    let config = temp.path().join("config.toml");
+    std::fs::write(
+        &config,
+        format!("corral = {corral:?}\n[queue]\ndrover = {queue:?}\n"),
+    )
+    .unwrap();
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 30,
+            cols: 160,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
+    cmd.args(["--config", config.to_str().unwrap()]);
+    cmd.env("TERM", "xterm-256color");
+    match colorterm {
+        Some(value) => cmd.env("COLORTERM", value),
+        None => cmd.env_remove("COLORTERM"),
+    }
+    cmd.env("HOME", temp.path());
+    cmd.env("SADDLE_RUNTIME_DIR", temp.path().join("run"));
+    cmd.cwd(temp.path());
+    let mut child = pair.slave.spawn_command(cmd).unwrap();
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().unwrap();
+    let mut writer = pair.master.take_writer().unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut bytes = [0; 8192];
+        while let Ok(n) = reader.read(&mut bytes) {
+            if n == 0 || tx.send(bytes[..n].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut output = Vec::new();
+    let mut answered_cursor = false;
+    // The bottom bar is drawn last in the Agents column.
+    while !String::from_utf8_lossy(&output).contains("Fold") && Instant::now() < deadline {
+        if let Ok(bytes) = rx.recv_timeout(Duration::from_millis(100)) {
+            output.extend(bytes);
+            if !answered_cursor && output.windows(4).any(|w| w == b"\x1b[6n") {
+                writer.write_all(b"\x1b[1;1R").unwrap();
+                answered_cursor = true;
+            }
+        }
+    }
+    let _ = writer.write_all(b"q");
+    let end = Instant::now() + Duration::from_secs(5);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > end {
+            child.kill().unwrap();
+            let _ = child.wait();
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    String::from_utf8_lossy(&output).into_owned()
+}
+
+#[test]
+fn agents_colors_follow_the_terminals_announced_color_depth() {
+    // Agents background #1d1a16 is sent as 24-bit only when the terminal says it supports it.
+    let truecolor = first_frame(Some("truecolor"));
+    assert!(truecolor.contains("48;2;29;26;22"), "{truecolor}");
+    let limited = first_frame(None);
+    assert!(limited.contains("Fold"), "{limited}");
+    assert!(!limited.contains("48;2;29;26;22"), "{limited}");
+    assert!(limited.contains("48;5;234"), "{limited}");
+}

@@ -128,7 +128,9 @@ impl Drop for TerminalGuard {
     }
 }
 
-pub fn run(config: Config) -> Result<()> {
+pub fn run(mut config: Config) -> Result<()> {
+    let truecolor = crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref());
+    config.colors = config.colors.for_terminal(truecolor);
     let mut app = App::new(config)?;
     let _guard = TerminalGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;

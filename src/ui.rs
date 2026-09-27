@@ -18,7 +18,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Default)]
 pub struct Hits {
-    pub(crate) buttons: Vec<crate::buttons::Hit>,
+    pub buttons: Vec<crate::buttons::Hit>,
     pub terminal: Vec<crate::terminals::Hit>,
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
@@ -443,12 +443,14 @@ fn agents_header(area: Rect) -> Rect {
     )
 }
 /// One bottom-bar control: key and label, whether it acts, and whether it is destructive.
+/// `lit` shows a state in normal text without making the control clickable.
 struct Control {
     key: &'static str,
     label: &'static str,
     code: crossterm::event::KeyCode,
     enabled: bool,
     danger: bool,
+    lit: bool,
 }
 impl Control {
     fn width(&self) -> u16 {
@@ -540,6 +542,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 code: K::Enter,
                 enabled: false,
                 danger: false,
+                lit: true,
             }
         } else {
             Control {
@@ -548,6 +551,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 code: K::Enter,
                 enabled: selected,
                 danger: false,
+                lit: false,
             }
         },
         Control {
@@ -556,6 +560,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             code: K::Char('n'),
             enabled: true,
             danger: false,
+            lit: false,
         },
         Control {
             key: "s",
@@ -563,6 +568,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             code: K::Char('s'),
             enabled: true,
             danger: false,
+            lit: false,
         },
         Control {
             key: if panel.stopping { "" } else { "x" },
@@ -570,6 +576,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             code: K::Char('x'),
             enabled: selected && !panel.stopping,
             danger: true,
+            lit: false,
         },
         Control {
             key: "z",
@@ -577,6 +584,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             code: K::Char('z'),
             enabled: true,
             danger: false,
+            lit: false,
         },
     ];
     let bar = bar_rows(&controls, content.width);
@@ -593,7 +601,10 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             let y = body_bottom + 1 + row as u16;
             for &(x, i) in placed {
                 let c = &controls[i];
-                let (key, label) = if !c.enabled {
+                let (key, label) = if c.lit {
+                    let text = Style::default().fg(t.agents_text);
+                    (text, text)
+                } else if !c.enabled {
                     let dim = Style::default().fg(t.agents_dimmer);
                     (dim, dim)
                 } else if c.danger {
@@ -1197,8 +1208,8 @@ fn git_parts(
     (left, diff)
 }
 
-/// The directory's last two levels; only the parent when the last level repeats the group.
-/// Anything still too wide loses leading levels, then leading characters, keeping the end.
+/// The full directory; when its last level repeats the group, only the parent's last level.
+/// Anything too wide loses leading levels, then leading characters, keeping the end.
 fn agent_path(path: &str, prefix: &str, width: usize) -> String {
     let mut parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
     let trailing = if !prefix.is_empty() && parts.last() == Some(&prefix.trim_end_matches('/')) {
@@ -1207,8 +1218,11 @@ fn agent_path(path: &str, prefix: &str, width: usize) -> String {
     } else {
         ""
     };
-    let keep = if trailing.is_empty() { 2 } else { 1 };
-    let mut start = parts.len().saturating_sub(keep);
+    let mut start = if trailing.is_empty() {
+        0
+    } else {
+        parts.len().saturating_sub(1)
+    };
     let text = |start: usize| {
         let joined = parts[start..].join("/");
         if start > 0 {

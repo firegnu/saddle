@@ -88,3 +88,15 @@
 - RED→GREEN：从基线 fc7e131 原样恢复 `delegated_effort_shows_strength_bars_and_unknown_stays_blank`、`selecting_an_agent_keeps_its_effort_icon_tier`（后者补断言图标确为 `⣴`，否则两边都是空格也会通过），新增 `effort_keeps_its_first_row_slot_when_folded_and_narrow`（7 个 agent 自动折叠，50/42 列下每个首行在固定列显示对应档位或空白、状态紧随其后、长名被截断；全无 effort 时不留列）。改代码前三项均因首行无图标失败，改后通过。
 - 其后 `cargo test --all-targets` 一次：除 workflow `t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell`（第 2892 行 ctl close 未返回 confirmation）外全部通过；该用例单独连跑 3 次通过。workflow 全套又跑 6 次：4 次全过，1 次同一用例失败，1 次 `t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases`（第 2971 行）失败；失败现场是「+ → New agent… → Cancel Esc」后新标签页的内容选择框仍开着。为判断是否本任务引入，把基线 fc7e131 用 `git archive` 导出到临时目录（未建 worktree、未动 main）跑 workflow 5 次：3 次失败，失败的正是上述两条（同在 2892/2971 行）以及 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`。结论：基线已有的偶发问题，与 Agents 渲染改动无关，根因未定位，未修复，不称全套一次全绿。排查时临时给断言加了输出，已还原。
 - `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 通过。
+
+### 主控审查返工（依据主仓库 docs/任务/Agents侧栏3a主控审查.md，只读）
+只处理审查指出的三项规格偏差；其余取舍已由主控裁定保留，未改。
+1. **R5 路径放得下时完整显示。** `agent_path` 非同组目录从完整路径开始，只有超宽才先省去前面层级（`…/` 开头）再从左截字符、保留末段；末段等于组名时沿用截图的「父目录末级 + `/`」写法。不改公开 cwd、不动 Git 查询。
+2. **256 色终端取最近值。** `theme::truecolor(COLORTERM)` 仅在 `truecolor`/`24bit` 时视为真彩色；否则启动时 `Theme::for_terminal(false)` 把 Agents 专用色（`agents_*`、`agent_selected`、`claude`/`codex`/`pi`/`omp`）中的 RGB 换成 xterm 256 色中最近的一格（6×6×6 立方与灰阶取距离更近者）。真彩色环境保持原 RGB；与 Tasks 等共用的颜色、用户写的 ANSI 颜色名不变。无新依赖、无新设置。workflow harness 显式设 `COLORTERM=truecolor`，原有 RGB 颜色断言不再依赖运行者环境。README 中英、`config.toml` 注释同步。
+3. **`[Attached]` 已连接时用正文色，仍不可点。** 底栏控件新增 `lit`：已连接显示正文色，但不生成 Enter 点击目标；未连接的 `↵ Attach` 规则不变，不改会话/焦点语义。为让测试直接检查点击目标，`ui::Hits.buttons` 由 `pub(crate)` 改为 `pub`。
+
+验证（只跑直接相关检查）：
+- RED→GREEN（新的颜色能力分支）：`tests/layout_config.rs::agents_palette_takes_nearest_256_colors_unless_the_terminal_announces_truecolor`（COLORTERM 判定、已知色对应 234/143/167/253、Agents 专用色全部变成索引色、共用色和 ANSI 名保持）以及 `tests/app.rs::agents_colors_follow_the_terminals_announced_color_depth`（隔离运行 saddle 二进制：`COLORTERM=truecolor` 时首帧有 `48;2;29;26;22`；去掉 COLORTERM 时只有 `48;5;234`）。先用保持旧行为的桩函数跑，两条均在能力判定处失败；实现后通过。
+- 纯视觉/命中（不造 RED）：`tests/ui.rs` 新增 `paths_show_in_full_when_they_fit_and_lose_leading_levels_only_when_too_wide`（50/42 列：`/tmp/team/project` 完整；长路径按宽度省层级；同组目录显示 `…/team/`）与 `attached_reads_in_text_color_but_offers_no_second_attach_click`（已连接时 `[Attached]` 为正文色且没有 Enter 点击目标；未连接时 `↵ Attach` 可点）。
+- `cargo test --test ui --test layout_config --test app` 通过；workflow 只跑受影响的 `startup_colors…`、`buttons_require_release…`、`agents_reply_entry…`、`fold_toggles…`、`native_mouse_buttons…`、`stop_in_progress…`，均通过。未重复全套和基线多轮实验。
+- `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 通过。

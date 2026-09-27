@@ -180,6 +180,38 @@ impl Default for Theme {
     }
 }
 
+/// Whether the terminal announces 24-bit color (`COLORTERM`).
+pub fn truecolor(colorterm: Option<&str>) -> bool {
+    colorterm.is_some_and(|value| {
+        value.eq_ignore_ascii_case("truecolor") || value.eq_ignore_ascii_case("24bit")
+    })
+}
+/// The nearest xterm 256-color entry for an RGB color, from the 6×6×6 cube or the gray ramp;
+/// other colors are kept.
+pub fn nearest_256(color: Color) -> Color {
+    let Color::Rgb(r, g, b) = color else {
+        return color;
+    };
+    const LEVELS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    let level = |v: u8| (0..6).min_by_key(|&i| LEVELS[i].abs_diff(v)).unwrap();
+    let distance = |(x, y, z): (u8, u8, u8)| {
+        [(x, r), (y, g), (z, b)]
+            .iter()
+            .map(|&(a, b)| u32::from(a.abs_diff(b)).pow(2))
+            .sum::<u32>()
+    };
+    let (ri, gi, bi) = (level(r), level(g), level(b));
+    let cube = (LEVELS[ri], LEVELS[gi], LEVELS[bi]);
+    let average = (u32::from(r) + u32::from(g) + u32::from(b)) / 3;
+    let step = ((average.saturating_sub(8) + 5) / 10).min(23) as u8;
+    let gray = 8 + 10 * step;
+    if distance((gray, gray, gray)) < distance(cube) {
+        Color::Indexed(232 + step)
+    } else {
+        Color::Indexed(16 + 36 * ri as u8 + 6 * gi as u8 + bi as u8)
+    }
+}
+
 fn deserialize_color<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Color, D::Error> {
     let value = <String as serde::Deserialize>::deserialize(deserializer)?;
     let color = match value.as_str() {
@@ -217,6 +249,37 @@ fn deserialize_color<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Resul
 }
 
 impl Theme {
+    /// Without 24-bit color, the Agents-only colors take their nearest 256-color entries;
+    /// colors shared with other areas, and ANSI names, are left as configured.
+    pub fn for_terminal(mut self, truecolor: bool) -> Self {
+        if truecolor {
+            return self;
+        }
+        for color in [
+            &mut self.agents_bg,
+            &mut self.agents_border,
+            &mut self.agents_rule,
+            &mut self.agents_faint,
+            &mut self.agents_text,
+            &mut self.agents_branch,
+            &mut self.agents_dim,
+            &mut self.agents_dimmer,
+            &mut self.agents_accent,
+            &mut self.agents_green,
+            &mut self.agents_red,
+            &mut self.agents_blue,
+            &mut self.agents_yellow,
+            &mut self.agents_purple,
+            &mut self.agent_selected,
+            &mut self.claude,
+            &mut self.codex,
+            &mut self.pi,
+            &mut self.omp,
+        ] {
+            *color = nearest_256(*color);
+        }
+        self
+    }
     pub fn base(&self) -> Style {
         Style::default().fg(self.text).bg(self.bg)
     }
