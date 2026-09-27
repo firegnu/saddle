@@ -1,14 +1,14 @@
 use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
 use saddle::{
     drover::{Operation, Request, Snapshot},
-    queue::{Page, Panel},
+    queue::{Page, Panel, View},
 };
 fn key(code: K) -> KeyEvent {
     KeyEvent::new(code, M::NONE)
 }
 
 #[test]
-fn pending_detail_opens_task_text_and_edits_without_returning_to_the_list() {
+fn selected_pending_shows_beside_the_list_and_edits_return_to_the_same_view() {
     let mut panel = Panel::default();
     panel.absorb(
         serde_json::from_value(serde_json::json!({
@@ -17,28 +17,24 @@ fn pending_detail_opens_task_text_and_edits_without_returning_to_the_list() {
         }))
         .unwrap(),
     );
-    panel.open(0);
-    panel.key(key(K::Char('t')));
+    assert_eq!(panel.view, View::Text, "the task text shows first");
     assert!(
-        panel.overlay_open(),
-        "Task must open the original text overlay"
+        panel.content.is_some(),
+        "the selected task shows beside the list"
     );
     panel.key(key(K::Char('e')));
     assert!(matches!(&panel.page, Page::Edit { title, body, .. }
         if title == "Second" && body == "second body"));
     panel.paste(" discarded");
     panel.key(key(K::Esc));
-    assert!(
-        panel.overlay_open(),
-        "Cancel returns to the task text overlay"
-    );
-    panel.key(key(K::Esc));
-    assert!(matches!(panel.page, Page::Detail(_)));
+    assert!(matches!(panel.page, Page::List) && panel.view == View::Text);
 
+    panel.key(key(K::Enter));
+    assert!(matches!(panel.page, Page::List) && panel.view == View::Details);
     panel.key(key(K::Char('e')));
     assert!(
         matches!(panel.page, Page::Edit { .. }),
-        "Detail has a direct Edit entry"
+        "Run details keep Edit"
     );
     panel.paste(" revised");
     let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
@@ -50,15 +46,15 @@ fn pending_detail_opens_task_text_and_edits_without_returning_to_the_list() {
     fresh.pending[0].title = "Second revised".into();
     panel.absorb(fresh);
     assert!(
-        matches!(panel.page, Page::Detail(_)),
-        "Save returns to detail"
+        matches!(panel.page, Page::List) && panel.view == View::Details,
+        "Save returns to the same task and view"
     );
     panel.key(key(K::Char('e')));
     assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Second revised"));
 }
 
 #[test]
-fn detail_edit_tracks_identity_and_preserves_the_form_on_failure() {
+fn edit_follows_the_selected_task_and_preserves_the_form_on_failure() {
     let mut panel = Panel::default();
     panel.absorb(
         serde_json::from_value(serde_json::json!({
@@ -67,12 +63,11 @@ fn detail_edit_tracks_identity_and_preserves_the_form_on_failure() {
         }))
         .unwrap(),
     );
-    panel.open(1);
-    panel.key(key(K::Char('t')));
+    panel.select(1);
     let mut fresh = panel.snapshot.clone().unwrap();
     fresh.pending.swap(0, 1);
     panel.absorb(fresh.clone());
-    panel.select(1); // Selection cannot retarget an already open detail.
+    assert_eq!(panel.selected, 0, "the selection follows T2");
     panel.key(key(K::Char('e')));
     panel.paste(" changed");
     let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
@@ -89,23 +84,19 @@ fn detail_edit_tracks_identity_and_preserves_the_form_on_failure() {
     fresh.current = Some(fresh.pending.remove(0));
     panel.absorb(fresh);
     panel.key(key(K::Esc));
-    assert!(matches!(panel.page, Page::Task(_)));
+    assert!(matches!(panel.page, Page::List));
+    panel.key(key(K::Enter));
     let target = panel.detail_key().unwrap();
     assert_eq!(target.id, "T2");
     panel.absorb_detail(&target, Ok(show("T2", "current", "doing")));
-    for c in ['e', 'g', 'n', 'p', 'l', 'a', 'A', 'c', 'u', 'd', 'x', 'r'] {
-        assert!(panel.key(key(K::Char(c))).is_none());
-        assert!(matches!(panel.page, Page::Task(_)), "{c}");
-    }
-    panel.key(key(K::Esc));
-    assert_eq!(panel.detail_key(), Some(target));
     assert_eq!(opened(&panel).data.as_ref().unwrap().task.id, "T2");
+    // A running task is read-only.
     panel.key(key(K::Char('e')));
-    assert!(matches!(panel.page, Page::Detail(_)));
+    assert!(matches!(panel.page, Page::List));
 }
 
 #[test]
-fn saving_task_text_edit_updates_unnumbered_target_and_returns_to_the_overlay() {
+fn saving_an_unnumbered_edit_keeps_it_selected() {
     let mut panel = Panel::default();
     panel.absorb(Snapshot {
         pending: vec![saddle::drover::Task {
@@ -114,26 +105,19 @@ fn saving_task_text_edit_updates_unnumbered_target_and_returns_to_the_overlay() 
         }],
         ..Default::default()
     });
-    panel.open(0);
-    panel.key(key(K::Char('t')));
     panel.key(key(K::Char('e')));
     panel.paste(" revised");
     let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
         panic!("missing edit");
     };
     panel.complete(&op, Ok("saved".into()));
-    assert!(matches!(panel.page, Page::Task(_)));
+    assert!(matches!(panel.page, Page::List));
     let mut fresh = panel.snapshot.clone().unwrap();
     fresh.pending[0].title = "Original revised".into();
     panel.absorb(fresh);
+    assert_eq!(panel.tasks()[panel.selected].1.title, "Original revised");
     panel.key(key(K::Char('e')));
     assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Original revised"));
-    panel.key(key(K::Esc));
-    panel.key(key(K::Esc));
-    assert!(matches!(panel.page, Page::Detail(_)));
-    panel.key(key(K::Esc));
-    assert!(matches!(panel.page, Page::List));
-    assert_eq!(panel.tasks()[panel.selected].1.title, "Original revised");
 }
 
 #[test]
@@ -236,8 +220,11 @@ fn native_queue_selects_details_and_creates_tasks_without_an_external_editor() {
     panel.key(key(K::Down));
     assert_eq!(panel.selected, 1);
     panel.key(key(K::Enter));
-    assert!(matches!(panel.page, Page::Detail(_)));
-    panel.key(key(K::Esc));
+    assert!(matches!(panel.page, Page::List) && panel.view == View::Details);
+    assert_eq!(
+        panel.selected, 1,
+        "details show the selection, not a new page"
+    );
     panel.key(key(K::Char('a')));
     for c in "中文新增".chars() {
         panel.key(key(K::Char(c)));
@@ -490,10 +477,7 @@ fn show(id: &str, location: &str, status: &str) -> saddle::drover::Detail {
     serde_json::from_value(value).unwrap()
 }
 fn opened(panel: &Panel) -> &saddle::detail::TaskDetail {
-    match &panel.page {
-        Page::Detail(detail) => detail,
-        _ => panic!("details are not open"),
-    }
+    panel.content.as_deref().expect("a task is selected")
 }
 
 #[test]
@@ -531,12 +515,17 @@ fn details_follow_the_task_id_through_completion_and_ignore_older_targets() {
         opened(&panel).data.as_ref().unwrap().task.location,
         "awaiting"
     );
-    // A reopened detail is a new target; results for the old one are dropped.
-    panel.key(key(K::Esc));
-    assert!(matches!(panel.page, Page::List));
+    // Switching views keeps the same target; only Run details are queried.
+    panel.key(key(K::Char('t')));
     assert_eq!(panel.detail_key(), None);
     panel.key(key(K::Enter));
+    assert_eq!(panel.detail_key(), Some(first.clone()));
+    // Selecting it again after another task is a new target; old results are dropped.
+    panel.select(0);
+    assert_eq!(panel.detail_key().unwrap().id, "T5");
+    panel.select(1);
     let second = panel.detail_key().unwrap();
+    assert_eq!(second.id, "T4");
     assert_ne!(second, first);
     panel.absorb_detail(&first, Ok(show("T4", "awaiting", "done")));
     panel.absorb_detail(&first, Err(anyhow::anyhow!("old failure")));
@@ -545,9 +534,9 @@ fn details_follow_the_task_id_through_completion_and_ignore_older_targets() {
         project: "/tmp/project-b".into(),
         ..second.clone()
     };
-    panel.absorb_detail(&other_project, Ok(show("T5", "current", "doing")));
+    panel.absorb_detail(&other_project, Ok(show("T4", "awaiting", "done")));
     assert!(opened(&panel).data.is_none());
-    panel.absorb_detail(&second, Ok(show("T5", "current", "doing")));
+    panel.absorb_detail(&second, Ok(show("T4", "awaiting", "done")));
     assert!(opened(&panel).data.is_some());
 }
 
@@ -561,15 +550,13 @@ fn pending_and_unnumbered_details_use_list_data_until_the_task_starts() {
     }))
     .unwrap();
     panel.absorb(snapshot.clone());
+    panel.key(key(K::Enter));
     for index in 0..4 {
         panel.select(index);
-        panel.key(key(K::Enter));
-        assert!(matches!(panel.page, Page::Detail(_)), "row {index}");
+        assert_eq!(panel.view, View::Details, "row {index}");
         assert_eq!(panel.detail_key(), None, "row {index}");
-        panel.key(key(K::Esc));
     }
     panel.select(0);
-    panel.key(key(K::Enter));
     let mut started = snapshot;
     started.current = Some(started.pending.remove(0));
     panel.absorb(started);
@@ -577,7 +564,7 @@ fn pending_and_unnumbered_details_use_list_data_until_the_task_starts() {
 }
 
 #[test]
-fn detail_page_ignores_queue_actions_and_back_keeps_the_list_position() {
+fn content_keys_scroll_the_text_without_moving_the_list() {
     let mut panel = Panel::default();
     let history: Vec<_> = (0..30)
         .map(|i| serde_json::json!({"id": format!("T{i}"), "title": format!("Done {i}"), "status":"done"}))
@@ -593,26 +580,18 @@ fn detail_page_ignores_queue_actions_and_back_keeps_the_list_position() {
     panel.top = 5;
     let selected_title = panel.tasks()[panel.selected].1.title.clone();
     panel.key(key(K::Enter));
-    for c in [
-        'g', 'n', 'p', 'l', 'a', 'A', 'c', 'e', 'u', 'd', 'x', '?', 'r',
-    ] {
-        assert!(panel.key(key(K::Char(c))).is_none(), "{c}");
-        assert!(matches!(panel.page, Page::Detail(_)), "{c}");
-        assert!(!panel.busy, "{c}");
-    }
-    for code in [
-        K::Down,
-        K::Up,
-        K::PageDown,
-        K::PageUp,
-        K::Char('j'),
-        K::Char('k'),
-    ] {
+    for code in [K::PageDown, K::PageUp, K::Char('t'), K::Enter] {
         assert!(panel.key(key(code)).is_none());
-        assert!(matches!(panel.page, Page::Detail(_)));
+        assert!(matches!(panel.page, Page::List));
+        assert_eq!(panel.tasks()[panel.selected].1.title, selected_title);
+        assert_eq!(panel.top, 5);
     }
-    panel.key(key(K::Esc));
-    assert!(matches!(panel.page, Page::List));
-    assert_eq!(panel.tasks()[panel.selected].1.title, selected_title);
-    assert_eq!(panel.top, 5);
+    assert_eq!(panel.view, View::Details);
+    panel.key(key(K::Down));
+    assert_eq!(panel.selected, 8);
+    assert_eq!(
+        panel.view,
+        View::Details,
+        "the chosen view stays across tasks"
+    );
 }

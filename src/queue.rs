@@ -1,20 +1,19 @@
 use crate::drover::{Operation, Request, Snapshot, Task};
-use crate::theme::{self, Theme};
+use crate::theme::Theme;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
+/// What the Tasks popup shows. `List` is the list with the selected task beside it; every
+/// other page replaces both inside the same popup.
 #[derive(Default)]
 pub enum Page {
     #[default]
     List,
-    Detail(Box<crate::detail::TaskDetail>),
-    Task(Box<crate::detail::TaskDetail>),
     Help,
     Feedback(String),
     Projects,
     Project(String),
     AllPending,
     Edit {
-        return_to: Option<Box<Page>>,
         pending: Vec<Task>,
         index: usize,
         title: String,
@@ -31,21 +30,12 @@ pub enum Page {
         index: usize,
     },
 }
-impl Page {
-    fn detail(&self) -> Option<&crate::detail::TaskDetail> {
-        match self {
-            Self::Detail(detail) | Self::Task(detail) => Some(detail),
-            Self::Edit { return_to, .. } => return_to.as_ref()?.detail(),
-            _ => None,
-        }
-    }
-    fn detail_mut(&mut self) -> Option<&mut crate::detail::TaskDetail> {
-        match self {
-            Self::Detail(detail) | Self::Task(detail) => Some(detail),
-            Self::Edit { return_to, .. } => return_to.as_mut()?.detail_mut(),
-            _ => None,
-        }
-    }
+/// The two readings of the selected task beside the list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum View {
+    #[default]
+    Text,
+    Details,
 }
 #[derive(Default)]
 pub struct Panel {
@@ -64,6 +54,12 @@ pub struct Panel {
     pub(crate) list_area: ratatui::layout::Rect,
     pub scroll: usize,
     pub page: Page,
+    /// The selected task as shown beside the list; replaced when the selection moves to
+    /// another task, so each selection gets its own `drover show` target.
+    pub content: Option<Box<crate::detail::TaskDetail>>,
+    pub view: View,
+    pub(crate) text_scroll: usize,
+    pub(crate) content_area: ratatui::layout::Rect,
     pub message: String,
     pub(crate) message_failed: bool,
     pub busy: bool,
@@ -107,17 +103,6 @@ impl Panel {
         use crate::buttons::Button as B;
         use KeyCode as K;
         match self.page {
-            Page::Task(_) => {
-                let mut controls = vec![B::new("Back Esc", K::Esc, true)];
-                if self.pending_index().is_some() {
-                    controls.push(B::new(
-                        "Edit e",
-                        K::Char('e'),
-                        !self.busy && self.read_error.is_none(),
-                    ));
-                }
-                controls
-            }
             Page::Add { .. } | Page::Edit { .. } => vec![
                 B::control(
                     "Save ^s",
@@ -167,32 +152,24 @@ impl Panel {
     }
     fn pending_index(&self) -> Option<usize> {
         let s = self.snapshot.as_ref()?;
-        if let Some(detail) = self.page.detail() {
-            let (group, task) = self.live(detail)?;
-            return (group == "Pending")
-                .then(|| s.pending.iter().position(|t| t == task))
-                .flatten();
-        }
         let index = self
             .selected
             .checked_sub(usize::from(s.current.is_some()) + usize::from(s.awaiting.is_some()))?;
         (index < s.pending.len()).then_some(index)
     }
-    /// Where the list has the detail page's task now: by id, or by content if unnumbered.
+    /// Where the list has the shown task now: by id, or by content if unnumbered.
     fn live(&self, detail: &crate::detail::TaskDetail) -> Option<(&'static str, &Task)> {
         self.tasks()
             .into_iter()
-            .find(|(_, t)| match &detail.task.id {
-                Some(id) => t.id.as_ref() == Some(id),
-                None => {
-                    t.id.is_none() && t.title == detail.task.title && t.body == detail.task.body
-                }
-            })
+            .find(|(_, t)| same_task(t, &detail.task))
     }
-    /// The `drover show` target of the open detail page. Pending and unnumbered tasks are not
-    /// covered by show; a pending task becomes a target once it starts.
+    /// The `drover show` target while Run details is the chosen view. Pending and unnumbered
+    /// tasks are not covered by show; a pending task becomes a target once it starts.
     pub fn detail_key(&self) -> Option<DetailKey> {
-        let detail = self.page.detail()?;
+        if self.view != View::Details {
+            return None;
+        }
+        let detail = self.content.as_ref()?;
         let id = detail.task.id.as_ref().filter(|id| {
             id.strip_prefix('T')
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
@@ -218,7 +195,7 @@ impl Panel {
         if self.detail_key().as_ref() != Some(key) {
             return;
         }
-        if let Some(detail) = self.page.detail_mut() {
+        if let Some(detail) = &mut self.content {
             match result {
                 Ok(data) => {
                     detail.data = Some(Box::new(data));
@@ -228,15 +205,24 @@ impl Panel {
             }
         }
     }
-    /// Selects a task row and opens its details, as a click does.
-    pub fn open(&mut self, index: usize) {
-        self.select(index);
-        self.open_detail();
-    }
-    fn open_detail(&mut self) {
-        if let Some((group, task)) = self.tasks().get(self.selected) {
-            let detail = crate::detail::TaskDetail::new(group, (*task).clone());
-            self.page = Page::Detail(Box::new(detail));
+    /// Keeps the content beside the list on the selected task; a different task starts
+    /// afresh at the top.
+    fn sync_content(&mut self) {
+        let selected = self
+            .tasks()
+            .get(self.selected)
+            .map(|(group, task)| (*group, (*task).clone()));
+        let Some((group, task)) = selected else {
+            self.content = None;
+            return;
+        };
+        if !self
+            .content
+            .as_ref()
+            .is_some_and(|content| same_task(&content.task, &task))
+        {
+            self.content = Some(Box::new(crate::detail::TaskDetail::new(group, task)));
+            self.text_scroll = 0;
         }
     }
     fn edit(&mut self) {
@@ -248,13 +234,7 @@ impl Panel {
             let task = &pending[index];
             let title = task.title.clone();
             let body = task.body.clone();
-            let return_to = if matches!(self.page, Page::Detail(_) | Page::Task(_)) {
-                Some(Box::new(std::mem::take(&mut self.page)))
-            } else {
-                None
-            };
             self.page = Page::Edit {
-                return_to,
                 pending,
                 index,
                 title,
@@ -265,9 +245,7 @@ impl Panel {
         }
     }
     fn finish_edit(&mut self) {
-        if let Page::Edit { return_to, .. } = std::mem::take(&mut self.page) {
-            self.page = return_to.map(|page| *page).unwrap_or_default();
-        }
+        self.page = Page::List;
     }
     pub fn absorb(&mut self, snapshot: Snapshot) {
         self.read_error = None;
@@ -284,10 +262,7 @@ impl Panel {
         let tasks = self.tasks();
         self.selected = old
             .and_then(|(index, old)| {
-                let matches = |(_, t): &(&str, &Task)| match &old.id {
-                    Some(id) => t.id.as_ref() == Some(id),
-                    None => t.id.is_none() && t.title == old.title && t.body == old.body,
-                };
+                let matches = |(_, t): &(&str, &Task)| same_task(t, &old);
                 if tasks.get(index).is_some_and(matches) {
                     Some(index)
                 } else {
@@ -296,17 +271,36 @@ impl Panel {
             })
             .unwrap_or(self.selected)
             .min(tasks.len().saturating_sub(1));
+        self.sync_content();
     }
+    /// Selects a task row; the content beside the list follows it.
     pub fn select(&mut self, index: usize) {
         self.selected = index.min(self.tasks().len().saturating_sub(1));
         self.scroll = 0;
         self.manual_scroll = false;
+        self.sync_content();
+    }
+    fn scroll_content(&mut self, delta: isize) {
+        match (self.view, &mut self.content) {
+            (View::Details, Some(detail)) => detail.scroll_by(delta),
+            // Clamped when drawn, like the other plain-text pages.
+            _ => self.text_scroll = self.text_scroll.saturating_add_signed(delta),
+        }
+    }
+    fn content_page(&self) -> isize {
+        match (self.view, &self.content) {
+            (View::Details, Some(detail)) => detail.page(),
+            _ => self.content_area.height.saturating_sub(3).max(1) as isize,
+        }
     }
     pub fn wheel(&mut self, column: u16, row: u16, delta: isize) {
-        if !self.overlay_open() && self.list_area.contains((column, row).into()) {
-            if let Page::Detail(detail) = &mut self.page {
-                detail.scroll_by(delta);
-            } else if self.read_error.is_some() {
+        if self.overlay_open() {
+            return;
+        }
+        if self.content_area.contains((column, row).into()) {
+            self.scroll_content(delta);
+        } else if self.list_area.contains((column, row).into()) {
+            if self.read_error.is_some() {
                 self.scroll = self.scroll.saturating_add_signed(delta);
             } else {
                 self.top = self.top.saturating_add_signed(delta);
@@ -362,16 +356,12 @@ impl Panel {
                         task.body = body.clone();
                         (*index, task)
                     });
-                    if let Some((_, task)) = &self.selection_after_write {
-                        if let Some(detail) = self.page.detail_mut() {
-                            detail.task = task.clone();
-                        }
-                        if let Some(snapshot) = &mut self.snapshot
-                            && let Some(old) = snapshot.pending.get_mut(*index)
-                            && Some(&*old) == pending.get(*index)
-                        {
-                            *old = task.clone();
-                        }
+                    if let Some((_, task)) = &self.selection_after_write
+                        && let Some(snapshot) = &mut self.snapshot
+                        && let Some(old) = snapshot.pending.get_mut(*index)
+                        && Some(&*old) == pending.get(*index)
+                    {
+                        *old = task.clone();
                     }
                     self.finish_edit();
                     self.manual_scroll = false;
@@ -443,41 +433,6 @@ impl Panel {
                 KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
                 KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
                 KeyCode::Char('r') => return Some(Request::AllPending),
-                _ => {}
-            }
-            return None;
-        }
-        if matches!(self.page, Page::Task(_)) {
-            match key.code {
-                KeyCode::Esc => {
-                    if let Page::Task(detail) = std::mem::take(&mut self.page) {
-                        self.page = Page::Detail(detail);
-                    }
-                }
-                KeyCode::Char('e') => self.edit(),
-                KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
-                KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
-                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
-                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
-                _ => {}
-            }
-            return None;
-        }
-        if let Page::Detail(detail) = &mut self.page {
-            match key.code {
-                KeyCode::Esc => self.page = Page::List,
-                KeyCode::Char('t') => {
-                    if let Page::Detail(detail) = std::mem::take(&mut self.page) {
-                        self.page = Page::Task(detail);
-                        self.scroll = 0;
-                        self.message.clear();
-                    }
-                }
-                KeyCode::Char('e') => self.edit(),
-                KeyCode::Up | KeyCode::Char('k') => detail.scroll_by(-1),
-                KeyCode::Down | KeyCode::Char('j') => detail.scroll_by(1),
-                KeyCode::PageUp => detail.scroll_by(-detail.page()),
-                KeyCode::PageDown => detail.scroll_by(detail.page()),
                 _ => {}
             }
             return None;
@@ -624,11 +579,20 @@ impl Panel {
                     self.scroll = self.scroll.saturating_add(1);
                 }
             }
+            KeyCode::PageUp | KeyCode::PageDown
+                if matches!(self.page, Page::List) && self.read_error.is_none() =>
+            {
+                let page = self.content_page();
+                self.scroll_content(if key.code == KeyCode::PageUp {
+                    -page
+                } else {
+                    page
+                });
+            }
             KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
             KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
-            KeyCode::Enter if !self.tasks().is_empty() && self.read_error.is_none() => {
-                self.open_detail();
-            }
+            KeyCode::Enter if matches!(self.page, Page::List) => self.view = View::Details,
+            KeyCode::Char('t') if matches!(self.page, Page::List) => self.view = View::Text,
             KeyCode::Char('?' | 'h') => {
                 self.page = Page::Help;
                 self.scroll = 0;
@@ -730,15 +694,58 @@ impl Panel {
             t.agent_idle
         }
     }
+    /// A sub-page has replaced the list and content inside the popup.
     pub fn overlay_open(&self) -> bool {
-        !matches!(self.page, Page::List | Page::Detail(_))
+        !matches!(self.page, Page::List)
     }
+    fn mode_line(&self, t: &Theme) -> ratatui::text::Line<'static> {
+        use ratatui::{
+            style::{Modifier, Style},
+            text::{Line, Span},
+        };
+        let emphasis = |color| Style::default().fg(color).add_modifier(Modifier::BOLD);
+        if self.read_error.is_some() {
+            return Line::styled("Read failed", emphasis(t.agent_error));
+        }
+        let Some(s) = &self.snapshot else {
+            return Line::styled("Loading tasks…", emphasis(t.agent_starting));
+        };
+        let (state, color) = if s.paused {
+            ("Paused", t.agent_blocked)
+        } else if s.current.is_some() {
+            ("Running", t.agent_working)
+        } else if s.awaiting.is_some() {
+            ("Awaiting", t.agent_blocked)
+        } else if !s.pending.is_empty() {
+            ("Ready", t.agent_idle)
+        } else {
+            ("Idle", t.agent_idle)
+        };
+        Line::from(vec![
+            Span::styled(
+                if s.mode.gate { "Manual" } else { "Auto" },
+                Style::default().fg(t.muted),
+            ),
+            Span::raw(" · "),
+            Span::styled(state, emphasis(color)),
+            Span::raw(" · "),
+            Span::styled(
+                if s.mode.r#loop { "Loop on" } else { "Loop off" },
+                if s.mode.r#loop {
+                    emphasis(t.agent_idle)
+                } else {
+                    Style::default().fg(t.dim)
+                },
+            ),
+        ])
+    }
+    /// Draws the Tasks popup into `area`: project and queue actions on top, then either the
+    /// list beside the selected task with task actions below, or the open sub-page.
     pub fn draw(
         &mut self,
         t: &Theme,
         frame: &mut ratatui::Frame,
         area: ratatui::layout::Rect,
-        focused: bool,
     ) -> Vec<(u16, usize)> {
         use crate::{
             buttons::{self, Button as B},
@@ -747,244 +754,359 @@ impl Panel {
         use KeyCode as K;
         use ratatui::{
             layout::Rect,
-            style::{Modifier, Style},
-            text::{Line, Span},
-            widgets::Paragraph,
+            style::Style,
+            text::Line,
+            widgets::{Clear, Paragraph},
         };
+        use unicode_width::UnicodeWidthStr;
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
         self.list_area = Rect::default();
+        self.content_area = Rect::default();
         if area.is_empty() {
             return Vec::new();
         }
-        let mut block = t.block(" Queue ", focused).title_top(
-            Line::styled(
-                format!(" {} tasks ", self.tasks().len()),
-                Style::default().fg(t.muted),
-            )
-            .right_aligned(),
-        );
-        if self.overlay_open() && !focused {
-            block = block.title_bottom(Line::styled(
-                " Click Queue to resume ",
-                Style::default().fg(t.focus),
-            ));
-        }
+        self.sync_content();
+        frame.render_widget(Clear, area);
+        let block = t
+            .block(" Tasks ", true)
+            .style(t.base().bg(t.overlay))
+            .title_top(
+                Line::styled(
+                    format!(" {} tasks ", self.tasks().len()),
+                    Style::default().fg(t.muted),
+                )
+                .right_aligned(),
+            );
         let inside = block.inner(area);
         frame.render_widget(block, area);
-        if inside.height < 3 || inside.width == 0 {
+        if inside.height < 4 || inside.width < 12 {
             return Vec::new();
         }
         let on_list = matches!(self.page, Page::List);
         let ready = on_list && !self.busy && self.snapshot.is_some() && self.read_error.is_none();
+        // Project row: picker and directory on the left, queue state on the right.
         let name = std::path::Path::new(&self.project)
             .file_name()
             .unwrap_or_default()
-            .to_string_lossy();
-        let inline = inside.width >= 40;
-        let controls_width = 23.min(inside.width);
-        let controls = Rect::new(
-            inside.right() - controls_width,
-            inside.y + u16::from(!inline),
-            controls_width,
-            inside.height.saturating_sub(u16::from(!inline)).min(1),
+            .to_string_lossy()
+            .into_owned();
+        let project = format!("{} ▾ c", ui::clip(&name, 24));
+        let mode = self.mode_line(t);
+        let mode_width = (mode.width() as u16).min(inside.width);
+        frame.render_widget(
+            Paragraph::new(mode).right_aligned(),
+            Rect::new(inside.right() - mode_width, inside.y, mode_width, 1),
         );
-        let (_, project_hits) = buttons::draw_compact_top(
+        let label = Rect::new(inside.x, inside.y, 8.min(inside.width), 1);
+        frame.render_widget(
+            Paragraph::new("Project").style(Style::default().fg(t.muted)),
+            label,
+        );
+        let picker_width = (project.width() as u16 + 2).min(inside.width - label.width);
+        let (_, hits) = buttons::draw_compact_top(
             t,
             frame,
-            controls,
-            &[
-                B::new("Refresh r", K::Char('r'), !self.busy && on_list),
-                B::new("Project c", K::Char('c'), !self.busy && on_list),
-            ],
+            Rect::new(label.right(), inside.y, picker_width, 1),
+            &[B::new(&project, K::Char('c'), !self.busy && on_list)],
         );
-        self.buttons.extend(project_hits);
-        let name_width = if inline {
-            inside.width.saturating_sub(controls_width + 1)
-        } else {
-            inside.width
-        };
-        frame.render_widget(
-            Paragraph::new(ui::clip(&name, usize::from(name_width)))
-                .style(Style::default().fg(t.bright)),
-            Rect::new(inside.x, inside.y, name_width, 1),
-        );
-        if inline {
+        self.buttons.extend(hits);
+        let path_x = label.right() + picker_width + 1;
+        let path_end = inside.right().saturating_sub(mode_width + 2);
+        if path_end > path_x {
             frame.render_widget(
-                Paragraph::new(ui::clip(&self.project, usize::from(inside.width)))
+                Paragraph::new(ui::clip(&self.project, usize::from(path_end - path_x)))
                     .style(Style::default().fg(t.dim)),
-                Rect::new(inside.x, inside.y + 1, inside.width, 1),
+                Rect::new(path_x, inside.y, path_end - path_x, 1),
             );
         }
-        let header_height = 3;
-        let emphasis = |color| Style::default().fg(color).add_modifier(Modifier::BOLD);
-        let mode = if self.read_error.is_some() {
-            Line::styled("Read failed", emphasis(t.agent_error))
-        } else if let Some(s) = &self.snapshot {
-            let (state, color) = if s.paused {
-                ("Paused", t.agent_blocked)
-            } else if s.current.is_some() {
-                ("Running", t.agent_working)
-            } else if s.awaiting.is_some() {
-                ("Awaiting", t.agent_blocked)
-            } else if !s.pending.is_empty() {
-                ("Ready", t.agent_idle)
-            } else {
-                ("Idle", t.agent_idle)
-            };
-            Line::from(vec![
-                Span::styled(
-                    if s.mode.gate { "Manual" } else { "Auto" },
-                    Style::default().fg(t.muted),
-                ),
-                Span::raw(" · "),
-                Span::styled(state, emphasis(color)),
-                Span::raw(" · "),
-                Span::styled(
-                    if s.mode.r#loop { "Loop on" } else { "Loop off" },
-                    if s.mode.r#loop {
-                        emphasis(t.agent_idle)
-                    } else {
-                        Style::default().fg(t.dim)
-                    },
-                ),
-            ])
-        } else {
-            Line::styled("Loading tasks…", emphasis(t.agent_starting))
-        };
-        frame.render_widget(
-            Paragraph::new(mode),
+        // Queue actions for the whole project; Refresh sits apart on the right.
+        let refresh = "Refresh r";
+        let refresh_width = refresh.width() as u16 + 2;
+        let actions = Rect::new(
+            inside.x,
+            inside.y + 1,
+            inside.width.saturating_sub(refresh_width + 1),
+            inside.height - 1,
+        );
+        let (_, hits) = buttons::draw_compact_top(
+            t,
+            frame,
             Rect::new(
-                inside.x,
-                inside.y + (header_height - 1).min(inside.height - 1),
-                inside.width,
+                inside.right().saturating_sub(refresh_width),
+                actions.y,
+                refresh_width.min(inside.width),
                 1,
             ),
+            &[B::new(refresh, K::Char('r'), !self.busy && on_list)],
         );
-        let used = header_height.min(inside.height);
-        let remaining = Rect::new(
-            inside.x,
-            inside.y + used,
-            inside.width,
-            inside.height - used,
+        self.buttons.extend(hits);
+        let (below, hits) = buttons::draw_compact_top(
+            t,
+            frame,
+            actions,
+            &[
+                B::new("Next n", K::Char('n'), ready),
+                B::new("Check & release g", K::Char('g'), ready).primary(),
+                B::new(
+                    if self.snapshot.as_ref().is_some_and(|s| s.paused) {
+                        "Resume p"
+                    } else {
+                        "Pause p"
+                    },
+                    K::Char('p'),
+                    ready,
+                ),
+                B::new("Loop l", K::Char('l'), ready),
+            ],
         );
-        let (remaining, action_hits) = if self.read_error.is_some() {
-            (remaining, Vec::new())
+        self.buttons.extend(hits);
+        if below.height < 2 {
+            return Vec::new();
+        }
+        let rule = Rect::new(inside.x, below.y, inside.width, 1);
+        let body = Rect::new(inside.x, below.y + 1, inside.width, below.height - 1);
+        let heading = match self.page {
+            Page::List => "",
+            Page::Help => " Help ",
+            Page::Feedback(_) => " Action result ",
+            Page::Projects => " Projects ",
+            Page::Project(_) => " Project path ",
+            Page::AllPending => " All pending ",
+            Page::Add { .. } => " Add task ",
+            Page::Edit { .. } => " Edit task ",
+            Page::Delete { .. } => " Delete task ",
+        };
+        let mut line = vec![ratatui::text::Span::styled(
+            "─".repeat(usize::from(rule.width)),
+            Style::default().fg(t.border),
+        )];
+        if self.busy {
+            line.insert(
+                0,
+                ratatui::text::Span::styled(
+                    "─ Running action… ",
+                    Style::default().fg(t.agent_working),
+                ),
+            );
+        } else if !heading.is_empty() {
+            line.insert(
+                0,
+                ratatui::text::Span::styled(format!("─{heading}"), Style::default().fg(t.bright)),
+            );
+        }
+        frame.render_widget(Paragraph::new(Line::from(line)), rule);
+        if !on_list {
+            let (mut body, hits) = buttons::draw_compact(t, frame, body, &self.controls());
+            self.buttons.extend(hits);
+            if !self.message.is_empty() && body.height > 3 {
+                let lines = wrap_text(&self.message, body.width);
+                let height = (lines.len() as u16).min(body.height / 3).max(1);
+                frame.render_widget(
+                    Paragraph::new(lines).style(Style::default().fg(self.message_color(t))),
+                    Rect::new(body.x, body.bottom() - height, body.width, height),
+                );
+                body.height -= height;
+            }
+            self.draw_page(t, frame, body, true, false);
+            return Vec::new();
+        }
+        // Task actions below the list and content; Close sits apart on the right.
+        let close = "Close Esc";
+        let close_width = close.width() as u16 + 2;
+        let (_, hits) = buttons::draw_compact(
+            t,
+            frame,
+            Rect::new(
+                body.right().saturating_sub(close_width),
+                body.bottom() - 1,
+                close_width.min(body.width),
+                1,
+            ),
+            &[B::new(close, K::Esc, true)],
+        );
+        self.buttons.extend(hits);
+        let mut controls = vec![B::new("Add task a", K::Char('a'), ready)];
+        if let Some(index) = self.pending_index() {
+            controls.extend([
+                B::new("Edit e", K::Char('e'), ready),
+                B::new("Move up u", K::Char('u'), ready && index > 0),
+                B::new(
+                    "Move down d",
+                    K::Char('d'),
+                    ready && index + 1 < self.snapshot.as_ref().unwrap().pending.len(),
+                ),
+                B::new("Delete x", K::Char('x'), ready).danger(),
+            ]);
+        }
+        controls.push(B::new("All pending A", K::Char('A'), !self.busy));
+        controls.push(B::new("Help ?", K::Char('?'), true));
+        let (middle, hits) = buttons::draw_compact(
+            t,
+            frame,
+            Rect {
+                width: body.width.saturating_sub(close_width + 1),
+                ..body
+            },
+            &controls,
+        );
+        self.buttons.extend(hits);
+        if middle.height < 2 {
+            return Vec::new();
+        }
+        // The buttons left Close its column; the list and content use the full width.
+        let middle = Rect {
+            height: middle.height - 1,
+            width: body.width,
+            ..middle
+        };
+        let border = Style::default().fg(t.border);
+        frame.render_widget(
+            Paragraph::new("─".repeat(usize::from(body.width))).style(border),
+            Rect::new(body.x, middle.bottom(), body.width, 1),
+        );
+        // Side by side when there is room; otherwise the list sits above the content.
+        let (list, content) = if middle.width >= 60 {
+            let left = middle.width / 3;
+            let divider = middle.x + left;
+            for y in middle.y..middle.bottom() {
+                frame.render_widget(
+                    Paragraph::new("│").style(border),
+                    Rect::new(divider, y, 1, 1),
+                );
+            }
+            if heading.is_empty() && !self.busy {
+                frame.render_widget(
+                    Paragraph::new("┬").style(border),
+                    Rect::new(divider, rule.y, 1, 1),
+                );
+            }
+            frame.render_widget(
+                Paragraph::new("┴").style(border),
+                Rect::new(divider, middle.bottom(), 1, 1),
+            );
+            (
+                Rect {
+                    width: left,
+                    ..middle
+                },
+                Rect::new(
+                    divider + 2,
+                    middle.y,
+                    middle.right().saturating_sub(divider + 2),
+                    middle.height,
+                ),
+            )
         } else {
-            buttons::draw_compact_top(
-                t,
-                frame,
-                remaining,
-                &[
-                    B::new("Go g", K::Char('g'), ready).primary(),
-                    B::new("Next n", K::Char('n'), ready),
-                    B::new(
-                        if self.snapshot.as_ref().is_some_and(|s| s.paused) {
-                            "Resume p"
-                        } else {
-                            "Pause p"
-                        },
-                        K::Char('p'),
-                        ready,
-                    ),
-                    B::new("Loop l", K::Char('l'), ready),
-                ],
+            let top = (middle.height * 2 / 5).max(1);
+            frame.render_widget(
+                Paragraph::new("─".repeat(usize::from(middle.width))).style(border),
+                Rect::new(middle.x, middle.y + top, middle.width, 1),
+            );
+            (
+                Rect {
+                    height: top,
+                    ..middle
+                },
+                Rect::new(
+                    middle.x,
+                    middle.y + top + 1,
+                    middle.width,
+                    middle.height.saturating_sub(top + 1),
+                ),
             )
         };
-        self.buttons.extend(action_hits);
-        let detail = self.page.detail().is_some();
-        let task_controls = if detail {
-            let enabled = !self.overlay_open();
-            let mut controls = vec![
-                B::new("Back Esc", K::Esc, enabled),
-                B::new("Task t", K::Char('t'), enabled),
-            ];
-            if self.pending_index().is_some() {
-                controls.push(B::new(
-                    "Edit e",
-                    K::Char('e'),
-                    enabled && !self.busy && self.read_error.is_none(),
-                ));
-            }
-            controls
-        } else {
-            let mut controls = vec![
-                B::new("Details ↵", K::Enter, ready && !self.tasks().is_empty()),
-                B::new("Add a", K::Char('a'), ready),
-            ];
-            if let Some(index) = self.pending_index() {
-                controls.extend([
-                    B::new("Edit e", K::Char('e'), ready),
-                    B::new("Move up u", K::Char('u'), ready && index > 0),
-                    B::new(
-                        "Move down d",
-                        K::Char('d'),
-                        ready && index + 1 < self.snapshot.as_ref().unwrap().pending.len(),
-                    ),
-                    B::new("Delete x", K::Char('x'), ready).danger(),
-                ]);
-            }
-            controls.push(B::new(
-                "All pending A",
-                K::Char('A'),
-                !self.overlay_open() && !self.busy,
-            ));
-            controls.push(B::new("Help ?", K::Char('?'), !self.overlay_open()));
-            controls
+        let rows = self.draw_page(t, frame, list, true, true);
+        self.draw_content(t, frame, content);
+        rows
+    }
+    /// The selected task beside the list, as its text or its run details.
+    fn draw_content(&mut self, t: &Theme, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+        use crate::buttons::{self, Button as B};
+        use KeyCode as K;
+        use ratatui::{
+            layout::Rect,
+            style::{Modifier, Style},
+            text::{Line, Span},
+            widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
         };
-        let (mut body, task_hits) = buttons::draw_compact(t, frame, remaining, &task_controls);
-        self.buttons.extend(task_hits);
-        if body.height > 0 {
-            frame.render_widget(
-                Paragraph::new(if self.busy {
-                    "─ Running action…"
-                } else if detail {
-                    "─ Task details ──────"
-                } else {
-                    "─ Tasks ─────────────"
-                })
-                .style(Style::default().fg(if self.busy {
-                    t.agent_working
-                } else {
-                    t.border
-                })),
-                Rect::new(body.x, body.y, body.width, 1),
-            );
+        if area.is_empty() {
+            return;
+        }
+        let shown = self.read_error.is_none() && self.content.is_some();
+        let tab = |label, code, view| {
+            let button = B::new(label, code, shown);
+            if shown && self.view == view {
+                button.primary()
+            } else {
+                button
+            }
+        };
+        let (mut body, hits) = buttons::draw_compact_top(
+            t,
+            frame,
+            area,
+            &[
+                tab("Task text t", K::Char('t'), View::Text),
+                tab("Run details ↵", K::Enter, View::Details),
+            ],
+        );
+        self.buttons.extend(hits);
+        if body.height > 1 {
             body.y += 1;
             body.height -= 1;
         }
-        if detail {
-            self.draw_detail(t, frame, body);
-            return Vec::new();
-        }
-        let hits = self.draw_page(t, frame, body, focused, true);
-        if self.overlay_open() {
-            Vec::new()
-        } else {
-            hits
-        }
-    }
-    fn draw_detail(&mut self, t: &Theme, frame: &mut ratatui::Frame, body: ratatui::layout::Rect) {
-        use ratatui::{
-            layout::Rect,
-            style::Style,
-            widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
-        };
-        self.list_area = body;
-        let queried = self.detail_key().is_some();
-        let Some(detail) = self.page.detail() else {
+        self.content_area = body;
+        if !shown {
+            frame.render_widget(
+                Paragraph::new(if self.read_error.is_some() {
+                    "Queue data unavailable"
+                } else if self.snapshot.is_some() {
+                    "No task selected"
+                } else {
+                    "Loading tasks…"
+                })
+                .style(Style::default().fg(t.muted)),
+                body,
+            );
             return;
-        };
+        }
         let width = body.width.saturating_sub(1);
-        let lines = detail.lines(t, self.live(detail), queried, usize::from(width));
         let height = usize::from(body.height);
-        let max = lines.len().saturating_sub(height);
-        let Some(detail) = self.page.detail_mut() else {
-            return;
+        let queried = self.detail_key().is_some();
+        let detail = self.content.as_ref().unwrap();
+        let live = self.live(detail);
+        let (lines, top) = match self.view {
+            View::Details => {
+                let lines = detail.lines(t, live, queried, usize::from(width));
+                let max = lines.len().saturating_sub(height);
+                let detail = self.content.as_mut().unwrap();
+                detail.view = (height, max);
+                (lines, detail.scroll.min(max))
+            }
+            View::Text => {
+                let task = live.map(|(_, task)| task).unwrap_or(&detail.task);
+                let mut lines: Vec<Line<'static>> = wrap_text(
+                    &format!("{} {}", task.id.as_deref().unwrap_or("·"), task.title),
+                    width,
+                )
+                .into_iter()
+                .map(|line| line.style(Style::default().fg(t.bright).add_modifier(Modifier::BOLD)))
+                .collect();
+                lines.push(Line::raw(""));
+                if task.body.is_empty() {
+                    lines.push(Line::from(Span::styled(
+                        "No body",
+                        Style::default().fg(t.muted),
+                    )));
+                } else {
+                    lines.extend(wrap_text(&task.body, width));
+                }
+                self.text_scroll = self.text_scroll.min(lines.len().saturating_sub(height));
+                (lines, self.text_scroll)
+            }
         };
-        detail.view = (height, max);
-        let top = detail.scroll.min(max);
         let visible: Vec<_> = lines.iter().skip(top).take(height).cloned().collect();
         frame.render_widget(
             Paragraph::new(visible),
@@ -998,59 +1120,11 @@ impl Panel {
                     .thumb_style(Style::default().fg(t.muted))
                     .track_style(Style::default().fg(t.border)),
                 body,
-                &mut ScrollbarState::new(max + 1)
+                &mut ScrollbarState::new(lines.len() - height + 1)
                     .viewport_content_length(height)
                     .position(top),
             );
         }
-    }
-    pub fn draw_overlay(&mut self, t: &Theme, frame: &mut ratatui::Frame) {
-        if !self.overlay_open() {
-            return;
-        }
-        use crate::buttons;
-        use ratatui::{
-            layout::Rect,
-            style::Style,
-            widgets::{Clear, Paragraph},
-        };
-        let title = match self.page {
-            Page::Projects => " Projects ",
-            Page::Project(_) => " Project path ",
-            Page::Add { .. } => " Add task ",
-            Page::Edit { .. } => " Edit task ",
-            Page::Task(_) => " Task ",
-            Page::Help => " Help ",
-            Page::Feedback(_) => " Action result ",
-            Page::AllPending => " All pending ",
-            Page::Delete { .. } => " Delete task ",
-            Page::List | Page::Detail(_) => return,
-        };
-        let height = if matches!(self.page, Page::Projects | Page::Project(_)) {
-            20
-        } else {
-            28
-        };
-        let area = theme::centered(frame.area(), 76, height);
-        frame.render_widget(Clear, area);
-        let block = t.block(title, true).style(t.base().bg(t.overlay));
-        let inside = block.inner(area);
-        frame.render_widget(block, area);
-        self.buttons.clear();
-        self.fields.clear();
-        self.project_rows.clear();
-        let (mut body, hits) = buttons::draw_compact(t, frame, inside, &self.controls());
-        self.buttons = hits;
-        if !self.message.is_empty() && body.height > 3 {
-            let lines = wrap_text(&self.message, body.width);
-            let height = (lines.len() as u16).min(body.height / 3).max(1);
-            frame.render_widget(
-                Paragraph::new(lines).style(Style::default().fg(self.message_color(t))),
-                Rect::new(body.x, body.bottom() - height, body.width, height),
-            );
-            body.height -= height;
-        }
-        self.draw_page(t, frame, body, true, false);
     }
     fn draw_page(
         &mut self,
@@ -1414,18 +1488,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Queue help\nTop actions control the project; bottom actions control tasks.\nc: Projects; e: Set path (in Projects)\nWheel / trackpad: Scroll the task list or details\nUp/Down / j k: Select task or project\nEnter / click a task: Details; Esc: Back\nt: Task text (in Details)\nPgUp/PgDn: Scroll details / results\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task (also in Details / Task)\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nq / Ctrl-]: Return to Agents\n\nGo / Next / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
-                    Page::Task(detail) => {
-                        let (title, text) = if let Some((_, task)) = self.live(detail) {
-                            (&task.title, &task.body)
-                        } else if let Some(data) = &detail.data {
-                            (&data.task.title, &data.task.body)
-                        } else {
-                            (&detail.task.title, &detail.task.body)
-                        };
-                        format!("{} {}\n\n{}{}", detail.task.id.as_deref().unwrap_or("·"), title,
-                            if self.live(detail).is_none() { "No longer in the list; showing saved task text.\n\n" } else { "" }, text)
-                    }
+                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
@@ -1549,6 +1612,14 @@ impl Panel {
             }
         }
         lines
+    }
+}
+
+/// The same task across refreshes: by id, or by title and body if unnumbered.
+fn same_task(a: &Task, b: &Task) -> bool {
+    match &b.id {
+        Some(id) => a.id.as_ref() == Some(id),
+        None => a.id.is_none() && a.title == b.title && a.body == b.body,
     }
 }
 

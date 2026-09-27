@@ -63,9 +63,6 @@ pub fn draw_workspace(
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
     let mut hits = draw_agents(frame, panel, &view);
-    hits.queue_rows = view
-        .queue
-        .draw(t, frame, view.panes.queue, view.focus == Focus::Queue);
     let title = view
         .showing
         .map(|name| format!("Viewer · {name}"))
@@ -81,17 +78,16 @@ pub fn draw_workspace(
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
     }
-    let queue_modal = view.focus == Focus::Queue && view.queue.overlay_open();
+    // Tasks is open exactly while it has the input; the popup then takes every hit.
+    let queue_modal = view.focus == Focus::Queue;
+    let entry = tasks_entry(t, frame, view.panes.agents, queue_modal);
     if queue_modal {
-        view.queue.draw_overlay(t, frame);
+        hits.queue_rows = view.queue.draw(t, frame, view.panes.tasks);
         hits.buttons.clear();
         hits.agents.clear();
-        hits.queue_rows.clear();
-    }
-    if !queue_modal && view.queue.overlay_open() {
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
+    } else {
+        view.queue.draw(t, frame, Rect::default());
+        view.queue.buttons.extend(entry);
     }
     if let Some(name) = &panel.confirm {
         let modal = crate::theme::centered(frame.area(), 64, 12);
@@ -197,44 +193,25 @@ pub fn draw_workspace(
             }
         }
     }
-    if !view.panes.tabs.is_empty() {
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    " Agents ",
-                    Style::default().fg(if !view.panes.agents.is_empty() {
-                        t.focus
-                    } else {
-                        t.muted
-                    }),
-                ),
-                Span::styled(
-                    " Queue ",
-                    Style::default().fg(if !view.panes.queue.is_empty() {
-                        t.focus
-                    } else {
-                        t.muted
-                    }),
-                ),
-            ])),
-            view.panes.tabs,
-        );
-    }
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  n New  Tab Queue  q Quit",
+            " ↑↓ Select  ↵ Attach  n New  Tab Tasks  q Quit",
         ),
         Focus::Queue => (
-            "Queue".to_string(),
-            " ↑↓ Select  Enter Details  c Projects  a Add  A All pending  ? Help  Ctrl-] Agents",
+            match view.queue.view {
+                crate::queue::View::Text => "Tasks",
+                crate::queue::View::Details => "Tasks · Run details",
+            }
+            .to_string(),
+            " ↑↓ Select  t Text  ↵ Run details  PgUp/PgDn Scroll  a Add  c Projects  ? Help  Esc Close",
         ),
         Focus::Viewer => (
             view.showing.unwrap_or("Viewer · disconnected").to_string(),
             " Keys go to terminal  Ctrl-] Agents",
         ),
     };
-    if queue_modal {
+    if queue_modal && view.queue.overlay_open() {
         match &view.queue.page {
             crate::queue::Page::Add { body_focus, .. }
             | crate::queue::Page::Edit { body_focus, .. } => {
@@ -263,21 +240,13 @@ pub fn draw_workspace(
             }
             crate::queue::Page::AllPending => {
                 target = "All pending".into();
-                help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  Ctrl-] Agents";
-            }
-            crate::queue::Page::Task(_) => {
-                target = "Queue · Task text".into();
-                help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  e Edit pending  Esc Back";
+                help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  q Close";
             }
             _ => {
-                target = "Queue · Details / Result".into();
-                help = " Wheel / PgUp/PgDn Scroll  Esc Back  Ctrl-] Agents";
+                target = "Tasks · Help / Result".into();
+                help = " ↑↓ / PgUp/PgDn Scroll  Esc Back  q Close";
             }
         }
-    }
-    if view.focus == Focus::Queue && matches!(view.queue.page, crate::queue::Page::Detail(_)) {
-        target = "Queue · Task details".into();
-        help = " ↑↓ / Wheel Scroll  PgUp/PgDn Page  t Task  e Edit pending  Esc Back";
     }
     if let Some(form) = &form {
         target = format!("New agent · {}", form.label());
@@ -306,9 +275,13 @@ pub fn draw_workspace(
                 Style::default().fg(t.input_text).bg(t.focus),
             ),
             Span::styled(
-                if panel.confirm.is_some() || queue_modal || form.is_some() || placement.is_some() {
+                if panel.confirm.is_some()
+                    || view.queue.overlay_open() && queue_modal
+                    || form.is_some()
+                    || placement.is_some()
+                {
                     help
-                } else if view.focus == Focus::Queue && !view.queue.message.is_empty() {
+                } else if queue_modal && !view.queue.message.is_empty() {
                     &view.queue.message
                 } else if panel.message.is_empty() {
                     help
@@ -323,6 +296,22 @@ pub fn draw_workspace(
     hits
 }
 
+/// The fixed Tasks entry on the Agents top border; highlighted, and not clickable, while open.
+fn tasks_entry(t: &Theme, frame: &mut Frame, agents: Rect, open: bool) -> Vec<crate::buttons::Hit> {
+    use crate::buttons::{self, Button};
+    let label = "Tasks Tab";
+    let width = label.width() as u16 + 2;
+    if agents.width < width + 18 || agents.height == 0 {
+        return Vec::new();
+    }
+    let area = Rect::new(agents.right() - width - 2, agents.y, width, 1);
+    let mut button = Button::new(label, crossterm::event::KeyCode::Tab, true);
+    if open {
+        button = button.primary();
+    }
+    let (_, hits) = buttons::draw_compact_top(t, frame, area, &[button]);
+    if open { Vec::new() } else { hits }
+}
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
 }

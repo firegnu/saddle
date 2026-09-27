@@ -141,15 +141,11 @@ fn main() -> anyhow::Result<()> {
             "reply" => a.show_reply = true,
             _ => {}
         }
-        let panes = Panes::with_queue(
-            Rect::new(0, 0, w, h),
-            &Config::default(),
-            focus == Focus::Queue,
-        );
+        let panes = Panes::new(Rect::new(0, 0, w, h), &Config::default());
         let mut terminal = Terminal::new(TestBackend::new(w, h))?;
         terminal.draw(|frame| {
             ui::draw(frame,&mut a,View{colors:&saddle::theme::Theme::default(),panes,focus,showing:Some("saddle/main"),viewer:None,queue:&mut q,viewer_note:"",reply:"已完成布局与交互重设计。\n\n- 管理区域全部由 Rust + Ratatui 绘制\n- Viewer 保留原终端颜色与按键\n- 自动验证使用合成数据",now:150.0,pointer:&Pointer::default()});
-            if overlay.is_empty() || overlay=="reply" {
+            if (overlay.is_empty() || overlay=="reply") && focus != Focus::Queue {
                 let area=ui::inner(panes.viewer);
                 let mut screen=Screen::new(Size{rows:area.height,cols:area.width});
                 screen.process("\x1b[1m› saddle 界面重设计\x1b[0m\r\n\r\n\x1b[32m●\x1b[0m Explored\r\n  Read src/ui.rs, src/queue.rs, src/buttons.rs\r\n\r\n\x1b[32m●\x1b[0m Ran cargo test\r\n  test result: ok. Synthetic checks passed\r\n\r\n\x1b[32m●\x1b[0m Edited src/ui.rs\r\n\x1b[48;2;25;50;32m  + 中文状态列保持对齐，按钮有悬停和按下反馈。\x1b[0m\r\n\r\n继续检查窄窗口和弹层输入边界。\r\n".as_bytes());
