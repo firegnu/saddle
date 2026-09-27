@@ -531,3 +531,12 @@ Agents ‹Tasks›             Agent terminal
 - 补齐 Hold、Attention、Unmet、Main agent 等仍用普通文字的状态展示：Hold 开启为琥珀色、关闭/未知中性；Attention 需要处理（suggested）或等待放行（awaiting_release）为琥珀色，其余未知/不适用保持中性；Main agent 的状态沿用 Agents 状态配色，仅给状态文字着色，名称与其他说明保持中性。保留 inferred、历史范围、旧数据等已有说明，不能用颜色暗示尚未发生的状态。
 - 本次只改显示和对应命中区域，不改 CLI 请求、任务/agent 状态语义、焦点和操作规则；不新增颜色配置项，复用现有主题键并服从用户配置。
 - 实现取舍：顶部 Suggested attention 提示同样用 agent_blocked 琥珀色；Hold 未知值用 muted。悬停沿用 bright，但当前页签保留 ● 和加粗；Main agent 仅映射公开返回的 working/blocked/idle/starting 状态，不新增停滞或错误推断。
+
+## 36. 终端窗格显示 agent 角色（2026-09-27）
+
+用户要求调查以 agent 角色替换右侧窗格标题中的 Viewer；说明修改只需在 Saddle 内通过 corral 已有 labels 记录和读取角色后，用户回复「好的，开始干吧」。本节扩展第 34 节：Role 除名称约束外也记录为公开标签，不赋予权限或自动配置派发。
+
+- New 创建 Controller / Regular 时分别向公开 `corral start` 传入 `--label role=controller` / `--label role=regular`，预览与实际参数一致；角色与 Codex/Claude 工具选择独立。
+- 右侧窗格根据对应 agent 的公开 labels 显示 `Controller · 名称` 或 `Regular · 名称`。旧 agent 没有角色、未知或无效角色时显示 `Agent · 名称`；不根据 main 等名字猜测角色。空窗格没有 agent 时保留 Viewer。
+- 沿用现有公开快照读取标签，不新增轮询或持久化配置。多个窗格各自显示所接入 agent 的角色，常规 workspace 与无 terminals 的渲染路径保持一致。
+- 不增加角色控件或修改样式，不改精确命名、YOLO、打开位置、终端输入及接入规则。不修改派发流程、corral/drover 仓库或任何现有 agent，不扩展开发/审查职责标签。
