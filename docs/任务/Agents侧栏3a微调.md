@@ -112,3 +112,10 @@
 主控先前已跑标准检查通过（workflow 58 passed、2 ignored），本次仅定向复核 UI 39、配置8、workflow6项通过；app 启动检查通过，颜色检查在 NO_COLOR=1 环境先失败，清空该变量后通过。新增颜色测试未自行隔离 NO_COLOR 记为不阻塞建议；旧 picker 偶发失败基线亦可复现，根因未定位，未扩大范围。开发本提交 Clippy/fmt 通过。实现取舍已逐条裁定并写入审查和 DESIGN 第40节。
 
 合并提交 2c884e7；不推进 drover/T20，发布和清理结果见下方。
+
+
+## 发布与清理
+
+2026-09-27：合并 2c884e7 已推送 origin/main。main 上 `cargo build --release` 通过，共享 target/release/saddle 与仓库 target/release/saddle 原子同步；默认 ~/.local/bin/saddle 仍指向共享 release，三个入口 SHA-256 均为 `cbec3ecc4a532b48921c5406def99149f1634c65531ebd4b59a4258b6f3fab03`。未重启用户当前 saddle，重启后体验。
+
+确认实现者 idle、attached=0，开发 worktree 干净且分支已合入 main 后，正常移除 agents-panel-3a worktree 与分支；工作目录已删，一并关闭自有 saddle/dev-agents-panel-1。无独立审查环境，无本任务遗留；用户其他 agent 不动，未调用 drover 推进任务。随后在 main 补收尾空提交并更新 HANDOFF。
