@@ -4,7 +4,7 @@
 
 - 用户已提供 Desktop/export 的 Agents Panel Spec.md 与 agents-panel-3a.png，要求据此微调左侧 Agents。两份原稿已原样归档 docs/设计稿/agents-panel-3a/；Markdown 优先。主控设计补充在 DESIGN 第 40 节，实施任务 docs/任务/Agents侧栏3a微调.md，main 起点 fc7e131。
 - 路由常规／交叉审查不要／改行为。实现者 saddle/dev-agents-panel-1（instance 047de6644ab4），Claude Code opus[1m] / high，role=implementer；worktree ../saddle-worktrees/agents-panel-3a，分支 agents-panel-3a。公开 status 已确认 working，不重复分派。
-- 已核对 C<n> 是领先基准，不是落后；按规格允许的字段修正显示 ↑n，不修改 Git 采集。ATT 为公开连接数，本机连接标记与光标独立。其余主要内容按原稿执行，不能顺带改 Tasks 弹窗/右侧终端。effort 去留已向用户发可选澄清，已给等待时间并说明暂按推荐保留于展开信息行；若用户后续指定其他选项，更新设计并通知同一实现者。
+- 已核对 C<n> 是领先基准，不是落后；按规格允许的字段修正显示 ↑n，不修改 Git 采集。ATT 为公开连接数，本机连接标记与光标独立。其余主要内容按原稿执行，不能顺带改 Tasks 弹窗/右侧终端。用户已明确 effort「保留，放在现在的位置不变，这个很重要」；DESIGN 第40节/主仓库实施任务已修正为 R1 类型之后、状态之前保留两格，折叠也显示，不移到展开行。实现者尚 working，使用公开 corral send --after 向同一实现者排队发送修正，收到下一次完成提醒不能只看旧 DONE，须确认最终提交落实该要求；不要直接合并未含此修正的旧结果。
 - 当前代码尚未交付、合并或发布。开发完成后取 status/reply 与完成记录，主控审 diff，并按改行为预算重跑标准测试一次；只为真实未达标项交回原实现者。通过后按项目规则合并推送、构建并同步 release，正常清理 worktree/分支后关闭自有 agent、空提交收尾、更新交接。
 - 该任务由本轮用户直接要求，尚未登记 drover 队列；不要擅自重发/放行已完成 T20。最新公开 drover list 为无 current、队列空。T20 的代码/skill 安装已完成，之后按用户要求也将同一 skill 安装到 ~/.claude/skills/saddle 并核对一致。
 - 当前 agent corral/main、drover/main、saddle/main 不动。所有测试仅假 CLI/合成数据、隔离 runtime；不操作用户现场，不读 corral/drover 内部文件。收到开发提醒先查状态，仍 working 则重挂，DONE 才进入审查。
