@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-27：英文 Agent 工作职责标题已发布收尾
+
+- 窗格按公开标签显示 Controller / Implementer / Reviewer · 名称；Regular、无标签 Agent、空窗格 Viewer 规则保留。Saddle 项目 AGENTS.md 已补充派发职责标签；其他项目/入口需创建时传相同标签。设计与审查见 DESIGN 第 37 节、docs/任务/Agent工作职责标题.md。
+- 开发 4314164、合并 037d010、主控审查 872571e、收尾空提交 4104ec1。纯显示审查通过，直接角色标题渲染检查 1 passed、diff 检查通过，未重跑全套/Clippy；既有 full_workflow 基线失败未扩修。
+- main release 已构建并同步共享 target 与仓库 target/release/saddle，SHA-256 均为 f6c72428ec3241730ed2afa9a9e331df77243f421dcb4f45f7b8a8f735aad3cf；默认 saddle 仍指向共享 release，重启体验。
+- 最终确认 idle、attached=0、工作区干净且分支合入 main 后，正常删除 agent-duty-title worktree/分支；工作目录已删，一并关闭自有 saddle/dev-duty-title-1。New 控件、创建行为、用户现有 agent、真实队列、全局技能与其他仓库均未改。
+- 本节随 main 推送；只留主仓库，无本次开发环境遗留，下一步等用户体验反馈。
+
 ## 2026-09-27：Agent 角色标题已发布收尾
 
 - New 创建时记录 role=controller / role=regular；右侧窗格按公开标签显示 Controller / Regular · 名称，无有效标签的旧 agent 显示 Agent · 名称，空窗格仍为 Viewer。完整设计和审查见 DESIGN 第 36 节、docs/任务/Agent角色标题.md。
