@@ -1,10 +1,12 @@
 # 交接
 
-## 2026-09-27：Tasks 页签与详情配色已委派
+## 2026-09-27：Tasks 页签与详情配色已发布收尾
 
-- 用户反馈 Task text / Run details 选中态看不清、详情缺状态色，要求考虑配色。设计与任务提交 2b624bb，见 DESIGN 第 35 节、docs/任务/Tasks页签与详情配色.md。当前项 focus 色加粗加 ●，其他项灰色 ○；详情结构化状态复用已有语义色，分节标题 reply_heading，普通内容中性。
-- 自有 saddle/dev-task-colors-1（Claude Code opus[1m] / high），worktree ../saddle-worktrees/tasks-detail-colors，分支同名。路由常规/不交叉/看得见，按纯视觉预算验证和主控审查，不扩状态逻辑或配置系统，不操作队列。
-- 下一步完成后查最新状态/reply，审查 diff 与直接渲染证据，通过后合并推送、更新 release、清理开发环境并收尾，供用户体验。当前尚未实现完成或发布。
+- 页签当前项 focus 色加粗加 ●，非当前项灰色 ○；悬停仍保留当前标识。详情结构化状态复用现有语义色，分节标题 reply_heading，普通内容中性。完整设计与审查见 DESIGN 第 35 节、docs/任务/Tasks页签与详情配色.md。
+- 开发 fef8627、合并 02cde1f、主控审查 22d3ba9、收尾空提交 109f437。主控按纯视觉预算核对完整 diff、直接渲染检查 1 条通过，未重跑套件；开发 UI/lib/queue、Clippy/fmt 通过，workflow 唯一失败为旧鼠标坐标基线问题，未扩修。
+- main release 已构建并同步共享 target 与仓库 target/release/saddle，SHA-256 均为 00ee47109670913ea972e00ae0d7a3391e17fa39456a460678ecf7d208ed59f7。默认 saddle 指向共享 release，重启体验。
+- 核对 idle、attached=0、工作区干净且分支合入 main 后，正常删除 tasks-detail-colors worktree/分支；工作目录已删，一并关闭自有 saddle/dev-task-colors-1。用户 agent、队列和配置未操作。
+- 本节随 main 推送；下一步等用户体验反馈，不自动开始其他待办。
 
 ## 2026-09-27：New 主控/普通角色命名已发布收尾
 
