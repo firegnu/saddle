@@ -1,5 +1,11 @@
 # 交接
 
+## 2026-09-27：Working 紫色动画移除已派发
+
+- 用户确认 working 前紫色点阵导致 effort 视觉混淆，按此前建议只去掉该动画、保留左侧圆点旋转与 effort 原样；DESIGN 第40节末尾已更新，任务 docs/任务/Working动画与effort区分.md。
+- 实现者 saddle/dev-working-mark-1（83a546e6aca5），Claude Code sonnet / medium，role=implementer；分支 working-mark，worktree ../saddle-worktrees/working-mark，起点 c67a610。已 working/attached=0，完成提醒已挂；不要重复分派。
+- 轻档／看得见／无需交叉审查，限 src/ui.rs、直接相关 tests/ui.rs、README中英及完成记录；不改状态、effort、生命周期，不新增模型名。主控只核对 diff/定向证据，不跑全套。DONE 后审查、合并推送发布、清理、空提交和交接；attached非0时先确认，其他用户agent不动。不操作drover/T20。
+
 ## 2026-09-27：颜色测试环境隔离已合并并清理收尾
 
 - 简单 effort 观察任务已完成：实现 6412032，主控审查通过，合并 93d044a 已推送 origin/main。仅 tests/app.rs 子进程清空 NO_COLOR 与任务记录；不用重建发布产品二进制，未操作 drover/T20。记录见 docs/任务/颜色测试环境隔离.md。
