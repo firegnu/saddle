@@ -510,3 +510,9 @@ Agents ‹Tasks›             Agent terminal
 用户要求：「增加新agent的时候，claude code已经默认auto mode，但是新codex会出现permission对话框，我不想要，我想直接可以以yolo mode来新建codex agent」。New Agent 初始化及明确选择内置 Codex 时，默认命令改为 `codex --yolo`，预览与实际 argv 一致，内置 Codex 仍显示为选中，不误标为 Custom command。覆盖第 27 节中默认裸 `codex`、不带权限参数的规定。
 
 高级设置中手工填写的完整命令原样使用，不在提交阶段统一追加参数；Claude 默认命令、名称、打开位置、界面样式及其他创建行为保持现状。不修改用户全局配置或现有 agent。
+
+## 34. New Agent：默认 main 按精确名称创建（2026-09-27）
+
+用户发现 New 中保留默认 `main` 却创建出 `main-1`，并强调「现在有些工作流依赖主控的名字是main」。New 表单的默认值仍为 `main`，提交时无论名称是否手工编辑，均按表单名称调用公开 `corral start`，不带 `--unique`；名称已占用时沿用公开 CLI 的失败提示并保留草稿，不自动编号或改接已有 agent。覆盖第 27、31 节关于未修改建议名携带 `--unique` 的旧规则。
+
+保留手改名称保护、启动预览及公开返回名处理；这次仅修正 New 入口，不改变主控派发开发 agent 的命名流程，也不重命名、停止或改动现有 agent。
