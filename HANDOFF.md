@@ -7,7 +7,7 @@
 - 合并 7c753ff 已推送；发布记录 8667a53，清理后空提交 7eb65e9（收尾: T20）。main release 已构建并同步共享 target 与仓库 target/release/saddle；默认 ~/.local/bin/saddle 指向共享 release，SHA-256 均为 03df25780a76cfae7571b08f4ca6c6912c386c5309481f45da6ce0263f25ad97。用户重启 saddle 后体验，未重启当前现场。
 - saddle skill 已通过 quick_validate，安装至 ~/.codex/skills/saddle，与仓库版本一致。未改其他 skill、corral/drover 仓库或用户 agent。单实例最多保留 256 次 ctl 修改记录，满后拒绝新修改，是已公开边界。
 - 开发及审查 worktree 已正常移除，t20-terminal-workspace 分支已删除。确认 idle/attached=0、工作区干净且已合并后，工作目录已删，一并关闭自有 saddle/dev-t20-workspace-1、saddle/dev-t20-review-1。当前只剩 main worktree；原有 corral/main、drover/main、saddle/main 留存。迟到的完成提醒若查到 not_found，忽略，不重开。
-- 下一步：本交接推送后执行公开 drover done T20 并核对结果；当前最近实查仍为 T20 doing、队列空、放行模式。不要再 next，也不自动 go/启动新任务。除该完成登记外，等用户重启体验反馈。
+- 已公开执行 drover done T20，核对通过并记录 DONE；退出 8 表示放行模式正常停等，不是失败。随后 drover show T20 --json 确认 status=done、location=awaiting，收尾/main前进/分支合并判据均满足，未配置额外验收命令。下一步等用户重启体验和放行；不自动 drover go/next，不启动新任务。
 
 ## 2026-09-27：New Agent 名称前缀已发布收尾
 
