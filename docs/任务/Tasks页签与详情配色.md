@@ -30,3 +30,13 @@
 
 ## 做完
 在本文件末尾追加完成记录并提交：改动、验证、取舍、未做事项。回复带提交 SHA 和需要主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（saddle/dev-task-colors，2026-09-27）
+
+- 改动：
+  - `src/queue.rs` draw_content：两个页签前加 `●`（当前）/`○`（非当前）；当前页签在描边和紧凑两种样式下都用 Primary（focus 色文字与边框）并整块加粗，非当前页签的标签文字改 muted，边框沿用原色，仍无填充。悬停时 Pointer 仍把整块刷成 bright，当前项靠 `●` 和加粗区分。视图切换键、命中区域逻辑不变（标签多两列，命中框随宽度变化）。
+  - `src/detail.rs`：分节标题（含 Body）改用 `reply_heading` 加粗；Hold 开启时 `On` 琥珀色，关闭 text、未知 muted，`(at task end)` 等说明中性；Attention 仅状态词着色，suggested / awaiting_release 琥珀色，其余中性，reason 与 `(inferred)` 保持 text；Unmet 条目琥珀色；Main agent 只给状态词着色（working/blocked/idle/starting 沿用 Agents 配色，其余 muted），名称、via、idle 时长中性。顶部 “Suggested attention …” 一行由 agent_stalled（橙）改为 agent_blocked（琥珀），与设计第 35 节 “Attention suggested 为琥珀色” 保持一致。时间、路径、SHA、数量未动，仍为中性。未改主题默认值、颜色配置项或用户配置。
+  - `tests/ui.rs`：`management_layouts_…` 的页签标签断言改为带 `●`/`○`；新增 `task_tabs_mark_the_chosen_view_and_details_color_structured_states`，在 160×48（描边）与 80×24（紧凑）下检查页签标识随视图切换、当前项 focus+加粗、非当前项 muted 不加粗；悬停两个页签时当前项仍加粗；详情中分节标题为 reply_heading、Running 蓝、Suggested/Unmet/Hold On 琥珀、Main agent 仅状态词着色（idle 绿、working 蓝）、Hold 未知 muted、其余说明 text。
+- 验证：`git diff --check`、`cargo fmt --check` 通过；`cargo test --test ui` 29 passed；`cargo test --lib` 9 passed；`cargo test --test queue` 16 passed；`cargo test --test workflow` 36 passed、1 failed、2 ignored，唯一失败为已知 `full_workflow_routes_input_switches_safely_and_survives_disappearance`（tests/workflow.rs:245 旧鼠标坐标，未扩修）；`cargo clippy --all-targets -- -D warnings` 通过。未跑全套矩阵、未录屏，纯显示调整未制造 RED。
+- 取舍：Hold 未知用 muted 而非 text（第 35 节 “未知保持 muted/dim”，仍属中性）；非当前页签只把标签内部刷 muted，不动边框，紧凑样式的 `‹›` 保持 border 色。
+- 未做：未改 buttons.rs、主题系统、其他 UI；未处理 full_workflow 旧问题。

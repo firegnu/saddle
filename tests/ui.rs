@@ -145,8 +145,8 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
             "Pause p",
             "Loop l",
             "Refresh r",
-            "Task text t",
-            "Run details ↵",
+            "● Task text t",
+            "○ Run details ↵",
         ] {
             let (x, y) = find(&buffer, label).expect(label);
             if outlined {
@@ -1256,6 +1256,128 @@ fn run_details_sit_beside_the_list_inside_the_popup_only() {
         assert!(!outside.contains(detail_text), "{detail_text}: {all}");
     }
     assert!(all.contains("Input ▸ Tasks · Run details"), "{all}");
+}
+
+#[test]
+fn task_tabs_mark_the_chosen_view_and_details_color_structured_states() {
+    use ratatui::{layout::Position, style::Modifier};
+    use saddle::theme::{self, Theme};
+    let style = |buffer: &Buffer, label: &str, skip: u16, len: u16| {
+        let (x, y) = find(buffer, label).unwrap_or_else(|| panic!("{label}: {}", text(buffer)));
+        let cells: Vec<_> = (x + skip..x + skip + len)
+            .map(|x| &buffer[(x, y)])
+            .collect();
+        let fg = cells[0].fg;
+        assert!(cells.iter().all(|c| c.fg == fg), "{label}: mixed colours");
+        (fg, cells[0].modifier.contains(Modifier::BOLD))
+    };
+    let heading = Theme::default().reply_heading;
+    let (mut a, _) = fixture();
+    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
+    // Outlined in the large popup, compact in the small one; both flip with the view.
+    for (w, h) in [(160, 48), (80, 24)] {
+        q.view = queue::View::Text;
+        let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
+        assert_eq!(style(&buffer, "● Task text t", 0, 11), (theme::FOCUS, true));
+        assert_eq!(style(&buffer, "○ Run details ↵", 0, 13).0, theme::MUTED);
+        assert!(!style(&buffer, "○ Run details ↵", 0, 13).1);
+        assert!(find(&buffer, "○ Task text t").is_none());
+    }
+    open_detail(&mut q, Some(show_json()));
+    for (w, h) in [(160, 48), (80, 24)] {
+        let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
+        assert_eq!(
+            style(&buffer, "● Run details ↵", 0, 13),
+            (theme::FOCUS, true)
+        );
+        assert_eq!(style(&buffer, "○ Task text t", 0, 11).0, theme::MUTED);
+        assert!(find(&buffer, "● Task text t").is_none());
+    }
+    // Hovering either tab brightens it, yet the chosen one keeps its mark and weight.
+    let colors = Theme::default();
+    for label in ["● Run details ↵", "○ Task text t"] {
+        let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+        let (x, y) = find(&buffer, label).unwrap();
+        let mut pointer = Pointer::default();
+        pointer.hover = Some(Position::new(x, y));
+        let mut terminal = Terminal::new(TestBackend::new(160, 48)).unwrap();
+        terminal
+            .draw(|frame| {
+                ui::draw(
+                    frame,
+                    &mut a,
+                    View {
+                        colors: &colors,
+                        panes: Panes::new(frame.area(), &Config::default()),
+                        focus: Focus::Queue,
+                        showing: Some("demo/main"),
+                        viewer: None,
+                        queue: &mut q,
+                        viewer_note: "",
+                        reply: "",
+                        now: 100.0,
+                        pointer: &pointer,
+                    },
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let (fg, bold) = style(buffer, "● Run details ↵", 0, 13);
+        assert!(bold, "{label}");
+        assert_eq!(
+            fg,
+            if label.starts_with('●') {
+                theme::BRIGHT
+            } else {
+                theme::FOCUS
+            }
+        );
+        let (fg, bold) = style(buffer, "○ Task text t", 0, 11);
+        assert!(!bold, "{label}");
+        assert_eq!(
+            fg,
+            if label.starts_with('○') {
+                theme::BRIGHT
+            } else {
+                theme::MUTED
+            }
+        );
+    }
+
+    // Headings take reply_heading; states their semantic colour; everything else stays neutral.
+    let buffer = render_queue(&mut q, 106, 120);
+    let color = |label: &str, skip: u16, len: u16| style(&buffer, label, skip, len).0;
+    for label in [
+        "Completion checks",
+        "Last check",
+        "Progress",
+        "Route, hold",
+        "Records",
+    ] {
+        assert_eq!(style(&buffer, label, 0, 5), (heading, true), "{label}");
+    }
+    assert_eq!(color("Running", 0, 7), theme::AGENT_WORKING);
+    assert_eq!(color("Suggested · idle", 0, 9), theme::AGENT_BLOCKED);
+    assert_eq!(color("Suggested · idle", 9, 7), theme::TEXT);
+    assert_eq!(color("completion marker", 0, 17), theme::AGENT_BLOCKED);
+    assert_eq!(color("saddle/main · idle", 0, 14), theme::TEXT);
+    assert_eq!(color("saddle/main · idle", 14, 4), theme::AGENT_IDLE);
+    assert_eq!(color("idle · via send", 4, 11), theme::TEXT);
+    assert_eq!(color("Unknown · task body", 0, 7), theme::MUTED);
+    assert_eq!(color("Hold", 0, 4), theme::MUTED);
+
+    let mut value = show_json();
+    value["hold"] =
+        serde_json::json!({"enabled":true,"scope":"current_events","unavailable_reason":null});
+    value["attention"]["agent"]["state"] = "working".into();
+    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
+    open_detail(&mut q, Some(value));
+    let buffer = render_queue(&mut q, 106, 120);
+    let color = |label: &str, skip: u16, len: u16| style(&buffer, label, skip, len).0;
+    assert_eq!(color("On · stop", 0, 2), theme::AGENT_BLOCKED);
+    assert_eq!(color("On · stop", 2, 7), theme::TEXT);
+    assert_eq!(color("saddle/main · working", 14, 7), theme::AGENT_WORKING);
+    assert_ne!(heading, theme::TEXT, "headings stand apart from body text");
 }
 
 #[test]

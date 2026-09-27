@@ -140,7 +140,7 @@ impl TaskDetail {
             )]),
             "suggested" => out.line(vec![Span::styled(
                 "Suggested attention: main agent idle with unmet checks (inferred)",
-                bold(t.agent_stalled),
+                bold(t.agent_blocked),
             )]),
             _ => {}
         }
@@ -418,63 +418,77 @@ impl Out<'_> {
         };
         self.field("Route", &[(route, t.text)]);
         let hold = &data.hold;
-        self.field(
-            "Hold",
-            &[(
+        let mut value = match hold.enabled {
+            Some(true) => vec![
+                ("On".to_owned(), t.agent_blocked),
+                (" · stop after done".to_owned(), t.text),
+            ],
+            Some(false) => vec![("Off".to_owned(), t.text)],
+            None => vec![(
                 format!(
-                    "{}{}",
-                    match hold.enabled {
-                        Some(true) => "On · stop after done".to_owned(),
-                        Some(false) => "Off".to_owned(),
-                        None => format!(
-                            "Unknown · {}",
-                            hold.unavailable_reason
-                                .as_deref()
-                                .map(phrase)
-                                .unwrap_or_else(|| "not recorded".into())
-                        ),
-                    },
-                    if hold.scope == "task_end_events" {
-                        " (at task end)"
-                    } else {
-                        ""
-                    }
+                    "Unknown · {}",
+                    hold.unavailable_reason
+                        .as_deref()
+                        .map(phrase)
+                        .unwrap_or_else(|| "not recorded".into())
                 ),
-                t.text,
+                t.muted,
             )],
-        );
+        };
+        if hold.scope == "task_end_events" {
+            value.push((" (at task end)".into(), t.text));
+        }
+        self.field("Hold", &value);
         self.field(
             "Attention",
-            &[(
-                format!(
-                    "{} · {}{}",
+            &[
+                (
                     capitalized(&phrase(&attention.state)),
-                    phrase(&attention.reason),
-                    if attention.inference && attention.state == "suggested" {
-                        " (inferred)"
-                    } else {
-                        ""
-                    }
+                    match attention.state.as_str() {
+                        "suggested" | "awaiting_release" => t.agent_blocked,
+                        _ => t.text,
+                    },
                 ),
-                t.text,
-            )],
+                (
+                    format!(
+                        " · {}{}",
+                        phrase(&attention.reason),
+                        if attention.inference && attention.state == "suggested" {
+                            " (inferred)"
+                        } else {
+                            ""
+                        }
+                    ),
+                    t.text,
+                ),
+            ],
         );
         if !attention.unmet_rows.is_empty() {
             let rows: Vec<_> = attention.unmet_rows.iter().map(|r| phrase(r)).collect();
-            self.field("Unmet", &[(rows.join(", "), t.text)]);
+            self.field("Unmet", &[(rows.join(", "), t.agent_blocked)]);
         }
         if let Some(agent) = &attention.agent {
             let known = |value: &Option<String>| value.clone().unwrap_or_else(|| "unknown".into());
-            let mut text = format!(
-                "{} · {} · via {}",
-                known(&agent.name),
-                known(&agent.state),
-                known(&agent.last_input_source)
-            );
+            // The Agents list palette, on the state word only.
+            let state = match agent.state.as_deref() {
+                Some("working") => t.agent_working,
+                Some("blocked") => t.agent_blocked,
+                Some("idle") => t.agent_idle,
+                Some("starting") => t.agent_starting,
+                _ => t.muted,
+            };
+            let mut rest = format!(" · via {}", known(&agent.last_input_source));
             if let Some(idle) = agent.idle_for {
-                text += &format!(" · idle {}", duration(idle));
+                rest += &format!(" · idle {}", duration(idle));
             }
-            self.field("Main agent", &[(text, t.text)]);
+            self.field(
+                "Main agent",
+                &[
+                    (format!("{} · ", known(&agent.name)), t.text),
+                    (known(&agent.state), state),
+                    (rest, t.text),
+                ],
+            );
         }
     }
     /// Recorded start, finish and release times, then the body.
@@ -584,7 +598,10 @@ impl Out<'_> {
     }
     fn heading(&mut self, text: &str) {
         self.rows.push(Line::raw(""));
-        self.line(vec![Span::styled(text.to_owned(), bold(self.t.text))]);
+        self.line(vec![Span::styled(
+            text.to_owned(),
+            bold(self.t.reply_heading),
+        )]);
     }
     /// A labelled value whose wrapped rows line up under the value.
     fn field(&mut self, label: &str, value: &[(String, Color)]) {
