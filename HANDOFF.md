@@ -1,12 +1,12 @@
 # 交接
 
-## 2026-09-27：T18 Tasks 大弹窗已授权并委派（以本节为准）
+## 2026-09-27：T18 已合并发布并收尾（以本节为准）
 
-- 用户同意先实施再体验调整。方案与任务已提交 6d42ce2：DESIGN 第 32 节、docs/任务/T18-Tasks大弹窗.md。Agents 独占左列，固定 Tasks 入口，大弹窗内列表与正文/运行详情左右分栏，编辑在同框切换。
-- 自有 saddle/dev-t18-tasks-1（Claude Code opus[1m] / high）在 ../saddle-worktrees/t18-tasks-popup、分支 t18-tasks-popup 实施；完成提醒已挂好。路由影响面改行为，不交叉审查，主控收到 DONE 后按任务预算审查。
-- 用户后续同意 Tasks 常驻入口显示简短状态（运行中、待放行或待办数量）；已补入主仓库设计和任务文件，纳入 T18 完成范围。旧开发 worktree 文件需结合此补充阅读，主控审查不能遗漏。
-- 主体提交 906bec6 已完成静态初审，记录在 docs/任务/T18-主控审查.md；开发正在追加入口状态，尚未做主控最终标准检查，不能按旧一轮 DONE 合并。
-- 尚未合并或发布。下一步审查通过后合并推送、更新 release、清理该 worktree/分支和自有 agent、空提交收尾并核对 T18 完成，等待用户体验。不恢复已取消的 T16，不开始 T17/T13。
+- Tasks 大弹窗与常驻入口状态已完成：主体 906bec6、补充 7451b00，主控审查 f77e462，合并 4a2083e，收尾空提交 2e04f20。Agents 独占左列；点击 Tasks 或在 Agents 按 Tab 打开任务弹窗；n/g 仍走原公开 drover 调用。设计与取舍见 DESIGN 第 32 节，审查见 docs/任务/T18-主控审查.md。
+- 主控最终标准测试 140 passed、1 failed、2 ignored；Clippy/diff 通过。唯一失败仍是 T15 已确认的基线 full_workflow 旧终端鼠标坐标检查，发生在 Tasks 操作之前，未扩修，不能称全套全绿。
+- main release 已构建并同步共享 target 与仓库 target/release/saddle，SHA-256 均为 cb83561774191ffad43f3314a1a1ba44526d6b83adbdb23929a968d88dabea10。默认 saddle 指向共享 release，重新启动生效；合并已推送 origin/main。
+- 开发 agent 的最终回复为 DONE，终端已回提示符，但状态仍停在 ScheduleWakeup/working；清理时发现 attached=1，经用户明确同意关闭并清理后，停止自有 saddle/dev-t18-tasks-1，再正常删除干净且已合并的 t18-tasks-popup worktree/分支。其他用户 agent 未操作。
+- 公开 drover done T18 核对通过，退出 8 表示已完成待用户放行；未执行 go/next。下一步等用户体验反馈，不恢复已取消的 T16，不启动其他待办。
 
 ## 2026-09-27：T16 已取消并清理（以本节为准）
 
