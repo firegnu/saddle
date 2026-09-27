@@ -72,7 +72,7 @@ saddle
 
 ## 启动 agent、标签页和分屏
 
-Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为当前 Tasks 项目；在这里另选项目只改变新 agent 的目录，不切换 Tasks。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。名称默认为 `main`，手工编辑后不再随项目或 agent 类型变化。默认与手工名称都精确传给公开 `corral start`，不加 `--unique`；重名时显示 CLI 报错并保留草稿，不自动编号。实际名称取 corral 返回值。
+Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为当前 Tasks 项目；在这里另选项目只改变新 agent 的目录，不切换 Tasks。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。**Role** 默认选 **Controller**（主控），名称锁定为只读 `main`；选择 **Regular**（普通 agent）后可编辑名称，首次值为 `main`，角色往返切换时保留普通名称草稿。切换项目或 Codex/Claude 不改变名称和角色。角色仅约束名称，不配置队列或开启任务派发。两种角色都按精确名称调用公开 `corral start`，不加 `--unique`；重名时显示 CLI 报错并保留草稿，不自动编号。实际名称取 corral 返回值。
 
 输入框有标签、框线、占位提示、焦点高亮及真实插入光标。点击内容定位光标，Tab／Shift-Tab 切焦点，左右键、Home／End、Backspace／Delete、Ctrl-U 清空及粘贴都按当前位置编辑，支持中文宽字符。长行横向滚动，多行消息还可上下移动、纵向滚动及 Enter 换行；小窗口可切焦点或用滚轮访问字段，底部保留创建和取消入口。
 

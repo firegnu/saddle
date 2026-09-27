@@ -21,6 +21,8 @@ const CODEX: usize = 6;
 const CLAUDE: usize = 7;
 const ADVANCED: usize = 8;
 const PREVIEW: usize = 9;
+const CONTROLLER: usize = 10;
+const REGULAR: usize = 11;
 const CODEX_COMMAND: &str = "codex --yolo";
 
 pub struct Form {
@@ -34,7 +36,8 @@ pub struct Form {
     field_hits: Vec<(Rect, usize)>,
     advanced: bool,
     edit_path: bool,
-    manual_name: bool,
+    regular: bool,
+    inactive_name: edit::Input,
     agent: usize,
     choosing_project: bool,
     project_index: usize,
@@ -43,8 +46,8 @@ pub struct Form {
 }
 impl Form {
     pub fn new(project: String) -> Self {
-        let mut form = Self {
-            fields: [project, String::new(), CODEX_COMMAND.into(), String::new()]
+        Self {
+            fields: [project, "main".into(), CODEX_COMMAND.into(), String::new()]
                 .map(edit::Input::new),
             field: PROJECT,
             place: 0,
@@ -55,21 +58,25 @@ impl Form {
             field_hits: Vec::new(),
             advanced: false,
             edit_path: false,
-            manual_name: false,
+            regular: false,
+            inactive_name: edit::Input::new("main".into()),
             agent: 0,
             choosing_project: false,
             project_index: 0,
             project_hits: Vec::new(),
             scroll_start: 0,
-        };
-        form.suggest_name();
-        form
-    }
-    fn suggest_name(&mut self) {
-        if self.manual_name {
-            return;
         }
-        self.fields[1] = edit::Input::new("main".into());
+    }
+    fn choose_role(&mut self, regular: bool) {
+        if self.regular != regular {
+            std::mem::swap(&mut self.fields[1], &mut self.inactive_name);
+            self.regular = regular;
+        }
+        self.field = if regular { REGULAR } else { CONTROLLER };
+        self.error.clear();
+    }
+    fn editable(&self, field: usize) -> bool {
+        field < 4 && (field != 1 || self.regular)
     }
     fn invalid(&self, field: usize) -> Option<String> {
         let value = &self.fields[field].text;
@@ -128,17 +135,11 @@ impl Form {
     }
     fn edited(&mut self, old: &str) {
         if self.field < 4 && old != self.fields[self.field].text {
-            if self.field == 1 {
-                self.manual_name = true;
-            }
-            if self.field == 0 {
-                self.suggest_name();
-            }
             self.error.clear();
         }
     }
     pub fn paste(&mut self, text: &str) {
-        if self.busy.is_none() && !self.choosing_project && self.field < 4 {
+        if self.busy.is_none() && !self.choosing_project && self.editable(self.field) {
             let old = self.fields[self.field].text.clone();
             self.fields[self.field].insert(text, self.field == 3);
             self.edited(&old);
@@ -149,7 +150,11 @@ impl Form {
         if self.edit_path {
             order.push(0);
         }
-        order.extend([CODEX, CLAUDE, 1, ADVANCED]);
+        order.extend([CODEX, CLAUDE, CONTROLLER, REGULAR]);
+        if self.regular {
+            order.push(1);
+        }
+        order.push(ADVANCED);
         if self.advanced {
             order.extend([2, 3, 4, PREVIEW]);
         }
@@ -164,13 +169,11 @@ impl Form {
         self.agent = agent;
         self.field = CODEX + agent;
         self.fields[2] = edit::Input::new([CODEX_COMMAND, "claude"][agent].into());
-        self.suggest_name();
         self.error.clear();
     }
     fn select_project(&mut self, projects: &[String]) {
         if let Some(project) = projects.get(self.project_index) {
             self.fields[0] = edit::Input::new(project.clone());
-            self.suggest_name();
             self.error.clear();
         }
         self.choosing_project = false;
@@ -191,6 +194,8 @@ impl Form {
             "Claude",
             "Advanced",
             "Preview",
+            "Controller",
+            "Regular",
         ][self.field]
     }
     /// Only the Create button / Ctrl-S submits; editing and navigation never do.
@@ -239,7 +244,7 @@ impl Form {
                     self.choosing_project = true;
                     self.field = PROJECT;
                 }
-                KeyCode::Char('u') if self.field < 4 => {
+                KeyCode::Char('u') if self.editable(self.field) => {
                     let old = self.fields[self.field].text.clone();
                     self.fields[self.field].clear();
                     self.edited(&old);
@@ -260,6 +265,8 @@ impl Form {
             KeyCode::BackTab => self.move_focus(true),
             KeyCode::F(2) => self.choose_agent(0),
             KeyCode::F(3) => self.choose_agent(1),
+            KeyCode::F(6) => self.choose_role(false),
+            KeyCode::F(7) => self.choose_role(true),
             KeyCode::F(4) => {
                 self.advanced = !self.advanced;
                 self.field = ADVANCED;
@@ -280,6 +287,12 @@ impl Form {
             KeyCode::Enter | KeyCode::Char(' ') if matches!(self.field, CODEX | CLAUDE) => {
                 self.choose_agent(self.field - CODEX)
             }
+            KeyCode::Left | KeyCode::Right if matches!(self.field, CONTROLLER | REGULAR) => {
+                self.choose_role(!self.regular)
+            }
+            KeyCode::Enter | KeyCode::Char(' ') if matches!(self.field, CONTROLLER | REGULAR) => {
+                self.choose_role(self.field == REGULAR)
+            }
             KeyCode::Enter | KeyCode::Char(' ') if self.field == ADVANCED => {
                 self.advanced = !self.advanced;
             }
@@ -295,7 +308,7 @@ impl Form {
                     self.preview_top.saturating_add(3)
                 };
             }
-            _ if self.field < 4 => {
+            _ if self.editable(self.field) => {
                 let old = self.fields[self.field].text.clone();
                 self.fields[self.field].key(key.code, self.field == 3);
                 self.edited(&old);
@@ -315,7 +328,7 @@ impl Form {
             }
         } else if let Some((_, field)) = self.field_hits.iter().find(|(r, _)| r.contains(point)) {
             self.field = *field;
-            if *field < 4 {
+            if self.editable(*field) {
                 self.fields[*field].click(point);
             }
         }
@@ -347,7 +360,7 @@ impl Form {
         program: &str,
         projects: &[String],
     ) -> Vec<buttons::Hit> {
-        let area = crate::theme::centered(frame.area(), 104, if self.advanced { 40 } else { 24 });
+        let area = crate::theme::centered(frame.area(), 104, if self.advanced { 44 } else { 28 });
         frame.render_widget(Clear, area);
         frame.render_widget(
             t.block(" New agent ", true).style(t.base().bg(t.overlay)),
@@ -464,13 +477,17 @@ impl Form {
         if self.edit_path {
             sections.push((0, 3));
         }
-        sections.extend([(CODEX, 4), (1, 4), (ADVANCED, 3)]);
+        sections.extend([(CODEX, 4), (CONTROLLER, 4), (1, 4), (ADVANCED, 3)]);
         if self.advanced {
             sections.extend([(2, 4), (3, 6), (4, 4), (PREVIEW, 4)]);
         }
         let focus = sections
             .iter()
-            .position(|(id, _)| *id == self.field || (*id == CODEX && self.field == CLAUDE))
+            .position(|(id, _)| {
+                *id == self.field
+                    || (*id == CODEX && self.field == CLAUDE)
+                    || (*id == CONTROLLER && self.field == REGULAR)
+            })
             .unwrap_or(0);
         self.scroll_start = self.scroll_start.min(focus);
         while self.scroll_start < focus
@@ -574,6 +591,40 @@ impl Form {
                         hits.extend(controls);
                     }
                 }
+                CONTROLLER => {
+                    frame.render_widget(
+                        Paragraph::new("Role").style(Style::default().fg(t.muted)),
+                        Rect::new(rect.x, rect.y, rect.width, 1),
+                    );
+                    if rect.height > 1 {
+                        let (_, controls) = buttons::draw_outlined_top(
+                            t,
+                            frame,
+                            Rect::new(rect.x, rect.y + 1, rect.width, rect.height - 1),
+                            &[
+                                Button::new(
+                                    if self.regular {
+                                        "○ Controller"
+                                    } else {
+                                        "● Controller"
+                                    },
+                                    KeyCode::F(6),
+                                    enabled,
+                                ),
+                                Button::new(
+                                    if self.regular {
+                                        "● Regular"
+                                    } else {
+                                        "○ Regular"
+                                    },
+                                    KeyCode::F(7),
+                                    enabled,
+                                ),
+                            ],
+                        );
+                        hits.extend(controls);
+                    }
+                }
                 ADVANCED => {
                     let (_, controls) = buttons::draw_outlined_top(
                         t,
@@ -629,6 +680,7 @@ impl Form {
                 }
                 0..=3 => {
                     let hint = match id {
+                        1 if !self.regular => "Controller name · read-only",
                         1 => "Exact name · edit freely",
                         2 => "Quoted arguments; no shell expansion",
                         3 => "Enter newline · ↑↓ move · paste multiple lines",
@@ -643,7 +695,7 @@ impl Form {
                     let title = error
                         .as_ref()
                         .map_or(format!(" {label} "), |error| format!(" {label} · {error} "));
-                    let focused = self.field == id && enabled;
+                    let focused = self.field == id && enabled && self.editable(id);
                     let mut block = t.block(title, focused);
                     if error.is_some() {
                         block = block.border_style(Style::default().fg(t.danger));
@@ -662,7 +714,7 @@ impl Form {
                         ][id],
                         t,
                     );
-                    if enabled {
+                    if enabled && self.editable(id) {
                         self.field_hits.push((box_rect, id));
                     }
                     if input_height < rect.height {
@@ -675,10 +727,21 @@ impl Form {
                 _ => unreachable!(),
             }
             // Give keyboard-focused non-text controls the same visible emphasis.
-            if self.field >= 4 && (id == self.field || (id == CODEX && self.field == CLAUDE)) {
+            if self.field >= 4
+                && (id == self.field
+                    || (id == CODEX && self.field == CLAUDE)
+                    || (id == CONTROLLER && self.field == REGULAR))
+            {
                 for hit in hits.iter().filter(|h| rect.contains(h.area.as_position())) {
-                    let selected = id != CODEX
-                        || hit.key.code == KeyCode::F(if self.field == CODEX { 2 } else { 3 });
+                    let selected = match id {
+                        CODEX => {
+                            hit.key.code == KeyCode::F(if self.field == CODEX { 2 } else { 3 })
+                        }
+                        CONTROLLER => {
+                            hit.key.code == KeyCode::F(if self.field == CONTROLLER { 6 } else { 7 })
+                        }
+                        _ => true,
+                    };
                     if selected {
                         // Outline and label turn to the focus colour; the frame stays unfilled.
                         frame
@@ -696,6 +759,91 @@ impl Form {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn controller_name_cannot_be_edited_by_click_keys_or_paste() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Position};
+        let mut form = Form::new("/tmp/demo".into());
+        let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
+        terminal
+            .draw(|frame| {
+                form.draw(&Theme::default(), frame, "corral", &[]);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let point = (0..46)
+            .find_map(|y| {
+                let row: String = (0..106).map(|x| buffer[(x, y)].symbol()).collect();
+                row.find("main").map(|x| Position::new(x as u16, y))
+            })
+            .unwrap();
+        form.click(point, &[]);
+        form.key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            &[],
+        );
+        form.paste("renamed");
+        for code in [KeyCode::Char('x'), KeyCode::Backspace, KeyCode::Delete] {
+            press(&mut form, code);
+        }
+        assert_eq!(form.args().unwrap()[1], "main");
+        assert!(!form.args().unwrap().iter().any(|arg| arg == "--unique"));
+    }
+
+    #[test]
+    fn regular_name_survives_role_project_and_agent_changes_and_is_validated() {
+        let mut form = Form::new("/tmp/demo".into());
+        press(&mut form, KeyCode::F(7));
+        assert_eq!(form.args().unwrap()[1], "main");
+        press(&mut form, KeyCode::Tab);
+        form.key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            &[],
+        );
+        form.paste("reviewer");
+        press(&mut form, KeyCode::F(3));
+        assert_eq!(
+            form.args().unwrap(),
+            ["start", "reviewer", "--cwd", "/tmp/demo", "--", "claude"]
+        );
+        press(&mut form, KeyCode::F(6));
+        assert_eq!(form.args().unwrap()[1], "main");
+        let projects = vec!["/tmp/other".into()];
+        form.key(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &projects,
+        );
+        form.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &projects);
+        press(&mut form, KeyCode::F(2));
+        assert_eq!(form.args().unwrap()[1], "main");
+        press(&mut form, KeyCode::F(7));
+        assert_eq!(
+            form.args().unwrap(),
+            [
+                "start",
+                "reviewer",
+                "--cwd",
+                "/tmp/other",
+                "--",
+                "codex",
+                "--yolo"
+            ]
+        );
+        press(&mut form, KeyCode::Tab);
+        form.key(
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+            &[],
+        );
+        assert!(form.args().is_err());
+        form.paste("bad name");
+        assert!(form.args().is_err());
+        press(&mut form, KeyCode::F(6));
+        assert_eq!(form.args().unwrap()[1], "main");
+        press(&mut form, KeyCode::Right); // Role arrow navigation restores Regular.
+        assert!(form.args().is_err());
+        press(&mut form, KeyCode::Left);
+        assert_eq!(form.args().unwrap()[1], "main");
+    }
 
     #[test]
     fn placement_new_and_queue_use_the_same_bottom_cancel() {
@@ -763,7 +911,7 @@ mod tests {
             );
             assert_eq!(cancel.area.height, 1);
             let dialog = if new {
-                crate::theme::centered(buffer.area, 104, 24)
+                crate::theme::centered(buffer.area, 104, 28)
             } else {
                 tasks(buffer.area)
             };
@@ -786,7 +934,7 @@ mod tests {
         assert_eq!(text(buffer, back[0].area), "‹Back Esc›");
         assert_eq!(
             back[0].area.bottom(),
-            crate::theme::centered(buffer.area, 104, 24).bottom() - 1
+            crate::theme::centered(buffer.area, 104, 28).bottom() - 1
         );
     }
 
@@ -810,7 +958,7 @@ mod tests {
             "codex",
             "--yolo",
         ];
-        let mut terminal = Terminal::new(TestBackend::new(106, 42)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
         press(&mut form, KeyCode::F(4)); // Show command and preview.
         for explicitly_select in [false, true] {
             if explicitly_select {
@@ -824,7 +972,7 @@ mod tests {
                 })
                 .unwrap();
             let buffer = terminal.backend().buffer();
-            let text = (0..42)
+            let text = (0..46)
                 .map(|y| {
                     (0..106)
                         .map(|x| buffer[(x, y)].symbol())
@@ -835,7 +983,7 @@ mod tests {
             assert!(text.contains("● Codex"));
             assert!(!text.contains("Custom command"));
             assert!(text.contains("corral start main --cwd /tmp/demo -- codex --yolo"));
-            assert!(text.contains("Exact name · edit freely"));
+            assert!(text.contains("Controller name · read-only"));
         }
     }
 
@@ -884,6 +1032,7 @@ mod tests {
                 "claude"
             ]
         );
+        press(&mut form, KeyCode::F(7)); // Regular
         press(&mut form, KeyCode::Tab); // Name
         form.key(
             KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
@@ -941,13 +1090,14 @@ mod tests {
         use ratatui::{Terminal, backend::TestBackend};
         let mut form = Form::new("/tmp/demo".into());
         let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+        press(&mut form, KeyCode::F(7));
         press(&mut form, KeyCode::F(4));
         form.key(
             KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
             &[],
         );
         let mut visited = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..12 {
             terminal
                 .draw(|frame| {
                     let hits = form.draw(&Theme::default(), frame, "corral", &[]);
@@ -981,13 +1131,13 @@ mod tests {
             &[],
         );
         press(&mut form, KeyCode::F(2));
-        let mut terminal = Terminal::new(TestBackend::new(106, 42)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
         let mut hits = Vec::new();
         terminal
             .draw(|frame| hits = form.draw(&t, frame, "corral", &[]))
             .unwrap();
         let buffer = terminal.backend().buffer();
-        let rows: Vec<String> = (0..42)
+        let rows: Vec<String> = (0..46)
             .map(|y| (0..106).map(|x| buffer[(x, y)].symbol()).collect())
             .collect();
         println!("{}", rows.join("\n"));
@@ -1005,6 +1155,8 @@ mod tests {
                 ctrl('e'),
                 plain(KeyCode::F(2)),
                 plain(KeyCode::F(3)),
+                plain(KeyCode::F(6)),
+                plain(KeyCode::F(7)),
                 plain(KeyCode::F(4)),
                 plain(KeyCode::F(5)),
             ],

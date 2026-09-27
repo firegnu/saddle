@@ -54,3 +54,17 @@
   - `git diff --check`，通过。
 - 取舍与未做：遵循设计第 34 节，无需变更设计；沿用现有 CLI 失败反馈与草稿保留，不新增重试、编号或接入已有 agent 的策略。不改派发、命令默认值、打开位置或 UI 样式；未操作真实 agent/队列、未构建 release、未合并或推送。
 - 待主控：审查本分支，决定后续合并；已知 full_workflow 旧鼠标坐标问题另行安排。
+
+## 角色方案增量完成记录（2026-09-27）
+
+- 本轮确认：用户确认 Regular 首次名称为可编辑的 `main`，切到 Controller 显示锁定 `main`，切回 Regular 恢复此前填写的名称草稿。
+- 改动：名称前新增 Role 的 Controller / Regular 描边按钮，默认 Controller；主控名称不进入可编辑焦点，不接受点击编辑、清空、字符键或粘贴。Regular 沿用原名称输入和校验，角色切换保存其输入状态；项目和 Codex/Claude 切换不覆盖角色或名称。名称继续精确提交，不加 `--unique`。
+- 布局与说明：复用现有按钮、输入框、焦点和滚动方式，只为 Role 增加四行表单高度；支持 Tab、方向键、Enter/空格和 F6/F7 选择角色，短窗口仍通过焦点滚动访问控件。同步中英文 README。
+- 定向 RED → GREEN：先增加 `controller_name_cannot_be_edited_by_click_keys_or_paste`，以 `cargo test --lib launch::tests::controller_name_cannot_be_edited_by_click_keys_or_paste -- --exact` 运行，旧实现实际名称为 `renamed`、预期 `main`，退出码 101；实现后同一命令 1 个通过。
+- 增量验证：以下 Cargo 命令均加共享 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，逐条前台等待结束。
+  - `cargo test --lib launch::tests::`：8 个通过，覆盖只读名称、普通名称草稿与校验、项目/工具切换、精确 argv/预览、描边样式和 40×12 短窗口输入可达性。
+  - `cargo test --test workflow -- new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor new_agent_ placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft closing_a_start_target_keeps_the_created_agent_available_without_attaching starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab`：6 个通过，使用假 CLI；覆盖默认主控创建、普通名称编辑及角色往返切换、失败草稿、取消重开、关闭启动目标和隐藏标签启动。
+  - `cargo clippy --all-targets -- -D warnings`：通过。
+  - `git diff --check`：通过。
+- 取舍与未做：角色仅限制 New 名称，没有新增派发或队列配置；保留 b015f42 的精确名称语义、公开返回名和错误处理。未改变 YOLO、Claude 命令默认值或打开位置，未操作任何真实 agent/队列，未重跑全套、未扩修已知 full_workflow 问题、未构建 release、未合并或推送。
+- 待主控：审查增量提交并决定合并；没有待确认的实现规则。
