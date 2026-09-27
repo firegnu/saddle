@@ -1,5 +1,11 @@
 # 交接
 
+## 2026-09-27：Tasks 页签与详情配色已委派
+
+- 用户反馈 Task text / Run details 选中态看不清、详情缺状态色，要求考虑配色。设计与任务提交 2b624bb，见 DESIGN 第 35 节、docs/任务/Tasks页签与详情配色.md。当前项 focus 色加粗加 ●，其他项灰色 ○；详情结构化状态复用已有语义色，分节标题 reply_heading，普通内容中性。
+- 自有 saddle/dev-task-colors-1（Claude Code opus[1m] / high），worktree ../saddle-worktrees/tasks-detail-colors，分支同名。路由常规/不交叉/看得见，按纯视觉预算验证和主控审查，不扩状态逻辑或配置系统，不操作队列。
+- 下一步完成后查最新状态/reply，审查 diff 与直接渲染证据，通过后合并推送、更新 release、清理开发环境并收尾，供用户体验。当前尚未实现完成或发布。
+
 ## 2026-09-27：New 主控/普通角色命名已发布收尾
 
 - New 默认 Controller，名称锁定为精确 main；Regular 首次也填 main（用户再次确认），可编辑且角色往返保留普通名称草稿。两者都不加 --unique，重名显示 CLI 错误并保留草稿。派发流程、YOLO 和现有 agent（包括用户 main-1）未改；完整设计/审查见 DESIGN 第 34 节及 docs/任务/New-Agent精确名称.md。
