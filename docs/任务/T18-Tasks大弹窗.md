@@ -71,3 +71,21 @@
 - 未改 `docs/DESIGN.md`（第 32 节按已批准方案实施，上面的实现取舍待主控决定是否写入）。
 - 未做真实 agent、录屏或覆盖矩阵测试；未合并、未推送、未构建 release。
 - 基线用例 `full_workflow_…` 的鼠标转发断言未修（范围外，见上）。
+
+## 实施中补充：入口显示简短状态（完成记录）
+
+需求原文见主仓库本文件末尾「实施中补充：入口显示简短状态」及 DESIGN 第 32 节新增条目（用户：「我觉得你上面踢的那个留意的点是必要的。」）。本分支在主体完成后追加。
+
+### 改动
+- `queue::Panel::entry_status`：只从现有公开快照 `drover list --json` 得出入口状态，按需要关注的优先级取一项：`Awaiting release`（待放行色）> `Running`（运行色）> `Paused`（待放行同色）> `N pending`（Pending 组色）> `Idle`（空闲色）。尚未读到显示 `Loading…`；读取失败显示 `Read failed`（错误色），不沿用失败前的旧快照。没有新增查询、通知或状态推断。
+- 入口改为 `‹Tasks · <状态> Tab›`，状态文字用上述语义色；弹窗打开时入口仍高亮、不可点。Agents 左列窄时依次去掉 `Tab` 提示、改短写（`Awaiting`、`Failed`、待办只留数字），再不够则只显示 `Tasks`。
+- 中英文 README 补充入口状态说明。
+
+### 验证
+- RED→GREEN：新增 `tests/ui.rs::closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors`（Loading、各状态文字与颜色、读取失败、窄列短写），旧实现只显示 `Tasks Tab` 而失败，实现后通过。
+- 定位入口的既有检查从精确文字 `Tasks Tab` 改为稳定前缀 `‹Tasks`（`tests/workflow.rs`、`tests/app.rs`、`tests/ui.rs`）。
+- 重跑受影响目标：`ui`、`app`、`queue` 全过；`workflow` 36 过 / 1 败（仍只有已知基线 `full_workflow_…`，失败点同前）/ 2 忽略。`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 通过。按要求未重复无关全套。
+
+### 取舍
+- 暂停但仍有运行中/待放行任务时显示后者（更需处理）；暂停且无运行时显示 `Paused` 而不是待办数。
+- 入口文字随状态变长，窄列按上述顺序降级；因此测试不再依赖入口完整文字。

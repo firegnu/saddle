@@ -698,6 +698,33 @@ impl Panel {
     pub fn overlay_open(&self) -> bool {
         !matches!(self.page, Page::List)
     }
+    /// The project's state for the closed Tasks entry, long and short, in its semantic color:
+    /// what needs attention first, and never an old snapshot after a failed read.
+    pub fn entry_status(&self, t: &Theme) -> (String, String, ratatui::style::Color) {
+        let same = |text: &str, color| (text.to_owned(), text.to_owned(), color);
+        if self.read_error.is_some() {
+            return ("Read failed".into(), "Failed".into(), t.agent_error);
+        }
+        let Some(s) = &self.snapshot else {
+            return same("Loading…", t.agent_starting);
+        };
+        if s.awaiting.is_some() {
+            (
+                "Awaiting release".into(),
+                "Awaiting".into(),
+                t.agent_blocked,
+            )
+        } else if s.current.is_some() {
+            same("Running", t.agent_working)
+        } else if s.paused {
+            same("Paused", t.agent_blocked)
+        } else if !s.pending.is_empty() {
+            let n = s.pending.len();
+            (format!("{n} pending"), n.to_string(), t.agent_starting)
+        } else {
+            same("Idle", t.agent_idle)
+        }
+    }
     fn mode_line(&self, t: &Theme) -> ratatui::text::Line<'static> {
         use ratatui::{
             style::{Modifier, Style},

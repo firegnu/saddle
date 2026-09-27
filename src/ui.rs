@@ -80,7 +80,15 @@ pub fn draw_workspace(
     }
     // Tasks is open exactly while it has the input; the popup then takes every hit.
     let queue_modal = view.focus == Focus::Queue;
-    let entry = tasks_entry(t, frame, view.panes.agents, queue_modal);
+    let title_width = format!(" Agents · {} ", panel.agents.len()).width() as u16;
+    let entry = tasks_entry(
+        t,
+        frame,
+        view.panes.agents,
+        title_width,
+        view.queue,
+        queue_modal,
+    );
     if queue_modal {
         hits.queue_rows = view.queue.draw(t, frame, view.panes.tasks);
         hits.buttons.clear();
@@ -296,20 +304,44 @@ pub fn draw_workspace(
     hits
 }
 
-/// The fixed Tasks entry on the Agents top border; highlighted, and not clickable, while open.
-fn tasks_entry(t: &Theme, frame: &mut Frame, agents: Rect, open: bool) -> Vec<crate::buttons::Hit> {
+/// The fixed Tasks entry on the Agents top border, carrying the project's short task state;
+/// highlighted, and not clickable, while open. Narrow columns drop the key hint, then shorten.
+fn tasks_entry(
+    t: &Theme,
+    frame: &mut Frame,
+    agents: Rect,
+    title_width: u16,
+    queue: &crate::queue::Panel,
+    open: bool,
+) -> Vec<crate::buttons::Hit> {
     use crate::buttons::{self, Button};
-    let label = "Tasks Tab";
-    let width = label.width() as u16 + 2;
-    if agents.width < width + 18 || agents.height == 0 {
+    let (long, short, color) = queue.entry_status(t);
+    let room = agents.width.saturating_sub(title_width + 3);
+    let Some((label, status)) = [
+        (format!("Tasks · {long} Tab"), long.as_str()),
+        (format!("Tasks · {long}"), long.as_str()),
+        (format!("Tasks · {short}"), short.as_str()),
+        ("Tasks".to_owned(), ""),
+    ]
+    .into_iter()
+    .find(|(label, _)| label.width() as u16 + 2 <= room) else {
+        return Vec::new();
+    };
+    if agents.height == 0 {
         return Vec::new();
     }
+    let width = label.width() as u16 + 2;
     let area = Rect::new(agents.right() - width - 2, agents.y, width, 1);
-    let mut button = Button::new(label, crossterm::event::KeyCode::Tab, true);
+    let mut button = Button::new(&label, crossterm::event::KeyCode::Tab, true);
     if open {
         button = button.primary();
     }
     let (_, hits) = buttons::draw_compact_top(t, frame, area, &[button]);
+    let offset = "‹Tasks · ".width() as u16;
+    frame.buffer_mut().set_style(
+        Rect::new(area.x + offset, area.y, status.width() as u16, 1).intersection(area),
+        Style::default().fg(color),
+    );
     if open { Vec::new() } else { hits }
 }
 pub fn inner(area: Rect) -> Rect {

@@ -1595,7 +1595,7 @@ fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
     let (mut a, mut q) = fixture();
     let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
     let screen = text(&buffer);
-    assert!(screen.contains("Tasks Tab"), "{screen}");
+    assert!(screen.contains("‹Tasks"), "{screen}");
     assert!(!screen.contains("T12345"), "{screen}");
     // The Agents border runs down to the status row.
     assert_eq!(buffer[(0, 46)].symbol(), "┗");
@@ -1613,4 +1613,82 @@ fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
     for label in ["Check & release g", "Refresh r", "Add task a", "Close Esc"] {
         assert!(screen.contains(label), "{label}: {screen}");
     }
+}
+
+#[test]
+fn closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors() {
+    use saddle::theme as t;
+    let (mut a, _) = fixture();
+    let task = || Task {
+        id: Some("T1".into()),
+        title: "Task".into(),
+        ..Default::default()
+    };
+    let entry = |a: &mut agents::Panel, q: &mut queue::Panel, width| {
+        let (buffer, _) = render(width, 40, a, q, Focus::Agents);
+        let top: String = (0..width)
+            .map(|x| buffer[(x, 0)].symbol().to_owned())
+            .collect();
+        (buffer, top)
+    };
+    let mut q = queue::Panel::default();
+    let (_, top) = entry(&mut a, &mut q, 160);
+    assert!(top.contains("‹Tasks · Loading… Tab›"), "{top}");
+    for (snapshot, label, color) in [
+        (
+            Snapshot {
+                awaiting: Some(task()),
+                current: Some(task()),
+                pending: vec![task()],
+                ..Default::default()
+            },
+            "Awaiting release",
+            t::AGENT_BLOCKED,
+        ),
+        (
+            Snapshot {
+                current: Some(task()),
+                pending: vec![task()],
+                ..Default::default()
+            },
+            "Running",
+            t::AGENT_WORKING,
+        ),
+        (
+            Snapshot {
+                paused: true,
+                pending: vec![task()],
+                ..Default::default()
+            },
+            "Paused",
+            t::AGENT_BLOCKED,
+        ),
+        (
+            Snapshot {
+                pending: vec![task(), task(), task()],
+                ..Default::default()
+            },
+            "3 pending",
+            t::AGENT_STARTING,
+        ),
+        (Snapshot::default(), "Idle", t::AGENT_IDLE),
+    ] {
+        q.absorb(snapshot);
+        let (buffer, top) = entry(&mut a, &mut q, 160);
+        assert!(top.contains(&format!("‹Tasks · {label} Tab›")), "{top}");
+        assert_label_color(&buffer, label, color);
+    }
+    // A failed read is shown as such, never as the last good state.
+    q.read_error = Some("synthetic".into());
+    let (buffer, top) = entry(&mut a, &mut q, 160);
+    assert!(top.contains("‹Tasks · Read failed Tab›"), "{top}");
+    assert_label_color(&buffer, "Read failed", t::AGENT_ERROR);
+    // Narrow Agents columns keep the status and drop the key hint first.
+    q.read_error = None;
+    q.absorb(Snapshot {
+        awaiting: Some(task()),
+        ..Default::default()
+    });
+    let (_, top) = entry(&mut a, &mut q, 80);
+    assert!(top.contains("‹Tasks · Awaiting›"), "{top}");
 }
