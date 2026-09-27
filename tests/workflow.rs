@@ -1313,7 +1313,7 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
     h.send(b"n");
     h.see("New agent");
     h.see("● Codex");
-    h.see("project-one/codex");
+    h.see("main");
     h.click("Name");
     h.send("\x15\x1b[200~a中b\x1b[201~".as_bytes());
     h.see("a中b");
@@ -1369,16 +1369,16 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     let mut h = Harness::start_with_projects(&script, true);
     h.see("Queue project-one");
     h.send(b"n");
-    h.see("project-one/codex");
+    h.see("main");
     h.click("Create agent");
-    h.see("project-one/codex-actual READY");
+    h.see("main-actual READY");
     h.send(b"\x1dn");
     h.click("Project:");
     h.click("project-two ·");
     h.click("Claude");
-    h.see("project-two/claude");
+    h.see("main");
     h.click("Create agent");
-    h.see("project-two/claude-actual READY");
+    h.see("main-actual READY");
     h.see("Queue project-one");
     let calls: Vec<Vec<String>> = h
         .log("start-args")
@@ -1394,7 +1394,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
             calls[i],
             vec![
                 "start".to_string(),
-                format!("{project}/{agent}"),
+                "main".to_string(),
                 "--cwd".into(),
                 h.dir
                     .path()
@@ -1540,7 +1540,10 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
     h.send(b"\x1dn");
     h.click("Name");
-    h.send(b"\x15p/hidden\x13");
+    h.send(b"\x15p/hidden");
+    h.click("Advanced");
+    h.click("Open in: Current pane");
+    h.send(b"\x13");
     h.event("start p/hidden");
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
