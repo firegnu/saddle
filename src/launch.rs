@@ -21,6 +21,7 @@ const CODEX: usize = 6;
 const CLAUDE: usize = 7;
 const ADVANCED: usize = 8;
 const PREVIEW: usize = 9;
+const CODEX_COMMAND: &str = "codex --yolo";
 
 pub struct Form {
     fields: [edit::Input; 4],
@@ -43,7 +44,8 @@ pub struct Form {
 impl Form {
     pub fn new(project: String) -> Self {
         let mut form = Self {
-            fields: [project, String::new(), "codex".into(), String::new()].map(edit::Input::new),
+            fields: [project, String::new(), CODEX_COMMAND.into(), String::new()]
+                .map(edit::Input::new),
             field: PROJECT,
             place: 0,
             busy: None,
@@ -164,7 +166,7 @@ impl Form {
     fn choose_agent(&mut self, agent: usize) {
         self.agent = agent;
         self.field = CODEX + agent;
-        self.fields[2] = edit::Input::new(["codex", "claude"][agent].into());
+        self.fields[2] = edit::Input::new([CODEX_COMMAND, "claude"][agent].into());
         self.suggest_name();
         self.error.clear();
     }
@@ -543,7 +545,7 @@ impl Form {
                 }
                 CODEX => {
                     let command = &self.fields[2].text;
-                    let codex = if command == "codex" {
+                    let codex = if command == CODEX_COMMAND {
                         "● Codex"
                     } else {
                         "○ Codex"
@@ -553,7 +555,7 @@ impl Form {
                     } else {
                         "○ Claude"
                     };
-                    let label = if command == "codex" || command == "claude" {
+                    let label = if command == CODEX_COMMAND || command == "claude" {
                         "Agent"
                     } else {
                         "Agent · Custom command (Advanced)"
@@ -799,7 +801,8 @@ mod tests {
 
     #[test]
     fn default_project_and_codex_can_create_without_typing_a_command() {
-        let form = Form::new("/tmp/demo".into());
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut form = Form::new("/tmp/demo".into());
         assert_eq!(
             form.place,
             Place::ALL
@@ -807,18 +810,42 @@ mod tests {
                 .position(|p| *p == Place::Current)
                 .unwrap()
         );
-        assert_eq!(
-            form.args().unwrap(),
-            [
-                "start",
-                "main",
-                "--cwd",
-                "/tmp/demo",
-                "--unique",
-                "--",
-                "codex"
-            ]
-        );
+        let expected = [
+            "start",
+            "main",
+            "--cwd",
+            "/tmp/demo",
+            "--unique",
+            "--",
+            "codex",
+            "--yolo",
+        ];
+        let mut terminal = Terminal::new(TestBackend::new(106, 42)).unwrap();
+        press(&mut form, KeyCode::F(4)); // Show command and preview.
+        for explicitly_select in [false, true] {
+            if explicitly_select {
+                press(&mut form, KeyCode::F(3));
+                press(&mut form, KeyCode::F(2));
+            }
+            assert_eq!(form.args().unwrap(), expected);
+            terminal
+                .draw(|frame| {
+                    form.draw(&Theme::default(), frame, "corral", &[]);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let text = (0..42)
+                .map(|y| {
+                    (0..106)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("● Codex"));
+            assert!(!text.contains("Custom command"));
+            assert!(text.contains("corral start main --cwd /tmp/demo --unique -- codex --yolo"));
+        }
     }
 
     #[test]

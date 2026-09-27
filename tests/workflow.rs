@@ -1389,7 +1389,7 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
     h.see("a文中-actual READY");
     let args: Vec<String> = serde_json::from_str(h.log("start-args").trim()).unwrap();
     assert_eq!(args[1], "a文中");
-    assert_eq!(args.last().unwrap(), "codex");
+    assert_eq!(&args[args.len() - 2..], ["codex", "--yolo"]);
     assert!(!args.iter().any(|a| a == "--unique"));
     println!("Observed edited name a文中 and fake CLI creation: {args:?}");
     h.quit();
@@ -1423,28 +1423,29 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     assert_eq!(calls.len(), 2);
-    for (i, (project, agent)) in [("project-one", "codex"), ("project-two", "claude")]
-        .iter()
-        .enumerate()
+    for (i, (project, command)) in [
+        ("project-one", vec!["codex", "--yolo"]),
+        ("project-two", vec!["claude"]),
+    ]
+    .iter()
+    .enumerate()
     {
-        assert_eq!(
-            calls[i],
-            vec![
-                "start".to_string(),
-                "main".to_string(),
-                "--cwd".into(),
-                h.dir
-                    .path()
-                    .join(project)
-                    .canonicalize()
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
-                "--unique".into(),
-                "--".into(),
-                agent.to_string()
-            ]
-        );
+        let mut expected = vec![
+            "start".to_string(),
+            "main".to_string(),
+            "--cwd".into(),
+            h.dir
+                .path()
+                .join(project)
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            "--unique".into(),
+            "--".into(),
+        ];
+        expected.extend(command.iter().map(|arg| arg.to_string()));
+        assert_eq!(calls[i], expected);
     }
     h.quit();
     assert!(!h.log("events").contains("stop "));
