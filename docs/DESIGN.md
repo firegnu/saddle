@@ -540,3 +540,11 @@ Agents ‹Tasks›             Agent terminal
 - 右侧窗格根据对应 agent 的公开 labels 显示 `Controller · 名称` 或 `Regular · 名称`。旧 agent 没有角色、未知或无效角色时显示 `Agent · 名称`；不根据 main 等名字猜测角色。空窗格没有 agent 时保留 Viewer。
 - 沿用现有公开快照读取标签，不新增轮询或持久化配置。多个窗格各自显示所接入 agent 的角色，常规 workspace 与无 terminals 的渲染路径保持一致。
 - 不增加角色控件或修改样式，不改精确命名、YOLO、打开位置、终端输入及接入规则。不修改派发流程、corral/drover 仓库或任何现有 agent，不扩展开发/审查职责标签。
+
+## 37. Agent 工作职责标题（2026-09-27）
+
+用户进一步澄清希望显示主控、实现者、审查者等工作职责；确认可通过已有标签实现后回复「那就做吧」，并明确「不是汉语哦，就是对应的英语」。本节扩展第 36 节的职责范围。
+
+- 窗格标题按公开 role 标签显示英文：`controller` → `Controller`，`implementer` → `Implementer`，`reviewer` → `Reviewer`，后接 ` · 名称`。保留 `regular` → `Regular`、无效或无标签 → `Agent`、空窗格 → `Viewer` 的现有规则，不以名字或模型猜职责。
+- Saddle 项目 AGENTS.md 补充派发标签约定：创建实现 agent 时传 `--label role=implementer`，独立审查 agent 时传 `--label role=reviewer`，主控创建时为 `role=controller`；不改变派发操作和 model/effort 标签。其他入口创建的 agent 同样可通过这些公开标签显示职责。
+- New 仍为 Controller / Regular，普通身份不等于实现职责；本轮不增加角色控件，不改名称或创建行为。旧 agent 不补标签，不修改 corral/drover 仓库、全局技能或其他项目规则。

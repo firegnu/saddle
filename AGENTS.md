@@ -19,6 +19,7 @@
 - 被委派的 agent（任务文件里写明了身份）照任务文件做，不再往下派。
 - 需求单只写用户要的结果；验收照抄用户原话，不补验收点。主控觉得该加的，列出来问用户。
 - agent 名字以 `saddle/dev-` 开头；任务文件放 `docs/任务/`；每个任务一个分支，worktree 放 `../saddle-worktrees/<分支>`，交叉审查用 detached worktree `../saddle-worktrees/review-<分支>`。
+- 创建派发 agent 时，在公开 `corral start` 参数中注明职责：实现者加 `--label role=implementer`，独立审查者加 `--label role=reviewer`；保留既有 model/effort 标签。主控创建时用 `role=controller`。标签仅供显示，不改变职责分工、权限或派发动作；不改已有 agent，不根据名字猜职责。
 - 审查：主控审查每个任务。
 - 合并：审查通过后本地合并进 main，然后推送到 origin。
 - 收尾记号：一件活合并完、worktree 和分支清干净之后，在 main 上补一条空提交（`git commit --allow-empty`），首行写「收尾: 」加一句话说明这件活是什么。只记真正落地的活；说好不合并、停在审查的不记。
