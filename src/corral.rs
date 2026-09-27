@@ -42,11 +42,13 @@ pub enum Effort {
     Xhigh,
 }
 
-/// Role publicly labelled by New; never inferred from the agent's name.
+/// Role from the public `role` label; never inferred from the agent's name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     Controller,
     Regular,
+    Implementer,
+    Reviewer,
 }
 
 impl Agent {
@@ -54,6 +56,8 @@ impl Agent {
         match self.labels.get("role")?.as_str()? {
             "controller" => Some(Role::Controller),
             "regular" => Some(Role::Regular),
+            "implementer" => Some(Role::Implementer),
+            "reviewer" => Some(Role::Reviewer),
             _ => None,
         }
     }

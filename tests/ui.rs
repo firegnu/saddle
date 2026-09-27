@@ -1854,7 +1854,15 @@ fn viewer_title_shows_the_public_role_label_or_agent_without_guessing() {
             "Regular · demo/main",
         ),
         (
+            serde_json::json!({ "role": "implementer" }),
+            "Implementer · demo/main",
+        ),
+        (
             serde_json::json!({ "role": "reviewer" }),
+            "Reviewer · demo/main",
+        ),
+        (
+            serde_json::json!({ "role": "tester" }),
             "Agent · demo/main",
         ),
         (
