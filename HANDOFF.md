@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-27：T15 默认值完成（以本节为准）
+
+- New Agent 默认名称 `main`，默认打开位置 `Current pane`。开发 f6bf3ea、合并 c736197、主控审查 58ef7fd，收尾空提交 11bc039。设计见 DESIGN 第 31 节，验证与审查见 docs/任务/T15-New-Agent默认值.md。
+- 主控标准测试 137 passed、1 failed、2 ignored，Clippy/diff 通过。唯一失败 `full_workflow_routes_input_switches_safely_and_survives_disappearance` 在未合并 T15 的 main（29a2024）同样失败，是仍悬着的基线工作流检查问题；本任务未扩修，不能称全套全绿。
+- main release 已重建；共享 target 与仓库 target/release/saddle 同步，SHA-256 均为 612307283a3e6814823fbd50fa5e423220fa07d3dab36012b4a3e648e35c20b8。默认 saddle 仍指向共享 release，重新启动生效。
+- t15-new-agent-defaults worktree/分支已删除，自有 saddle/dev-t15-defaults-1 随工作目录清理一并关闭；当前仅 main worktree，无自有待处理开发 agent。其他用户 agent 未操作。
+- T15 完成核对后等用户放行和体验反馈；不执行 go/next，不开始 T16/T17/T13。本节随 main 推送，旧章节中的进行中状态已被覆盖。
+
 ## 2026-09-26：右侧标签按钮纠正（以本节为准）
 
 - 用户澄清只要缩小尺寸，保留原描边样式。已撤回上轮误改的单行方括号：恢复三行圆角描边、无填充，压缩横向留白，新增 + 保留左右各一格以免过瘦。agent 名称及长名截断保持；用户截图反馈后去掉顶边圆点，当前 tab 用 focus 强调色细边框和加粗名称，其他暗灰，无填充。
