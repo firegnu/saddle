@@ -1840,3 +1840,33 @@ fn closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors() {
     let (_, top) = entry(&mut a, &mut q, 80);
     assert!(top.contains("‹Tasks · Awaiting›"), "{top}");
 }
+
+#[test]
+fn viewer_title_shows_the_public_role_label_or_agent_without_guessing() {
+    let (mut a, mut q) = fixture();
+    for (labels, title) in [
+        (
+            serde_json::json!({ "role": "controller" }),
+            "Controller · demo/main",
+        ),
+        (
+            serde_json::json!({ "role": "regular" }),
+            "Regular · demo/main",
+        ),
+        (
+            serde_json::json!({ "role": "reviewer" }),
+            "Agent · demo/main",
+        ),
+        (
+            serde_json::json!({ "role": "Controller" }),
+            "Agent · demo/main",
+        ),
+        (serde_json::json!({}), "Agent · demo/main"),
+    ] {
+        a.agents[0].labels = labels.as_object().unwrap().clone();
+        let (buffer, _) = render(160, 40, &mut a, &mut q, Focus::Agents);
+        let screen = text(&buffer);
+        assert!(screen.contains(title), "{screen}");
+        assert!(!screen.contains("Viewer · "), "{screen}");
+    }
+}

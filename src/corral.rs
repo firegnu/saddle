@@ -42,7 +42,21 @@ pub enum Effort {
     Xhigh,
 }
 
+/// Role publicly labelled by New; never inferred from the agent's name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Controller,
+    Regular,
+}
+
 impl Agent {
+    pub fn role(&self) -> Option<Role> {
+        match self.labels.get("role")?.as_str()? {
+            "controller" => Some(Role::Controller),
+            "regular" => Some(Role::Regular),
+            _ => None,
+        }
+    }
     pub fn effort(&self) -> Option<Effort> {
         match self.labels.get("effort")?.as_str()? {
             "medium" => Some(Effort::Medium),

@@ -453,6 +453,7 @@ pub fn draw(
     area: Rect,
     terminals: &Terminals,
     focused: bool,
+    agents: &[crate::corral::Agent],
 ) -> Vec<Hit> {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{
@@ -587,11 +588,7 @@ pub fn draw(
         }
         let pane = terminals.get(id).unwrap();
         let active = id == terminals.tab().active;
-        let title = pane
-            .viewer
-            .showing
-            .as_deref()
-            .map_or("Viewer".into(), |n| format!("Viewer · {n}"));
+        let title = crate::ui::pane_title(pane.viewer.showing.as_deref(), agents);
         frame.render_widget(t.block(title.clone(), focused && active), rect);
         let inside = crate::ui::inner(rect);
         if let Some(session) = &pane.viewer.session {
