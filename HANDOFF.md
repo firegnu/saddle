@@ -1,11 +1,11 @@
 # 交接
 
-## 2026-09-27：T21 已合并清理，准备公开完成核对
+## 2026-09-27：T21 已完成并等待用户放行
 
 - README中英文已将effort三档图标/默认颜色整理为表格，保留公开标签、非运行时实际effort、未知不显示和对齐语义。用户现场确认「我看到了，已经好了。等任务结束。」；不新增产品行为或模型显示。记录见 docs/任务/T21-effort图标对照说明.md。
 - 实现cddbce4、合并90fda11、主控审查e14f6d0、清理记录a1e52f6、收尾空提交2b012cf。主控核对完整diff、中英与实现一致，diff检查通过；纯文档未跑套件/交叉审查/构建发布，原二进制保留。
 - 确认idle/attached=0、工作区干净、分支合入main后正常删除t21-effort-docs worktree/分支；工作目录已删，一并关闭saddle/dev-t21-effort-docs-1。目前仅main worktree，原有corral/main、drover/main、saddle/main保留。迟到提醒not_found即忽略。
-- 本节推送后公开drover done T21并核对返回；用户指定做完等放行，禁止自动go/next，不开始新任务。
+- 已公开执行drover done T21：收尾记号、main前进及分支合并核对通过，返回DONE；退出8是放行模式正常停等。随后公开show确认done/awaiting。无额外CHECK_CMD。等待用户放行，未go/next，不开始新任务；本节随main推送。
 
 ## 2026-09-27：Working 紫色动画已移除并发布收尾
 
