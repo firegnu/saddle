@@ -1,5 +1,11 @@
 # 交接
 
+## 2026-09-27：T17 默认 Codex YOLO 已委派
+
+- 用户要求 New Agent 新建 Codex 直接使用 YOLO，公开队列 T17 已为 current/doing，loop=false、gate=true。设计与任务提交 9fabb22，见 DESIGN 第 33 节、docs/任务/T17-Codex默认YOLO.md。
+- 自有 saddle/dev-t17-yolo-1（Codex gpt-6-astra / high）在 ../saddle-worktrees/t17-codex-yolo，分支 t17-codex-yolo 实施。默认命令及明确选择 Codex 改用 codex --yolo，保持高级自定义命令原样及 Claude 现状；用户已表示 UI 暂定，不继续调整样式。
+- 下一步接完成提醒后查状态/reply，按改行为预算主控审查；通过后合并推送、更新 release、清理本任务环境及收尾，再核对完成并等用户放行。当前尚未实现完成或发布。基线 full_workflow 旧鼠标坐标失败不扩修。
+
 ## 2026-09-27：Tasks 内部按钮描边调整
 
 - 用户批准评估方案并要求主控直接修改。项目选择、顶部项目操作及 Task text / Run details 页签已用紧凑圆角描边、无填充；选中页签提亮加粗，底部及子页底栏保留单行按钮。小窗口回退紧凑显示，规则见 DESIGN 第 32 节。
