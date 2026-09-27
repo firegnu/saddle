@@ -790,9 +790,13 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
     let content = width.saturating_sub(2);
     let info = content.saturating_sub(2);
     let brand_width = if panel_width >= 50 { 8 } else { 2 };
-    // Dot, then name, agent, state (9) and time (5), one column apart.
-    let name_width = content.saturating_sub(2 + brand_width + 1 + 9 + 1 + 5 + 1);
     let ordered = panel.ordered(now);
+    // The effort column exists only when some agent carries a known delegated effort label.
+    let effort_column = ordered.iter().any(|a| a.effort().is_some());
+    // Dot, then name, agent, effort (2), state (9) and time (5), one column apart; the name
+    // gives way.
+    let name_width = content
+        .saturating_sub(2 + brand_width + 1 + if effort_column { 3 } else { 0 } + 9 + 1 + 5 + 1);
     let folded = panel.folded();
     let mut rows = Vec::new();
     let mut previous = None;
@@ -907,6 +911,10 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
             ),
             Span::raw(" "),
         ];
+        if effort_column {
+            first.extend(effort_bars(t, a.effort()));
+            first.push(Span::raw(" "));
+        }
         first.extend(state);
         first.push(Span::raw(" ".repeat(1 + 5usize.saturating_sub(used))));
         first.push(Span::styled(mark, Style::default().fg(mark_color)));
@@ -972,7 +980,7 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
                 agent_path(a.cwd.as_deref().unwrap_or("—"), prefix, info),
                 Style::default().fg(t.agents_dim),
             )]));
-            // R6: instance, connections and source; the delegated effort sits at the right.
+            // R6: instance, connections and source.
             let dimmer = Style::default().fg(t.agents_dimmer);
             let mut identity = Vec::new();
             // Narrow panels keep only marks; a type without one is named here instead.
@@ -1008,17 +1016,7 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
                     dimmer,
                 ),
             ]);
-            let mut line = vec![Span::raw("  ")];
-            if a.effort().is_some() {
-                let identity = clip_spans(identity, info.saturating_sub(3));
-                let used = width_of(&identity);
-                line.extend(identity);
-                line.push(Span::raw(" ".repeat(info.saturating_sub(used + 2))));
-                line.extend(effort_bars(t, a.effort()));
-            } else {
-                line.extend(clip_spans(identity, info));
-            }
-            lines.push(line);
+            lines.push(indent(identity));
         }
         let background = if selected {
             Style::default().bg(t.agent_selected)

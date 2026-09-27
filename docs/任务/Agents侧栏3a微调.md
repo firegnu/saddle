@@ -53,7 +53,7 @@
 ### 改动
 - `src/agents.rs`：新增 `Status`（waiting/error/stalled/working/starting/unknown/idle/exited，声明顺序即组内默认顺序），`Panel::status` 统一供排序与显示使用；公开 `blocked` 显示为 waiting，`error`/incompatible 为 error，`exited` 仅在公开状态真实返回时出现。`by_state` 改为 `by_name`：默认按状态排序、`s` 切到名称排序，同状态按名称，选择跟随 agent 名称。新增 `fold: Option<bool>`、`folded()`（未手动选择时 >5 个自动折叠）、`toggle_fold()`（本次运行内手动选择优先，不持久化）。
 - `src/ui.rs` Agents 渲染按规格重写：边框内头部 `Agents · N` + 右侧 `Tasks · <状态> Tab`（Tasks 入口改为无括号文本、状态色沿用公开队列快照，仍可点击/Tab，打开时高亮不可点），分隔线；分组标题 `name/ ─── (n)`，组间空一行，条目间不留空；每条独立 gutter（选中橄榄 `┃`、未选极暗 `│`，均在同一列，不位移），选中整条底色 `#2b2621`（gutter 外）。R1 固定列：点 / 名称（弹性，`…` 截断，不再另起一行全名）/ agent 8 列（<50 列降为 2 列标识）/ 状态 9 列（working 前加紫色 braille，120ms 一帧；圆点 360ms 一帧）/ 时间 5 列右对齐（`⦿`=本 saddle 任一 pane/tab 正显示，`•`=未读完成回合；时间超 10h 取整、超 100h 用天/年，保证 ≤4 列）。R2 标题（等于分组名隐藏，单行截断）、R3 `ASK/ERR/DOING … · 时长`（状态色，时长暗色，右侧截断）、R4 `⎇ 分支 ↑n 基准 … +a -d ?u`（按显示宽度判定，放不下整组移到 R4b 右对齐，diff 内不折行；分支同名只显示 `⎇`）、R5 路径（末段等于组名只显示父目录并以 `/` 结尾；否则末两级；超宽先丢前面层级再从左截断保留末尾）、R6 `hash · ATT n · VIA via`（ATT>0 绿）。底栏贴底、上有分隔线：`↵ Attach`/`[Attached]`、`n New`、`s Sort`/`s Name`、`x Stop`（整组红，Stopping 时禁用）、`z Fold`/`z Expand`；按键字母橄榄粗体，点击区域随绘制结果生成，放不下时先缩间距再换行。滚动条放在右内边距列，滚动/跟随、命中行、滚动上下文底边标题照旧。
-- effort：原两格信号柱原样保留（形状、配色、选中不变），移到 R6 行右端对齐。窄宽下没有标识的未知 agent 类型在 R6 前补类型名；pi/omp 仍用 `π` + 各自颜色区分。
+- effort：原两格信号柱原样保留（形状、配色、选中不变）。首版曾移到 R6 行右端，按用户后续补充改回 R1 原位置（见下方「用户补充修正」）。窄宽下没有标识的未知 agent 类型在 R6 前补类型名；pi/omp 仍用 `π` + 各自颜色区分。
 - `src/app.rs`：Agents 焦点 `z` 切换折叠；View 新增 `local`（所有 tab/pane 中持有会话且正在显示的 agent 名），只读接线，不改 viewer/terminals。状态栏帮助加 `z Fold`。
 - `src/theme.rs`/`config.toml`：新增 Agents 专用配色 `agents_bg/border/rule/faint/text/branch/dim/dimmer/accent/green/red/blue/yellow/purple`（默认值即规格第 8 节）；`agent_selected`、`claude`、`codex` 默认改为规格值（这三项原本只用于 Agents）。共享 `agent_*` 未改，Tasks 弹窗与右侧终端配色不变；stalled/starting 状态与 effort 图标沿用共享色。旧配置照常加载。
 - README（中英）：Agents 描述、Git 行格式、配色说明、按键表（s/z/x）、示意图。
@@ -79,6 +79,12 @@
 - 未新增调参面板/持久化设置；未改 Git 采集、生命周期、PTY、ctl 协议、Tasks 弹窗与右侧工作区；未做 release、合并、推送。
 
 ### 待主控决定
-- effort 暂放 R6 右端（第 40 节默认方案），若用户另有选择需调整。
 - Agents 颜色做成了可配置的 `agents_*` 键（沿用 T1 配色可配置的做法）；若主控希望不暴露这些键，可改为常量。
 - `s` 按钮文案（默认 `Sort`、名称序 `Name`）与 `[Attached]` 的「激活」解读请确认。
+
+### 用户补充修正：effort 保留首行原位置
+用户明确：「保留，放在现在的位置不变，这个很重要」（主控转达，见主仓库 c399688 的 DESIGN 第 40 节与本任务文件修正；本分支未 cherry-pick 该文档提交）。
+- 改动：`src/ui.rs` R1 在 agent 类型列（窄窗为 2 列标识）之后、状态列之前放回两列信号格加 1 列间距；列表中有已知 effort 时所有条目都预留（未知留空对齐），全都未知时不占列；名称列让出 3 列继续弹性截断（50 列 19→16、42 列 17→14），类型/状态/时间固定列不变。折叠时首行照常显示。R6 恢复为纯 `hash · ATT n · VIA via`。第 23 节三档字形 `⣄⡀`/`⣴⡀`/`⣴⡇`、取色与未知语义未改。README 中英文同步。
+- RED→GREEN：从基线 fc7e131 原样恢复 `delegated_effort_shows_strength_bars_and_unknown_stays_blank`、`selecting_an_agent_keeps_its_effort_icon_tier`（后者补断言图标确为 `⣴`，否则两边都是空格也会通过），新增 `effort_keeps_its_first_row_slot_when_folded_and_narrow`（7 个 agent 自动折叠，50/42 列下每个首行在固定列显示对应档位或空白、状态紧随其后、长名被截断；全无 effort 时不留列）。改代码前三项均因首行无图标失败，改后通过。
+- 其后 `cargo test --all-targets` 一次：除 workflow `t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell`（第 2892 行 ctl close 未返回 confirmation）外全部通过；该用例单独连跑 3 次通过。workflow 全套又跑 6 次：4 次全过，1 次同一用例失败，1 次 `t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases`（第 2971 行）失败；失败现场是「+ → New agent… → Cancel Esc」后新标签页的内容选择框仍开着。为判断是否本任务引入，把基线 fc7e131 用 `git archive` 导出到临时目录（未建 worktree、未动 main）跑 workflow 5 次：3 次失败，失败的正是上述两条（同在 2892/2971 行）以及 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`。结论：基线已有的偶发问题，与 Agents 渲染改动无关，根因未定位，未修复，不称全套一次全绿。排查时临时给断言加了输出，已还原。
+- `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 通过。

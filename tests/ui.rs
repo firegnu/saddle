@@ -1161,26 +1161,19 @@ fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
             ("manual", 0),
             ("other", 0),
         ] {
-            // The icon sits at the right of the entry's instance line, the last one.
-            let rows: Vec<_> = hits
+            let y = hits
                 .agents
                 .iter()
-                .filter(|(_, n)| n == &format!("demo/{name}"))
-                .map(|(y, _)| *y)
-                .collect();
-            let headline: String = (0..width).map(|x| buffer[(x, rows[0])].symbol()).collect();
-            assert!(headline.contains("idle"), "{headline}");
-            let y = *rows.last().unwrap();
+                .find(|(_, n)| n == &format!("demo/{name}"))
+                .unwrap()
+                .0;
             let line: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
-            let found = rows
-                .iter()
-                .find_map(|y| (0..width).find(|x| matches!(buffer[(*x, *y)].symbol(), "⣄" | "⣴")));
+            let found = (0..width).find(|x| matches!(buffer[(*x, y)].symbol(), "⣄" | "⣴"));
             if lit == 0 {
                 assert!(found.is_none(), "{line}");
                 continue;
             }
             let x = found.expect(&line);
-            assert!(line.contains("ATT 0"), "{line}");
             columns.push(x);
             // Three bars occupy two cells, with distinct shapes and theme colors for each tier.
             let icon: String = (x..x + 2).map(|x| buffer[(x, y)].symbol()).collect();
@@ -1202,6 +1195,7 @@ fn delegated_effort_shows_strength_bars_and_unknown_stays_blank() {
                     "{name} bar {i}: {line}"
                 );
             }
+            assert!(line.contains("idle"), "{line}");
         }
         assert!(columns.windows(2).all(|w| w[0] == w[1]), "{columns:?}");
     }
@@ -1224,17 +1218,21 @@ fn selecting_an_agent_keeps_its_effort_icon_tier() {
             ..Default::default()
         })
         .collect();
-    // The two icon cells end the agent's instance line, its last row.
+    // The two icon cells sit right before " idle" on the agent's main row.
     let icon = |a: &mut agents::Panel, q: &mut queue::Panel, focus| {
         let (buffer, hits) = render(160, 48, a, q, focus);
         let y = hits
             .agents
             .iter()
-            .rfind(|(_, n)| n == "demo/high")
+            .find(|(_, n)| n == "demo/high")
             .unwrap()
             .0;
-        let x = hits.list.right() - 2;
-        (x..x + 2)
+        let x = (0..156)
+            .find(|x| {
+                (0..4).all(|i| buffer[(x + i, y)].symbol() == &"idle"[i as usize..=i as usize])
+            })
+            .unwrap();
+        (x - 3..x - 1)
             .map(|x| (buffer[(x, y)].symbol().to_owned(), buffer[(x, y)].fg))
             .collect::<Vec<_>>()
     };
@@ -2399,4 +2397,78 @@ fn folding_keeps_only_the_first_row_of_unselected_agents() {
     }
     let (_, hits) = render_panel(160, &mut many, &[]);
     assert_eq!(hits.agents.len(), 5 + 5);
+}
+
+#[test]
+fn effort_keeps_its_first_row_slot_when_folded_and_narrow() {
+    use saddle::theme as t;
+    // The user's explicit choice: keep effort where it was, after the type, before the state.
+    let label = |effort: &str| {
+        serde_json::json!({ "effort": effort })
+            .as_object()
+            .unwrap()
+            .clone()
+    };
+    let mut a = spec_sample();
+    for agent in &mut a.agents {
+        match agent.name.as_str() {
+            "corral/main" => agent.labels = label("xhigh"),
+            "saddle/dev-t20-workspace-1" => agent.labels = label("high"),
+            _ => {}
+        }
+    }
+    for i in 0..3 {
+        a.agents.push(Agent {
+            name: format!("saddle/extra-{i}"),
+            kind: Some("codex".into()),
+            state: Some("idle".into()),
+            labels: label("medium"),
+            ..Default::default()
+        });
+    }
+    assert!(a.folded());
+    for (width, brand, name, cut) in [
+        (160, 8, 16, "dev-t20-workspa…"),
+        (120, 2, 14, "dev-t20-works…"),
+    ] {
+        let (buffer, hits) = render_panel(width, &mut a, &[]);
+        let headlines: Vec<_> = hits
+            .agents
+            .iter()
+            .filter(|(y, _)| buffer[(4, *y)].symbol() != " ")
+            .map(|(y, n)| (*y, n.clone()))
+            .collect();
+        assert_eq!(headlines.len(), 7, "one first row each, folded or not");
+        // Dot, name, type, effort, state: fixed columns with the name giving way.
+        let effort_x = 6 + name + 1 + brand + 1;
+        for (y, n) in &headlines {
+            let line: String = (0..60).map(|x| buffer[(x, *y)].symbol()).collect();
+            let icon: String = (effort_x..effort_x + 2)
+                .map(|x| buffer[(x as u16, *y)].symbol())
+                .collect();
+            let expected = match n.as_str() {
+                "corral/main" => "⣴⡇",
+                "saddle/dev-t20-workspace-1" => "⣴⡀",
+                n if n.starts_with("saddle/extra") => "⣄⡀",
+                _ => "  ",
+            };
+            assert_eq!(icon, expected, "{width}: {line}");
+            if expected == "⣴⡇" {
+                assert_eq!(buffer[(effort_x as u16, *y)].fg, t::AGENT_STARTING);
+            }
+            assert_eq!(buffer[(effort_x as u16 + 2, *y)].symbol(), " ", "{line}");
+            let state = buffer[(effort_x as u16 + 3, *y)].symbol();
+            assert!(state == "i" || "⣾⣽⣻⢿⡿⣟⣯⣷".contains(state), "{line}");
+        }
+        let text = agents_lines(&buffer).join("\n");
+        assert!(text.contains(&format!("{cut} ")), "{text}");
+    }
+    // Nothing known: the slot is not reserved.
+    let mut plain = spec_sample();
+    let (buffer, _) = render_panel(160, &mut plain, &[]);
+    assert!(
+        agents_lines(&buffer)
+            .join("\n")
+            .contains("dev-t20-workspace-1 >_ codex")
+    );
 }
