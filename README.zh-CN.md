@@ -72,7 +72,7 @@ saddle
 
 ## 启动 agent、标签页和分屏
 
-Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为当前 Tasks 项目；在这里另选项目只改变新 agent 的目录，不切换 Tasks。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。**Role** 默认选 **Controller**（主控），名称锁定为只读 `main`；选择 **Regular**（普通 agent）后可编辑名称，首次值为 `main`，角色往返切换时保留普通名称草稿。切换项目或 Codex/Claude 不改变名称和角色。角色另记为公开标签 `role=controller` / `role=regular`，右侧终端窗格标题显示 `Controller · 名称` 或 `Regular · 名称`；其他入口带公开标签 `role=implementer` / `role=reviewer` 创建的 agent 显示英文 `Implementer · 名称` / `Reviewer · 名称`；没有有效角色标签的 agent 显示 `Agent · 名称`，空窗格仍为 `Viewer`。角色不配置队列或开启任务派发。两种角色都按精确名称调用公开 `corral start`，不加 `--unique`；重名时显示 CLI 报错并保留草稿，不自动编号。实际名称取 corral 返回值。
+Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为当前 Tasks 项目；在这里另选项目只改变新 agent 的目录，不切换 Tasks。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。**Role** 默认选 **Controller**（主控），名称锁定为只读 `main`；选择 **Regular**（普通 agent）后可编辑名称，首次值为 `main`，角色往返切换时保留普通名称草稿。名称前的 **Prefix** 默认 `agents`，两种角色下都可改（例如 `saddle`），须非空、不含空白和 `/`、不以 `-` 开头；完整名称为 `Prefix/Name`（如 `agents/main`），预览与实际调用一致。切换项目、Codex/Claude 或角色不改变前缀、名称和角色草稿。角色另记为公开标签 `role=controller` / `role=regular`，右侧终端窗格标题显示 `Controller · 名称` 或 `Regular · 名称`；其他入口带公开标签 `role=implementer` / `role=reviewer` 创建的 agent 显示英文 `Implementer · 名称` / `Reviewer · 名称`；没有有效角色标签的 agent 显示 `Agent · 名称`，空窗格仍为 `Viewer`。角色不配置队列或开启任务派发。两种角色都按精确名称调用公开 `corral start`，不加 `--unique`；重名时显示 CLI 报错并保留草稿，不自动编号。实际名称取 corral 返回值。
 
 输入框有标签、框线、占位提示、焦点高亮及真实插入光标。点击内容定位光标，Tab／Shift-Tab 切焦点，左右键、Home／End、Backspace／Delete、Ctrl-U 清空及粘贴都按当前位置编辑，支持中文宽字符。长行横向滚动，多行消息还可上下移动、纵向滚动及 Enter 换行；小窗口可切焦点或用滚轮访问字段，底部保留创建和取消入口。
 

@@ -23,6 +23,7 @@ const ADVANCED: usize = 8;
 const PREVIEW: usize = 9;
 const CONTROLLER: usize = 10;
 const REGULAR: usize = 11;
+const PREFIX: usize = 12;
 const CODEX_COMMAND: &str = "codex --yolo";
 
 pub struct Form {
@@ -38,6 +39,7 @@ pub struct Form {
     edit_path: bool,
     regular: bool,
     inactive_name: edit::Input,
+    prefix: edit::Input,
     agent: usize,
     choosing_project: bool,
     project_index: usize,
@@ -60,6 +62,7 @@ impl Form {
             edit_path: false,
             regular: false,
             inactive_name: edit::Input::new("main".into()),
+            prefix: edit::Input::new("agents".into()),
             agent: 0,
             choosing_project: false,
             project_index: 0,
@@ -76,10 +79,24 @@ impl Form {
         self.error.clear();
     }
     fn editable(&self, field: usize) -> bool {
-        field < 4 && (field != 1 || self.regular)
+        (field < 4 && (field != 1 || self.regular)) || field == PREFIX
+    }
+    fn input(&mut self, field: usize) -> &mut edit::Input {
+        if field == PREFIX {
+            &mut self.prefix
+        } else {
+            &mut self.fields[field]
+        }
+    }
+    fn text(&self, field: usize) -> &str {
+        if field == PREFIX {
+            &self.prefix.text
+        } else {
+            &self.fields[field].text
+        }
     }
     fn invalid(&self, field: usize) -> Option<String> {
-        let value = &self.fields[field].text;
+        let value = self.text(field);
         if value.contains('\0') {
             return Some("NUL bytes are not allowed".into());
         }
@@ -90,6 +107,14 @@ impl Form {
                 || value.chars().any(char::is_whitespace) =>
             {
                 Some("Name needs text, no spaces or leading '-'".into())
+            }
+            PREFIX
+                if value.trim().is_empty()
+                    || value.starts_with('-')
+                    || value.contains('/')
+                    || value.chars().any(char::is_whitespace) =>
+            {
+                Some("Prefix needs text, no spaces, '/' or leading '-'".into())
             }
             2 => match shell_words::split(value) {
                 Err(_) => Some("Command has an unclosed quote".into()),
@@ -102,7 +127,10 @@ impl Form {
         }
     }
     pub fn reveal_invalid(&mut self) {
-        if let Some(field) = (0..4).find(|i| self.invalid(*i).is_some()) {
+        if let Some(field) = [0, PREFIX, 1, 2, 3]
+            .into_iter()
+            .find(|i| self.invalid(*i).is_some())
+        {
             self.field = field;
             if field == 0 {
                 self.edit_path = true;
@@ -113,7 +141,7 @@ impl Form {
         }
     }
     pub fn args(&self) -> Result<Vec<String>> {
-        for field in 0..4 {
+        for field in [0, PREFIX, 1, 2, 3] {
             if let Some(error) = self.invalid(field) {
                 bail!("{error}");
             }
@@ -122,7 +150,7 @@ impl Form {
         let words = shell_words::split(command).context("Command has an unclosed quote")?;
         let mut args = vec![
             "start".into(),
-            name.clone(),
+            format!("{}/{name}", self.prefix.text),
             "--cwd".into(),
             expand_home(cwd).to_string_lossy().into_owned(),
             "--label".into(),
@@ -141,14 +169,15 @@ impl Form {
         Ok(args)
     }
     fn edited(&mut self, old: &str) {
-        if self.field < 4 && old != self.fields[self.field].text {
+        if self.editable(self.field) && old != self.text(self.field) {
             self.error.clear();
         }
     }
     pub fn paste(&mut self, text: &str) {
         if self.busy.is_none() && !self.choosing_project && self.editable(self.field) {
-            let old = self.fields[self.field].text.clone();
-            self.fields[self.field].insert(text, self.field == 3);
+            let old = self.text(self.field).to_owned();
+            let field = self.field;
+            self.input(field).insert(text, field == 3);
             self.edited(&old);
         }
     }
@@ -157,7 +186,7 @@ impl Form {
         if self.edit_path {
             order.push(0);
         }
-        order.extend([CODEX, CLAUDE, CONTROLLER, REGULAR]);
+        order.extend([CODEX, CLAUDE, CONTROLLER, REGULAR, PREFIX]);
         if self.regular {
             order.push(1);
         }
@@ -203,6 +232,7 @@ impl Form {
             "Preview",
             "Controller",
             "Regular",
+            "Prefix",
         ][self.field]
     }
     /// Only the Create button / Ctrl-S submits; editing and navigation never do.
@@ -252,8 +282,8 @@ impl Form {
                     self.field = PROJECT;
                 }
                 KeyCode::Char('u') if self.editable(self.field) => {
-                    let old = self.fields[self.field].text.clone();
-                    self.fields[self.field].clear();
+                    let old = self.text(self.field).to_owned();
+                    self.input(self.field).clear();
                     self.edited(&old);
                 }
                 _ => {}
@@ -316,8 +346,9 @@ impl Form {
                 };
             }
             _ if self.editable(self.field) => {
-                let old = self.fields[self.field].text.clone();
-                self.fields[self.field].key(key.code, self.field == 3);
+                let old = self.text(self.field).to_owned();
+                let field = self.field;
+                self.input(field).key(key.code, field == 3);
                 self.edited(&old);
             }
             _ => {}
@@ -336,7 +367,7 @@ impl Form {
         } else if let Some((_, field)) = self.field_hits.iter().find(|(r, _)| r.contains(point)) {
             self.field = *field;
             if self.editable(*field) {
-                self.fields[*field].click(point);
+                self.input(*field).click(point);
             }
         }
     }
@@ -494,6 +525,7 @@ impl Form {
                 *id == self.field
                     || (*id == CODEX && self.field == CLAUDE)
                     || (*id == CONTROLLER && self.field == REGULAR)
+                    || (*id == 1 && self.field == PREFIX)
             })
             .unwrap_or(0);
         self.scroll_start = self.scroll_start.min(focus);
@@ -696,34 +728,15 @@ impl Form {
                     let input_height = rect
                         .height
                         .saturating_sub(u16::from(!hint.is_empty() && rect.height > 3));
-                    let box_rect = Rect::new(rect.x, rect.y, rect.width, input_height);
-                    let error = self.invalid(id);
-                    let label = ["Directory", "Name", "Command", "First message (optional)"][id];
-                    let title = error
-                        .as_ref()
-                        .map_or(format!(" {label} "), |error| format!(" {label} · {error} "));
-                    let focused = self.field == id && enabled && self.editable(id);
-                    let mut block = t.block(title, focused);
-                    if error.is_some() {
-                        block = block.border_style(Style::default().fg(t.danger));
+                    let mut box_rect = Rect::new(rect.x, rect.y, rect.width, input_height);
+                    if id == 1 {
+                        // Prefix sits before Name on the same row: `Prefix/Name`.
+                        let width = box_rect.width / 3;
+                        self.draw_input(t, frame, PREFIX, Rect { width, ..box_rect }, enabled);
+                        box_rect.x += width;
+                        box_rect.width -= width;
                     }
-                    let inside = block.inner(box_rect);
-                    frame.render_widget(block, box_rect);
-                    self.fields[id].draw(
-                        frame,
-                        inside,
-                        focused,
-                        [
-                            "/path/to/project",
-                            "project/my-agent",
-                            "codex --model 'model name'",
-                            "Describe the first task…",
-                        ][id],
-                        t,
-                    );
-                    if enabled && self.editable(id) {
-                        self.field_hits.push((box_rect, id));
-                    }
+                    self.draw_input(t, frame, id, box_rect, enabled);
                     if input_height < rect.height {
                         frame.render_widget(
                             Paragraph::new(hint).style(Style::default().fg(t.muted)),
@@ -761,6 +774,30 @@ impl Form {
         }
         hits
     }
+    fn draw_input(&mut self, t: &Theme, frame: &mut Frame, id: usize, area: Rect, enabled: bool) {
+        let error = self.invalid(id);
+        let (label, placeholder) = match id {
+            0 => ("Directory", "/path/to/project"),
+            1 => ("Name", "my-agent"),
+            2 => ("Command", "codex --model 'model name'"),
+            3 => ("First message (optional)", "Describe the first task…"),
+            _ => ("Prefix", "agents"),
+        };
+        let title = error
+            .as_ref()
+            .map_or(format!(" {label} "), |error| format!(" {label} · {error} "));
+        let focused = self.field == id && enabled && self.editable(id);
+        let mut block = t.block(title, focused);
+        if error.is_some() {
+            block = block.border_style(Style::default().fg(t.danger));
+        }
+        let inside = block.inner(area);
+        frame.render_widget(block, area);
+        self.input(id).draw(frame, inside, focused, placeholder, t);
+        if enabled && self.editable(id) {
+            self.field_hits.push((area, id));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -793,7 +830,7 @@ mod tests {
         for code in [KeyCode::Char('x'), KeyCode::Backspace, KeyCode::Delete] {
             press(&mut form, code);
         }
-        assert_eq!(form.args().unwrap()[1], "main");
+        assert_eq!(form.args().unwrap()[1], "agents/main");
         assert!(!form.args().unwrap().iter().any(|arg| arg == "--unique"));
     }
 
@@ -801,8 +838,9 @@ mod tests {
     fn regular_name_survives_role_project_and_agent_changes_and_is_validated() {
         let mut form = Form::new("/tmp/demo".into());
         press(&mut form, KeyCode::F(7));
-        assert_eq!(form.args().unwrap()[1], "main");
-        press(&mut form, KeyCode::Tab);
+        assert_eq!(form.args().unwrap()[1], "agents/main");
+        press(&mut form, KeyCode::Tab); // Prefix
+        press(&mut form, KeyCode::Tab); // Name
         form.key(
             KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
             &[],
@@ -813,7 +851,7 @@ mod tests {
             form.args().unwrap(),
             [
                 "start",
-                "reviewer",
+                "agents/reviewer",
                 "--cwd",
                 "/tmp/demo",
                 "--label",
@@ -823,7 +861,7 @@ mod tests {
             ]
         );
         press(&mut form, KeyCode::F(6));
-        assert_eq!(form.args().unwrap()[1], "main");
+        assert_eq!(form.args().unwrap()[1], "agents/main");
         let projects = vec!["/tmp/other".into()];
         form.key(
             KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
@@ -831,13 +869,13 @@ mod tests {
         );
         form.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &projects);
         press(&mut form, KeyCode::F(2));
-        assert_eq!(form.args().unwrap()[1], "main");
+        assert_eq!(form.args().unwrap()[1], "agents/main");
         press(&mut form, KeyCode::F(7));
         assert_eq!(
             form.args().unwrap(),
             [
                 "start",
-                "reviewer",
+                "agents/reviewer",
                 "--cwd",
                 "/tmp/other",
                 "--label",
@@ -847,7 +885,8 @@ mod tests {
                 "--yolo"
             ]
         );
-        press(&mut form, KeyCode::Tab);
+        press(&mut form, KeyCode::Tab); // Prefix
+        press(&mut form, KeyCode::Tab); // Name
         form.key(
             KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
             &[],
@@ -856,11 +895,11 @@ mod tests {
         form.paste("bad name");
         assert!(form.args().is_err());
         press(&mut form, KeyCode::F(6));
-        assert_eq!(form.args().unwrap()[1], "main");
+        assert_eq!(form.args().unwrap()[1], "agents/main");
         press(&mut form, KeyCode::Right); // Role arrow navigation restores Regular.
         assert!(form.args().is_err());
         press(&mut form, KeyCode::Left);
-        assert_eq!(form.args().unwrap()[1], "main");
+        assert_eq!(form.args().unwrap()[1], "agents/main");
     }
 
     #[test]
@@ -969,7 +1008,7 @@ mod tests {
         );
         let expected = [
             "start",
-            "main",
+            "agents/main",
             "--cwd",
             "/tmp/demo",
             "--label",
@@ -1003,7 +1042,7 @@ mod tests {
             assert!(text.contains("● Codex"));
             assert!(!text.contains("Custom command"));
             assert!(text.contains(
-                "corral start main --cwd /tmp/demo --label 'role=controller' -- codex --yolo"
+                "corral start agents/main --cwd /tmp/demo --label 'role=controller' -- codex --yolo"
             ));
             assert!(text.contains("Controller name · read-only"));
         }
@@ -1042,7 +1081,15 @@ mod tests {
         ] {
             press(&mut form, key);
             let args = form.args().unwrap();
-            let mut expected = vec!["start", "main", "--cwd", "/tmp/demo", "--label", role, "--"];
+            let mut expected = vec![
+                "start",
+                "agents/main",
+                "--cwd",
+                "/tmp/demo",
+                "--label",
+                role,
+                "--",
+            ];
             expected.extend(command.split(' '));
             assert_eq!(args, expected);
             terminal
@@ -1061,11 +1108,112 @@ mod tests {
                 .join("\n");
             assert!(
                 text.contains(&format!(
-                    "corral start main --cwd /tmp/demo --label '{role}' -- {command}"
+                    "corral start agents/main --cwd /tmp/demo --label '{role}' -- {command}"
                 )),
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn prefix_defaults_to_agents_and_is_editable_for_both_roles() {
+        use ratatui::{Terminal, backend::TestBackend, layout::Position};
+        let mut form = Form::new("/tmp/demo".into());
+        press(&mut form, KeyCode::F(4)); // Show the preview.
+        let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
+        let mut render = |form: &mut Form| {
+            terminal
+                .draw(|frame| {
+                    form.draw(&Theme::default(), frame, "corral", &[]);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            (0..46)
+                .map(|y| {
+                    (0..106)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let clear = |form: &mut Form| {
+            form.key(
+                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+                &[],
+            );
+        };
+        assert_eq!(form.args().unwrap()[1], "agents/main");
+        let rows = render(&mut form);
+        let text = rows.join("\n");
+        assert!(
+            text.contains("corral start agents/main --cwd /tmp/demo"),
+            "{text}"
+        );
+        // Controller: the prefix box is clickable and editable; Name stays main.
+        let point = rows
+            .iter()
+            .enumerate()
+            .find_map(|(y, row)| {
+                let x = row.find(" Prefix ")?;
+                Some(Position::new(row[..x].chars().count() as u16 + 2, y as u16))
+            })
+            .expect("Prefix input is drawn");
+        form.click(point, &[]);
+        assert_eq!(form.label(), "Prefix");
+        clear(&mut form);
+        form.paste("saddle");
+        assert_eq!(form.args().unwrap()[1], "saddle/main");
+        let text = render(&mut form).join("\n");
+        assert!(text.contains("corral start saddle/main --cwd"), "{text}");
+        // Regular: prefix comes before the editable name in the Tab order.
+        press(&mut form, KeyCode::F(7));
+        press(&mut form, KeyCode::Tab);
+        assert_eq!(form.label(), "Prefix");
+        press(&mut form, KeyCode::Char('x'));
+        press(&mut form, KeyCode::Backspace);
+        press(&mut form, KeyCode::Tab);
+        assert_eq!(form.label(), "Name");
+        clear(&mut form);
+        form.paste("dev");
+        assert_eq!(form.args().unwrap()[1], "saddle/dev");
+        // Project, tool and role changes keep the prefix draft.
+        let projects = vec!["/tmp/other".into()];
+        form.key(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &projects,
+        );
+        form.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &projects);
+        press(&mut form, KeyCode::F(3));
+        press(&mut form, KeyCode::F(6));
+        assert_eq!(form.args().unwrap()[1], "saddle/main");
+        press(&mut form, KeyCode::F(7));
+        assert_eq!(
+            form.args().unwrap(),
+            [
+                "start",
+                "saddle/dev",
+                "--cwd",
+                "/tmp/other",
+                "--label",
+                "role=regular",
+                "--",
+                "claude"
+            ]
+        );
+        // Invalid prefixes are rejected and revealed.
+        press(&mut form, KeyCode::Tab);
+        for bad in ["", "a/b", "a b", "-a"] {
+            clear(&mut form);
+            form.paste(bad);
+            let error = form.args().unwrap_err().to_string();
+            assert!(error.contains("Prefix"), "{bad:?}: {error}");
+            press(&mut form, KeyCode::F(6));
+            form.reveal_invalid();
+            assert_eq!(form.label(), "Prefix", "{bad:?}");
+        }
+        clear(&mut form);
+        form.paste("saddle");
+        assert_eq!(form.args().unwrap()[1], "saddle/main");
     }
 
     fn press(form: &mut Form, code: KeyCode) {
@@ -1087,7 +1235,7 @@ mod tests {
             form.args().unwrap(),
             [
                 "start",
-                "main",
+                "agents/main",
                 "--cwd",
                 "/tmp/second project",
                 "--label",
@@ -1097,6 +1245,7 @@ mod tests {
             ]
         );
         press(&mut form, KeyCode::F(7)); // Regular
+        press(&mut form, KeyCode::Tab); // Prefix
         press(&mut form, KeyCode::Tab); // Name
         form.key(
             KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
@@ -1104,7 +1253,7 @@ mod tests {
         );
         form.paste("mine");
         press(&mut form, KeyCode::F(2));
-        assert_eq!(form.args().unwrap()[1], "mine");
+        assert_eq!(form.args().unwrap()[1], "agents/mine");
         assert!(!form.args().unwrap().iter().any(|a| a == "--unique"));
         press(&mut form, KeyCode::F(4));
         press(&mut form, KeyCode::Tab); // Command
@@ -1127,7 +1276,7 @@ mod tests {
             args,
             [
                 "start",
-                "mine",
+                "agents/mine",
                 "--cwd",
                 "/tmp/second project",
                 "--label",
@@ -1171,7 +1320,7 @@ mod tests {
                     assert!(hits.iter().any(|h| h.key.code == KeyCode::Esc));
                 })
                 .unwrap();
-            if form.field < 4 {
+            if form.editable(form.field) {
                 assert!(
                     form.field_hits
                         .iter()
@@ -1183,7 +1332,7 @@ mod tests {
             }
             press(&mut form, KeyCode::Tab);
         }
-        assert_eq!(visited, [0, 1, 2, 3]);
+        assert_eq!(visited, [0, PREFIX, 1, 2, 3]);
     }
 
     #[test]

@@ -29,3 +29,28 @@
 
 ## 做完
 在本文件末尾追加完成记录并提交：改动、验证、取舍、未做事项。回复附提交 SHA 和待主控决定事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（saddle/dev-name-prefix，2026-09-27）
+
+### 改动
+- `src/launch.rs`：New 表单增加 `Prefix` 输入框，默认 `agents`，与 Name 同一行放在其左侧（约占三分之一宽），不增加表单高度。Tab 顺序为 Role → Prefix → Name（Controller 时跳过只读 Name）。Controller 与 Regular 下 Prefix 都可键盘、粘贴、Ctrl-U、点击编辑；项目、工具、角色切换不覆盖前缀草稿。
+- 提交与预览统一使用 `Prefix/Name`（默认 `agents/main`），仍按精确名称调用 `corral start`，不加 `--unique`；角色标签、命令、打开位置不变。
+- 校验：Prefix 为空白、含 `/`、含空白或以 `-` 开头时报 `Prefix needs text, no spaces, '/' or leading '-'`（NUL 沿用通用提示）；提交失败时 `reveal_invalid` 把焦点移到 Prefix。Name 校验不变。
+- 把输入框绘制提成 `draw_input`，供 Prefix 与原有四个输入框共用；Name 占位文字由 `project/my-agent` 改为 `my-agent`（前缀已单独填写）。
+- 测试：新增 `prefix_defaults_to_agents_and_is_editable_for_both_roles`；现有 launch 单测与 `tests/workflow.rs` New 相关用例改为期望 `agents/...`，原先在 Name 中手写 `p/new`、`p/late`、`p/hidden` 的用例改为 Prefix 填 `p`、Name 填后半段，断言不变。
+- 中英文 README 补充 Prefix 说明。
+
+### 验证
+- RED：新测试在实现前失败于 `left: "main" / right: "agents/main"`；实现后 GREEN。
+- `cargo test --lib launch`：11 通过。`cargo test --test workflow new_`：5 通过。
+- `cargo test --all-targets`：除已知 `full_workflow_routes_input_switches_safely_and_survives_disappearance`（旧鼠标坐标基线，未用 New 表单）外全部通过（workflow 36 过 / 1 败 / 2 忽略）。
+- `cargo clippy --all-targets -- -D warnings`：通过。`git diff --check`：通过。
+- 本次改动的文件 `rustfmt --check` 通过；`cargo fmt --check` 另报 `tests/ui.rs` 一处既有格式差异，非本任务改动，未动。
+
+### 取舍
+- Prefix 与 Name 并排而非单独一段，避免表单变高、影响短窗口和既有对话框尺寸。
+- Name 仍允许含 `/`（沿用现有名称校验），因此 Regular 名称写 `p/new` 时完整名为 `agents/p/new`。
+
+### 未做 / 待主控决定
+- 是否要让 Name 也拒绝 `/`（避免 `agents/p/new` 这类多段名）——设计要求沿用现有校验，未改。
+- 前缀沿用表单现有生命周期：Esc 隐藏后再打开保留草稿；成功创建或重启 saddle 后回到默认 `agents`，不记住上次用过的前缀（设计要求不增加配置）。如需记住，待主控决定。
