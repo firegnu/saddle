@@ -1,5 +1,11 @@
 # 交接
 
+## 2026-09-27：T18 Tasks 大弹窗已授权并委派（以本节为准）
+
+- 用户同意先实施再体验调整。方案与任务已提交 6d42ce2：DESIGN 第 32 节、docs/任务/T18-Tasks大弹窗.md。Agents 独占左列，固定 Tasks 入口，大弹窗内列表与正文/运行详情左右分栏，编辑在同框切换。
+- 自有 saddle/dev-t18-tasks-1（Claude Code opus[1m] / high）在 ../saddle-worktrees/t18-tasks-popup、分支 t18-tasks-popup 实施；完成提醒已挂好。路由影响面改行为，不交叉审查，主控收到 DONE 后按任务预算审查。
+- 尚未合并或发布。下一步审查通过后合并推送、更新 release、清理该 worktree/分支和自有 agent、空提交收尾并核对 T18 完成，等待用户体验。不恢复已取消的 T16，不开始 T17/T13。
+
 ## 2026-09-27：T16 已取消并清理（以本节为准）
 
 - 用户认为可能是操作问题，要求停止并删除 T16、开发 worktree 及对应 agent。已删除 t16-pending-actions worktree/分支（包括未提交测试与记录）、关闭 saddle/dev-t16-pending-1、移除任务文件；通过公开 drover drop T16 移出 current，保留 Dropped 历史。
