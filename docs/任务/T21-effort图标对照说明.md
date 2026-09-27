@@ -31,3 +31,9 @@ worktree：/Users/firegnu/Developer/personal_projs/saddle-worktrees/t21-effort-d
 ## 做完
 
 在本文件末尾追加完成记录：改动、实际检查与取舍/未完成事项。提交后回复新 SHA，最后一行 DONE。主控负责后续审查、合并推送、清理与空提交收尾，再公开 drover done T21，等待用户放行，不 go/next。
+
+## 完成记录
+
+- 改动：在 `README.md` 与 `README.zh-CN.md` 的 Agents 说明中，将已有的 `medium`、`high`、`xhigh` effort 图标、默认颜色和对应主题色整理为简短对照表；保留公开委派标签语义、运行时 effort 非同义、无有效标签不显示及列对齐说明。
+- 实际检查：已只读核对 `docs/DESIGN.md` 第 23 节与第 40 节 effort/Working 补充、`src/corral.rs` 的三档解析和 `src/ui.rs` 的图标/颜色映射；执行 `git diff --check`。
+- 取舍/未完成事项：仅做 README 与本任务记录的文档整理，未改代码、设计、测试或产品行为；未运行全套测试、构建、交叉审查或发布。
