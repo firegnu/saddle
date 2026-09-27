@@ -1,11 +1,12 @@
 # 交接
 
-## 2026-09-27：颜色测试环境隔离已派发（effort 观察小任务）
+## 2026-09-27：颜色测试环境隔离已合并，待确认关闭显示中的开发 agent
 
-- 用户要求开一个不太难的新任务以观察 effort；主控选择上轮留下的 NO_COLOR 测试环境问题。任务 docs/任务/颜色测试环境隔离.md，起点 88ae021，分支 color-test-env，worktree ../saddle-worktrees/color-test-env。只改 tests/app.rs 与完成记录，不改产品功能或 effort。
-- 实现者 saddle/dev-color-env-1（instance a50196acd7b6），Codex gpt-5.6-luna / medium；公开 role=implementer、model 与 effort=medium 标签匹配实际启动参数。状态已 working，attached=0；用户可在 Agents 首行观察绿色 ⣄⡀。原普通 saddle/codex-right 已不在公开 ls，本轮未关闭或复用它。
-- 路由轻／无需交叉审查／改行为。先以 NO_COLOR=1 复现现有颜色检查失败再最小修复；标准检查一次，不重复旧 picker 偶发实验。完成提醒已挂到 saddle/main，查 DONE 后主控审查、合并推送、清理、空提交与交接；仅测试修改无需发布产品二进制，不操作 drover/T20。若仍 working 则重挂，不重复分派。
-- 此任务环境需保留至审查收尾；若用户 attach 观察，清理时先核对 attached，不能打断用户。其余 corral/main、drover/main、saddle/main 保留。
+- 简单 effort 观察任务已完成：实现 6412032，主控审查通过，合并 93d044a 已推送 origin/main。仅 tests/app.rs 子进程清空 NO_COLOR 与任务记录；不用重建发布产品二进制，未操作 drover/T20。记录见 docs/任务/颜色测试环境隔离.md。
+- 主控 NO_COLOR=1 标准测试一次：app 目标通过；workflow 57 passed、1 failed、2 ignored，唯一失败为此前已记录的 picker/close confirmation 偶发问题，其他已执行目标均过，退出101。不称全套全绿，不重复套件；Clippy/fmt/diff 通过。开发者自己一轮标准检查通过，分别记录。
+- saddle/dev-color-env-1（a50196acd7b6，gpt-5.6-luna / medium）idle，但清理前查到 attached=1；已向用户询问是否允许停止并清理，尚未收到答复。因此保留 color-test-env 分支与 ../saddle-worktrees/color-test-env，未写收尾空提交。收到同意后核对干净/已合并，正常删 worktree/分支并停止此自有 agent，补空提交、更新交接与推送。若用户要保留，则照其要求留存。
+- effort 参数与标签一致，绿色 medium 图标正常；用户截图反馈它与新增 working 紫色点阵动画混淆。主控提议去掉紫色动画、保留左侧转动圆点，但用户尚未确认；不要在此测试任务改 UI。是否还要显示 luna 模型名也未确认。
+- corral/main、drover/main、saddle/main 不动；原普通 saddle/codex-right 已不在公开 ls，本任务未关闭它。迟到提醒不重新分派。
 
 ## 2026-09-27：Agents 侧栏 3a 已发布并收尾
 
