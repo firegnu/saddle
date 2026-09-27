@@ -103,3 +103,12 @@
 - 纯视觉/命中（不造 RED）：`tests/ui.rs` 新增 `paths_show_in_full_when_they_fit_and_lose_leading_levels_only_when_too_wide`（50/42 列：`/tmp/team/project` 完整；长路径按宽度省层级；同组目录显示 `…/team/`）与 `attached_reads_in_text_color_but_offers_no_second_attach_click`（已连接时 `[Attached]` 为正文色且没有 Enter 点击目标；未连接时 `↵ Attach` 可点）。
 - `cargo test --test ui --test layout_config --test app` 通过；workflow 只跑受影响的 `startup_colors…`、`buttons_require_release…`、`agents_reply_entry…`、`fold_toggles…`、`native_mouse_buttons…`、`stop_in_progress…`，均通过。未重复全套和基线多轮实验。
 - `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 通过。
+
+
+## 主控审查
+
+2026-09-27：实现 cb36c3e，effort 原位修正 c3c2346，三处规格修正 8872c5c；主控最终结论可以合并，完整意见见《Agents侧栏3a主控审查.md》。effort 保留首行类型后、状态前，折叠仍显示；路径、256 色与 Attached 三项必须改已关闭，无剩余必须改，无独立交叉审查。
+
+主控先前已跑标准检查通过（workflow 58 passed、2 ignored），本次仅定向复核 UI 39、配置8、workflow6项通过；app 启动检查通过，颜色检查在 NO_COLOR=1 环境先失败，清空该变量后通过。新增颜色测试未自行隔离 NO_COLOR 记为不阻塞建议；旧 picker 偶发失败基线亦可复现，根因未定位，未扩大范围。开发本提交 Clippy/fmt 通过。实现取舍已逐条裁定并写入审查和 DESIGN 第40节。
+
+合并提交 2c884e7；不推进 drover/T20，发布和清理结果见下方。
