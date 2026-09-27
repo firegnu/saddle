@@ -1,14 +1,13 @@
 # 交接
 
-## 2026-09-27：Agents 侧栏 effort 已修正，主控审查后三处规格返工
+## 2026-09-27：Agents 侧栏 3a 已发布并收尾
 
-- 用户已提供 Desktop/export 的 Agents Panel Spec.md 与 agents-panel-3a.png，要求据此微调左侧 Agents。两份原稿已原样归档 docs/设计稿/agents-panel-3a/；Markdown 优先。主控设计补充在 DESIGN 第 40 节，实施任务 docs/任务/Agents侧栏3a微调.md，main 起点 fc7e131。
-- 路由常规／交叉审查不要／改行为。实现者 saddle/dev-agents-panel-1（instance 047de6644ab4），Claude Code opus[1m] / high，role=implementer；worktree ../saddle-worktrees/agents-panel-3a，分支 agents-panel-3a。effort 修正后提交 c3c2346 已 DONE，agent idle/attached=0，工作区干净；本轮交回原 agent 三处规格修正，不重复分派。
-- effort 已按用户明确要求保留 R1 类型之后/状态之前，两列信号柱、折叠也保留；主控核对新提交及定向断言通过。首轮 cb36c3e 的旧位置已被 c3c2346 修正，不再待确认。
-- 主控实跑本提交标准检查全过：all-targets 退出0（workflow 58 passed、2 ignored），Clippy/fmt/diff 通过。开发记录中原布局基线也能复现的 New picker 偶发失败仍未定位，主控这次未复现，不扩大排查或重复整套。
-- 主控审查在 docs/任务/Agents侧栏3a主控审查.md。必须改3项：非同组且放得下的完整路径被无条件缩短；缺少规格要求的256色近似；已连接 Attached 应正常色但仍保持不可重复点击。同意现有 Agents 配置键、Sort文案等取舍。交同一实现者做最小修正/直接检查，完成后只复核变化，不重跑无关全套；通过后合并推送发布、清理、空提交收尾与更新交接。尚未合并发布。
-- 该任务由本轮用户直接要求，尚未登记 drover 队列；不要擅自重发/放行已完成 T20。最新公开 drover list 为无 current、队列空。T20 的代码/skill 安装已完成，之后按用户要求也将同一 skill 安装到 ~/.claude/skills/saddle 并核对一致。
-- 当前 agent corral/main、drover/main、saddle/main 不动。所有测试仅假 CLI/合成数据、隔离 runtime；不操作用户现场，不读 corral/drover 内部文件。收到开发提醒先查状态，仍 working 则重挂，DONE 才进入审查。
+- 已按归档两份设计稿完成 Agents 侧栏 3a；effort 遵照用户明确要求保留首行类型之后、状态之前，两格信号柱，折叠也显示。设计与取舍见 DESIGN 第40节，原实施记录及最终审查见 docs/任务/Agents侧栏3a微调.md、Agents侧栏3a主控审查.md。
+- 实现 cb36c3e、effort 修正 c3c2346、规格修正 8872c5c；主控通过，无独立交叉审查。路径、256色近似、Attached正常色且不重复点击均已关闭。主控首轮标准检查通过；最终仅定向 UI39、配置8、workflow6项通过，app启动通过，颜色检查清空 NO_COLOR 后通过；未重复全套。
+- 非阻塞遗留：新增 app 颜色测试继承 NO_COLOR=1 时会假失败，显式清空后通过，建议以后在 fixture 隔离；旧 picker 偶发 workflow 失败基线亦可复现，根因仍未定位。本任务没有扩大修复或宣称其已解决。
+- 合并 2c884e7 已推送；发布记录 1f73229，清理后空提交 5a7012b。main release 构建通过，共享 release、仓库 target/release/saddle、默认 ~/.local/bin/saddle 三入口 SHA-256 均为 cbec3ecc4a532b48921c5406def99149f1634c65531ebd4b59a4258b6f3fab03。没有重启用户正在使用的 saddle；下一步用户重启体验。
+- 核对 idle、attached=0、工作区干净且分支已合并后，正常删除 agents-panel-3a worktree/分支；工作目录已删，一并关闭自有 saddle/dev-agents-panel-1。目前仅 main worktree；现有 corral/main、drover/main、saddle/main 留存，分别位于各自主仓库。迟到提醒查到 not_found 即忽略，不重开。
+- 本任务未登记 drover，未调用 done/go/next，不重新推进 T20。T20 与 saddle skill 的 Codex/Claude Code 安装均已在此前完成，本次未改。交接随 main 推送，下一步等用户体验反馈，不自动启动其他任务。
 
 ## 2026-09-27：T20 已合并发布并清理收尾
 
