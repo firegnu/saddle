@@ -1,5 +1,10 @@
 # 交接
 
+## 2026-09-27：T16 已取消并清理（以本节为准）
+
+- 用户认为可能是操作问题，要求停止并删除 T16、开发 worktree 及对应 agent。已删除 t16-pending-actions worktree/分支（包括未提交测试与记录）、关闭 saddle/dev-t16-pending-1、移除任务文件；通过公开 drover drop T16 移出 current，保留 Dropped 历史。
+- 没有合并或发布功能改动，不写功能完成收尾记号，不执行 go/next。旧完成提醒及跨仓库/退回规则询问均已失效，不得恢复 T16；下一步等用户新指示。
+
 ## 2026-09-27：T15 默认值完成（以本节为准）
 
 - New Agent 默认名称 `main`，默认打开位置 `Current pane`。开发 f6bf3ea、合并 c736197、主控审查 58ef7fd，收尾空提交 11bc039。设计见 DESIGN 第 31 节，验证与审查见 docs/任务/T15-New-Agent默认值.md。
