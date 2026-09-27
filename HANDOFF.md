@@ -1,11 +1,12 @@
 # 交接
 
-## 2026-09-27：New 默认 main 精确名称修复已委派
+## 2026-09-27：New 主控/普通角色命名已发布收尾
 
-- 最新澄清已获用户回复「对」确认：增加主控/普通角色选项，默认主控、名称固定 main，普通自由命名。DESIGN 第 34 节及任务文件已更新，继续交原开发者在 b015f42 上补齐角色选项；角色仅约束名称，不开启派发或改队列配置。
-- 用户发现默认 main 创建为 main-1，并说明工作流依赖精确名称 main。原因是 New 未编辑名称时带 --unique；修复方案见 DESIGN 第 34 节及 docs/任务/New-Agent精确名称.md，提交 f225237。
-- 自有 saddle/dev-exact-name-1（Codex gpt-6-astra / high）在 ../saddle-worktrees/new-agent-exact-name、同名分支继续实施。只改 New 角色/名称及必要布局、说明/检查，不改派发、YOLO 和现有 agent（包括用户 main-1）。
-- b015f42 已静态核对，diff 检查通过，主控未重跑标准测试、未给最终合并结论。等角色增量完成后审增量，并对最终版本跑一次主控标准检查，通过后合并发布、清理和收尾。没有新建或操作队列任务，T17 的已完成记录不重开。
+- New 默认 Controller，名称锁定为精确 main；Regular 首次也填 main（用户再次确认），可编辑且角色往返保留普通名称草稿。两者都不加 --unique，重名显示 CLI 错误并保留草稿。派发流程、YOLO 和现有 agent（包括用户 main-1）未改；完整设计/审查见 DESIGN 第 34 节及 docs/任务/New-Agent精确名称.md。
+- 原精确名称 b015f42，角色增量 1117245，合并 a80b12b，主控审查 67e0d48，收尾空提交 4534d96。主控最终标准测试 142 passed、1 failed、2 ignored；Clippy/diff 通过。唯一失败仍是已知 full_workflow 旧鼠标坐标检查，未扩修，不称全套全绿。
+- main release 已更新并同步共享 target 和仓库 target/release/saddle，SHA-256 均为 3accd41f0a6d62a3eaf99f019e66ca74fb1539ab6adf09c5c81605149998624a。默认 saddle 指向共享 release，重启体验。
+- 核对 idle、attached=0、工作区干净且分支已合并后，正常删除 new-agent-exact-name worktree/分支；工作目录已删，一并关闭自有 saddle/dev-exact-name-1。其他用户 agent 未操作。
+- 本修复没有新建或操作队列任务，T17 的已完成记录不重开。本节随 main 推送，下一步等待用户反馈，不启动其他待办。
 
 ## 2026-09-27：T17 默认 Codex YOLO 已发布收尾
 
