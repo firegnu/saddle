@@ -39,10 +39,10 @@ use control_impl::{Closing, Record, Replacement};
 
 #[derive(Clone)]
 enum Action {
-    Attach(String, Ticket),
+    Attach(String, Ticket, Option<u64>),
     Reply(String),
     Stop(String),
-    Start(Vec<String>, Ticket),
+    Start(Vec<String>, Ticket, Option<u64>),
 }
 struct ActionResult {
     action: Action,
@@ -73,14 +73,14 @@ impl Actions {
         let cancel = self.cancel.clone();
         self.workers.push(thread::spawn(move || {
             let result = match &action {
-                Action::Start(args, _) => client.json(
+                Action::Start(args, _, _) => client.json(
                     &args.iter().map(String::as_str).collect::<Vec<_>>(),
                     Duration::from_secs(120),
                     &cancel,
                 ),
                 _ => {
                     let (verb, name, timeout) = match &action {
-                        Action::Attach(name, _) => ("status", name, 15),
+                        Action::Attach(name, _, _) => ("status", name, 15),
                         Action::Reply(name) => ("reply", name, 15),
                         Action::Stop(name) => ("stop", name, 120),
                         Action::Start(..) => unreachable!(),
@@ -157,6 +157,10 @@ struct App {
     placement: Option<Placement>,
     native_mouse: bool,
     new_agent: Option<crate::launch::Form>,
+    /// Agents New draft parked while a location-bound form is in use.
+    agent_draft: Option<crate::launch::Form>,
+    /// Later deliberate input supersedes an asynchronous automatic focus transfer.
+    input_revision: u64,
     viewer_area: Rect,
     hits: Hits,
     pointer: crate::buttons::Pointer,
@@ -232,6 +236,8 @@ impl App {
             placement: None,
             native_mouse: false,
             new_agent: None,
+            agent_draft: None,
+            input_revision: 0,
             viewer_area: Rect::default(),
             hits: Hits::default(),
             pointer: Default::default(),
@@ -316,11 +322,11 @@ impl App {
         let results: Vec<_> = self.actions.receiver.try_iter().collect();
         for result in results {
             match result.action {
-                Action::Attach(name, ticket) if self.viewer.valid(ticket) => {
+                Action::Attach(name, ticket, focus_intent) if self.viewer.valid(ticket) => {
                     let expected = self
                         .viewer
                         .get(ticket.pane)
-                        .and_then(|p| p.viewer.agent_instance.clone());
+                        .and_then(|p| p.pending_agent.instance.clone());
                     let checked = result.result.and_then(|status| {
                         anyhow::ensure!(
                             status["attached"].as_u64().unwrap_or(0) == 0,
@@ -339,12 +345,12 @@ impl App {
                             self.viewer
                                 .get_mut(ticket.pane)
                                 .unwrap()
-                                .viewer
-                                .agent_instance = status["instance"].as_str().map(str::to_owned);
+                                .pending_agent
+                                .instance = status["instance"].as_str().map(str::to_owned);
                             self.viewer.complete(ticket, Some(name))?;
                             self.operation_update(ticket, "attaching", None, None);
                             self.panel.message.clear();
-                            if !self.command_ticket(ticket)
+                            if focus_intent == Some(self.input_revision)
                                 && self.focus == Focus::Agents
                                 && self.panel.confirm.is_none()
                                 && self.placement.is_none()
@@ -373,7 +379,7 @@ impl App {
                         }
                     }
                 }
-                Action::Start(_, ticket) => {
+                Action::Start(_, ticket, focus_intent) => {
                     let owns_form = self
                         .new_agent
                         .as_ref()
@@ -397,7 +403,13 @@ impl App {
                     match result {
                         Ok((name, instance)) => {
                             if owns_form {
-                                self.new_agent = None;
+                                self.new_agent = self.agent_draft.take();
+                            } else if self
+                                .agent_draft
+                                .as_ref()
+                                .is_some_and(|f| f.busy == Some(ticket))
+                            {
+                                self.agent_draft = None;
                             }
                             self.panel.message = format!("Started {name}");
                             self.poller.refresh();
@@ -405,11 +417,12 @@ impl App {
                                 self.viewer
                                     .get_mut(ticket.pane)
                                     .unwrap()
-                                    .viewer
-                                    .agent_instance = instance;
+                                    .pending_agent
+                                    .instance = instance;
                                 self.viewer.expect(ticket, name.clone());
                                 self.operation_update(ticket, "attaching", Some(&name), None);
-                                self.actions.start(Action::Attach(name, ticket));
+                                self.actions
+                                    .start(Action::Attach(name, ticket, focus_intent));
                             } else {
                                 self.operation_update(ticket, "target_invalid", Some(&name), None);
                                 self.panel
@@ -430,9 +443,14 @@ impl App {
                                 None,
                                 Some(&format!("{error:#}")),
                             );
-                            if owns_form && let Some(form) = &mut self.new_agent {
-                                form.busy = None;
-                                form.error = format!("{error:#}");
+                            for form in [&mut self.new_agent, &mut self.agent_draft]
+                                .into_iter()
+                                .flatten()
+                            {
+                                if form.busy == Some(ticket) {
+                                    form.busy = None;
+                                    form.error = format!("{error:#}");
+                                }
                             }
                         }
                     }
@@ -557,10 +575,14 @@ impl App {
             .reserve_at(id, Place::Current, Some(name.clone()));
         if let Some(agent) = self.panel.agents.iter().find(|a| a.name == name) {
             let pane = self.viewer.get_mut(ticket.pane).unwrap();
-            pane.cwd = agent.cwd.clone();
-            pane.viewer.agent_instance = agent.instance.clone();
+            pane.pending_agent.cwd = agent.cwd.clone();
+            pane.pending_agent.instance = agent.instance.clone();
         }
-        self.actions.start(Action::Attach(name.clone(), ticket));
+        self.actions.start(Action::Attach(
+            name.clone(),
+            ticket,
+            Some(self.input_revision),
+        ));
         self.panel.message = format!("attaching {name}…");
     }
     /// Opens the candidate the pick is bound to at the placement's location, only if row
@@ -589,11 +611,14 @@ impl App {
                 let project = self
                     .viewer
                     .get(anchor)
-                    .and_then(|p| p.cwd.clone())
+                    .and_then(|p| p.viewer.metadata.cwd.clone())
                     .unwrap_or_else(|| self.queue.project.clone());
                 let mut form = crate::launch::Form::new(project);
                 form.anchor = self.viewer.get(anchor).map(|p| p.ticket());
                 form.place = Place::ALL.iter().position(|p| *p == place).unwrap();
+                if self.new_agent.as_ref().is_some_and(|f| f.anchor.is_none()) {
+                    self.agent_draft = self.new_agent.take();
+                }
                 self.new_agent = Some(form);
                 return;
             }
@@ -701,6 +726,11 @@ impl App {
         Ok(())
     }
     fn event(&mut self, event: Event, panes: Panes) -> Result<bool> {
+        if matches!(&event, Event::Key(key) if key.kind != KeyEventKind::Release)
+            || matches!(&event, Event::Mouse(mouse) if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown))
+        {
+            self.input_revision += 1;
+        }
         match event {
             Event::Key(key) => {
                 self.pointer.cancel();
@@ -728,8 +758,10 @@ impl App {
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
                     let submit = form.key(key, &self.queue.projects);
                     let bound = form.anchor;
-                    if !form.visible && bound.is_some() && form.busy.is_none() {
-                        self.new_agent = None;
+                    if !form.visible && bound.is_some() {
+                        if form.busy.is_none() {
+                            self.new_agent = self.agent_draft.take();
+                        }
                         self.focus = if key
                             .modifiers
                             .contains(crossterm::event::KeyModifiers::CONTROL)
@@ -761,7 +793,8 @@ impl App {
                             if place == Place::Current {
                                 self.viewer.get_mut(anchor).unwrap().viewer.shell = None;
                             }
-                            self.begin_start(anchor, place, args).map(Some)
+                            self.begin_start(anchor, place, args, Some(self.input_revision))
+                                .map(Some)
                         });
                         let form = self.new_agent.as_mut().unwrap();
                         match result {
@@ -1108,6 +1141,9 @@ impl App {
             KeyCode::Enter => self.attach(),
             KeyCode::Char('n') => {
                 self.reload_projects();
+                if self.new_agent.as_ref().is_some_and(|f| f.anchor.is_some()) {
+                    self.new_agent = self.agent_draft.take();
+                }
                 self.new_agent
                     .get_or_insert_with(|| crate::launch::Form::new(self.queue.project.clone()))
                     .visible = true;

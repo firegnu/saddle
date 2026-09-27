@@ -10,14 +10,22 @@ pub struct Shell {
     pub env: Vec<(String, String)>,
 }
 
+#[derive(Clone, Default)]
+pub struct AgentMetadata {
+    pub cwd: Option<String>,
+    pub instance: Option<String>,
+}
+
 pub struct Viewer {
     pub session: Option<Session>,
     pub showing: Option<String>,
     pub note: String,
     pub shell: Option<Shell>,
-    pub agent_instance: Option<String>,
+    pub metadata: AgentMetadata,
+    pub exit_code: Option<u32>,
+    failed: bool,
     closing: bool,
-    pending: Option<String>,
+    pending: Option<(String, AgentMetadata)>,
     generation: u64,
     corral: String,
     spawning: Option<(u64, String, JoinHandle<Result<Session>>)>,
@@ -32,12 +40,22 @@ impl Viewer {
             corral,
             spawning: None,
             shell: None,
-            agent_instance: None,
+            metadata: AgentMetadata::default(),
+            exit_code: None,
+            failed: false,
             closing: false,
             note: "Select an agent on the left, then press Enter or click.".into(),
         }
     }
     pub fn select(&mut self, name: String) -> Result<()> {
+        let metadata = if self.showing.as_ref() == Some(&name) {
+            self.metadata.clone()
+        } else {
+            AgentMetadata::default()
+        };
+        self.select_agent(name, metadata)
+    }
+    pub fn select_agent(&mut self, name: String, metadata: AgentMetadata) -> Result<()> {
         self.closing = false;
         if self.showing.as_ref() == Some(&name)
             && self
@@ -48,7 +66,9 @@ impl Viewer {
             return Ok(());
         }
         self.cancel_pending();
-        self.pending = Some(name);
+        self.pending = Some((name, metadata));
+        self.exit_code = None;
+        self.failed = false;
         if let Some(session) = &mut self.session {
             session.interrupt()?;
         }
@@ -61,7 +81,7 @@ impl Viewer {
         if self
             .pending
             .as_ref()
-            .is_some_and(|name| !names.contains(&name.as_str()))
+            .is_some_and(|(name, _)| !names.contains(&name.as_str()))
         {
             self.cancel_pending();
         }
@@ -76,7 +96,15 @@ impl Viewer {
         Ok(())
     }
     pub fn target(&self) -> Option<&str> {
-        self.pending.as_deref().or(self.showing.as_deref())
+        self.pending
+            .as_ref()
+            .map(|(name, _)| name.as_str())
+            .or(self.showing.as_deref())
+    }
+    pub fn target_metadata(&self) -> &AgentMetadata {
+        self.pending
+            .as_ref()
+            .map_or(&self.metadata, |(_, metadata)| metadata)
     }
     /// Invalidate pending work without disconnecting the currently displayed session.
     pub fn cancel_pending(&mut self) {
@@ -98,24 +126,7 @@ impl Viewer {
         self.tick_visible(Some(size))
     }
     pub fn tick_visible(&mut self, size: Option<Size>) -> Result<()> {
-        if let Some(session) = &mut self.session {
-            if session.poll_exit()? {
-                if let Some(shell) = &mut self.shell {
-                    shell.state = "exited";
-                    shell.exit_code = session.exit_code();
-                    self.note = format!("Terminal exited ({})", shell.exit_code.unwrap_or(0));
-                }
-                if self.shell.is_none() || self.closing {
-                    self.session = None;
-                }
-                if let Some(name) = self.showing.take() {
-                    self.note =
-                        format!("{name} attach exited. Select an agent on the left to reconnect.");
-                }
-            } else if let Some(size) = size {
-                session.resize(size)?;
-            }
-        }
+        self.poll_session(size)?;
         if self
             .spawning
             .as_ref()
@@ -128,17 +139,24 @@ impl Viewer {
                 && if shell_spawn {
                     self.shell.as_ref().is_some_and(|s| s.state == "starting")
                 } else {
-                    self.pending.as_ref() == Some(&name)
+                    self.pending
+                        .as_ref()
+                        .is_some_and(|(target, _)| target == &name)
                 };
             match worker.join().expect("attach worker panicked") {
                 Ok(mut session) => {
                     if current {
-                        self.pending = None;
+                        self.exit_code = None;
+                        self.failed = false;
+                        let pending = self.pending.take();
                         if shell_spawn {
                             self.shell.as_mut().unwrap().state = "running";
                         } else {
                             self.shell = None;
                             self.showing = Some(name);
+                            if !session.poll_exit()? {
+                                self.metadata = pending.unwrap().1;
+                            }
                         }
                     } else {
                         // Keep ownership until the stale child exits, without naming it
@@ -146,12 +164,16 @@ impl Viewer {
                         session.interrupt()?;
                     }
                     self.session = Some(session);
+                    // The returned PTY may already have exited; never publish it as running.
+                    self.poll_session(size)?;
                 }
                 Err(error) if current => {
                     self.pending = None;
+                    self.exit_code = None;
                     if shell_spawn {
                         self.shell.as_mut().unwrap().state = "failed";
                     }
+                    self.failed = true;
                     self.note = format!("terminal {name}: {error:#}");
                 }
                 Err(_) => {}
@@ -159,11 +181,11 @@ impl Viewer {
         }
         if self.session.is_none()
             && self.spawning.is_none()
-            && let Some(name) = &self.pending
+            && let Some((name, metadata)) = &self.pending
         {
             let name = name.clone();
             let command = vec![self.corral.clone(), "attach".into(), name.clone()];
-            let instance = self.agent_instance.clone();
+            let instance = metadata.instance.clone();
             let checked_name = name.clone();
             let program = self.corral.clone();
             let size = size.unwrap_or(Size { rows: 24, cols: 80 });
@@ -207,9 +229,41 @@ impl Viewer {
         }
         Ok(())
     }
+    fn poll_session(&mut self, size: Option<Size>) -> Result<()> {
+        if let Some(session) = &mut self.session {
+            if session.poll_exit()? {
+                let exit_code = session.exit_code();
+                if let Some(shell) = &mut self.shell {
+                    shell.state = "exited";
+                    shell.exit_code = session.exit_code();
+                    self.note = format!("Terminal exited ({})", shell.exit_code.unwrap_or(0));
+                }
+                if self.shell.is_none() || self.closing {
+                    self.session = None;
+                }
+                if let Some(name) = self.showing.take() {
+                    self.exit_code = exit_code;
+                    self.failed = exit_code.is_some_and(|code| code != 0);
+                    self.note = format!(
+                        "{name} attach exited ({}). Select an agent on the left to reconnect.",
+                        exit_code.unwrap_or(0)
+                    );
+                }
+            } else if let Some(size) = size {
+                session.resize(size)?;
+            }
+        }
+        Ok(())
+    }
     pub fn start_shell(&mut self, shell: Shell) {
         self.cancel_pending();
         self.closing = false;
+        self.metadata = AgentMetadata {
+            cwd: Some(shell.cwd.clone()),
+            instance: None,
+        };
+        self.exit_code = None;
+        self.failed = false;
         self.shell = Some(shell);
         self.note = "Starting terminal…".into();
     }
@@ -226,6 +280,8 @@ impl Viewer {
             "attaching"
         } else if self.session.as_ref().is_some_and(Session::running) && self.showing.is_some() {
             "running"
+        } else if self.failed {
+            "failed"
         } else {
             "disconnected"
         }
@@ -237,5 +293,45 @@ impl Drop for Viewer {
         if let Some((_, _, worker)) = self.spawning.take() {
             let _ = worker.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn already_exited_attach_worker_is_never_published_as_running() {
+        let size = Size { rows: 10, cols: 40 };
+        let mut viewer = Viewer::new("unused".into());
+        viewer.pending = Some(("p/failed".into(), AgentMetadata::default()));
+        viewer.spawning = Some((
+            0,
+            "p/failed".into(),
+            thread::spawn(move || {
+                let mut session = Session::spawn(
+                    &["/bin/sh".into(), "-c".into(), "exit 7".into()],
+                    None,
+                    size,
+                )?;
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while !session.poll_exit()? {
+                    assert!(Instant::now() < deadline);
+                    thread::yield_now();
+                }
+                Ok(session)
+            }),
+        ));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !viewer.spawning.as_ref().unwrap().2.is_finished() {
+            assert!(Instant::now() < deadline);
+            thread::yield_now();
+        }
+        viewer.tick(size).unwrap();
+        assert_eq!(viewer.state(), "failed");
+        assert_eq!(viewer.exit_code, Some(7));
+        assert!(viewer.session.is_none());
+        assert!(viewer.showing.is_none());
     }
 }

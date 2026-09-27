@@ -41,7 +41,7 @@ impl App {
                 .flat_map(|t| &t.panes)
                 .filter(|p| {
                     p.viewer.showing.as_deref() == Some(name)
-                        && p.viewer.agent_instance.as_deref() == Some(instance)
+                        && p.viewer.metadata.instance.as_deref() == Some(instance)
                         && !p.replacing()
                         && p.input_session().is_some()
                 })
@@ -80,10 +80,10 @@ impl App {
                 let shell = p.viewer.shell.as_ref();
                 let kind = if shell.is_some() { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() { "agent" } else { "empty" };
                 json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,
-                    "agent":p.requested().or(p.viewer.target()),"corral_instance":p.viewer.agent_instance,
-                    "cwd":p.cwd.as_ref().unwrap_or(&self.queue.project),"cwd_source":if p.cwd.is_some() {"pane"} else {"tasks_project"},
+                    "agent":p.requested().or(p.viewer.target()),"corral_instance":p.viewer.metadata.instance,
+                    "cwd":p.viewer.metadata.cwd.as_ref().unwrap_or(&self.queue.project),"cwd_source":if p.viewer.metadata.cwd.is_some() {"pane"} else {"tasks_project"},
                     "state":if p.starting {"starting"} else if p.requested().is_some() {"accepted"} else {p.viewer.state()},
-                    "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"note":p.viewer.note})
+                    "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"exit_code":p.viewer.exit_code,"note":p.viewer.note})
             }).collect();
             json!({"id":tab.id,"active_pane":tab.active,"layout":tab.layout(),"panes":panes})
         }).collect();
@@ -91,15 +91,10 @@ impl App {
             "active_pane":self.viewer.active_pane().id,"focus":format!("{:?}",self.focus).to_lowercase(),"caller":caller,"tabs":tabs})
     }
     pub(super) fn control_tick(&mut self) {
-        let messages: Vec<_> = self.control.incoming.try_iter().take(32).collect();
-        for incoming in messages {
-            let value = self.control_message(incoming.message);
-            let _ = incoming.reply.try_send(value);
-        }
         for record in &mut self.records {
             if !matches!(
                 record.value["state"].as_str(),
-                Some("accepted" | "starting" | "attaching")
+                Some("accepted" | "starting" | "attaching" | "complete")
             ) {
                 continue;
             }
@@ -118,6 +113,13 @@ impl App {
                 if pane.requested().is_some() {
                     continue;
                 }
+                record.value["exit_code"] = json!(
+                    pane.viewer
+                        .shell
+                        .as_ref()
+                        .and_then(|s| s.exit_code)
+                        .or(pane.viewer.exit_code)
+                );
                 match pane.viewer.state() {
                     "running" | "exited" => {
                         record.value["state"] = json!("complete");
@@ -133,6 +135,11 @@ impl App {
                     _ => {}
                 }
             }
+        }
+        let messages: Vec<_> = self.control.incoming.try_iter().take(32).collect();
+        for incoming in messages {
+            let value = self.control_message(incoming.message);
+            let _ = incoming.reply.try_send(value);
         }
     }
     fn control_message(&mut self, message: Message) -> Value {
@@ -212,7 +219,12 @@ impl App {
                     self.open_content(anchor, *place, content.clone(), *focus)?;
                 value["pane"] = json!(ticket.pane);
                 value["revision"] = json!(ticket.revision);
-                value["cwd"] = json!(self.viewer.get(ticket.pane).and_then(|p| p.cwd.as_ref()));
+                value["cwd"] = json!(self.viewer.get(ticket.pane).and_then(|p| {
+                    p.pending_agent
+                        .cwd
+                        .as_ref()
+                        .or(p.viewer.metadata.cwd.as_ref())
+                }));
                 value["cwd_source"] = json!(cwd_source);
                 value["state"] = json!(if moved
                     && self.viewer.get(ticket.pane).unwrap().viewer.state() == "running"
@@ -310,13 +322,13 @@ impl App {
         };
         let cwd_source = if explicit.is_some() {
             "explicit"
-        } else if source.cwd.is_some() {
+        } else if source.viewer.metadata.cwd.is_some() {
             "source_pane"
         } else {
             "tasks_project"
         };
         let cwd = explicit
-            .or_else(|| source.cwd.clone())
+            .or_else(|| source.viewer.metadata.cwd.clone())
             .unwrap_or_else(|| self.queue.project.clone());
         if !matches!(content, Content::Agent { .. }) {
             ensure!(
@@ -361,9 +373,16 @@ impl App {
                 let cwd = agent.cwd.clone();
                 if let Some(id) = self.viewer.find(&name) {
                     let pane = self.viewer.get(id).unwrap();
+                    let metadata = if pane.viewer.showing.as_deref() == Some(&name) {
+                        &pane.viewer.metadata
+                    } else if pane.requested() == Some(&name) {
+                        &pane.pending_agent
+                    } else {
+                        pane.viewer.target_metadata()
+                    };
                     ensure!(
-                        pane.viewer
-                            .agent_instance
+                        metadata
+                            .instance
                             .as_ref()
                             .is_none_or(|old| old == &identity),
                         "agent identity changed"
@@ -372,9 +391,9 @@ impl App {
                 match self.viewer.place(anchor, place, &name)? {
                     Some(ticket) => {
                         let pane = self.viewer.get_mut(ticket.pane).unwrap();
-                        pane.cwd = cwd;
-                        pane.viewer.agent_instance = Some(identity);
-                        self.actions.start(Action::Attach(name, ticket));
+                        pane.pending_agent.cwd = cwd;
+                        pane.pending_agent.instance = Some(identity);
+                        self.actions.start(Action::Attach(name, ticket, None));
                         ticket
                     }
                     None => {
@@ -390,7 +409,6 @@ impl App {
                 let ticket = self.viewer.reserve_at(anchor, place, None);
                 self.viewer.complete(ticket, None)?;
                 let pane = self.viewer.get_mut(ticket.pane).unwrap();
-                pane.cwd = Some(cwd.clone());
                 pane.viewer.start_shell(crate::viewer::Shell {
                     program: std::env::var("SHELL")
                         .ok()
@@ -427,7 +445,7 @@ impl App {
                 }
                 args.push("--".into());
                 args.extend(argv);
-                self.begin_start(anchor, place, args)?
+                self.begin_start(anchor, place, args, None)?
             }
         };
         if focus {
@@ -446,6 +464,7 @@ impl App {
         anchor: u64,
         place: Place,
         args: Vec<String>,
+        focus_intent: Option<u64>,
     ) -> Result<Ticket> {
         ensure!(self.viewer.get(anchor).is_some(), "target pane disappeared");
         let cwd = args
@@ -453,14 +472,11 @@ impl App {
             .find(|a| a[0] == "--cwd")
             .map(|a| a[1].clone());
         let ticket = self.viewer.reserve_at(anchor, place, args.get(1).cloned());
-        self.viewer.get_mut(ticket.pane).unwrap().starting = true;
-        self.viewer.get_mut(ticket.pane).unwrap().cwd = cwd;
-        self.viewer
-            .get_mut(ticket.pane)
-            .unwrap()
-            .viewer
-            .agent_instance = None;
-        self.actions.start(Action::Start(args, ticket));
+        let pane = self.viewer.get_mut(ticket.pane).unwrap();
+        pane.starting = true;
+        pane.pending_agent.cwd = cwd;
+        self.actions
+            .start(Action::Start(args, ticket, focus_intent));
         Ok(ticket)
     }
     pub(super) fn operation_update(
@@ -486,12 +502,9 @@ impl App {
             }
         }
     }
-    pub(super) fn command_ticket(&self, ticket: Ticket) -> bool {
-        self.records.iter().any(|r| r.ticket == Some(ticket))
-    }
     pub(super) fn close_snapshot(&self, target: CloseTarget) -> Result<Value> {
         let panes: Vec<_> = self.viewer.tabs.iter().flat_map(|tab| tab.panes.iter().filter(move |p| match target { CloseTarget::Pane(id) => p.id == id, CloseTarget::Tab(id) => tab.id == id, CloseTarget::All => true }))
-            .map(|p| json!({"pane":p.id,"revision":p.ticket().revision,"running_shell":p.viewer.shell_live(),"cwd":p.cwd,"shell":p.viewer.shell.as_ref().map(|s| &s.program),"agent":p.viewer.target(),"corral_instance":p.viewer.agent_instance})).collect();
+            .map(|p| json!({"pane":p.id,"revision":p.ticket().revision,"running_shell":p.viewer.shell_live(),"cwd":p.viewer.metadata.cwd,"shell":p.viewer.shell.as_ref().map(|s| &s.program),"agent":p.viewer.target(),"corral_instance":p.viewer.metadata.instance})).collect();
         ensure!(!panes.is_empty(), "close target disappeared");
         Ok(json!(panes))
     }
@@ -544,11 +557,12 @@ impl App {
                 let pane = self.viewer.get_mut(id).unwrap();
                 pane.viewer.close()?;
                 pane.viewer.shell = None;
-                pane.viewer.agent_instance = None;
+                pane.viewer.metadata.instance = None;
                 match replacement {
                     Replacement::Attach(name) => self.attach_at(id, name),
                     Replacement::Start(args) => {
-                        let ticket = self.begin_start(id, Place::Current, args)?;
+                        let ticket =
+                            self.begin_start(id, Place::Current, args, Some(self.input_revision))?;
                         if let Some(form) = &mut self.new_agent {
                             form.busy = Some(ticket);
                             form.error.clear();

@@ -1,5 +1,9 @@
 //! In-memory tabs. Stable pane ids and revisions bind asynchronous work to its initiator.
-use crate::{pty::Session, terminal::Size, viewer::Viewer};
+use crate::{
+    pty::Session,
+    terminal::Size,
+    viewer::{AgentMetadata, Viewer},
+};
 use anyhow::Result;
 use ratatui::layout::Rect;
 
@@ -46,7 +50,8 @@ pub struct Pane {
     reserved: bool,
     pub starting: bool,
     observed: bool,
-    pub cwd: Option<String>,
+    /// Target metadata during public start/status; the displayed session keeps its own.
+    pub pending_agent: AgentMetadata,
 }
 impl Pane {
     pub fn input_session(&self) -> Option<&Session> {
@@ -207,7 +212,7 @@ impl Terminals {
             reserved: false,
             starting: false,
             observed: false,
-            cwd: None,
+            pending_agent: AgentMetadata::default(),
         }
     }
     pub fn new_tab(&mut self) -> u64 {
@@ -287,6 +292,8 @@ impl Terminals {
             pane.requested = None;
             pane.reserved = false;
             pane.starting = false;
+            pane.pending_agent = AgentMetadata::default();
+            pane.viewer.cancel_pending();
             if pane.viewer.showing.as_deref() == Some(name) {
                 pane.viewer.select(name.into())?;
             }
@@ -374,6 +381,7 @@ impl Terminals {
         pane.requested = name;
         pane.reserved = true;
         pane.starting = false;
+        pane.pending_agent = AgentMetadata::default();
         pane.viewer.cancel_pending();
         Ticket {
             pane: id,
@@ -399,9 +407,10 @@ impl Terminals {
         pane.requested = None;
         pane.reserved = false;
         pane.starting = false;
+        let metadata = std::mem::take(&mut pane.pending_agent);
         if let Some(name) = name {
             pane.observed = false;
-            pane.viewer.select(name)?;
+            pane.viewer.select_agent(name, metadata)?;
         }
         Ok(true)
     }

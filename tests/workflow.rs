@@ -2472,3 +2472,360 @@ fn control_socket_is_private_and_slow_clients_do_not_block_terminal_input() {
         "instance_unavailable"
     );
 }
+
+#[test]
+fn t20_rework_failed_current_start_preserves_original_identity() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let caller = [("CORRAL_NAME", "p/a"), ("CORRAL_INSTANCE", "abcdef123")];
+    let before = h.ctl_as(&["inspect"], &caller);
+    assert!(before["caller"]["pane"].is_u64(), "{before}");
+    std::fs::write(h.dir.path().join("fail-start"), "").unwrap();
+    h.send(b"\x1dn\x13");
+    h.see("synthetic start failed");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    let after = h.ctl_as(&["inspect"], &caller);
+    h.send(b"\x1b[ZA");
+    h.event("input p/a 41");
+    h.quit();
+    assert_eq!(
+        after["caller"]["pane"], before["caller"]["pane"],
+        "original live attach lost its caller identity"
+    );
+    for field in ["cwd", "corral_instance", "agent", "state"] {
+        assert_eq!(
+            after["tabs"][0]["panes"][0][field], before["tabs"][0]["panes"][0][field],
+            "{field}"
+        );
+    }
+}
+#[test]
+fn t20_rework_cancelled_picker_new_preserves_hidden_agents_draft() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"n");
+    h.click("Regular");
+    h.click("Name");
+    h.send(b"\x15preserve-my-draft");
+    h.see("preserve-my-draft");
+    h.click("Advanced");
+    h.click("Command");
+    h.send(b"\x15program 'draft argument'\tdraft prompt");
+    h.see("draft prompt");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.see("Create agent");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.send(b"\x1dn");
+    h.see("Create agent");
+    let retained = ["preserve-my-draft", "draft argument", "draft prompt"]
+        .iter()
+        .all(|text| h.contents().contains(text));
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.quit();
+    assert!(
+        retained,
+        "cancelled picker overwrote the original Agents New draft"
+    );
+}
+#[test]
+fn t20_rework_delayed_picker_attach_preserves_later_agents_focus() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "p/b");
+    h.see("Attaching p/b");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    let before = h.ctl(&["inspect"]);
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.see("p/b READY");
+    let after = h.ctl(&["inspect"]);
+    h.quit();
+    assert_eq!(
+        after["focus"], before["focus"],
+        "async completion stole the later Agents focus"
+    );
+}
+
+#[test]
+fn t20_rework_failed_attach_does_not_report_display_complete() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("fail-attach"), "").unwrap();
+    let start = h.ctl(&[
+        "open",
+        "--relative-to",
+        "active",
+        "--place",
+        "right",
+        "--agent",
+        "p/b",
+    ]);
+    assert_eq!(start["accepted"], true, "{start}");
+    h.event("attach p/b");
+    h.until(|h| {
+        let v = h.ctl(&["inspect"]);
+        matches!(
+            v["tabs"][0]["panes"][1]["state"].as_str(),
+            Some("failed" | "disconnected")
+        )
+    });
+    let result = h.operation(&start);
+    h.quit();
+    assert_ne!(
+        result["state"], "complete",
+        "failed corral attach was recorded as display complete"
+    );
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["exit_code"], 1, "{result}");
+}
+
+#[test]
+fn t20_rework_failed_status_and_reclaim_preserve_displayed_metadata() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let caller = [("CORRAL_NAME", "p/a"), ("CORRAL_INSTANCE", "abcdef123")];
+    let before = h.ctl_as(&["inspect"], &caller);
+    let other = h.dir.path().join("t20-other-cwd");
+    std::fs::create_dir(&other).unwrap();
+    std::fs::write(
+        h.dir.path().join("metadata.json"),
+        serde_json::json!({
+            "p/b": {"cwd":other,"instance":"other-instance"},
+            "p/taken": {"cwd":other,"instance":"taken-instance"}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    h.send(b"\x1djj");
+    h.see("t20-other-cwd"); // Public listing has absorbed the distinct target metadata.
+    h.send(b"\r");
+    h.see("attached elsewhere");
+    let failed = h.ctl_as(&["inspect"], &caller);
+    assert_eq!(failed["caller"]["pane"], before["caller"]["pane"]);
+    for field in ["cwd", "corral_instance", "agent", "state"] {
+        assert_eq!(
+            failed["tabs"][0]["panes"][0][field], before["tabs"][0]["panes"][0][field],
+            "{field}"
+        );
+    }
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"k\r");
+    h.see("attaching p/b");
+    h.send(b"k\r");
+    h.see("Input ▸ p/a");
+    let reclaimed = h.ctl_as(&["inspect"], &caller);
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.send(b"A");
+    h.event("input p/a 41");
+    assert_eq!(reclaimed["caller"]["pane"], before["caller"]["pane"]);
+    assert_eq!(
+        reclaimed["tabs"][0]["panes"][0]["cwd"],
+        before["tabs"][0]["panes"][0]["cwd"]
+    );
+    h.quit();
+    assert!(!h.log("events").contains("attach p/b"));
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn t20_rework_reclaimed_start_preserves_original_metadata_after_late_result() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let caller = [("CORRAL_NAME", "p/a"), ("CORRAL_INSTANCE", "abcdef123")];
+    let before = h.ctl_as(&["inspect"], &caller);
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    h.send(b"\x1dn\x13");
+    h.event("start agents/main");
+    h.see("Starting…");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    h.send(b"\r");
+    h.see("Input ▸ p/a");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    h.see("target closed or replaced");
+    let after = h.ctl_as(&["inspect"], &caller);
+    h.send(b"A");
+    h.event("input p/a 41");
+    h.quit();
+    assert_eq!(after["caller"]["pane"], before["caller"]["pane"]);
+    assert_eq!(
+        after["tabs"][0]["panes"][0]["cwd"],
+        before["tabs"][0]["panes"][0]["cwd"]
+    );
+    assert!(!h.log("events").contains("attach agents/main-actual"));
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn t20_rework_completed_picker_new_restores_hidden_agents_draft() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"n");
+    h.click("Regular");
+    h.click("Name");
+    h.send(b"\x15original-draft");
+    h.see("original-draft");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.see("Create agent");
+    h.send(b"\x13");
+    h.see("agents/main-actual READY");
+    h.send(b"\x1dn");
+    h.see("Create agent");
+    h.see("original-draft");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.quit();
+    assert_eq!(h.log("start-args").lines().count(), 1);
+}
+
+#[test]
+fn t20_rework_late_picker_start_does_not_clear_reopened_agents_draft() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"n");
+    h.click("Regular");
+    h.click("Name");
+    h.send(b"\x15original-draft");
+    h.see("original-draft");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.send(b"\x13");
+    h.event("start agents/main");
+    h.see("Starting…");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    h.send(b"\x1dn");
+    h.see("original-draft");
+    h.click("Name");
+    h.send(b"\x15original-draft-edited");
+    h.see("original-draft-edited");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    h.until(|h| h.ctl(&["inspect"])["tabs"][1]["panes"][0]["state"] == "running");
+    h.see("original-draft-edited");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.quit();
+}
+
+#[test]
+fn t20_rework_delayed_agents_attach_preserves_later_agents_focus() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\r");
+    h.see("attaching p/a");
+    h.send(b"\x1d"); // Explicit focus intent, even though Focus is already Agents.
+    h.see("Input ▸ Agents");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.see("p/a READY");
+    let after = h.ctl(&["inspect"]);
+    h.send(b"n");
+    h.see("Create agent");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Create agent"));
+    h.quit();
+    assert_eq!(after["focus"], "agents");
+    assert!(!h.log("events").contains("input p/a 6e"));
+}
+
+#[test]
+fn t20_rework_completed_request_tracks_late_attach_exit_and_closed_target() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    let start = h.ctl(&[
+        "open",
+        "--relative-to",
+        "active",
+        "--place",
+        "right",
+        "--agent",
+        "p/b",
+        "--focus",
+    ]);
+    assert_eq!(h.operation(&start)["pty"], "running");
+    h.see("p/b READY");
+    h.send(b"X");
+    h.until(|h| h.ctl(&["inspect"])["tabs"][0]["panes"][1]["state"] == "failed");
+    let result = h.operation(&start);
+    assert_eq!(result["state"], "failed", "{result}");
+    assert_eq!(result["pty"], "failed");
+    assert_eq!(result["exit_code"], 1);
+    let again = h.ctl(&[
+        "open",
+        "--relative-to",
+        "active",
+        "--place",
+        "down",
+        "--agent",
+        "p/a",
+    ]);
+    assert_eq!(h.operation(&again)["pty"], "running");
+    let pane = again["pane"].as_u64().unwrap().to_string();
+    let closed = h.ctl(&[
+        "close",
+        "--instance",
+        again["instance"].as_str().unwrap(),
+        "--pane",
+        &pane,
+    ]);
+    assert_eq!(closed["ok"], true, "{closed}");
+    let closed_result = h.operation(&again);
+    assert_eq!(closed_result["state"], "target_invalid", "{closed_result}");
+    assert_ne!(closed_result["pty"], "running");
+    assert_eq!(h.operation(&start)["exit_code"], 1);
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn t20_rework_hidden_busy_agents_draft_keeps_its_own_start_result() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    std::fs::write(h.dir.path().join("fail-start"), "").unwrap();
+    h.send(b"n");
+    h.click("Regular");
+    h.click("Name");
+    h.send(b"\x15busy-original\x13");
+    h.event("start agents/busy-original");
+    h.see("Starting…");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.see("Create agent");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    // Inspect is serviced after action results, so the failed reservation acknowledges
+    // that the original form's result has arrived while the temporary form is open.
+    h.until(|h| h.ctl(&["inspect"])["tabs"][0]["panes"][0]["state"] == "disconnected");
+    assert!(!h.popup("New agent").contains("synthetic start failed"));
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    h.send(b"\x1dn");
+    h.see("busy-original");
+    h.see("synthetic start failed");
+    h.see("Create agent"); // Original busy Ticket cleared, allowing retry.
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ New agent"));
+    h.quit();
+}

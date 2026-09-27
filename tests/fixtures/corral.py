@@ -23,9 +23,13 @@ def labels():
     path = root / 'labels.json'
     return json.loads(path.read_text()) if path.exists() else {}
 
+def metadata(name):
+    path = root / 'metadata.json'
+    return json.loads(path.read_text()).get(name, {}) if path.exists() else {}
+
 log(verb + ' ' + name)
 if verb == 'ls':
-    print(json.dumps({'agents': [dict(name=n, cwd='/tmp/demo', instance='abcdef123', kind='claude') for n in agents()]}))
+    print(json.dumps({'agents': [dict(name=n, cwd=metadata(n).get('cwd', '/tmp/demo'), instance=metadata(n).get('instance', 'abcdef123'), kind='claude') for n in agents()]}))
 elif verb == 'start':
     with (root / 'start-args').open('a') as f:
         f.write(json.dumps(sys.argv[1:]) + '\n')
@@ -49,7 +53,7 @@ elif verb == 'status':
         print(json.dumps({'ok': False, 'error': 'not_found'}))
         sys.exit(1)
     attached = int((root / name.replace('/', '-')).exists() or name == 'p/taken')
-    print(json.dumps(dict(ok=True, name=name, instance='abcdef123', kind='claude', state=agents()[name], attached=attached, title='Synthetic title', last_input_source='human', last_output=100, turn_started=100, labels=labels().get(name, {}))))
+    print(json.dumps(dict(ok=True, name=name, instance=metadata(name).get('instance', 'abcdef123'), kind='claude', state=agents()[name], attached=attached, title='Synthetic title', last_input_source='human', last_output=100, turn_started=100, labels=labels().get(name, {}))))
 elif verb == 'reply':
     print(json.dumps(dict(ok=True, text='REPLY ' + name + '\n' + '\n'.join('line ' + str(i) for i in range(60)))))
 elif verb == 'stop':
@@ -60,6 +64,9 @@ elif verb == 'stop':
     (root / 'agents.json').write_text(json.dumps(state))
     print(json.dumps(dict(ok=True)))
 elif verb == 'attach':
+    if (root / 'fail-attach').exists():
+        print('synthetic attach transport failure', flush=True)
+        sys.exit(1)
     marker = root / name.replace('/', '-')
     marker.write_text(str(os.getpid()))
     tty.setraw(0)
@@ -82,6 +89,9 @@ elif verb == 'attach':
         if not data:
             break
         log('input ' + name + ' ' + data.hex())
+        if data == b'X':
+            marker.unlink(missing_ok=True)
+            sys.exit(1)
         os.write(1, b'INPUT RECEIVED\r\n')
         if data == b'C':
             os.write(1, b'\x1b[31;48;2;9;8;7mAGENT COLORS\x1b[0m\r\n')
