@@ -61,6 +61,7 @@ fn render(
                     panes,
                     focus,
                     showing: Some("demo/main"),
+                    local: &["demo/main".to_string()],
                     viewer: None,
                     queue: q,
                     viewer_note: "测试终端",
@@ -202,6 +203,7 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
     let (mut a, mut q) = fixture();
     a.agents[0].title = Some("FIRST-TITLE".into());
     a.agents[0].last_input_source = Some("human".into());
+    a.agents[0].cwd = Some("/tmp/first".into());
     a.agents.push(Agent {
         name: "demo/second".into(),
         kind: Some("claude".into()),
@@ -217,7 +219,7 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
         for (name, markers) in [
             (
                 "demo/main",
-                ["FIRST-TITLE", "abcdef", "/tmp/demo", "VIA human"],
+                ["FIRST-TITLE", "abcdef", "/tmp/first", "VIA human"],
             ),
             (
                 "demo/second",
@@ -250,7 +252,7 @@ fn each_agents_extra_info_stays_with_its_row_when_reply_opens() {
 }
 
 #[test]
-fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
+fn group_headings_and_gutters_replace_the_tree_and_highlight_only_the_selected_agent() {
     use saddle::theme;
     let (mut a, mut q) = fixture();
     a.agents[0].cwd = Some("/Users/example/Developer/work/demo".into());
@@ -269,44 +271,59 @@ fn repo_tree_keeps_siblings_connected_and_highlights_only_the_selected_agent() {
         },
     ]);
     for by_state in [false, true] {
-        a.by_state = by_state;
+        a.by_name = !by_state;
         let (buffer, hits) = render(160, 100, &mut a, &mut q, Focus::Agents);
         let output = text(&buffer);
-        assert!(output.contains("…/work/demo"), "{output}");
-        for label in ["SOURCE ", "DIR ", "TITLE ", "/Users/example"] {
-            assert!(!output.contains(label), "{label}: {output}");
+        // The directory repeats the group, so only its parent shows.
+        assert!(output.contains("…/work/ "), "{output}");
+        let panel = agents_lines(&buffer).join("\n");
+        for label in ["SOURCE ", "DIR ", "TITLE ", "/Users/example", "├", "└"] {
+            assert!(!panel.contains(label), "{label}: {panel}");
         }
         assert!(output.contains("Review changes"));
         let headline = |name: &str| hits.agents.iter().find(|(_, n)| n == name).unwrap().0;
         let first = if by_state { "demo/review" } else { "demo/main" };
         let last = if by_state { "demo/main" } else { "demo/review" };
-        assert_eq!(buffer[(2, headline(first))].symbol(), "├");
-        assert_eq!(buffer[(2, headline(last))].symbol(), "└");
-        assert_eq!(buffer[(2, headline(first) + 1)].symbol(), "│");
-        assert_eq!(buffer[(2, headline("other/main"))].symbol(), "└");
+        // A group heading sits right above its first agent; entries follow without gaps and
+        // groups are one blank row apart.
+        let lines: Vec<_> = output.lines().collect();
+        assert!(lines[usize::from(headline(first)) - 1].contains("demo/ ─"));
+        let first_rows = hits.agents.iter().filter(|(_, n)| n == first).count() as u16;
+        assert_eq!(headline(last), headline(first) + first_rows);
+        let last_rows = hits.agents.iter().filter(|(_, n)| n == last).count() as u16;
+        assert_eq!(headline("other/main"), headline(last) + last_rows + 2);
         for (y, name) in &hits.agents {
+            let selected = name == "demo/main";
+            assert_eq!(buffer[(2, *y)].symbol(), if selected { "┃" } else { "│" });
+            assert_eq!(
+                buffer[(2, *y)].fg,
+                if selected {
+                    theme::AGENTS_ACCENT
+                } else {
+                    theme::AGENTS_FAINT
+                }
+            );
             assert_eq!(
                 buffer[(45, *y)].bg,
-                if name == "demo/main" {
+                if selected {
                     theme::AGENT_SELECTED
                 } else {
-                    ratatui::style::Color::Reset
+                    theme::AGENTS_BG
                 }
             );
         }
-        assert!(output.contains("‹Attach") || output.contains("‹Attached"));
+        assert!(output.contains("[Attached]"), "{output}");
     }
     a.follow = false;
     a.top = 2;
-    a.by_state = false;
+    a.by_name = true;
     let (buffer, _) = render(80, 20, &mut a, &mut q, Focus::Agents);
     let output = text(&buffer);
     assert!(
         output.contains("Agents · 3") && output.contains("demo/ · ↑"),
         "{output}"
     );
-    assert!(output.contains("…/work/demo"), "{output}");
-    for button in ["‹Attached›", "‹New n›", "‹Sort s›", "‹Stop x›"] {
+    for button in ["[Attached]", "n New", "s Name", "x Stop", "z Fold"] {
         assert!(output.contains(button), "{output}");
     }
     assert!(!output.contains("Reply r"));
@@ -319,11 +336,11 @@ fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_st
     use saddle::theme;
     use unicode_width::UnicodeWidthStr;
     for (kind, label, color) in [
-        ("claude", "✳ claude", Color::Rgb(0xd9, 0x77, 0x57)),
-        ("codex", ">_ codex", Color::Rgb(0x8e, 0xd9, 0xc1)),
+        ("claude", "✳ claude", Color::Rgb(0xe2, 0x83, 0x5e)),
+        ("codex", ">_ codex", Color::Rgb(0x79, 0xd4, 0xb4)),
         ("pi", "π pi", Color::Rgb(0xff, 0xff, 0xff)),
         ("omp", "π omp", Color::Rgb(0xa8, 0x55, 0xf7)),
-        ("custom", "custom", theme::MUTED),
+        ("custom", "custom", theme::AGENTS_DIM),
     ] {
         for selected in [false, true] {
             let (mut a, mut q) = fixture();
@@ -354,22 +371,28 @@ fn agent_type_marks_and_names_share_brand_color_without_changing_selection_or_st
                     if selected {
                         theme::AGENT_SELECTED
                     } else {
-                        Color::Reset
+                        theme::AGENTS_BG
                     }
                 );
             }
             assert!(line.contains("working"), "{line}");
-            assert!(line.contains("◉ 1s"), "{line}");
+            assert!(line.contains("⦿ 1s"), "{line}");
             let state = 1 + line[..line.find("working").unwrap()].width() as u16;
-            assert_eq!(buffer[(state, y)].fg, theme::AGENT_WORKING);
+            assert_eq!(buffer[(state, y)].fg, theme::AGENTS_BLUE);
         }
     }
 }
 
 #[test]
 fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim() {
-    use ratatui::style::Color;
-    for state in ["working", "idle", "blocked", "starting", "unknown"] {
+    // Public states keep their meaning; blocked reads as waiting in Agents.
+    for (state, shown) in [
+        ("working", "working"),
+        ("idle", "idle"),
+        ("blocked", "waiting"),
+        ("starting", "starting"),
+        ("unknown", "unknown"),
+    ] {
         let (mut a, mut q) = fixture();
         a.agents[0].state = Some(state.into());
         a.agents[0].last_tool = Some("读取文件".into());
@@ -380,7 +403,16 @@ fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim()
             for x in panes.agents.x..panes.agents.right() {
                 let cell = &buffer[(x, y)];
                 chrome.push_str(cell.symbol());
-                assert!(cell.bg == Color::Reset || cell.bg == saddle::theme::AGENT_SELECTED);
+                // A wide character's second cell is drawn with the character itself.
+                let continuation = x > panes.agents.x
+                    && unicode_width::UnicodeWidthStr::width(buffer[(x - 1, y)].symbol()) == 2;
+                assert!(
+                    continuation
+                        || cell.bg == saddle::theme::AGENTS_BG
+                        || cell.bg == saddle::theme::AGENT_SELECTED,
+                    "{x},{y} {:?}",
+                    cell.bg
+                );
             }
         }
         // Buffer wide-cell continuations are spaces, so remove them for this language check.
@@ -393,7 +425,7 @@ fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim()
                 .any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
             "{chrome}"
         );
-        assert!(chrome.contains(state), "{chrome}");
+        assert!(chrome.contains(shown), "{chrome}");
         assert!(!chrome.contains("Reply") && hits.reply.is_empty());
         assert!(text(&buffer).contains("Input ▸ Agents"));
     }
@@ -418,17 +450,17 @@ fn agent_totals_and_repo_counts_stay_visible_and_aligned() {
         },
     ]);
     for by_state in [false, true] {
-        a.by_state = by_state;
+        a.by_name = !by_state;
         let (buffer, hits) = render(160, 100, &mut a, &mut q, Focus::Agents);
         let output = text(&buffer);
         assert!(
-            output.lines().next().unwrap().contains("Agents · 3"),
+            output.lines().nth(1).unwrap().contains("Agents · 3"),
             "{output}"
         );
         for (repo, count) in [("demo/", "2"), ("other/", "1")] {
             let y = output
                 .lines()
-                .position(|line| line.starts_with(&format!("┃{repo}")))
+                .position(|line| line.starts_with(&format!("┃ {repo}")))
                 .unwrap() as u16;
             assert_eq!(buffer[(hits.list.right() - 3, y)].symbol(), "(");
             assert_eq!(buffer[(hits.list.right() - 2, y)].symbol(), count);
@@ -449,38 +481,160 @@ fn agent_totals_and_repo_counts_stay_visible_and_aligned() {
 }
 
 #[test]
-fn agent_status_colors_are_distinct_and_bold() {
-    use ratatui::style::{Color, Modifier};
+fn agent_states_have_the_designed_dots_colors_labels_and_activity() {
+    use ratatui::style::Modifier;
+    use saddle::theme as t;
     use unicode_width::UnicodeWidthStr;
-    for (state, color) in [
-        ("working", Color::Rgb(0x7f, 0xb4, 0xee)),
-        ("idle", Color::Rgb(0x9c, 0xbd, 0x80)),
-        ("blocked", Color::Rgb(0xe6, 0xb5, 0x66)),
-        ("stalled", Color::Rgb(0xe7, 0x9b, 0x65)),
-        ("error", Color::Rgb(0xef, 0x81, 0x74)),
-        ("starting", Color::Rgb(0xb0, 0xa1, 0xd8)),
+    // (case, dot, label, color, activity line)
+    for (case, dot, label, color, activity) in [
+        (
+            "waiting",
+            "?",
+            "waiting",
+            t::AGENTS_YELLOW,
+            Some("ASK waiting for input"),
+        ),
+        (
+            "error",
+            "!",
+            "error",
+            t::AGENTS_RED,
+            Some("ERR Synthetic error"),
+        ),
+        (
+            "working",
+            "◐",
+            "working",
+            t::AGENTS_BLUE,
+            Some("DOING 读取文件"),
+        ),
+        ("idle", "○", "idle", t::AGENTS_GREEN, None),
+        ("exited", "✕", "exited", t::AGENTS_FAINT, None),
+        // Extra public states keep their own recognisable look.
+        (
+            "stalled",
+            "▲",
+            "stalled",
+            t::AGENT_STALLED,
+            Some("DOING 读取文件"),
+        ),
+        ("starting", "◌", "starting", t::AGENT_STARTING, None),
+        ("unknown", "·", "unknown", t::AGENTS_DIM, None),
     ] {
         for selected in [false, true] {
             let (mut a, mut q) = fixture();
             a.selected = selected.then(|| "demo/main".into());
-            a.agents[0].state = Some(state.into());
-            if state == "stalled" {
-                a.agents[0].state = Some("working".into());
+            a.agents[0].last_tool = Some("读取文件".into());
+            a.agents[0].state = Some(
+                match case {
+                    "waiting" => "blocked",
+                    "stalled" | "error" => "working",
+                    other => other,
+                }
+                .into(),
+            );
+            if case == "stalled" {
                 a.agents[0].last_output = Some(-21.0);
-            } else if state == "error" {
+            } else if case == "error" {
                 a.agents[0].error = Some("Synthetic error".into());
             }
             let (buffer, hits) = render(160, 48, &mut a, &mut q, Focus::Agents);
             let output = text(&buffer);
             let y = hits.agents[0].0;
             let row = output.lines().nth(y as usize).unwrap();
-            let start = row[..row.find(state).unwrap()].width() as u16;
-            for x in start..start + state.len() as u16 {
-                assert_eq!(buffer[(x, y)].fg, color, "{state}");
+            // The dot follows the gutter and its padding; working cycles ◐◓◑◒.
+            let shown = buffer[(4, y)].symbol();
+            if case == "working" {
+                assert!("◐◓◑◒".contains(shown), "{row}");
+            } else {
+                assert_eq!(shown, dot, "{case}: {row}");
+            }
+            assert_eq!(buffer[(4, y)].fg, color, "{case}");
+            let start = row[..row.find(label).expect(row)].width() as u16;
+            for x in start..start + label.len() as u16 {
+                assert_eq!(buffer[(x, y)].fg, color, "{case}");
                 assert!(buffer[(x, y)].modifier.contains(Modifier::BOLD));
+            }
+            let name = &buffer[(6, y)];
+            assert_eq!(
+                name.fg,
+                if case == "exited" {
+                    t::AGENTS_FAINT
+                } else {
+                    t::AGENTS_TEXT
+                },
+                "{case}"
+            );
+            if case == "working" {
+                // Braille spinner in purple before the label, and a blue time.
+                assert_eq!(buffer[(start - 2, y)].fg, t::AGENTS_PURPLE);
+                assert!("⣾⣽⣻⢿⡿⣟⣯⣷".contains(buffer[(start - 2, y)].symbol()));
+            }
+            let rows: String = hits
+                .agents
+                .iter()
+                .map(|(y, _)| output.lines().nth(*y as usize).unwrap())
+                .collect();
+            match activity {
+                Some(line) => {
+                    assert!(rows.contains(line), "{case}: {rows}");
+                    let label = line.split(' ').next().unwrap();
+                    let (x, y) = find(&buffer, label).unwrap();
+                    assert_eq!(buffer[(x, y)].fg, color, "{case}");
+                }
+                None => assert!(
+                    !["ASK", "ERR", "DOING"].iter().any(|l| rows.contains(l)),
+                    "{case}: {rows}"
+                ),
             }
         }
     }
+}
+
+#[test]
+fn working_spinners_advance_at_their_own_rates() {
+    let (mut a, mut q) = fixture();
+    let frame = |a: &mut agents::Panel, q: &mut queue::Panel, now: f64| {
+        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
+        let panes = Panes::new(Rect::new(0, 0, 160, 40), &Config::default());
+        terminal
+            .draw(|frame| {
+                ui::draw(
+                    frame,
+                    a,
+                    View {
+                        colors: &saddle::theme::Theme::default(),
+                        panes,
+                        focus: Focus::Agents,
+                        showing: None,
+                        local: &[],
+                        viewer: None,
+                        queue: q,
+                        viewer_note: "",
+                        reply: "",
+                        now,
+                        pointer: &Pointer::default(),
+                    },
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let y = (0..40).find(|y| buffer[(6, *y)].symbol() == "m").unwrap();
+        let spinner = (6..50)
+            .find(|x| "⣾⣽⣻⢿⡿⣟⣯⣷".contains(buffer[(*x, y)].symbol()))
+            .unwrap();
+        (
+            buffer[(4, y)].symbol().to_owned(),
+            buffer[(spinner, y)].symbol().to_owned(),
+        )
+    };
+    // Braille steps every 120 ms and the dot every 360 ms.
+    let start = frame(&mut a, &mut q, 100.1);
+    assert_eq!(frame(&mut a, &mut q, 100.15), start);
+    let braille = frame(&mut a, &mut q, 100.23);
+    assert_eq!(braille.0, start.0);
+    assert_ne!(braille.1, start.1);
+    assert_ne!(frame(&mut a, &mut q, 100.47).0, start.0);
 }
 
 #[test]
@@ -488,14 +642,16 @@ fn agents_scrollbar_reaches_the_bottom_when_the_last_row_is_visible() {
     for (extra, height) in [(3, 20), (12, 40)] {
         let (mut a, mut q) = fixture();
         for index in 0..extra {
+            // The instance line is each entry's last row.
             a.agents.push(Agent {
                 name: format!("demo/worker-{index:02}"),
-                title: Some(format!("END-{index:02}")),
+                instance: Some(format!("END-{index:02}")),
                 ..Default::default()
             });
         }
         a.follow = false;
         a.top = usize::MAX;
+        a.fold = Some(false);
         let (buffer, hits) = render(160, height, &mut a, &mut q, Focus::Agents);
         let output = text(&buffer);
         assert!(
@@ -524,7 +680,7 @@ fn multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent() {
         kind: Some(kind.into()),
         state: Some("idle".into()),
         instance: Some("abcdef123".into()),
-        cwd: Some("/tmp/demo".into()),
+        cwd: Some("/tmp/work".into()),
         title: Some(format!("{kind} demo ready")),
         last_input_source: Some("human".into()),
         ..Default::default()
@@ -545,17 +701,23 @@ fn multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent() {
             let info: String = rows
                 .iter()
                 .map(|y| {
-                    (hits.list.x + 6..hits.list.right())
+                    (hits.list.x + 2..hits.list.right())
                         .map(|x| buffer[(x, *y)].symbol())
                         .collect::<String>()
                 })
                 .collect();
+            // Narrow panels show the type's mark alone.
+            let kind = match agent.kind.as_deref().unwrap() {
+                "claude" if width == 80 => "✳",
+                "omp" | "pi" if width == 80 => "π",
+                kind => kind,
+            };
             for field in [
-                agent.kind.as_deref().unwrap(),
+                kind,
                 "abcdef",
                 "ATT 0",
                 "VIA human",
-                "/tmp/demo",
+                "/tmp/work",
                 agent.title.as_deref().unwrap(),
             ] {
                 assert!(
@@ -567,11 +729,10 @@ fn multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent() {
                 let name = agent.name.strip_prefix("demo/").unwrap();
                 assert!(output.lines().nth(rows[0] as usize).unwrap().contains(name));
                 assert_eq!(info.matches(name).count(), 1);
-                assert_eq!(rows.len(), 5); // main, identity, path, Git line, title
+                assert_eq!(rows.len(), 5); // main, title, Git line, path, identity
             }
             if let Some(end) = previous_end {
-                assert_eq!(rows[0], end + 2); // Exactly one unselected, non-clickable spacer.
-                assert!(!hits.agents.iter().any(|(y, _)| *y == end + 1));
+                assert_eq!(rows[0], end + 1); // Entries of a group follow without spacers.
             }
             previous_end = rows.last().copied();
         }
@@ -637,7 +798,7 @@ fn render_queue(q: &mut queue::Panel, width: u16, height: u16) -> Buffer {
 fn assert_label_color(buffer: &Buffer, label: &str, color: ratatui::style::Color) {
     for y in 0..buffer.area.height {
         for x in 0..buffer.area.width {
-            if x as usize + label.len() > buffer.area.width as usize {
+            if x as usize + label.chars().count() > buffer.area.width as usize {
                 continue;
             }
             if label
@@ -645,7 +806,7 @@ fn assert_label_color(buffer: &Buffer, label: &str, color: ratatui::style::Color
                 .enumerate()
                 .all(|(i, c)| buffer[(x + i as u16, y)].symbol() == c.to_string())
             {
-                for i in 0..label.len() {
+                for i in 0..label.chars().count() {
                     assert_eq!(buffer[(x + i as u16, y)].fg, color, "{label}");
                 }
                 return;
@@ -1077,6 +1238,7 @@ fn selecting_an_agent_keeps_its_effort_icon_tier() {
     };
     a.selected = Some("demo/other".into());
     let unselected = icon(&mut a, &mut q, Focus::Viewer);
+    assert_eq!(unselected[0].0, "⣴");
     a.selected = Some("demo/high".into());
     for focus in [Focus::Agents, Focus::Viewer] {
         assert_eq!(icon(&mut a, &mut q, focus), unselected, "{focus:?}");
@@ -1138,53 +1300,55 @@ fn git_summary_line_follows_each_agents_directory_and_wraps_when_narrow() {
     .into_iter()
     .map(|(cwd, s)| (cwd.to_string(), s))
     .collect();
+    a.fold = Some(false);
     let (buffer, hits) = render(160, 120, &mut a, &mut q, Focus::Agents);
     let screen = text(&buffer);
-    let row = |name: &str| hits.agents.iter().find(|(_, n)| n == name).unwrap().0;
     let line = |y: u16| {
-        (hits.list.x + 6..hits.list.right())
+        (hits.list.x + 4..hits.list.right())
             .map(|x| buffer[(x, y)].symbol())
             .collect::<String>()
     };
-    // Each agent's rows read top to bottom, with spaces dropped so wrapped lines join up.
-    let info = |name: &str| {
-        let rows: Vec<_> = hits.agents.iter().filter(|(_, n)| n == name).collect();
-        rows.iter()
+    let rows = |name: &str| -> Vec<String> {
+        hits.agents
+            .iter()
+            .filter(|(_, n)| n == name)
             .map(|(y, _)| line(*y))
-            .collect::<String>()
-            .replace(' ', "")
+            .collect()
     };
-    let compact = |s: &str| s.replace(' ', "");
-    // Agents sharing a worktree show the same numbers.
+    let git = |name: &str| -> String {
+        let rows = rows(name);
+        let at = rows.iter().position(|r| r.starts_with('⎇')).expect(&screen);
+        rows[at].clone()
+    };
+    // Agents sharing a worktree show the same numbers; ↑ counts commits beyond the base.
     for name in ["demo/dev", "demo/twin"] {
-        assert!(
-            info(name).contains(&compact("dev-t12 · C2(main) · +18 -4 · ?1")),
-            "{screen}"
-        );
+        let row = git(name);
+        assert!(row.starts_with("⎇ dev-t12 ↑2 main "), "{row}");
+        assert!(row.trim_end().ends_with("+18 -4 ?1"), "{row}");
     }
+    // A branch that repeats the agent's name shows only the mark.
+    let row = git("demo/main");
+    assert!(row.starts_with("⎇ ↑0 origin/main "), "{row}");
+    assert!(row.trim_end().ends_with("+0 -0 2 binary ?0"), "{row}");
+    let row = git("demo/odd");
+    assert!(row.starts_with("⎇ HEAD detached ↑— "), "{row}");
+    assert!(row.trim_end().ends_with("+— -— ?—"), "{row}");
     assert!(
-        screen.contains("dev-t12 · C2(main) · +18 -4 · ?1"),
+        rows("demo/gone")[1].starts_with("git unavailable"),
         "{screen}"
     );
-    let main = "main · C0(origin/main) · +0 -0 · 2 binary · ?0";
-    assert!(info("demo/main").contains(&compact(main)), "{screen}");
-    assert!(
-        !screen.contains(main),
-        "narrow panes wrap the line: {screen}"
-    );
-    assert!(
-        info("demo/odd").contains(&compact("HEAD detached · C— · +— -— · ?—")),
-        "{screen}"
-    );
-    assert!(info("demo/gone").contains("gitunavailable"), "{screen}");
-    assert!(info("demo/new").contains("git…"), "{screen}");
-    assert_label_color(&buffer, "+18", theme::AGENT_IDLE);
-    assert_label_color(&buffer, "-4", theme::AGENT_ERROR);
-    // The Git line sits right below the agent's own directory line.
-    let y = (row("demo/main")..)
-        .find(|y| line(*y).contains("/w/main"))
-        .unwrap();
-    assert!(line(y + 1).contains("C0(origin/main)"), "{screen}");
+    assert!(rows("demo/new")[1].starts_with("git …"), "{screen}");
+    let panel = agents_lines(&buffer).join("\n");
+    assert!(!panel.contains("C2(") && !panel.contains('↓'), "{panel}");
+    assert_label_color(&buffer, "+18", theme::AGENTS_GREEN);
+    assert_label_color(&buffer, "-4", theme::AGENTS_RED);
+    assert_label_color(&buffer, "↑2", theme::AGENTS_YELLOW);
+    assert_label_color(&buffer, "↑0", theme::AGENTS_FAINT);
+    assert_label_color(&buffer, "dev-t12", theme::AGENTS_BRANCH);
+    // The directory follows its Git line.
+    let main = rows("demo/main");
+    let at = main.iter().position(|r| r.starts_with('⎇')).unwrap();
+    assert!(main[at + 1].starts_with("/w/"), "{main:?}");
 }
 
 fn show_json() -> serde_json::Value {
@@ -1311,6 +1475,7 @@ fn task_tabs_mark_the_chosen_view_and_details_color_structured_states() {
                         panes: Panes::new(frame.area(), &Config::default()),
                         focus: Focus::Queue,
                         showing: Some("demo/main"),
+                        local: &["demo/main".to_string()],
                         viewer: None,
                         queue: &mut q,
                         viewer_note: "",
@@ -1591,11 +1756,11 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
 }
 
 #[test]
-fn selected_agent_has_no_side_marker_but_bold_name_and_background_on_every_line() {
-    use ratatui::style::{Color, Modifier};
+fn selected_agent_has_an_accent_gutter_and_background_on_every_line() {
+    use ratatui::style::Modifier;
     use saddle::theme;
     let (mut a, mut q) = fixture();
-    a.agents[0].title = Some("long title that must wrap ".repeat(12));
+    a.agents[0].title = Some("long title that must be cut ".repeat(12));
     a.agents.push(Agent {
         name: "demo/review".into(),
         state: Some("idle".into()),
@@ -1612,20 +1777,23 @@ fn selected_agent_has_no_side_marker_but_bold_name_and_background_on_every_line(
                 .collect()
         };
         let selected = rows("demo/main");
-        // Headline, identity, path, Git, and a title wrapped over several lines.
-        assert!(selected.len() >= 6, "{selected:?}");
+        // Headline, title (cut to one line), activity, Git, path and instance.
+        assert_eq!(selected.len(), 6, "{}", text(&buffer));
+        assert!(text(&buffer).contains("long title that must be cut long"));
         for &y in &selected {
-            assert_eq!(buffer[(1, y)].symbol(), " ");
-            assert_eq!(buffer[(1, y)].bg, theme::AGENT_SELECTED);
+            assert_eq!(buffer[(2, y)].symbol(), "┃");
+            assert_eq!(buffer[(2, y)].fg, theme::AGENTS_ACCENT);
+            assert_eq!(buffer[(2, y)].bg, theme::AGENTS_BG);
+            for x in 3..50 {
+                assert_eq!(buffer[(x, y)].bg, theme::AGENT_SELECTED, "{x},{y}");
+            }
         }
-        assert_eq!(buffer[(2, selected[1])].symbol(), "│");
-        let gap = selected.last().unwrap() + 1;
-        assert_eq!(buffer[(1, gap)].bg, Color::Reset);
-        assert!(buffer[(7, selected[0])].modifier.contains(Modifier::BOLD));
-        assert_eq!(buffer[(7, selected[0])].fg, theme::BRIGHT);
-        let other = rows("demo/review")[0];
-        assert!(!buffer[(7, other)].modifier.contains(Modifier::BOLD));
-        assert_eq!(buffer[(1, other)].bg, Color::Reset);
+        assert!(buffer[(6, selected[0])].modifier.contains(Modifier::BOLD));
+        for y in rows("demo/review") {
+            assert_eq!(buffer[(2, y)].symbol(), "│");
+            assert_eq!(buffer[(2, y)].fg, theme::AGENTS_FAINT);
+            assert_eq!(buffer[(10, y)].bg, theme::AGENTS_BG);
+        }
     }
 }
 
@@ -1653,6 +1821,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                         panes: Panes::new(frame.area(), &Config::default()),
                         focus: Focus::Viewer,
                         showing: None,
+                        local: &[],
                         viewer: None,
                         queue: &mut queue,
                         viewer_note: "",
@@ -1740,15 +1909,15 @@ fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
     let (mut a, mut q) = fixture();
     let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
     let screen = text(&buffer);
-    assert!(screen.contains("‹Tasks"), "{screen}");
+    assert!(screen.contains("Tasks · "), "{screen}");
     assert!(!screen.contains("T12345"), "{screen}");
     // The Agents border runs down to the status row.
     assert_eq!(buffer[(0, 46)].symbol(), "┗");
     let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
     let screen = text(&buffer);
-    let (x, y) = find(&buffer, " Tasks ").expect(&screen);
+    let (x, y) = find(&buffer, "┏ Tasks ").expect(&screen);
     assert!(
-        (12..=14).contains(&x) && y == 4,
+        (11..=13).contains(&x) && y == 4,
         "popup opens centered: {x},{y}"
     );
     // The list row and the selected task's text are both on screen, side by side.
@@ -1773,16 +1942,20 @@ fn closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors() {
         title: "Task".into(),
         ..Default::default()
     };
+    // The entry ends the Agents header row, inside the border and its padding.
     let entry = |a: &mut agents::Panel, q: &mut queue::Panel, width| {
         let (buffer, _) = render(width, 40, a, q, Focus::Agents);
-        let top: String = (0..width)
-            .map(|x| buffer[(x, 0)].symbol().to_owned())
+        let panes = Panes::new(buffer.area, &Config::default());
+        let top: String = (0..panes.agents.right())
+            .map(|x| buffer[(x, 1)].symbol().to_owned())
             .collect();
+        assert!(top.ends_with(" ┃"), "{top}");
         (buffer, top)
     };
     let mut q = queue::Panel::default();
-    let (_, top) = entry(&mut a, &mut q, 160);
-    assert!(top.contains("‹Tasks · Loading… Tab›"), "{top}");
+    let (buffer, top) = entry(&mut a, &mut q, 160);
+    assert!(top.contains("Tasks · Loading… Tab ┃"), "{top}");
+    assert_label_color(&buffer, "Tasks · ", t::AGENTS_DIM);
     for (snapshot, label, color) in [
         (
             Snapshot {
@@ -1824,13 +1997,13 @@ fn closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors() {
     ] {
         q.absorb(snapshot);
         let (buffer, top) = entry(&mut a, &mut q, 160);
-        assert!(top.contains(&format!("‹Tasks · {label} Tab›")), "{top}");
+        assert!(top.contains(&format!("Tasks · {label} Tab ┃")), "{top}");
         assert_label_color(&buffer, label, color);
     }
     // A failed read is shown as such, never as the last good state.
     q.read_error = Some("synthetic".into());
     let (buffer, top) = entry(&mut a, &mut q, 160);
-    assert!(top.contains("‹Tasks · Read failed Tab›"), "{top}");
+    assert!(top.contains("Tasks · Read failed Tab ┃"), "{top}");
     assert_label_color(&buffer, "Read failed", t::AGENT_ERROR);
     // Narrow Agents columns keep the status and drop the key hint first.
     q.read_error = None;
@@ -1839,7 +2012,7 @@ fn closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors() {
         ..Default::default()
     });
     let (_, top) = entry(&mut a, &mut q, 80);
-    assert!(top.contains("‹Tasks · Awaiting›"), "{top}");
+    assert!(top.contains("Tasks · Awaiting ┃"), "{top}");
 }
 
 #[test]
@@ -1875,4 +2048,497 @@ fn viewer_title_shows_the_public_role_label_or_agent_without_guessing() {
         assert!(screen.contains(title), "{screen}");
         assert!(!screen.contains("Viewer · "), "{screen}");
     }
+}
+
+/// The four agents of the 3a design sample: corral / drover / saddle ×2.
+fn spec_sample() -> agents::Panel {
+    use saddle::git::{Changes, Head, Summary};
+    let home = "/Users/example/Developer/personal_projs";
+    let mut a = agents::Panel {
+        follow: true,
+        ..Default::default()
+    };
+    let agent = |name: &str, kind: &str, state: &str, cwd: String, instance: &str| Agent {
+        name: name.into(),
+        kind: Some(kind.into()),
+        state: Some(state.into()),
+        cwd: Some(cwd),
+        instance: Some(instance.into()),
+        ..Default::default()
+    };
+    a.absorb(
+        vec![
+            Agent {
+                title: Some("✳ Claude Code".into()),
+                attached: 1,
+                last_input_source: Some("human".into()),
+                last_output: Some(89.0),
+                ..agent(
+                    "corral/main",
+                    "claude",
+                    "idle",
+                    format!("{home}/corral"),
+                    "160f6f01",
+                )
+            },
+            Agent {
+                title: Some("drover".into()),
+                last_input_source: Some("agent".into()),
+                last_output: Some(-500.0),
+                ..agent(
+                    "drover/main",
+                    "codex",
+                    "idle",
+                    format!("{home}/drover"),
+                    "be790d01",
+                )
+            },
+            Agent {
+                title: Some("⠪ t20-terminal-workspace".into()),
+                last_tool: Some("apply_patch".into()),
+                turn_started: Some(-380.0),
+                last_output: Some(100.0),
+                last_input_source: Some("send".into()),
+                ..agent(
+                    "saddle/dev-t20-workspace-1",
+                    "codex",
+                    "working",
+                    format!("{home}/saddle-worktrees/t20-terminal-workspace"),
+                    "b88a3701",
+                )
+            },
+            Agent {
+                last_output: Some(-20.0),
+                last_input_source: Some("send".into()),
+                ..agent(
+                    "saddle/main",
+                    "codex",
+                    "idle",
+                    format!("{home}/saddle"),
+                    "154fac01",
+                )
+            },
+        ],
+        None,
+        100.0,
+    );
+    let summary = |branch: &str, ahead: u64, base: &str, (added, deleted), untracked| {
+        Some(Summary {
+            head: Head::Branch(branch.into()),
+            ahead: Some((ahead, base.into())),
+            changes: Some(Changes {
+                added,
+                deleted,
+                binary: 0,
+            }),
+            untracked: Some(untracked),
+        })
+    };
+    a.git = [
+        (
+            format!("{home}/corral"),
+            summary("main", 0, "origin/main", (0, 0), 0),
+        ),
+        (
+            format!("{home}/drover"),
+            summary("main", 0, "origin/main", (0, 0), 1),
+        ),
+        (
+            format!("{home}/saddle-worktrees/t20-terminal-workspace"),
+            summary("t20-terminal-workspace", 0, "main", (127, 3), 3),
+        ),
+        (
+            format!("{home}/saddle"),
+            summary("main", 3, "origin/main", (0, 0), 0),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    a.select(Some("corral/main".into()));
+    a
+}
+/// Rows of the Agents pane, one string per screen row.
+fn agents_lines(buffer: &Buffer) -> Vec<String> {
+    use unicode_width::UnicodeWidthStr;
+    let panes = Panes::new(buffer.area, &Config::default());
+    (panes.agents.y..panes.agents.bottom())
+        .map(|y| {
+            let mut line = String::new();
+            let mut x = panes.agents.x;
+            while x < panes.agents.right() {
+                let symbol = buffer[(x, y)].symbol();
+                line.push_str(symbol);
+                x += symbol.width().max(1) as u16;
+            }
+            line
+        })
+        .collect()
+}
+
+/// Renders the Agents pane of `a` with `local` as this saddle's displayed agents.
+fn render_panel(width: u16, a: &mut agents::Panel, local: &[String]) -> (Buffer, ui::Hits) {
+    let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
+    let panes = Panes::new(Rect::new(0, 0, width, 40), &Config::default());
+    let mut hits = ui::Hits::default();
+    let mut q = queue::Panel::default();
+    terminal
+        .draw(|frame| {
+            hits = ui::draw(
+                frame,
+                a,
+                View {
+                    colors: &saddle::theme::Theme::default(),
+                    panes,
+                    focus: Focus::Agents,
+                    showing: local.first().map(String::as_str),
+                    local,
+                    viewer: None,
+                    queue: &mut q,
+                    viewer_note: "",
+                    reply: "",
+                    now: 100.0,
+                    pointer: &Pointer::default(),
+                },
+            );
+        })
+        .unwrap();
+    (terminal.backend().buffer().clone(), hits)
+}
+
+#[test]
+fn design_sample_fits_fifty_columns_without_wrapping() {
+    let mut a = spec_sample();
+    let (buffer, hits) = render_panel(160, &mut a, &["corral/main".into()]);
+    let panes = Panes::new(buffer.area, &Config::default());
+    assert_eq!(panes.agents.width - 2, 50);
+    let lines = agents_lines(&buffer);
+    let body: Vec<_> = lines[1..lines.len() - 1]
+        .iter()
+        .map(|l| l.trim_start_matches('┃').trim_end_matches('┃').to_owned())
+        .collect();
+    // Row for row as in the design (spinner frames as drawn at this instant).
+    let expected = [
+        " Agents · 4                  Tasks · Loading… Tab ",
+        " ──────────────────────────────────────────────── ",
+        " corral/ ──────────────────────────────────── (1) ",
+        " ┃ ○ main                ✳ claude idle      ⦿ 11s ",
+        " ┃   ✳ Claude Code                                ",
+        " ┃   ⎇ ↑0 origin/main                    +0 -0 ?0 ",
+        " ┃   …/personal_projs/                            ",
+        " ┃   160f6f · ATT 1 · VIA human                   ",
+        "                                                  ",
+        " drover/ ──────────────────────────────────── (1) ",
+        " │ ○ main                >_ codex idle        10m ",
+        " │   ⎇ ↑0 origin/main                    +0 -0 ?1 ",
+        " │   …/personal_projs/                            ",
+        " │   be790d · ATT 0 · VIA agent                   ",
+        "                                                  ",
+        " saddle/ ──────────────────────────────────── (2) ",
+        " │ ◓ dev-t20-workspace-1 >_ codex ⣽ working    0s ",
+        " │   ⠪ t20-terminal-workspace                     ",
+        " │   DOING apply_patch · 8m                       ",
+        " │   ⎇ t20-terminal-workspace ↑0 main  +127 -3 ?3 ",
+        " │   …/saddle-worktrees/t20-terminal-workspace    ",
+        " │   b88a37 · ATT 0 · VIA send                    ",
+        " │ ○ main                >_ codex idle         2m ",
+        " │   ⎇ ↑3 origin/main                    +0 -0 ?0 ",
+        " │   …/personal_projs/                            ",
+        " │   154fac · ATT 0 · VIA send                    ",
+    ];
+    for (i, line) in expected.iter().enumerate() {
+        assert_eq!(&body[i], line, "row {i}:\n{}", body.join("\n"));
+    }
+    assert!(
+        !body
+            .iter()
+            .any(|l| l.contains('…') && !l.contains("…/") && !l.contains("Loading…"))
+    );
+    let bar = &body[body.len() - 1];
+    assert_eq!(bar.trim_end(), " [Attached]  n New  s Sort  x Stop  z Fold");
+    assert_eq!(&body[body.len() - 2], expected[1]);
+    // Every row of an entry belongs to it; headings, blanks and rules take no clicks.
+    assert_eq!(hits.agents.len(), 5 + 4 + 6 + 4);
+    use saddle::theme as t;
+    assert_label_color(&buffer, "⦿ 11s", t::AGENTS_GREEN);
+    assert_label_color(&buffer, "ATT 1", t::AGENTS_GREEN);
+    assert_label_color(&buffer, "ATT 0", t::AGENTS_DIMMER);
+    assert_label_color(&buffer, "↑3", t::AGENTS_YELLOW);
+    // Group heading: accent name, faint line, dim count.
+    assert_eq!(buffer[(2, 3)].fg, t::AGENTS_ACCENT);
+    assert_eq!(buffer[(10, 3)].fg, t::AGENTS_FAINT);
+    assert_eq!(buffer[(47, 3)].fg, t::AGENTS_DIM);
+    assert_label_color(&buffer, "0s", t::AGENTS_BLUE);
+    assert_label_color(&buffer, "…/personal_projs/", t::AGENTS_DIM);
+}
+
+#[test]
+fn a_diff_too_wide_for_its_row_moves_whole_to_the_next_row_right_aligned() {
+    use saddle::git::Changes;
+    let mut a = spec_sample();
+    let cwd = a
+        .agents
+        .iter()
+        .find(|x| x.name == "saddle/dev-t20-workspace-1")
+        .unwrap()
+        .cwd
+        .clone()
+        .unwrap();
+    a.git.get_mut(&cwd).unwrap().as_mut().unwrap().changes = Some(Changes {
+        added: 12847,
+        deleted: 3291,
+        binary: 0,
+    });
+    a.git.get_mut(&cwd).unwrap().as_mut().unwrap().untracked = Some(128);
+    let (buffer, _) = render_panel(160, &mut a, &[]);
+    let lines = agents_lines(&buffer);
+    let at = lines
+        .iter()
+        .position(|l| l.contains("⎇ t20-terminal-workspace"))
+        .unwrap();
+    assert_eq!(
+        lines[at],
+        "┃ │   ⎇ t20-terminal-workspace ↑0 main             ┃"
+    );
+    let diff = "+12847 -3291 ?128";
+    assert_eq!(
+        lines[at + 1],
+        format!("┃ │{}{diff} ┃", " ".repeat(50 - 3 - diff.len()))
+    );
+    assert!(lines[at + 2].contains("…/saddle-worktrees/t20-terminal-workspace"));
+}
+
+#[test]
+fn selecting_saddle_main_highlights_only_that_entry() {
+    use saddle::theme as t;
+    let mut a = spec_sample();
+    a.select(Some("saddle/main".into()));
+    let (buffer, hits) = render_panel(160, &mut a, &[]);
+    for (y, name) in &hits.agents {
+        let selected = name == "saddle/main";
+        assert_eq!(buffer[(2, *y)].symbol(), if selected { "┃" } else { "│" });
+        for x in 3..50 {
+            assert_eq!(
+                buffer[(x, *y)].bg,
+                if selected {
+                    t::AGENT_SELECTED
+                } else {
+                    t::AGENTS_BG
+                },
+                "{name} at {x},{y}"
+            );
+        }
+    }
+    // The other saddle entry is unchanged by the move.
+    assert!(
+        hits.agents
+            .iter()
+            .any(|(_, n)| n == "saddle/dev-t20-workspace-1")
+    );
+}
+
+#[test]
+fn forty_two_columns_show_agent_icons_and_keep_columns_aligned() {
+    let mut a = spec_sample();
+    let (buffer, hits) = render_panel(120, &mut a, &["corral/main".into()]);
+    let panes = Panes::new(buffer.area, &Config::default());
+    assert_eq!(panes.agents.width - 2, 42);
+    let headlines: Vec<_> = hits
+        .agents
+        .iter()
+        .filter(|(y, _)| "○◐◓◑◒".contains(buffer[(4, *y)].symbol()))
+        .map(|(y, name)| (*y, name.clone()))
+        .collect();
+    assert_eq!(headlines.len(), 4);
+    let right = panes.agents.right() - 3;
+    for (y, name) in &headlines {
+        let line: String = (0..panes.agents.width)
+            .map(|x| buffer[(x, *y)].symbol())
+            .collect();
+        // Agent column: the mark alone, two columns wide, at the same place on every row.
+        let mark = buffer[(24, *y)].symbol().to_owned() + buffer[(25, *y)].symbol();
+        assert!(mark == "✳ " || mark == ">_", "{name}: {line}");
+        assert_eq!(buffer[(23, *y)].symbol(), " ", "{line}");
+        assert!(
+            !line.contains("claude") && !line.contains("codex"),
+            "{line}"
+        );
+        // State column after it; times end at the right edge.
+        let state = buffer[(27, *y)].symbol();
+        assert!(state == "i" || "⣾⣽⣻⢿⡿⣟⣯⣷".contains(state), "{line}");
+        assert_ne!(buffer[(right, *y)].symbol(), " ", "{line}");
+        assert_eq!(buffer[(right + 1, *y)].symbol(), " ", "{line}");
+    }
+    let text = agents_lines(&buffer).join("\n");
+    assert!(text.contains("dev-t20-workspac…"), "{text}");
+    assert!(text.contains("…/t20-terminal-workspace"), "{text}");
+}
+
+#[test]
+fn folding_keeps_only_the_first_row_of_unselected_agents() {
+    let mut a = spec_sample();
+    let expanded = render_panel(160, &mut a, &[]).1.agents.len();
+    a.toggle_fold();
+    let (buffer, hits) = render_panel(160, &mut a, &[]);
+    let rows = |name: &str| hits.agents.iter().filter(|(_, n)| n == name).count();
+    assert_eq!(rows("corral/main"), 5);
+    for name in ["drover/main", "saddle/dev-t20-workspace-1", "saddle/main"] {
+        assert_eq!(rows(name), 1, "{name}");
+    }
+    assert!(hits.agents.len() < expanded);
+    assert!(agents_lines(&buffer).join("\n").contains("z Expand"));
+    // More than five agents fold on their own; the selected one stays open.
+    let mut many = spec_sample();
+    for i in 0..2 {
+        many.agents.push(Agent {
+            name: format!("saddle/extra-{i}"),
+            state: Some("idle".into()),
+            ..Default::default()
+        });
+    }
+    let (_, hits) = render_panel(160, &mut many, &[]);
+    assert_eq!(hits.agents.len(), 5 + 5);
+}
+
+#[test]
+fn effort_keeps_its_first_row_slot_when_folded_and_narrow() {
+    use saddle::theme as t;
+    // The user's explicit choice: keep effort where it was, after the type, before the state.
+    let label = |effort: &str| {
+        serde_json::json!({ "effort": effort })
+            .as_object()
+            .unwrap()
+            .clone()
+    };
+    let mut a = spec_sample();
+    for agent in &mut a.agents {
+        match agent.name.as_str() {
+            "corral/main" => agent.labels = label("xhigh"),
+            "saddle/dev-t20-workspace-1" => agent.labels = label("high"),
+            _ => {}
+        }
+    }
+    for i in 0..3 {
+        a.agents.push(Agent {
+            name: format!("saddle/extra-{i}"),
+            kind: Some("codex".into()),
+            state: Some("idle".into()),
+            labels: label("medium"),
+            ..Default::default()
+        });
+    }
+    assert!(a.folded());
+    for (width, brand, name, cut) in [
+        (160, 8, 16, "dev-t20-workspa…"),
+        (120, 2, 14, "dev-t20-works…"),
+    ] {
+        let (buffer, hits) = render_panel(width, &mut a, &[]);
+        let headlines: Vec<_> = hits
+            .agents
+            .iter()
+            .filter(|(y, _)| buffer[(4, *y)].symbol() != " ")
+            .map(|(y, n)| (*y, n.clone()))
+            .collect();
+        assert_eq!(headlines.len(), 7, "one first row each, folded or not");
+        // Dot, name, type, effort, state: fixed columns with the name giving way.
+        let effort_x = 6 + name + 1 + brand + 1;
+        for (y, n) in &headlines {
+            let line: String = (0..60).map(|x| buffer[(x, *y)].symbol()).collect();
+            let icon: String = (effort_x..effort_x + 2)
+                .map(|x| buffer[(x as u16, *y)].symbol())
+                .collect();
+            let expected = match n.as_str() {
+                "corral/main" => "⣴⡇",
+                "saddle/dev-t20-workspace-1" => "⣴⡀",
+                n if n.starts_with("saddle/extra") => "⣄⡀",
+                _ => "  ",
+            };
+            assert_eq!(icon, expected, "{width}: {line}");
+            if expected == "⣴⡇" {
+                assert_eq!(buffer[(effort_x as u16, *y)].fg, t::AGENT_STARTING);
+            }
+            assert_eq!(buffer[(effort_x as u16 + 2, *y)].symbol(), " ", "{line}");
+            let state = buffer[(effort_x as u16 + 3, *y)].symbol();
+            assert!(state == "i" || "⣾⣽⣻⢿⡿⣟⣯⣷".contains(state), "{line}");
+        }
+        let text = agents_lines(&buffer).join("\n");
+        assert!(text.contains(&format!("{cut} ")), "{text}");
+    }
+    // Nothing known: the slot is not reserved.
+    let mut plain = spec_sample();
+    let (buffer, _) = render_panel(160, &mut plain, &[]);
+    assert!(
+        agents_lines(&buffer)
+            .join("\n")
+            .contains("dev-t20-workspace-1 >_ codex")
+    );
+}
+
+#[test]
+fn paths_show_in_full_when_they_fit_and_lose_leading_levels_only_when_too_wide() {
+    let mut a = agents::Panel::default();
+    let long = "/Users/example/Developer/personal_projs/saddle-worktrees/t20-terminal-workspace";
+    a.absorb(
+        vec![
+            Agent {
+                name: "demo/fits".into(),
+                cwd: Some("/tmp/team/project".into()),
+                ..Default::default()
+            },
+            Agent {
+                name: "demo/long".into(),
+                cwd: Some(long.into()),
+                ..Default::default()
+            },
+            Agent {
+                name: "demo/group".into(),
+                cwd: Some("/tmp/team/demo".into()),
+                ..Default::default()
+            },
+        ],
+        None,
+        100.0,
+    );
+    for (width, long_shown) in [
+        (160, "…/saddle-worktrees/t20-terminal-workspace"),
+        (120, "…/t20-terminal-workspace"),
+    ] {
+        let (buffer, _) = render_panel(width, &mut a, &[]);
+        let lines = agents_lines(&buffer);
+        let path = |start: &str| {
+            lines
+                .iter()
+                .map(|l| l.replace('┃', "│"))
+                .find(|l| l.contains(start))
+                .unwrap_or_else(|| panic!("{start}: {}", lines.join("\n")))
+        };
+        assert!(path("/tmp/team/project").contains("│   /tmp/team/project "));
+        assert!(path(long_shown).contains(&format!("│   {long_shown} ")));
+        // The group's own directory keeps the design's parent-only form.
+        assert!(path("…/team/").contains("│   …/team/ "));
+    }
+}
+
+#[test]
+fn attached_reads_in_text_color_but_offers_no_second_attach_click() {
+    use saddle::theme as t;
+    let mut a = spec_sample();
+    // corral/main is selected and displayed here.
+    let (buffer, hits) = render_panel(160, &mut a, &["corral/main".into()]);
+    let (x, y) = find(&buffer, "[Attached]").unwrap();
+    for i in 0..10 {
+        assert_eq!(buffer[(x + i, y)].fg, t::AGENTS_TEXT);
+    }
+    let enter = |hits: &ui::Hits| {
+        hits.buttons
+            .iter()
+            .filter(|h| h.key.code == crossterm::event::KeyCode::Enter)
+            .count()
+    };
+    assert_eq!(enter(&hits), 0);
+    assert!(hits.buttons.iter().all(|h| !h.area.contains((x, y).into())));
+    // Not displayed: the usual Attach control, clickable.
+    let (buffer, hits) = render_panel(160, &mut a, &[]);
+    let (x, y) = find(&buffer, "↵ Attach").unwrap();
+    assert_eq!(buffer[(x, y)].fg, t::AGENTS_ACCENT);
+    assert_eq!(enter(&hits), 1);
 }

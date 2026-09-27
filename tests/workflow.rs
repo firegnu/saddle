@@ -79,6 +79,8 @@ impl Harness {
         let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
         cmd.args(["--config", config.to_str().unwrap()]);
         cmd.env("TERM", "xterm-256color");
+        // Color assertions expect the configured 24-bit values.
+        cmd.env("COLORTERM", "truecolor");
         cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
         cmd.env("SADDLE_RUNTIME_DIR", dir.path().join("run"));
@@ -123,7 +125,7 @@ while True:
                 }
             }
         });
-        Self {
+        let mut harness = Self {
             dir,
             child,
             master: pair.master,
@@ -132,7 +134,14 @@ while True:
             screen: vt100::Parser::new(40, 140, 0),
             cursor_answered: false,
             raw: Vec::new(),
-        }
+        };
+        // Agents lists by status first by default; these scenarios start from the first agent in
+        // name order (p/a, p/b, p/taken), so switch to it and select the top once it is up.
+        harness.see("Synthetic title");
+        harness.send(b"skk");
+        harness.see("┃ ○ a ");
+        harness.see("s Name");
+        harness
     }
     fn pump(&mut self) {
         if let Ok(bytes) = self.output.recv_timeout(Duration::from_millis(30)) {
@@ -305,7 +314,7 @@ impl Drop for Harness {
 #[test]
 fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.see("Synthetic title");
     assert!(!h.log("events").contains("reply "));
     h.send(b"\r");
@@ -328,7 +337,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         r#"{"p/a":"blocked","p/b":"working","p/new":"idle","p/taken":"idle"}"#,
     )
     .unwrap();
-    h.see("blocked");
+    h.see("waiting");
     h.master
         .resize(PtySize {
             rows: 44,
@@ -384,10 +393,10 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
 #[test]
 fn mouse_selection_attaches_and_quit_remains_responsive_during_output_flood() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.see("Synthetic title");
-    // One-based SGR coordinates: first agent headline is screen row 3.
-    h.send(b"\x1b[<0;5;3M");
+    // One-based SGR coordinates: first agent headline is screen row 5.
+    h.send(b"\x1b[<0;5;5M");
     h.see("p/a READY");
     h.send(b"F");
     h.event("flood p/a");
@@ -408,7 +417,7 @@ fn failed_queue_data_request_keeps_actionable_error_visible() {
     let mut h = Harness::start_with_queue(
         "#!/bin/sh\necho 'QUEUE FAILED: /tmp/a-long-project-directory/another-long-directory/.drover.conf missing project'\nexit 2\n",
     );
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("Read failed");
     h.see("missing"); // The full error wraps across rows in a narrow pane.
@@ -426,7 +435,7 @@ fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repositor
     let mut h = Harness::start_with_queue(&script);
     let project = h.dir.path().join("chosen-project");
     std::fs::create_dir(&project).unwrap();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("missing project");
     h.send(b"ce");
@@ -452,7 +461,7 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
             "title='Queue ' + Path.cwd().name",
         );
     let mut h = Harness::start_with_projects(&script, true);
-    h.click("‹Tasks");
+    h.click("Tasks · ");
     h.see("Queue project-one");
     h.click("project-one ▾ c");
     h.see("Projects");
@@ -473,13 +482,13 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
 #[test]
 fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.see("Synthetic title");
-    h.click("Stop x");
+    h.click("x Stop");
     h.click("Cancel Esc");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
-    h.click("‹Tasks");
+    h.click("Tasks · ");
     h.see("detail line 0");
     h.click("Run details ↵");
     h.see("From the queue list");
@@ -510,7 +519,7 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     // Narrow windows keep Agents on the left; hit targets must follow the new rows.
-    h.click("Stop x");
+    h.click("x Stop");
     h.click("‹Stop y›");
     h.event("stop p/a");
     h.quit();
@@ -519,7 +528,7 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
 #[test]
 fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t?");
     h.see("Tasks help");
     h.see("Back Esc");
@@ -571,7 +580,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
 fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
     // PTY reads may split a redraw while the old form's text is still on screen.
     let mut h = Harness::start_with_read_chunk(include_str!("fixtures/drover.py"), false, "", 64);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("Native queue task"); // Add waits for queue data.
     h.send(b"a");
@@ -636,7 +645,7 @@ fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
 #[test]
 fn pending_delete_button_confirms_names_the_task_and_can_be_cancelled() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("T1 Native queue task");
     h.click("Delete x");
@@ -703,7 +712,7 @@ fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
         quote(&drover)
     );
     let mut h = Harness::start_with_queue(&wrapper);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("Synthetic native task");
     h.send(b"\r");
@@ -746,11 +755,11 @@ fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
 #[test]
 fn buttons_require_release_on_the_same_target() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.press_button("‹Tasks");
+    h.press_button("Tasks · ");
     let deadline = Instant::now() + Duration::from_millis(400);
     while Instant::now() < deadline {
         h.pump();
@@ -814,7 +823,7 @@ fn overlays_capture_input_and_narrow_windows_keep_the_viewer_attached() {
     h.screen.screen_mut().set_size(24, 80);
     // Wait for the redraw at the new size: the Agents column ends at column 34.
     h.until(|h| matches!(h.screen.screen().cell(0, 33).unwrap().contents(), "┐" | "┓"));
-    h.click("‹Tasks");
+    h.click("Tasks · ");
     h.see("Path e"); // The suspended project picker resumes.
     h.send(b"\x1b");
     h.see("Input ▸ Tasks");
@@ -839,7 +848,7 @@ fn overlays_capture_input_and_narrow_windows_keep_the_viewer_attached() {
 fn delayed_attach_does_not_steal_input_from_an_open_form() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.send(b"\r\t");
     h.see("Native queue task"); // Add waits for queue data.
@@ -878,7 +887,7 @@ fn stop_in_progress_cannot_be_submitted_twice() {
 #[test]
 fn returning_to_agents_preserves_the_unsubmitted_queue_draft() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("Native queue task"); // Add waits for queue data.
     h.send(b"a");
@@ -900,7 +909,7 @@ fn agents_reply_entry_is_hidden_and_r_does_not_open_it() {
     let mut h = Harness::start();
     h.see("Synthetic title");
     h.send(b"rs");
-    h.see("Name s"); // The next key confirms the preceding r was processed.
+    h.see("s Sort"); // The next key confirms the preceding r was processed.
     let screen = h.screen.screen().contents();
     assert!(!screen.contains("Last reply"), "{screen}");
     assert!(
@@ -959,7 +968,7 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
         .unwrap(),
     )
     .unwrap();
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     // The list is the popup's left third; the selected task's text is beside it.
     let list = |h: &Harness| h.screen.screen().rows(0, 40).collect::<Vec<_>>().join("\n");
@@ -1022,7 +1031,7 @@ fn installed_drover_complete_history_reaches_saddle_and_scrolls_both_ends() {
         quote(&drover)
     );
     let mut h = Harness::start_with_queue(&wrapper);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("40 tasks");
     // The list is the popup's left third; the selected task's text is beside it.
@@ -1055,13 +1064,14 @@ fn startup_colors_reach_agents_queue_controls_and_leave_viewer_colors_alone() {
 bg = "#102030"
 focus = "#112233"
 agent_idle = "#445566"
+agents_green = "#556677"
 claude = "#778899"
 overlay = "#203040"
 text = "#abcdef"
 "##,
     );
     h.see("Synthetic title");
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     let label_cell = |h: &Harness, label: &str| {
         for y in 0..40 {
             for x in 0..140 {
@@ -1079,9 +1089,10 @@ text = "#abcdef"
         h.screen.screen().cell(0, 0).unwrap().fgcolor(),
         Color::Rgb(0x11, 0x22, 0x33)
     );
+    // Agents has its own palette; the shared status accents keep coloring Tasks.
     assert_eq!(
         label_cell(&h, "idle").fgcolor(),
-        Color::Rgb(0x44, 0x55, 0x66)
+        Color::Rgb(0x55, 0x66, 0x77)
     );
     assert_eq!(
         label_cell(&h, "claude").fgcolor(),
@@ -1135,7 +1146,7 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
             "if Path('fail-list').exists():\n    print('synthetic project read failure', file=sys.stderr)\n    sys.exit(4)\nif args == ['list', '--json']:",
         );
     let mut h = Harness::start_with_projects(&script, true);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"\t");
     h.see("Queue project-one");
     // The loaded footer gains task actions; wait for it before locating a button there.
@@ -1167,8 +1178,8 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
 #[test]
 fn task_edit_from_run_details_saves_and_returns_to_the_same_view() {
     let mut h = Harness::start();
-    h.see("‹Tasks");
-    h.click("‹Tasks");
+    h.see("Tasks · ");
+    h.click("Tasks · ");
     h.see("T1 Native queue task");
     h.click("Run details ↵");
     h.see("Input ▸ Tasks · Run details");
@@ -1221,7 +1232,7 @@ else:
     h.send(b"\r");
     h.see("p/a READY");
     let shows = |h: &Harness| h.log("queue-events").matches("\"show\"").count();
-    h.click("‹Tasks");
+    h.click("Tasks · ");
     h.see("Detail target 任务");
     h.click("Detail target");
     h.see("list body");
@@ -1257,7 +1268,7 @@ else:
 #[test]
 fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.see("Synthetic title");
     h.send(b"n");
     h.click("Regular");
@@ -1371,7 +1382,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
 #[test]
 fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
     let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"n");
     h.see("New agent");
     h.see("● Codex");
@@ -1438,7 +1449,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
         "title='Queue ' + Path.cwd().name",
     );
     let mut h = Harness::start_with_projects(&script, true);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"n");
     h.see("main");
     h.click("Create agent");
@@ -1492,7 +1503,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
 #[test]
 fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
     let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     h.send(b"n");
     h.see("New agent");
     h.see("project-one");
@@ -1742,7 +1753,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     )
     .unwrap();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;3M"); // Mouse: the first agent row opens p/a in the current pane.
+    h.send(b"\x1b[<0;5;5M"); // Mouse: the first agent row opens p/a in the current pane.
     h.see("p/a READY");
     // Cancelling at either step keeps the single pane and tab.
     h.click("Split ▾");
@@ -1810,7 +1821,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
 fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;3M");
+    h.send(b"\x1b[<0;5;5M");
     h.see("p/a READY");
     h.send(b"A");
     h.see("INPUT RECEIVED");
@@ -1870,7 +1881,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
 fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;3M");
+    h.send(b"\x1b[<0;5;5M");
     h.see("p/a READY");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.click("Split ▾");
@@ -1962,13 +1973,13 @@ fn a_candidate_click_opens_only_the_agent_it_was_pressed_on() {
 fn tasks_entry_opens_the_popup_and_closing_returns_to_the_previous_target() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.see("‹Tasks");
+    h.see("Tasks · ");
     // Agents own the whole left column; the task list only lives in the popup.
     assert!(!h.contents().contains("Native queue task"));
     h.send(b"\r");
     h.see("p/a READY");
     h.see("Input ▸ p/a");
-    h.click("‹Tasks");
+    h.click("Tasks · ");
     h.see("Input ▸ Tasks");
     // List and the selected task's text sit side by side.
     h.see("T1 Native queue task");
@@ -2988,4 +2999,37 @@ fn t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases() {
         after["tabs"][0]["panes"][0]["cwd"],
         before["tabs"][0]["panes"][0]["cwd"]
     );
+}
+
+#[test]
+fn fold_toggles_by_key_and_bar_and_background_tab_agents_keep_the_local_mark() {
+    let mut h = Harness::start();
+    let titles = |h: &Harness| h.contents().matches("Synthetic title").count();
+    assert_eq!(titles(&h), 3);
+    h.send(b"z");
+    h.see("z Expand");
+    h.until(|h| titles(h) == 1); // Only the selected p/a stays expanded.
+    h.click("z Expand");
+    h.see("z Fold");
+    h.until(|h| titles(h) == 3);
+    h.send(b"\r");
+    h.see("p/a READY");
+    // Shown in a background tab, p/a is still displayed by this saddle.
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "p/b");
+    h.see("p/b READY");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    let row = |h: &Harness, name: &str| {
+        h.contents()
+            .lines()
+            .find(|line| line.contains(&format!("○ {name} ")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    h.until(|h| row(h, "a").contains('⦿'));
+    assert!(h.contents().contains("⦿ 56y"));
+    // p/taken has a public attach count but no display here.
+    assert!(!row(&h, "taken").contains('⦿'), "{}", h.contents());
+    h.quit();
 }

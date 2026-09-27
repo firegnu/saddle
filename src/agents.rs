@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 pub struct Panel {
     pub agents: Vec<Agent>,
     pub selected: Option<String>,
-    pub by_state: bool,
+    /// `s` switches from the default status order to plain name order.
+    pub by_name: bool,
+    /// Manual fold choice for this session; `None` folds automatically above five agents.
+    pub fold: Option<bool>,
     pub show_reply: bool,
     pub reply_top: usize,
     pub top: usize,
@@ -75,6 +78,15 @@ impl Panel {
         }
     }
 
+    /// Folded lists show only the first row of unselected agents.
+    pub fn folded(&self) -> bool {
+        self.fold.unwrap_or(self.agents.len() > 5)
+    }
+    pub fn toggle_fold(&mut self) {
+        self.fold = Some(!self.folded());
+        self.follow = true;
+    }
+
     pub fn select(&mut self, name: Option<String>) {
         if self.selected != name {
             self.reply_top = 0;
@@ -105,10 +117,10 @@ impl Panel {
             group(&a.name)
                 .cmp(group(&b.name))
                 .then_with(|| {
-                    if self.by_state {
-                        self.rank(a, now).cmp(&self.rank(b, now))
-                    } else {
+                    if self.by_name {
                         std::cmp::Ordering::Equal
+                    } else {
+                        self.status(a, now).cmp(&self.status(b, now))
                     }
                 })
                 .then_with(|| a.name.cmp(&b.name))
@@ -130,19 +142,39 @@ impl Panel {
             _ => false,
         }
     }
-    fn rank(&self, a: &Agent, now: f64) -> u8 {
+    /// The Agents view of the public state; `blocked` shows as waiting. Declaration order
+    /// is the default order within a group, agents needing a person first.
+    pub fn status(&self, a: &Agent, now: f64) -> Status {
+        if a.error.is_some() || a.incompatible {
+            return Status::Error;
+        }
         if self.suspect(a, now) {
-            return 1;
+            return Status::Stalled;
+        }
+        if a.starting {
+            return Status::Starting;
         }
         match a.state.as_deref() {
-            Some("blocked") => 0,
-            Some("working") => 2,
-            Some("starting") => 3,
-            Some("idle") => 5,
-            _ if a.starting => 3,
-            _ => 4,
+            Some("blocked") => Status::Waiting,
+            Some("working") => Status::Working,
+            Some("starting") => Status::Starting,
+            Some("idle") => Status::Idle,
+            Some("exited") => Status::Exited,
+            _ => Status::Unknown,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Status {
+    Waiting,
+    Error,
+    Stalled,
+    Working,
+    Starting,
+    Unknown,
+    Idle,
+    Exited,
 }
 
 pub fn group(name: &str) -> &str {

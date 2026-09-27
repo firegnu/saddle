@@ -1,5 +1,5 @@
 use crate::{
-    agents::{Panel, group},
+    agents::{Panel, Status, group},
     corral::{Agent, Effort},
     git::{Head, Summary},
     input::Focus,
@@ -18,7 +18,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Default)]
 pub struct Hits {
-    pub(crate) buttons: Vec<crate::buttons::Hit>,
+    pub buttons: Vec<crate::buttons::Hit>,
     pub terminal: Vec<crate::terminals::Hit>,
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
@@ -31,6 +31,8 @@ pub struct View<'a> {
     pub panes: Panes,
     pub focus: Focus,
     pub showing: Option<&'a str>,
+    /// Agents this saddle is displaying in any pane, in every tab.
+    pub local: &'a [String],
     pub viewer: Option<&'a Session>,
     pub queue: &'a mut crate::queue::Panel,
     pub viewer_note: &'a str,
@@ -79,11 +81,11 @@ pub fn draw_workspace(
     }
     // Tasks is open exactly while it has the input; the popup then takes every hit.
     let queue_modal = view.focus == Focus::Queue;
-    let title_width = format!(" Agents · {} ", panel.agents.len()).width() as u16;
+    let title_width = format!("Agents · {}", panel.agents.len()).width() as u16;
     let entry = tasks_entry(
         t,
         frame,
-        view.panes.agents,
+        agents_header(view.panes.agents),
         title_width,
         view.queue,
         queue_modal,
@@ -203,7 +205,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  n New  Tab Tasks  q Quit",
+            " ↑↓ Select  ↵ Attach  n New  z Fold  Tab Tasks  q Quit",
         ),
         Focus::Queue => (
             match view.queue.view {
@@ -310,45 +312,68 @@ pub fn draw_workspace(
     hits
 }
 
-/// The fixed Tasks entry on the Agents top border, carrying the project's short task state;
-/// highlighted, and not clickable, while open. Narrow columns drop the key hint, then shorten.
+/// The fixed Tasks entry at the right of the Agents header, carrying the project's short task
+/// state; highlighted, and not clickable, while open. Narrow columns drop the key hint, then
+/// shorten.
 fn tasks_entry(
     t: &Theme,
     frame: &mut Frame,
-    agents: Rect,
+    header: Rect,
     title_width: u16,
     queue: &crate::queue::Panel,
     open: bool,
 ) -> Vec<crate::buttons::Hit> {
-    use crate::buttons::{self, Button};
     let (long, short, color) = queue.entry_status(t);
-    let room = agents.width.saturating_sub(title_width + 3);
-    let Some((label, status)) = [
-        (format!("Tasks · {long} Tab"), long.as_str()),
-        (format!("Tasks · {long}"), long.as_str()),
-        (format!("Tasks · {short}"), short.as_str()),
-        ("Tasks".to_owned(), ""),
+    let room = header.width.saturating_sub(title_width + 2);
+    let Some((status, key)) = [
+        (long.as_str(), " Tab"),
+        (long.as_str(), ""),
+        (short.as_str(), ""),
+        ("", ""),
     ]
     .into_iter()
-    .find(|(label, _)| label.width() as u16 + 2 <= room) else {
+    .find(|(status, key)| {
+        let width = if status.is_empty() {
+            5
+        } else {
+            8 + status.width() + key.width()
+        };
+        width as u16 <= room
+    }) else {
         return Vec::new();
     };
-    if agents.height == 0 {
+    if header.height == 0 {
         return Vec::new();
     }
-    let width = label.width() as u16 + 2;
-    let area = Rect::new(agents.right() - width - 2, agents.y, width, 1);
-    let mut button = Button::new(&label, crossterm::event::KeyCode::Tab, true);
-    if open {
-        button = button.primary();
+    let mut spans = vec![Span::styled(
+        "Tasks",
+        if open {
+            Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(t.agents_dim)
+        },
+    )];
+    if !status.is_empty() {
+        spans.push(Span::styled(" · ", Style::default().fg(t.agents_dim)));
+        spans.push(Span::styled(
+            format!("{status}{key}"),
+            Style::default().fg(color),
+        ));
     }
-    let (_, hits) = buttons::draw_compact_top(t, frame, area, &[button]);
-    let offset = "‹Tasks · ".width() as u16;
-    frame.buffer_mut().set_style(
-        Rect::new(area.x + offset, area.y, status.width() as u16, 1).intersection(area),
-        Style::default().fg(color),
-    );
-    if open { Vec::new() } else { hits }
+    let width = width_of(&spans) as u16;
+    let area = Rect::new(header.right() - width, header.y, width, 1);
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    if open {
+        return Vec::new();
+    }
+    vec![crate::buttons::Hit {
+        area,
+        danger: false,
+        key: crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Tab,
+            crossterm::event::KeyModifiers::NONE,
+        ),
+    }]
 }
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
@@ -407,6 +432,63 @@ struct Row {
     name: Option<String>,
     headline: bool,
 }
+/// The Agents header row, inside the border and its one-column side padding.
+fn agents_header(area: Rect) -> Rect {
+    let inside = inner(area);
+    Rect::new(
+        inside.x + 1.min(inside.width),
+        inside.y,
+        inside.width.saturating_sub(2),
+        inside.height.min(1),
+    )
+}
+/// One bottom-bar control: key and label, whether it acts, and whether it is destructive.
+/// `lit` shows a state in normal text without making the control clickable.
+struct Control {
+    key: &'static str,
+    label: &'static str,
+    code: crossterm::event::KeyCode,
+    enabled: bool,
+    danger: bool,
+    lit: bool,
+}
+impl Control {
+    fn width(&self) -> u16 {
+        (self.key.width() + usize::from(!self.key.is_empty()) + self.label.width()) as u16
+    }
+}
+/// Places controls left to right, with two-column gaps, then one, then wrapping onto rows.
+fn bar_rows(controls: &[Control], width: u16) -> Vec<Vec<(u16, usize)>> {
+    for gap in [2, 1] {
+        let total: u16 = controls.iter().map(Control::width).sum::<u16>()
+            + gap * controls.len().saturating_sub(1) as u16;
+        if total <= width {
+            let mut x = 0;
+            return vec![
+                controls
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        let at = x;
+                        x += c.width() + gap;
+                        (at, i)
+                    })
+                    .collect(),
+            ];
+        }
+    }
+    let mut rows = vec![Vec::new()];
+    let mut x = 0;
+    for (i, c) in controls.iter().enumerate() {
+        if x > 0 && x + c.width() > width {
+            rows.push(Vec::new());
+            x = 0;
+        }
+        rows.last_mut().unwrap().push((x, i));
+        x += c.width() + 1;
+    }
+    rows
+}
 fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     let t = view.colors;
     let area = view.panes.agents;
@@ -414,59 +496,163 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         return Hits::default();
     }
     let focused = view.focus == Focus::Agents;
-    let title = format!(" Agents · {} ", panel.agents.len());
-    let block = border(t, &title, focused)
-        .title_style(Style::default().fg(t.text).add_modifier(Modifier::BOLD));
+    frame
+        .buffer_mut()
+        .set_style(area, Style::default().fg(t.agents_text).bg(t.agents_bg));
+    let block = t
+        .block("", focused)
+        .border_style(Style::default().fg(if focused { t.focus } else { t.agents_border }));
     frame.render_widget(block.clone(), area);
     let inside = inner(area);
-    if inside.is_empty() {
+    let content = agents_header(area);
+    let content = Rect {
+        height: inside.height,
+        ..content
+    };
+    if content.is_empty() {
         return Hits::default();
     }
-    use crate::buttons::{self, Button};
+    let rule = |frame: &mut Frame, y: u16| {
+        frame.render_widget(
+            Paragraph::new("─".repeat(usize::from(content.width)))
+                .style(Style::default().fg(t.agents_rule)),
+            Rect::new(content.x, y, content.width, 1),
+        );
+    };
+    frame.render_widget(
+        Paragraph::new(format!("Agents · {}", panel.agents.len())).style(
+            Style::default()
+                .fg(t.agents_text)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Rect::new(content.x, content.y, content.width, 1),
+    );
+    if content.height >= 2 {
+        rule(frame, content.y + 1);
+    }
     use crossterm::event::KeyCode as K;
     let selected = panel.selected.is_some();
     let connected = selected && panel.selected.as_deref() == view.showing;
-    let (content, buttons) = buttons::draw_compact(
-        t,
-        frame,
-        inside,
-        &[
-            Button::new(
-                if connected { "Attached" } else { "Attach ↵" },
-                K::Enter,
-                selected && !connected,
-            ),
-            Button::new("New n", K::Char('n'), true),
-            Button::new(
-                if panel.by_state { "Name s" } else { "Sort s" },
-                K::Char('s'),
-                true,
-            ),
-            Button::new(
-                if panel.stopping { "Stopping" } else { "Stop x" },
-                K::Char('x'),
-                selected && !panel.stopping,
-            )
-            .danger(),
-        ],
-    );
-    let detail_height = if panel.show_reply && selected && content.height >= 6 {
-        (content.height / 3).max(3)
+    let folded = panel.folded();
+    let controls = [
+        if connected {
+            Control {
+                key: "",
+                label: "[Attached]",
+                code: K::Enter,
+                enabled: false,
+                danger: false,
+                lit: true,
+            }
+        } else {
+            Control {
+                key: "↵",
+                label: "Attach",
+                code: K::Enter,
+                enabled: selected,
+                danger: false,
+                lit: false,
+            }
+        },
+        Control {
+            key: "n",
+            label: "New",
+            code: K::Char('n'),
+            enabled: true,
+            danger: false,
+            lit: false,
+        },
+        Control {
+            key: "s",
+            label: if panel.by_name { "Name" } else { "Sort" },
+            code: K::Char('s'),
+            enabled: true,
+            danger: false,
+            lit: false,
+        },
+        Control {
+            key: if panel.stopping { "" } else { "x" },
+            label: if panel.stopping { "Stopping" } else { "Stop" },
+            code: K::Char('x'),
+            enabled: selected && !panel.stopping,
+            danger: true,
+            lit: false,
+        },
+        Control {
+            key: "z",
+            label: if folded { "Expand" } else { "Fold" },
+            code: K::Char('z'),
+            enabled: true,
+            danger: false,
+            lit: false,
+        },
+    ];
+    let bar = bar_rows(&controls, content.width);
+    let bar_height = bar.len() as u16;
+    let mut hits = Hits::default();
+    // Header, rule, at least one list row, rule and the bar; with less room the list keeps
+    // the space.
+    let body_top = content.y + 2.min(content.height);
+    let mut body_bottom = content.bottom();
+    if content.height > 3 + bar_height {
+        body_bottom = content.bottom() - bar_height - 1;
+        rule(frame, body_bottom);
+        for (row, placed) in bar.iter().enumerate() {
+            let y = body_bottom + 1 + row as u16;
+            for &(x, i) in placed {
+                let c = &controls[i];
+                let (key, label) = if c.lit {
+                    let text = Style::default().fg(t.agents_text);
+                    (text, text)
+                } else if !c.enabled {
+                    let dim = Style::default().fg(t.agents_dimmer);
+                    (dim, dim)
+                } else if c.danger {
+                    let red = Style::default().fg(t.agents_red);
+                    (red.add_modifier(Modifier::BOLD), red)
+                } else {
+                    (
+                        Style::default()
+                            .fg(t.agents_accent)
+                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(t.agents_text),
+                    )
+                };
+                let mut spans = Vec::new();
+                if !c.key.is_empty() {
+                    spans.push(Span::styled(c.key, key));
+                    spans.push(Span::raw(" "));
+                }
+                spans.push(Span::styled(c.label, label));
+                let rect = Rect::new(content.x + x, y, c.width(), 1).intersection(content);
+                frame.render_widget(Paragraph::new(Line::from(spans)), rect);
+                if c.enabled {
+                    hits.buttons.push(crate::buttons::Hit {
+                        area: rect,
+                        danger: c.danger,
+                        key: crossterm::event::KeyEvent::new(
+                            c.code,
+                            crossterm::event::KeyModifiers::NONE,
+                        ),
+                    });
+                }
+            }
+        }
+    }
+    let body_height = body_bottom.saturating_sub(body_top);
+    let detail_height = if panel.show_reply && selected && body_height >= 6 {
+        (body_height / 3).max(3)
     } else {
         0
     };
     let list = Rect::new(
         content.x,
-        content.y,
-        content.width.saturating_sub(1),
-        content.height - detail_height,
+        body_top,
+        content.width,
+        body_height - detail_height,
     );
-    let mut hits = Hits {
-        buttons,
-        list,
-        ..Default::default()
-    };
-    let rows = agent_rows(t, panel, view.showing, usize::from(list.width), view.now);
+    hits.list = list;
+    let rows = agent_rows(t, panel, view.local, inside.width, view.now);
     let selected_rows: Vec<_> = rows
         .iter()
         .enumerate()
@@ -501,16 +687,17 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     }
     if rows.is_empty() {
         frame.render_widget(
-            Paragraph::new("No agents").style(Style::default().fg(t.muted)),
+            Paragraph::new("No agents").style(Style::default().fg(t.agents_dim)),
             list,
         );
     }
     if rows.len() > usize::from(list.height) && list.height > 0 {
+        // The right padding column carries the scrollbar.
         scrollbar(
             t,
             frame,
             Rect {
-                width: inside.width,
+                width: list.width + 1,
                 ..list
             },
             rows.len(),
@@ -522,7 +709,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             .skip(panel.top + usize::from(list.height))
             .filter(|r| r.headline)
             .count();
-        // Keep the repository visible when its root has scrolled above the viewport.
+        // Keep the repository visible when its heading has scrolled above the viewport.
         let context = rows[panel.top]
             .name
             .as_deref()
@@ -534,7 +721,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         frame.render_widget(
             block.title_bottom(Line::styled(
                 format!(" {context}↑{above} ↓{below} "),
-                Style::default().fg(t.muted),
+                Style::default().fg(t.agents_dim),
             )),
             area,
         );
@@ -545,12 +732,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
             Paragraph::new(heading).style(Style::default().fg(t.bright)),
             Rect::new(content.x, list.bottom(), content.width, 1),
         );
-        hits.reply = Rect::new(
-            content.x,
-            list.bottom() + 1,
-            content.width.saturating_sub(1),
-            detail_height - 1,
-        );
+        hits.reply = Rect::new(content.x, list.bottom() + 1, list.width, detail_height - 1);
         let lines = reply_lines(t, view.reply, usize::from(hits.reply.width));
         panel.reply_top = panel
             .reply_top
@@ -565,7 +747,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 t,
                 frame,
                 Rect {
-                    width: content.width,
+                    width: list.width + 1,
                     ..hits.reply
                 },
                 lines.len(),
@@ -589,230 +771,340 @@ fn scrollbar(t: &Theme, frame: &mut Frame, area: Rect, len: usize, top: usize) {
             .position(top),
     );
 }
-fn agent_rows(t: &Theme, panel: &Panel, showing: Option<&str>, width: usize, now: f64) -> Vec<Row> {
+fn width_of(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(|s| s.content.width()).sum()
+}
+/// Cuts spans to `width` display columns, ending with … when anything was dropped.
+fn clip_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    if width_of(&spans) <= width {
+        return spans;
+    }
+    let mut result = Vec::new();
+    let mut used = 0;
+    for span in spans {
+        let room = width.saturating_sub(used);
+        let text = clip(&span.content, room);
+        used += text.width();
+        let cut = text != span.content;
+        result.push(Span::styled(text, span.style));
+        if cut {
+            break;
+        }
+    }
+    result
+}
+/// Rows of every group and agent. `panel_width` is the Agents panel's inner width; the row
+/// area is two columns narrower (side padding), and entries indent after their gutter.
+fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now: f64) -> Vec<Row> {
+    let width = usize::from(panel_width.saturating_sub(2));
+    // Entry text after the gutter and its padding; expanded lines indent two more.
+    let content = width.saturating_sub(2);
+    let info = content.saturating_sub(2);
+    let brand_width = if panel_width >= 50 { 8 } else { 2 };
     let ordered = panel.ordered(now);
-    let mut rows = Vec::new();
-    let mut previous = None;
-    let wide = width >= 46;
-    let mut name_width = 8;
     // The effort column exists only when some agent carries a known delegated effort label.
     let effort_column = ordered.iter().any(|a| a.effort().is_some());
+    // Dot, then name, agent, effort (2), state (9) and time (5), one column apart; the name
+    // gives way.
+    let name_width = content
+        .saturating_sub(2 + brand_width + 1 + if effort_column { 3 } else { 0 } + 9 + 1 + 5 + 1);
+    let folded = panel.folded();
+    let mut rows = Vec::new();
+    let mut previous = None;
     for (index, a) in ordered.iter().enumerate() {
         let prefix = group(&a.name);
         if previous != Some(prefix) {
-            if wide {
-                let longest = ordered[index..]
-                    .iter()
-                    .take_while(|agent| group(&agent.name) == prefix)
-                    .map(|agent| {
-                        agent
-                            .name
-                            .strip_prefix(prefix)
-                            .unwrap_or(&agent.name)
-                            .width()
-                    })
-                    .max()
-                    .unwrap_or(8);
-                // Reserve tree/status icon, type, effort, state and the right-hand activity badge.
-                let reserved = if effort_column { 36 } else { 33 };
-                name_width = longest.clamp(8, width.saturating_sub(reserved).max(8));
+            if previous.is_some() {
+                rows.push(Row {
+                    line: Line::default(),
+                    name: None,
+                    headline: false,
+                });
             }
+            let count = ordered[index..]
+                .iter()
+                .take_while(|agent| group(&agent.name) == prefix)
+                .count();
+            let count = format!("({count})");
+            let title = clip(
+                if prefix.is_empty() { "agents/" } else { prefix },
+                width.saturating_sub(count.width() + 3),
+            );
+            let fill = width.saturating_sub(title.width() + count.width() + 2);
             rows.push(Row {
-                line: {
-                    let count = ordered[index..]
-                        .iter()
-                        .take_while(|agent| group(&agent.name) == prefix)
-                        .count();
-                    let count = format!("({count})");
-                    let name_width = width.saturating_sub(count.width() + 1);
-                    let name = clip(
-                        if prefix.is_empty() { "agents/" } else { prefix },
-                        name_width,
-                    );
-                    Line::from(vec![
-                        Span::styled(
-                            pad(&name, width.saturating_sub(count.width())),
-                            Style::default()
-                                .fg(t.connected)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(count, Style::default().fg(t.muted)),
-                    ])
-                },
+                line: Line::from(vec![
+                    Span::styled(
+                        title,
+                        Style::default()
+                            .fg(t.agents_accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" "),
+                    Span::styled("─".repeat(fill), Style::default().fg(t.agents_faint)),
+                    Span::raw(" "),
+                    Span::styled(count, Style::default().fg(t.agents_dim)),
+                ]),
                 name: None,
                 headline: false,
             });
             previous = Some(prefix);
         }
-        let last = ordered
-            .get(index + 1)
-            .is_none_or(|next| group(&next.name) != prefix);
         let selected = panel.selected.as_deref() == Some(&a.name);
-        let style = if selected {
+        let status = panel.status(a, now);
+        let look = look(t, status, now);
+        let short = a.name.strip_prefix(prefix).unwrap_or(&a.name);
+        let exited = status == Status::Exited;
+        let mut lines = Vec::new();
+        // R1: status dot, name, agent, state and time in fixed columns.
+        let (brand_label, brand_color) = agent_brand(t, a.kind.as_deref().unwrap_or(""));
+        let brand = if brand_width == 8 {
+            brand_label
+        } else {
+            brand_label.split(' ').next().unwrap_or("").to_owned()
+        };
+        let mut state = Vec::new();
+        if status == Status::Working {
+            state.push(Span::styled(
+                ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"][(now * 1000.0 / 120.0) as usize % 8],
+                Style::default().fg(t.agents_purple),
+            ));
+            state.push(Span::raw(" "));
+        }
+        state.push(Span::styled(
+            look.label,
+            Style::default().fg(look.color).add_modifier(Modifier::BOLD),
+        ));
+        let state_width = width_of(&state);
+        state.push(Span::raw(" ".repeat(9usize.saturating_sub(state_width))));
+        let here = local.iter().any(|name| name == &a.name);
+        let (mark, mark_color) = if here {
+            ("⦿", t.agents_green)
+        } else if panel.unread.contains(&a.name) {
+            ("•", t.unread)
+        } else {
+            ("", t.agents_text)
+        };
+        let time = short_time(a.last_output.map(|v| now - v));
+        let time_color = if here {
+            t.agents_green
+        } else if status == Status::Working {
+            t.agents_blue
+        } else if exited {
+            t.agents_faint
+        } else {
+            t.agents_text
+        };
+        let gap = if mark.is_empty() || mark.width() + 1 + time.width() > 5 {
+            ""
+        } else {
+            " "
+        };
+        let used = mark.width() + gap.width() + time.width();
+        let mut first = vec![
+            Span::styled(look.dot, Style::default().fg(look.color)),
+            Span::raw(" "),
+            Span::styled(
+                pad(&clip(short, name_width), name_width),
+                Style::default()
+                    .fg(if exited {
+                        t.agents_faint
+                    } else {
+                        t.agents_text
+                    })
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                pad(&clip(&brand, brand_width), brand_width),
+                Style::default()
+                    .fg(brand_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+        ];
+        if effort_column {
+            first.extend(effort_bars(t, a.effort()));
+            first.push(Span::raw(" "));
+        }
+        first.extend(state);
+        first.push(Span::raw(" ".repeat(1 + 5usize.saturating_sub(used))));
+        first.push(Span::styled(mark, Style::default().fg(mark_color)));
+        first.push(Span::styled(
+            format!("{gap}{time}"),
+            Style::default().fg(time_color),
+        ));
+        lines.push(first);
+        if !folded || selected {
+            let indent = |spans: Vec<Span<'static>>| {
+                let mut line = vec![Span::raw("  ")];
+                line.extend(clip_spans(spans, info));
+                line
+            };
+            // R2: the title unless it merely repeats the group.
+            if let Some(title) = a
+                .title
+                .as_deref()
+                .filter(|title| !title.trim().is_empty() && *title != prefix.trim_end_matches('/'))
+            {
+                lines.push(indent(vec![Span::styled(
+                    title.to_owned(),
+                    Style::default().fg(t.agents_text),
+                )]));
+            }
+            // R3: what the agent is doing or needs, from public fields only.
+            for (label, text, duration) in activity(a, status) {
+                let tail = duration
+                    .then(|| format!(" · {}", short_time(a.turn_started.map(|v| now - v))))
+                    .filter(|tail| label.width() + 2 + tail.width() <= info);
+                let room = info.saturating_sub(
+                    label.width() + 1 + tail.as_deref().map_or(0, UnicodeWidthStr::width),
+                );
+                let mut spans = vec![Span::styled(
+                    format!("{label} {}", clip(&text, room)),
+                    Style::default().fg(look.color),
+                )];
+                if let Some(tail) = tail {
+                    spans.push(Span::styled(tail, Style::default().fg(t.agents_dim)));
+                }
+                lines.push(indent(spans));
+            }
+            // R4 (and R4b): branch and base on the left, uncommitted changes on the right.
+            if let Some(cwd) = &a.cwd {
+                let (left, diff) = git_parts(t, panel.git.get(cwd), short, info);
+                let (left_width, diff_width) = (width_of(&left), width_of(&diff));
+                if diff.is_empty() {
+                    lines.push(indent(left));
+                } else if left_width + 1 + diff_width <= info {
+                    let mut line = left;
+                    line.push(Span::raw(" ".repeat(info - left_width - diff_width)));
+                    line.extend(diff);
+                    lines.push(indent(line));
+                } else {
+                    lines.push(indent(left));
+                    let mut line = vec![Span::raw(" ".repeat(info.saturating_sub(diff_width)))];
+                    line.extend(diff);
+                    lines.push(indent(line));
+                }
+            }
+            // R5: the directory.
+            lines.push(indent(vec![Span::styled(
+                agent_path(a.cwd.as_deref().unwrap_or("—"), prefix, info),
+                Style::default().fg(t.agents_dim),
+            )]));
+            // R6: instance, connections and source.
+            let dimmer = Style::default().fg(t.agents_dimmer);
+            let mut identity = Vec::new();
+            // Narrow panels keep only marks; a type without one is named here instead.
+            if brand_width < 8 && a.kind.as_deref().is_some_and(|kind| brand == kind) {
+                identity.push(Span::styled(
+                    format!("{} · ", a.kind.as_deref().unwrap_or("—")),
+                    dimmer,
+                ));
+            }
+            identity.extend([
+                Span::styled(
+                    format!(
+                        "{} · ",
+                        a.instance
+                            .as_deref()
+                            .unwrap_or("—")
+                            .chars()
+                            .take(6)
+                            .collect::<String>()
+                    ),
+                    dimmer,
+                ),
+                Span::styled(
+                    format!("ATT {}", a.attached),
+                    Style::default().fg(if a.attached > 0 {
+                        t.agents_green
+                    } else {
+                        t.agents_dimmer
+                    }),
+                ),
+                Span::styled(
+                    format!(" · VIA {}", a.last_input_source.as_deref().unwrap_or("—")),
+                    dimmer,
+                ),
+            ]);
+            lines.push(indent(identity));
+        }
+        let background = if selected {
             Style::default().bg(t.agent_selected)
         } else {
             Style::default()
         };
-        let tree_color = if selected { t.muted } else { t.dim };
-        let (icon, state, color) = state(t, a, panel, now);
-        let (brand_label, brand_color) = agent_brand(t, a.kind.as_deref().unwrap_or(""));
-        let name = a.name.strip_prefix(prefix).unwrap_or(&a.name);
-        let mut spans = vec![
-            Span::raw(" "),
-            Span::styled(
-                if last { "└─ " } else { "├─ " },
-                Style::default().fg(tree_color),
-            ),
-            Span::styled(format!("{icon} "), Style::default().fg(color)),
-            Span::styled(
-                pad(&clip(name, name_width), name_width),
-                if selected {
-                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(t.text)
-                },
-            ),
-        ];
-        if wide {
-            spans.push(Span::styled(
-                format!(" {} ", pad(&clip(&brand_label, 8), 8)),
-                Style::default().fg(brand_color).add_modifier(
-                    if a.kind
-                        .as_deref()
-                        .is_some_and(|kind| kind.eq_ignore_ascii_case("codex"))
-                    {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    },
+        for (i, spans) in lines.into_iter().enumerate() {
+            let mut line = vec![
+                Span::styled(
+                    if selected { "┃" } else { "│" },
+                    Style::default()
+                        .fg(if selected {
+                            t.agents_accent
+                        } else {
+                            t.agents_faint
+                        })
+                        .bg(t.agents_bg),
                 ),
-            ));
-        }
-        if effort_column {
-            spans.push(Span::raw(" "));
-            spans.extend(effort_bars(t, a.effort()));
-        }
-        spans.push(Span::styled(
-            format!(" {state}"),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ));
-        let badge = if showing == Some(&a.name) {
-            "◉"
-        } else if panel.unread.contains(&a.name) {
-            "new"
-        } else {
-            ""
-        };
-        let suffix = format!(" {badge} {}", seconds(a.last_output.map(|v| now - v)));
-        let used: usize = spans.iter().map(|s| s.content.width()).sum();
-        spans.push(Span::raw(
-            " ".repeat(width.saturating_sub(used + suffix.width())),
-        ));
-        spans.push(Span::styled(
-            suffix,
-            Style::default().fg(if showing == Some(&a.name) {
-                t.connected
-            } else if !badge.is_empty() {
-                t.unread
-            } else {
-                t.muted
-            }),
-        ));
-        rows.push(Row {
-            line: Line::from(spans).style(style),
-            name: Some(a.name.clone()),
-            headline: true,
-        });
-        let mut details = vec![
-            (
-                format!(
-                    "{}{} · ATT {} · VIA {}",
-                    if wide && brand_label.width() <= 8 {
-                        String::new()
-                    } else {
-                        format!("{} ", a.kind.as_deref().unwrap_or("—"))
-                    },
-                    a.instance
-                        .as_deref()
-                        .unwrap_or("—")
-                        .chars()
-                        .take(6)
-                        .collect::<String>(),
-                    a.attached,
-                    a.last_input_source.as_deref().unwrap_or("—")
-                ),
-                Style::default().fg(t.working),
-            ),
-            (
-                short_path(a.cwd.as_deref().unwrap_or("—")),
-                Style::default().fg(t.muted).add_modifier(Modifier::DIM),
-            ),
-            (
-                a.title.as_deref().unwrap_or("—").to_owned(),
-                Style::default().fg(t.text),
-            ),
-        ];
-        if name.width() > name_width {
-            details.insert(0, (name.to_owned(), Style::default().fg(t.text)));
-        }
-        // The Git line goes right below the path, which sits just before the title here.
-        let path_index = details.len() - 2;
-        if matches!(a.state.as_deref(), Some("working" | "blocked")) {
-            details.push((
-                format!(
-                    "DOING {} · {}",
-                    a.last_tool.as_deref().unwrap_or("thinking"),
-                    seconds(a.turn_started.map(|v| now - v))
-                ),
-                Style::default().fg(color),
-            ));
-        }
-        if let Some(error) = &a.error {
-            details.push((format!("ERROR {error}"), Style::default().fg(t.danger)));
-        }
-        if a.incompatible {
-            details.push((
-                format!("Incompatible protocol {}", a.proto.unwrap_or(0)),
-                Style::default().fg(t.danger),
-            ));
-        }
-        let mut lines = Vec::new();
-        for (i, (detail, detail_style)) in details.into_iter().enumerate() {
-            lines.extend(
-                reply_lines(t, &detail, width.saturating_sub(6))
-                    .into_iter()
-                    .map(|line| vec![Span::styled(line.to_string(), detail_style)]),
-            );
-            if i == path_index
-                && let Some(cwd) = &a.cwd
-            {
-                lines.extend(wrap_spans(
-                    git_spans(t, panel.git.get(cwd)),
-                    width.saturating_sub(6),
-                ));
-            }
-        }
-        for spans in lines {
-            let mut line = vec![Span::styled(
-                if last { "      " } else { " │    " },
-                Style::default().fg(tree_color),
-            )];
+                Span::raw(" "),
+            ];
             line.extend(spans);
             rows.push(Row {
-                line: Line::from(line).style(style),
+                line: Line::from(line).style(background),
                 name: Some(a.name.clone()),
-                headline: false,
-            });
-        }
-        if index + 1 < ordered.len() {
-            rows.push(Row {
-                line: Line::styled(if last { "" } else { " │" }, Style::default().fg(t.dim)),
-                name: None,
-                headline: false,
+                headline: i == 0,
             });
         }
     }
     rows
+}
+/// Status dot, state label and its color in the Agents palette.
+struct Look {
+    dot: &'static str,
+    label: &'static str,
+    color: Color,
+}
+fn look(t: &Theme, status: Status, now: f64) -> Look {
+    let (dot, label, color) = match status {
+        Status::Waiting => ("?", "waiting", t.agents_yellow),
+        Status::Error => ("!", "error", t.agents_red),
+        Status::Stalled => ("▲", "stalled", t.agent_stalled),
+        Status::Working => (
+            ["◐", "◓", "◑", "◒"][(now * 1000.0 / 360.0) as usize % 4],
+            "working",
+            t.agents_blue,
+        ),
+        Status::Starting => ("◌", "starting", t.agent_starting),
+        Status::Unknown => ("·", "unknown", t.agents_dim),
+        Status::Idle => ("○", "idle", t.agents_green),
+        Status::Exited => ("✕", "exited", t.agents_faint),
+    };
+    Look { dot, label, color }
+}
+/// Activity lines: label, text, and whether the turn's duration follows. Waiting has no
+/// public summary of the question, so it says so plainly instead of guessing one.
+fn activity(a: &Agent, status: Status) -> Vec<(&'static str, String, bool)> {
+    let mut lines = Vec::new();
+    match status {
+        Status::Waiting => lines.push(("ASK", "waiting for input".to_owned(), true)),
+        Status::Working | Status::Stalled => lines.push((
+            "DOING",
+            a.last_tool.as_deref().unwrap_or("thinking").to_owned(),
+            true,
+        )),
+        _ => {}
+    }
+    if let Some(error) = &a.error {
+        lines.push(("ERR", error.clone(), false));
+    }
+    if a.incompatible {
+        lines.push((
+            "ERR",
+            format!("incompatible protocol {}", a.proto.unwrap_or(0)),
+            false,
+        ));
+    }
+    lines
 }
 // Text approximations of brand marks; no icon font or terminal image protocol required.
 fn agent_brand(t: &Theme, kind: &str) -> (String, Color) {
@@ -821,7 +1113,7 @@ fn agent_brand(t: &Theme, kind: &str) -> (String, Color) {
         "codex" => (">_", t.codex),
         "pi" => ("π", t.pi),
         "omp" => ("π", t.omp),
-        _ => return (kind.to_owned(), t.muted),
+        _ => return (kind.to_owned(), t.agents_dim),
     };
     (format!("{mark} {kind}"), color)
 }
@@ -848,108 +1140,131 @@ fn effort_bars(t: &Theme, effort: Option<Effort>) -> Vec<Span<'static>> {
     ]
 }
 
-// Git state of the agent's directory: a missing entry is still loading, `None` is unavailable,
-// and fields Git could not determine show — rather than zero.
-fn git_spans(t: &Theme, git: Option<&Option<Summary>>) -> Vec<Span<'static>> {
-    let muted = Style::default().fg(t.muted);
+/// Git state of the agent's directory as (branch and base, changes). A missing entry is still
+/// loading, `None` is unavailable, and fields Git could not determine show — rather than zero.
+/// `ahead` counts commits HEAD has beyond its base, so it reads ↑. The branch is left out
+/// when it repeats the agent's name, and shortened so the base stays within `width`.
+fn git_parts(
+    t: &Theme,
+    git: Option<&Option<Summary>>,
+    name: &str,
+    width: usize,
+) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+    let dim = Style::default().fg(t.agents_dim);
     let Some(git) = git else {
-        return vec![Span::styled("git …", muted)];
+        return (vec![Span::styled("git …", dim)], Vec::new());
     };
     let Some(s) = git else {
-        return vec![Span::styled("git unavailable", muted)];
+        return (vec![Span::styled("git unavailable", dim)], Vec::new());
     };
     let head = match &s.head {
-        Head::Branch(branch) => branch.as_str(),
-        Head::Detached => "HEAD detached",
-        Head::Unknown => "—",
+        Head::Branch(branch) if branch == name => String::new(),
+        Head::Branch(branch) => branch.clone(),
+        Head::Detached => "HEAD detached".into(),
+        Head::Unknown => "—".into(),
     };
-    let ahead = s
-        .ahead
-        .as_ref()
-        .map_or("C—".into(), |(count, base)| format!("C{count}({base})"));
-    let mut spans = vec![Span::styled(format!("{head} · {ahead} · "), muted)];
+    let mut base = vec![match &s.ahead {
+        Some((count, _)) => Span::styled(
+            format!(" ↑{count}"),
+            Style::default().fg(if *count > 0 {
+                t.agents_yellow
+            } else {
+                t.agents_faint
+            }),
+        ),
+        None => Span::styled(" ↑—", Style::default().fg(t.agents_faint)),
+    }];
+    if let Some((_, name)) = &s.ahead {
+        base.push(Span::styled(format!(" {name}"), dim));
+    }
+    let mut left = vec![Span::styled("⎇", dim)];
+    if !head.is_empty() {
+        let room = width.saturating_sub(2 + width_of(&base)).max(1);
+        left.push(Span::styled(
+            format!(" {}", clip(&head, room)),
+            Style::default().fg(t.agents_branch),
+        ));
+    }
+    left.extend(base);
+    let mut diff = Vec::new();
     match &s.changes {
         Some(changes) => {
-            spans.push(Span::styled(
+            diff.push(Span::styled(
                 format!("+{}", changes.added),
-                Style::default().fg(t.agent_idle),
+                Style::default().fg(t.agents_green),
             ));
-            spans.push(Span::styled(" ", muted));
-            spans.push(Span::styled(
-                format!("-{}", changes.deleted),
-                Style::default().fg(t.agent_error),
+            diff.push(Span::styled(
+                format!(" -{}", changes.deleted),
+                Style::default().fg(t.agents_red),
             ));
             if changes.binary > 0 {
-                spans.push(Span::styled(format!(" · {} binary", changes.binary), muted));
+                diff.push(Span::styled(format!(" {} binary", changes.binary), dim));
             }
         }
-        None => spans.push(Span::styled("+— -—", muted)),
+        None => diff.push(Span::styled("+— -—", dim)),
     }
     let untracked = s.untracked.map_or("—".into(), |n| n.to_string());
-    spans.push(Span::styled(format!(" · ?{untracked}"), muted));
-    spans
+    diff.push(Span::styled(format!(" ?{untracked}"), dim));
+    (left, diff)
 }
 
-// Wraps styled spans by display width, keeping each character's style.
-fn wrap_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'static>>> {
-    let mut lines = vec![Vec::new()];
-    let mut used = 0;
-    for span in spans {
-        let mut piece = String::new();
-        for c in span.content.chars() {
-            let w = c.width().unwrap_or(0);
-            if used + w > width && used > 0 {
-                if !piece.is_empty() {
-                    lines
-                        .last_mut()
-                        .unwrap()
-                        .push(Span::styled(std::mem::take(&mut piece), span.style));
-                }
-                lines.push(Vec::new());
-                used = 0;
-            }
-            piece.push(c);
-            used += w;
-        }
-        if !piece.is_empty() {
-            lines
-                .last_mut()
-                .unwrap()
-                .push(Span::styled(piece, span.style));
-        }
-    }
-    lines
-}
-
-fn short_path(path: &str) -> String {
-    let parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
-    if parts.len() > 2 {
-        format!("…/{}", parts[parts.len() - 2..].join("/"))
+/// The full directory; when its last level repeats the group, only the parent's last level.
+/// Anything too wide loses leading levels, then leading characters, keeping the end.
+fn agent_path(path: &str, prefix: &str, width: usize) -> String {
+    let mut parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
+    let trailing = if !prefix.is_empty() && parts.last() == Some(&prefix.trim_end_matches('/')) {
+        parts.pop();
+        "/"
     } else {
-        path.to_owned()
+        ""
+    };
+    let mut start = if trailing.is_empty() {
+        0
+    } else {
+        parts.len().saturating_sub(1)
+    };
+    let text = |start: usize| {
+        let joined = parts[start..].join("/");
+        if start > 0 {
+            format!("…/{joined}{trailing}")
+        } else if path.starts_with('/') {
+            format!("/{joined}{trailing}")
+        } else {
+            format!("{joined}{trailing}")
+        }
+    };
+    if parts.is_empty() {
+        return clip(path, width);
     }
+    while text(start).width() > width && start + 1 < parts.len() {
+        start += 1;
+    }
+    let result = text(start);
+    if result.width() <= width {
+        return result;
+    }
+    // Keep the end of the last level.
+    let mut kept = String::new();
+    let mut used = 1;
+    for c in result.chars().rev() {
+        let w = c.width().unwrap_or(0);
+        if used + w > width {
+            break;
+        }
+        kept.insert(0, c);
+        used += w;
+    }
+    format!("…{kept}")
 }
 
-fn state(t: &Theme, a: &Agent, panel: &Panel, now: f64) -> (&'static str, &'static str, Color) {
-    if a.error.is_some() || a.incompatible {
-        return ("!", "error", t.agent_error);
-    }
-    if panel.suspect(a, now) {
-        return ("▲", "stalled", t.agent_stalled);
-    }
-    if a.starting {
-        return ("◌", "starting", t.agent_starting);
-    }
-    match a.state.as_deref() {
-        Some("working") => (
-            ["◐", "◓", "◑", "◒"][(now * 3.0) as usize % 4],
-            "working",
-            t.agent_working,
-        ),
-        Some("blocked") => ("◆", "blocked", t.agent_blocked),
-        Some("idle") => ("○", "idle", t.agent_idle),
-        Some("starting") => ("◌", "starting", t.agent_starting),
-        _ => ("·", "unknown", t.muted),
+/// Ages fit the five-column time slot beside a connection mark: at most four columns, so
+/// hours round once past ten, then days and years take over.
+fn short_time(value: Option<f64>) -> String {
+    match value {
+        Some(s) if s >= 1000.0 * 86400.0 => format!("{}y", (s / (365.0 * 86400.0)) as u64),
+        Some(s) if s >= 100.0 * 3600.0 => format!("{}d", (s / 86400.0) as u64),
+        Some(s) if s >= 36000.0 => format!("{}h", (s / 3600.0) as u64),
+        _ => seconds(value),
     }
 }
 fn seconds(value: Option<f64>) -> String {
