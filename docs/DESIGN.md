@@ -498,3 +498,9 @@ Agents ‹Tasks›             Agent terminal
 - 弹窗内容不足 60 列时，列表与正文改为上下排列；正文和列表各自滚动。极矮表单显示放大窗口提示，不修改底层 PTY 尺寸。
 - 入口状态优先级为 Awaiting release、Running、Paused、N pending、Idle。暂停且仍有运行/待放行任务时优先显示后者；读取失败显示 Read failed，未加载显示 Loading。窄列先省略 Tab 提示，再短写 Awaiting/Failed/待办数字，极窄时保留 Tasks 入口。优先级和颜色均来自既有公开快照，详细命令结果仍到弹窗内查看。
 - 项目、Next、Check & release、Task text、Run details 等按钮采用明确用途文案；没有额外后台通知机制，也没有引入 T16/T17 的功能。
+
+### T18 发布后的按钮调整（用户授权主控直接修改）
+
+- 弹窗内部的项目选择、Next、Check & release、Pause/Resume、Loop、Refresh 改用既有灰白细圆角描边按钮，宽度贴合文字、无独立填充；Task text / Run details 使用同系列页签，选中项提亮边框与文字并加粗。沿用禁用、悬停和危险语义，不改操作。
+- 底部 Add task、Edit、Move、Delete、All pending、Help、Close，以及子页面 Save/Cancel/Apply/Back 等仍用单行 `‹…›`。列表、路径、状态文字和输入框保持原样。
+- 完整描边占三行；弹窗内宽至少 76 列、内高至少 28 行时使用描边，否则内部按钮统一回退单行紧凑样式，优先保留任务正文空间。顶部项目文字与状态对齐按钮中间行，点击区域随绘制布局移动。

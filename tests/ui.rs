@@ -119,7 +119,13 @@ fn queue_reports_no_active_tasks_even_when_history_exists() {
 
 #[test]
 fn management_layouts_keep_cjk_status_and_input_target_visible() {
-    for (w, h) in [(160, 48), (120, 36), (80, 24)] {
+    for (w, h, outlined) in [
+        (160, 48, true),
+        (120, 36, true),
+        (160, 24, false),
+        (80, 48, false),
+        (80, 24, false),
+    ] {
         let (mut a, mut q) = fixture();
         let (buffer, hits) = render(w, h, &mut a, &mut q, Focus::Queue);
         let output = text(&buffer);
@@ -129,17 +135,32 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
             "{output}"
         );
         assert!(!hits.queue_rows.is_empty());
-        for label in [
-            "‹Refresh r›",
-            "‹demo ▾ c›",
-            "‹Run details ↵›",
-            "‹Add task a›",
-            "‹Help ?›",
-            "‹Close Esc›",
-        ] {
+        for label in ["‹Add task a›", "‹Help ?›", "‹Close Esc›"] {
             assert!(output.contains(label), "missing {label}: {output}");
         }
-        assert!(!output.contains('╭'), "{output}");
+        for label in [
+            "demo ▾ c",
+            "Next n",
+            "Check & release g",
+            "Pause p",
+            "Loop l",
+            "Refresh r",
+            "Task text t",
+            "Run details ↵",
+        ] {
+            let (x, y) = find(&buffer, label).expect(label);
+            if outlined {
+                assert_eq!(buffer[(x - 2, y - 1)].symbol(), "╭", "{label}: {output}");
+                assert_eq!(buffer[(x - 2, y + 1)].symbol(), "╰", "{label}: {output}");
+            } else {
+                assert!(output.contains(&format!("‹{label}›")), "{label}: {output}");
+            }
+        }
+        let (x, y) = find(&buffer, "Refresh r").unwrap();
+        assert!(matches!(
+            q.click(x - if outlined { 2 } else { 1 }, y - u16::from(outlined)),
+            Some(saddle::drover::Request::Refresh)
+        ));
         // The popup is one dialog surface over Agents and Viewer, which take no clicks.
         let panes = Panes::new(buffer.area, &Config::default());
         let overlay = saddle::theme::Theme::default().overlay;
@@ -1608,7 +1629,8 @@ fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
         "popup opens centered: {x},{y}"
     );
     // The list row and the selected task's text are both on screen, side by side.
-    let row = screen.lines().find(|l| l.contains("Task text")).unwrap();
+    let (_, tabs_y) = find(&buffer, "Task text").unwrap();
+    let row = screen.lines().nth(usize::from(tabs_y - 1)).unwrap();
     assert!(
         row.contains("Pending 1"),
         "list and content share rows: {row}"

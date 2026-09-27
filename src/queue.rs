@@ -813,6 +813,16 @@ impl Panel {
         }
         let on_list = matches!(self.page, Page::List);
         let ready = on_list && !self.busy && self.snapshot.is_some() && self.read_error.is_none();
+        // Keep the compact toolbars when outlines would crowd out the task content.
+        let outlined = inside.width >= 76 && inside.height >= 28;
+        let draw_toolbar = if outlined {
+            buttons::draw_outlined_top
+        } else {
+            buttons::draw_compact_top
+        };
+        let row_height = if outlined { 3 } else { 1 };
+        let padding = if outlined { 4 } else { 2 };
+        let text_y = inside.y + row_height / 2;
         // Project row: picker and directory on the left, queue state on the right.
         let name = std::path::Path::new(&self.project)
             .file_name()
@@ -824,18 +834,18 @@ impl Panel {
         let mode_width = (mode.width() as u16).min(inside.width);
         frame.render_widget(
             Paragraph::new(mode).right_aligned(),
-            Rect::new(inside.right() - mode_width, inside.y, mode_width, 1),
+            Rect::new(inside.right() - mode_width, text_y, mode_width, 1),
         );
-        let label = Rect::new(inside.x, inside.y, 8.min(inside.width), 1);
+        let label = Rect::new(inside.x, text_y, 8.min(inside.width), 1);
         frame.render_widget(
             Paragraph::new("Project").style(Style::default().fg(t.muted)),
             label,
         );
-        let picker_width = (project.width() as u16 + 2).min(inside.width - label.width);
-        let (_, hits) = buttons::draw_compact_top(
+        let picker_width = (project.width() as u16 + padding).min(inside.width - label.width);
+        let (_, hits) = draw_toolbar(
             t,
             frame,
-            Rect::new(label.right(), inside.y, picker_width, 1),
+            Rect::new(label.right(), inside.y, picker_width, row_height),
             &[B::new(&project, K::Char('c'), !self.busy && on_list)],
         );
         self.buttons.extend(hits);
@@ -845,31 +855,31 @@ impl Panel {
             frame.render_widget(
                 Paragraph::new(ui::clip(&self.project, usize::from(path_end - path_x)))
                     .style(Style::default().fg(t.dim)),
-                Rect::new(path_x, inside.y, path_end - path_x, 1),
+                Rect::new(path_x, text_y, path_end - path_x, 1),
             );
         }
         // Queue actions for the whole project; Refresh sits apart on the right.
         let refresh = "Refresh r";
-        let refresh_width = refresh.width() as u16 + 2;
+        let refresh_width = refresh.width() as u16 + padding;
         let actions = Rect::new(
             inside.x,
-            inside.y + 1,
+            inside.y + row_height,
             inside.width.saturating_sub(refresh_width + 1),
-            inside.height - 1,
+            inside.height - row_height,
         );
-        let (_, hits) = buttons::draw_compact_top(
+        let (_, hits) = draw_toolbar(
             t,
             frame,
             Rect::new(
                 inside.right().saturating_sub(refresh_width),
                 actions.y,
                 refresh_width.min(inside.width),
-                1,
+                row_height,
             ),
             &[B::new(refresh, K::Char('r'), !self.busy && on_list)],
         );
         self.buttons.extend(hits);
-        let (below, hits) = buttons::draw_compact_top(
+        let (below, hits) = draw_toolbar(
             t,
             frame,
             actions,
@@ -1045,11 +1055,17 @@ impl Panel {
             )
         };
         let rows = self.draw_page(t, frame, list, true, true);
-        self.draw_content(t, frame, content);
+        self.draw_content(t, frame, content, outlined);
         rows
     }
     /// The selected task beside the list, as its text or its run details.
-    fn draw_content(&mut self, t: &Theme, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    fn draw_content(
+        &mut self,
+        t: &Theme,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        outlined: bool,
+    ) {
         use crate::buttons::{self, Button as B};
         use KeyCode as K;
         use ratatui::{
@@ -1064,13 +1080,18 @@ impl Panel {
         let shown = self.read_error.is_none() && self.content.is_some();
         let tab = |label, code, view| {
             let button = B::new(label, code, shown);
-            if shown && self.view == view {
+            if shown && self.view == view && !outlined {
                 button.primary()
             } else {
                 button
             }
         };
-        let (mut body, hits) = buttons::draw_compact_top(
+        let draw_tabs = if outlined {
+            buttons::draw_outlined_top
+        } else {
+            buttons::draw_compact_top
+        };
+        let (mut body, hits) = draw_tabs(
             t,
             frame,
             area,
@@ -1079,6 +1100,19 @@ impl Panel {
                 tab("Run details ↵", K::Enter, View::Details),
             ],
         );
+        if outlined {
+            let selected = if self.view == View::Text {
+                K::Char('t')
+            } else {
+                K::Enter
+            };
+            if let Some(hit) = hits.iter().find(|hit| hit.key.code == selected) {
+                frame.buffer_mut().set_style(
+                    hit.area,
+                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
+                );
+            }
+        }
         self.buttons.extend(hits);
         if body.height > 1 {
             body.y += 1;

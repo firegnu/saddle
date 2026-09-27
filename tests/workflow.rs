@@ -503,8 +503,8 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"\r");
     h.see("Input ▸ Tasks · Run details");
     h.see("detail line 0");
-    h.send(b"\x1b[6~\x1b[6~");
-    // PgDn pages through the details beside the list.
+    h.send(b"\x1b[6~\x1b[6~\x1b[6~");
+    // Three pages reach line 50 with the outlined toolbars above the details.
     h.see("detail line 50");
     assert!(!h.screen.screen().contents().contains("detail line 0"));
     h.send(b"t");
