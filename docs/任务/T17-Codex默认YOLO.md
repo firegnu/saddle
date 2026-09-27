@@ -30,3 +30,12 @@ New Agent 的内置 Codex 默认以 `codex --yolo` 启动。初始化和明确�
 
 ## 做完
 在本文件末尾追加完成记录并提交：做了什么、验证结果、取舍及未做事项。回复带提交 SHA 和需要主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（2026-09-27）
+
+- 实现：`src/launch.rs` 用同一个 `codex --yolo` 默认命令供初始化、明确选择 Codex、内置选项识别使用；预览继续从实际 argv 生成。同步 README 默认命令说明及受影响的假 CLI 断言。
+- 定向 RED：先增强现有 `default_project_and_codex_can_create_without_typing_a_command` 检查，再运行 `cargo test --lib launch::tests::default_project_and_codex_can_create_without_typing_a_command -- --exact`，退出 101；实际 argv 以 `codex` 结束，期望为 `codex --yolo`，确认为目标缺陷。
+- 定向 GREEN：最小实现后原命令退出 0，覆盖初始化、从 Claude 切回 Codex、内置选中标识、无 Custom command 误标及完整预览。
+- 标准测试（各一次）：`cargo test --all-targets` 退出 101；所有其他测试通过，workflow 为 36 通过、1 失败、2 忽略。唯一失败是任务已注明的 `full_workflow_routes_input_switches_safely_and_survives_disappearance`：旧坐标鼠标输入后未出现期望的 `input p/a 1b5b3c303b333b324d`。本次默认创建、编辑名称后创建、Claude 默认、自定义命令预览和失败草稿检查均通过。`cargo clippy --all-targets -- -D warnings` 退出 0。
+- 格式及差异：`cargo fmt --check` 首次提示本次新增代码的换行，已运行 `cargo fmt` 修正；最终 `git diff --check` 通过。所有 Cargo 命令均使用规定的共享 `CARGO_TARGET_DIR`，所有命令在前台等待结束。
+- 取舍及未做事项：只修改内置默认值，不在提交阶段追加参数；高级自定义命令与 Claude 行为保持原样。设计第 33 节已明确授权，无需再改设计。未操作真实 agent、队列、全局配置或其他仓库；未合并、推送或构建 release。已知基线失败未扩修，交由主控另行安排；无新增设计决策待确认。
