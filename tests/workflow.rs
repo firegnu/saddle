@@ -1441,7 +1441,6 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
                 .unwrap()
                 .to_string_lossy()
                 .into_owned(),
-            "--unique".into(),
             "--".into(),
         ];
         expected.extend(command.iter().map(|arg| arg.to_string()));

@@ -119,9 +119,6 @@ impl Form {
             "--cwd".into(),
             expand_home(cwd).to_string_lossy().into_owned(),
         ];
-        if !self.manual_name {
-            args.push("--unique".into());
-        }
         if !prompt.is_empty() {
             args.extend(["--prompt".into(), prompt.clone()]);
         }
@@ -632,13 +629,7 @@ impl Form {
                 }
                 0..=3 => {
                     let hint = match id {
-                        1 => {
-                            if self.manual_name {
-                                "Exact name · edit freely"
-                            } else {
-                                "Suggested name · edit freely"
-                            }
-                        }
+                        1 => "Exact name · edit freely",
                         2 => "Quoted arguments; no shell expansion",
                         3 => "Enter newline · ↑↓ move · paste multiple lines",
                         _ => "",
@@ -800,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    fn default_project_and_codex_can_create_without_typing_a_command() {
+    fn default_project_and_codex_create_exact_main_without_typing_a_command() {
         use ratatui::{Terminal, backend::TestBackend};
         let mut form = Form::new("/tmp/demo".into());
         assert_eq!(
@@ -815,7 +806,6 @@ mod tests {
             "main",
             "--cwd",
             "/tmp/demo",
-            "--unique",
             "--",
             "codex",
             "--yolo",
@@ -844,7 +834,8 @@ mod tests {
                 .join("\n");
             assert!(text.contains("● Codex"));
             assert!(!text.contains("Custom command"));
-            assert!(text.contains("corral start main --cwd /tmp/demo --unique -- codex --yolo"));
+            assert!(text.contains("corral start main --cwd /tmp/demo -- codex --yolo"));
+            assert!(text.contains("Exact name · edit freely"));
         }
     }
 
@@ -889,7 +880,6 @@ mod tests {
                 "main",
                 "--cwd",
                 "/tmp/second project",
-                "--unique",
                 "--",
                 "claude"
             ]
