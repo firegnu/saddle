@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-27：New Agent 名称前缀已发布收尾
+
+- New 的 Prefix 输入框默认 agents，与 Name 并排；两种角色下都可编辑，创建和预览统一使用 Prefix/Name。Controller 的 main 仍锁定，Regular 名称可编辑。设计及取舍见 DESIGN 第 38 节、docs/任务/New-Agent名称前缀.md。
+- 开发 dc8ef9b / a7269e9、合并 901896e、主控审查 12db950、收尾空提交 cd8edfe。主控标准测试 146 passed、1 failed、2 ignored；Clippy/diff 通过。唯一失败仍为已知 full_workflow 旧鼠标坐标基线，本次未扩修。
+- main release 已构建并同步共享 target 与仓库 target/release/saddle，SHA-256 均为 4464312fb045a65b579d866314cc29e8e44aaa0dc9c100050d9f43ef4b520eee；默认 saddle 指向共享 release，重启后体验。
+- 已确认 idle、attached=0、工作区干净且分支合入 main，正常删除 new-agent-prefix worktree/分支；工作目录已删，一并关闭自有 saddle/dev-name-prefix-1。用户现有 agent、队列与其他仓库未操作，当前只留 main worktree。
+- 前缀不跨成功创建或重启记忆，Name 沿用可含斜杠的原校验；均按本轮范围保留。非阻塞建议：无效前缀时会额外展开 Advanced，焦点仍正确，不影响本需求，未扩修。下一步等用户体验反馈，不自动启动其他待办；本节随 main 推送。
+
 ## 2026-09-27：英文 Agent 工作职责标题已发布收尾
 
 - 窗格按公开标签显示 Controller / Implementer / Reviewer · 名称；Regular、无标签 Agent、空窗格 Viewer 规则保留。Saddle 项目 AGENTS.md 已补充派发职责标签；其他项目/入口需创建时传相同标签。设计与审查见 DESIGN 第 37 节、docs/任务/Agent工作职责标题.md。
