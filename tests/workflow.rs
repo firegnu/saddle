@@ -1395,9 +1395,9 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
     assert!(!h.log("events").contains("start "));
     h.click("Create agent");
     h.see("a文中-actual READY");
-    h.see("Regular · a文中-actual");
+    h.see("Regular · agents/a文中-actual");
     let args: Vec<String> = serde_json::from_str(h.log("start-args").trim()).unwrap();
-    assert_eq!(args[1], "a文中");
+    assert_eq!(args[1], "agents/a文中");
     assert!(args.windows(2).any(|w| w == ["--label", "role=regular"]));
     assert_eq!(&args[args.len() - 2..], ["codex", "--yolo"]);
     assert!(!args.iter().any(|a| a == "--unique"));
@@ -1417,7 +1417,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     h.see("main");
     h.click("Create agent");
     h.see("main-actual READY");
-    h.see("Controller · main-actual");
+    h.see("Controller · agents/main-actual");
     h.send(b"\x1dn");
     h.click("Project:");
     h.click("project-two ·");
@@ -1443,7 +1443,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     {
         let mut expected = vec![
             "start".to_string(),
-            "main".to_string(),
+            "agents/main".to_string(),
             "--cwd".into(),
             h.dir
                 .path()
@@ -1471,8 +1471,10 @@ fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
     h.see("New agent");
     h.see("project-one");
     h.click("Regular");
+    h.click("Prefix");
+    h.send(b"\x15p");
     h.click("Name");
-    h.send(b"\x15p/new");
+    h.send(b"\x15new");
     h.click("Advanced");
     h.click("Command");
     h.send(b"\x15codex --model 'test model'\t");
@@ -1570,8 +1572,10 @@ fn closing_a_start_target_keeps_the_created_agent_available_without_attaching() 
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
     h.send(b"n");
     h.click("Regular");
+    h.click("Prefix");
+    h.send(b"\x15p");
     h.click("Name");
-    h.send(b"\x15p/late\x13");
+    h.send(b"\x15late\x13");
     h.event("start p/late");
     h.send(b"\x13"); // Busy submit cannot start it twice.
     h.send(b"\x1b"); // Hide form while the public start is running.
@@ -1598,8 +1602,10 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
     h.send(b"\x1dn");
     h.click("Regular");
+    h.click("Prefix");
+    h.send(b"\x15p");
     h.click("Name");
-    h.send(b"\x15p/hidden");
+    h.send(b"\x15hidden");
     h.click("Advanced");
     h.click("Open in: Current pane");
     h.send(b"\x13");
