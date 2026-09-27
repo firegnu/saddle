@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-27：New 默认 main 精确名称修复已委派
+
+- 最新澄清已获用户回复「对」确认：增加主控/普通角色选项，默认主控、名称固定 main，普通自由命名。DESIGN 第 34 节及任务文件已更新，继续交原开发者在 b015f42 上补齐角色选项；角色仅约束名称，不开启派发或改队列配置。
+- 用户发现默认 main 创建为 main-1，并说明工作流依赖精确名称 main。原因是 New 未编辑名称时带 --unique；修复方案见 DESIGN 第 34 节及 docs/任务/New-Agent精确名称.md，提交 f225237。
+- 自有 saddle/dev-exact-name-1（Codex gpt-6-astra / high）在 ../saddle-worktrees/new-agent-exact-name、同名分支继续实施。只改 New 角色/名称及必要布局、说明/检查，不改派发、YOLO 和现有 agent（包括用户 main-1）。
+- b015f42 已静态核对，diff 检查通过，主控未重跑标准测试、未给最终合并结论。等角色增量完成后审增量，并对最终版本跑一次主控标准检查，通过后合并发布、清理和收尾。没有新建或操作队列任务，T17 的已完成记录不重开。
+
 ## 2026-09-27：T17 默认 Codex YOLO 已发布收尾
 
 - New Agent 默认创建和明确选择 Codex 均使用 `codex --yolo`；预览与实际 argv 一致，高级自定义命令及 Claude 保持原样。开发 8a47a9e、合并 1c48bbf、主控审查 522d4e7、收尾空提交 f895884。设计与完整记录见 DESIGN 第 33 节、docs/任务/T17-Codex默认YOLO.md；用户已表示 UI 暂定，不继续调整样式。
