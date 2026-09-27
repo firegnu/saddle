@@ -44,3 +44,8 @@ worktree：/Users/firegnu/Developer/personal_projs/saddle-worktrees/t21-effort-d
 核对实现者 idle/attached=0、新回复 DONE、提交 cddbce4 与完整差异。仅 README 中英文和任务完成记录改动；三档、字形、默认色与 src/corral.rs::effort、src/ui.rs::effort_bars 及主题常量一致，均保留公开委派标签不代表运行时 effort、未知不显示、列对齐和折叠显示语义。表格中英一致，同意仅整理已有说明的取舍，无剩余必须改或建议改。
 
 主控 git diff --check 通过；按用户纯文档预算不跑套件、不交叉审查、不构建或发布二进制。用户现场已确认「我看到了，已经好了。等任务结束。」作为本次 effort 显示体验反馈记录，不扩大为运行时模型档位检测结论。按流程合并推送、清理收尾后公开 drover done T21，等用户放行。
+
+
+## 合并与清理
+
+合并90fda11、审查e14f6d0已推送origin/main。核对实现者idle/attached=0、worktree干净、分支已合入main后，正常删除t21-effort-docs worktree/分支；工作目录已删，一并关闭自有saddle/dev-t21-effort-docs-1。未发布二进制。随后补收尾空提交、交接并公开drover done T21，等待用户放行。
