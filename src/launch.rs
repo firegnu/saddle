@@ -745,6 +745,7 @@ mod tests {
         let style: Vec<_> = (cancel.area.x..cancel.area.right())
             .map(|x| buffer[(x, cancel.area.y)].clone())
             .collect();
+        let tasks = |area| crate::layout::Panes::new(area, &Default::default()).tasks;
         let mut form = Form::new("/tmp/demo".into());
         let mut queue = crate::queue::Panel::default();
         queue.page = crate::queue::Page::Project("/tmp/demo".into());
@@ -754,7 +755,8 @@ mod tests {
                     if new {
                         hits = form.draw(&t, frame, "corral", &[]);
                     } else {
-                        queue.draw_overlay(&t, frame);
+                        let area = frame.area();
+                        queue.draw(&t, frame, tasks(area));
                         hits = queue.buttons.clone();
                     }
                 })
@@ -767,16 +769,12 @@ mod tests {
                 text(buffer, buffer.area)
             );
             assert_eq!(cancel.area.height, 1);
-            assert_eq!(
-                cancel.area.bottom(),
-                crate::theme::centered(
-                    buffer.area,
-                    if new { 104 } else { 76 },
-                    if new { 24 } else { 20 }
-                )
-                .bottom()
-                    - 1
-            );
+            let dialog = if new {
+                crate::theme::centered(buffer.area, 104, 24)
+            } else {
+                tasks(buffer.area)
+            };
+            assert_eq!(cancel.area.bottom(), dialog.bottom() - 1);
             let cells: Vec<_> = (cancel.area.x..cancel.area.right())
                 .map(|x| buffer[(x, cancel.area.y)].clone())
                 .collect();

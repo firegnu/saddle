@@ -7,14 +7,14 @@ English · [简体中文](README.zh-CN.md)
 See your agents, manage the task queue, and work in an agent's live terminal—all in one window.
 
 ```text
-┌─ Agents ─────────────┬─ Viewer ──────────────────────────┐
+┌─ Agents ───‹Tasks›──┬─ Viewer ──────────────────────────┐
 │ project/            │                                   │
 │ ├─ main   working   │  The selected agent's terminal     │
 │ └─ review idle      │                                   │
-├─ Queue ─────────────┤  Type, paste, and interact here.    │
-│ Current / Pending   │                                   │
-│ History             │                                   │
+│                     │  Type, paste, and interact here.    │
+│                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
+  Tasks opens as a large popup from the left, over the Viewer.
 ```
 
 saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings together [corral](https://github.com/firegnu/corral) agent sessions and the [drover](https://github.com/firegnu/drover) task queue. It does not require tmux or Zellij.
@@ -23,14 +23,14 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 
 - **Agents:** a repository tree with live status, agent type, activity, attachment count, working directory, and title. Color distinguishes working, idle, blocked, stalled, and error states. When an agent was started with a public corral `effort` label, a small dotted signal icon shows it: `⣄⡀`, `⣴⡀`, or `⣴⡇` for medium, high, or xhigh (three bars packed into two character cells, using the theme’s idle/working/starting colors—soft green/blue/purple by default; unlit bars keep only baseline dots, and selection does not change the icon). Agents without the label, or with any other value, show no icon. It reflects the delegation label only, not the runtime's actual effort.
 - **Git summary per agent:** below each agent's directory, a line such as `dev-t12 · C2(main) · +18 -4 · ?1` describes the worktree at the agent's public corral `cwd`: the current branch; commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together, after Git's built-in text/eol attributes (so a committed CRLF file whose timestamp changed is not counted), per path with no rename detection (a pure rename counts as all lines deleted and added); and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only; a slow repository delays the round for every directory. It never fetches or lazily fetches missing objects, and it runs no external diff, textconv, fsmonitor hook or clean/smudge/process filter from any attributes source. When a changed file would need such a filter, the line counts show `+— -—` instead. A parent repository's line does not look inside submodule worktrees: uncommitted changes inside a submodule are not counted, while a submodule whose commit moved counts as a changed gitlink (`+1 -1`). It also skips optional index writes and ignores inherited `GIT_*` variables such as `GIT_DIR`. It does not follow an agent that later `cd`s elsewhere.
-- **Queue:** current, awaiting, pending, and historical tasks. Click a task for its status and progress details, add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
+- **Tasks:** a large popup opened from the **Tasks** entry at the top of Agents (or **Tab**). While closed, the entry keeps the project's short state in its status color — `Awaiting release`, `Running`, `Paused`, the pending count, or `Idle` (`Loading…` / `Read failed` until the queue is read) — so you can tell whether anything needs attention. Project and queue actions sit on top; current, awaiting, pending, and historical tasks are listed on the left with the selected task's text or run details beside them. Add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
 - **New agents:** choose a project and Codex or Claude, then create an agent with an editable suggested name. Advanced settings hold the full command, first message, opening location, and exact call preview.
 - **Viewer tabs and splits:** each tab holds a group of terminals, with left/right/up/down splits. Each pane runs a live `corral attach` with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
-- **Responsive layout:** three panes in a wide terminal; Agents and Queue become tabs in a narrow window.
+- **Responsive layout:** Agents keep the whole left column at every width; the Tasks popup takes about 85% of the window and stacks its list above the content when narrow.
 - **Terminal-native appearance:** transparent panel backgrounds, semantic state colors, and English interface labels. Task text and agent output keep their original language.
 
-Agents and Queue are native Rust widgets. Only Viewer panes run child PTYs; saddle does not embed external board interfaces.
+Agents and Tasks are native Rust widgets. Only Viewer panes run child PTYs; saddle does not embed external board interfaces.
 
 ## Getting started
 
@@ -65,7 +65,7 @@ Use **New** in Agents to start an agent, or attach an existing corral session. R
 1. Select an agent on the left and press **Enter**, or click its row, to attach.
 2. Type directly in Viewer to work with that agent.
 3. Press **Ctrl-]** to return to Agents. Viewer stays connected.
-4. Press **Tab** to focus Queue, or click the pane. Use **Project** to choose a registered project.
+4. Press **Tab**, or click **Tasks** at the top of Agents, to open the task popup. Use the project selector at its top to choose a registered project; **Esc** closes it and returns input where it was.
 5. To exit from anywhere, press **Ctrl-]**, then **q**. Exiting disconnects all of saddle's viewers; the agents keep running.
 
 **New / n** opens a form ready to create an agent: choose a **Project**, choose **Codex** (default) or **Claude**, then click **Create agent** or press **Ctrl-S**. The project defaults to the current Tasks directory; selecting a different project only affects this new agent. Click the project selector (or Ctrl-P) to choose a registered directory with the mouse or Up/Down and Enter; **Edit path / Ctrl-E** allows any directory. The suggested `<project>/<agent>` name follows these choices until you edit it. Suggested names use `corral start --unique`; edited names are passed exactly, including normal CLI duplicate-name errors. The actual created name always comes from corral's reply.
@@ -101,7 +101,7 @@ drover = "drover"
 |---|---|
 | `corral` | corral executable name or path |
 | `left_width` | Preferred width of the left column, in terminal cells |
-| `left_split` | Fraction of the left column height allocated to Agents; between 0 and 1 |
+| `left_split` | No longer used: Agents take the whole left column and Tasks is a popup. Still accepted (between 0 and 1) so existing configs keep loading |
 | `refresh_ms` | Background refresh interval in milliseconds |
 | `queue.drover` | drover executable name or path |
 | `queue.cwd` | Optional initial queue project directory |
@@ -139,34 +139,33 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Viewer chrome | tab / pane title / × | Select a tab/pane, close a tab |
 | Viewer chrome | Close pane / Close tab | Disconnect the pane or every pane in the tab |
 | Agents | Mouse wheel / trackpad | Scroll the list without changing selection |
-| Agents | Tab / Shift-Tab | Focus Queue / Viewer |
+| Agents | Tab / Shift-Tab | Open Tasks / focus Viewer |
+| Anywhere | Click Tasks (top of Agents) | Open Tasks; closing returns to the previous input target |
 | Agents | PgUp / PgDn | Scroll the agent list |
 | Agents | s | Toggle name / state sorting within repositories |
 | Agents | x, then y | Stop the selected agent; other keys cancel |
 | Agents | q | Quit saddle |
-| Queue | ↑↓ / j k | Select a task |
-| Queue | Click a task / Enter | Show its details in the Tasks area |
-| Queue list | Mouse wheel / trackpad | Scroll tasks and history without changing selection |
-| Queue | c | Open the project picker |
+| Tasks | ↑↓ / j k / click a task | Select a task; its text or run details show beside the list |
+| Tasks | t / Task text, Enter / Run details | Show the task text / its run details |
+| Tasks | PgUp / PgDn | Scroll the task text or run details |
+| Tasks | Mouse wheel / trackpad | Scroll whichever of the list or the content is under the pointer, without changing selection |
+| Tasks | c / project selector | Open the project picker |
 | Project picker | Enter / click, e, r | Open project, enter a path, reload registry |
 | Path form | Ctrl-U / Enter / Esc | Clear / apply / cancel |
-| Task details | Esc / Back | Return to the list |
-| Task details | t / Task | Open the full task text in a dialog |
-| Task details / task text | e / Edit | Edit the task while it is pending |
-| Task details / result | ↑↓ / j k / Mouse wheel / PgUp / PgDn | Scroll content |
-| Queue | r / g / n | Refresh / check and release / send next task |
-| Queue | p / l | Pause or resume / toggle loop |
-| Queue | a / ? | Add a task / open help |
-| Queue pending task | e / u / d / x | Edit / move up / move down / delete (confirm with y) |
-| Queue | A | Show pending tasks from all registered projects |
-| All pending | Mouse wheel / PgUp / PgDn, r, Esc | Scroll / reload / close |
+| Tasks | r / g / n | Refresh / check and release / send next task |
+| Tasks | p / l | Pause or resume / toggle loop |
+| Tasks | a / ? | Add a task / open help |
+| Tasks, pending task selected | e / u / d / x | Edit / move up / move down / delete (confirm with y) |
+| Tasks | A | Show pending tasks from all registered projects |
+| All pending | Mouse wheel / PgUp / PgDn, r, Esc | Scroll / reload / back |
 | Add / Edit form | Tab / Ctrl-S / Esc | Switch field / save / cancel |
-| Queue | q | Return to Agents; in text fields, q is text |
-| Queue / Viewer | Ctrl-] | Return to Agents |
+| Help / result / other pages | Esc / Back | Return to the list |
+| Tasks | Esc / Close, q | Close Tasks and return to the previous input target; in text fields, q is text |
+| Tasks / Viewer | Ctrl-] | Return to Agents (Tasks closes, keeping its state) |
 
-Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies the current input target. Open dialogs capture their own input; background controls stay inactive. Unsubmitted Queue drafts survive a temporary return to Agents.
+Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies the current input target. Open dialogs capture their own input; background controls stay inactive. While Tasks is open, keys and the mouse act only on it; the terminals keep running underneath and are not resized. Closing and reopening Tasks keeps the project, the selected task, the text/details view, scroll positions, and any unsubmitted add/edit draft.
 
-**Task details.** Click a task (or select it and press **Enter**) to switch the Tasks area to that task; **Esc** or **Back** returns to the list with the same selection and scroll position. Agents and Viewer stay as they are, and keys and scrolling in the details stay in Queue. For current, awaiting, and history tasks, saddle runs the read-only `drover show <id> --json --with-agent-status` in the project when the page opens and about every 5 seconds while it stays open, one query at a time; returning to the list, switching projects, or quitting stops it. The page follows the task id, so a task that finishes or is released keeps showing the same task. It shows:
+**Task text and run details.** The selected task shows beside the list, first as its full title and body (**Task text t**). **Run details ↵** switches to its status and progress; the chosen view stays as you move between tasks. For current, awaiting, and history tasks, run details come from the read-only `drover show <id> --json --with-agent-status`, run in the project when the view shows and about every 5 seconds while it stays open, one query at a time; choosing Task text, another task, switching projects, closing Tasks, or quitting stops it. The details follow the task id, so a task that finishes or is released keeps showing the same task. They show:
 
 - the status, elapsed time, and any attention hint or inconsistent-snapshot warning;
 - the completion checks recomputed now, with each reason; for history tasks the completion-time checks were not saved, and today's are not applied;
@@ -175,15 +174,15 @@ Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies
 - routing from the current task file, hold, and the attention hint (an inference, not proof that work stopped);
 - start, finish, and release times, and the body.
 
-Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their page shows the list's title, body, and status; a pending task switches to full details once it starts. **Task t** opens the full title and body in a dialog; closing it restores the detail reading position. Pending tasks have **Edit e** in both the detail pane and the text dialog. Saving or cancelling returns to the view that opened the editor. Other queue actions work from the list.
+Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their details show the list's title, body, and status; a pending task switches to full details once it starts.
 
-Select a pending task to use **Edit**, **Move up**, or **Move down**; other task states cannot be edited or reordered. Edit prefills the title and multiline body. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, saddle rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
+Select a pending task to use **Edit**, **Move up**, or **Move down** at the bottom of Tasks; other task states cannot be edited or reordered. Edit opens a full-size form in the same popup and prefills the title and multiline body; saving or cancelling returns to the same task and view. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, saddle rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
 
 **Delete x** opens a confirmation showing the selected pending task's position, id, title, and body; press **y** or click **Delete** to confirm, or **Esc** / **Cancel** to keep it. The confirmed target is fixed when the dialog opens, so refreshes do not change it. saddle runs `drover drop --pos <position> "Deleted in saddle"` after the same pending recheck: the task leaves the pending queue and drover keeps it in History as **Dropped** (with that reason); it is not erased. Only pending tasks can be deleted here; current tasks cannot be returned to pending.
 
-**All pending A** opens a read-only dialog listing the pending tasks of every project in `~/.drover/projects`, grouped by project with each task's queue position, id, and full title. Each project is read in the background with its own `drover list --json`; a project that is still loading or failed to read is labeled as such, with the full error, while the other projects still show their tasks. Press **r** to reload. The dialog does not edit or reorder tasks; switch to a project to act on its queue.
+**All pending A** opens a read-only page in the Tasks popup listing the pending tasks of every project in `~/.drover/projects`, grouped by project with each task's queue position, id, and full title. Each project is read in the background with its own `drover list --json`; a project that is still loading or failed to read is labeled as such, with the full error, while the other projects still show their tasks. Press **r** to reload. The page does not edit or reorder tasks; switch to a project to act on its queue.
 
-**Go, Next, Pause, and Loop apply to the selected project**, regardless of which history task is highlighted. A failed refresh disables actions on stale queue data. No active work is shown as `No active tasks`; history remains available, with a range indicator at the bottom.
+**Next, Check & release, Pause, and Loop apply to the selected project**, regardless of which history task is highlighted. A failed refresh disables actions on stale queue data. No active work is shown as `No active tasks`; history remains available, with a range indicator at the bottom.
 
 ## Development
 

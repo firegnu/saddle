@@ -49,11 +49,7 @@ fn render(
     focus: Focus,
 ) -> (Buffer, ui::Hits) {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
-    let panes = Panes::with_queue(
-        Rect::new(0, 0, w, h),
-        &Config::default(),
-        focus == Focus::Queue,
-    );
+    let panes = Panes::new(Rect::new(0, 0, w, h), &Config::default());
     let mut hits = ui::Hits::default();
     terminal
         .draw(|frame| {
@@ -127,7 +123,7 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
         let (mut a, mut q) = fixture();
         let (buffer, hits) = render(w, h, &mut a, &mut q, Focus::Queue);
         let output = text(&buffer);
-        assert!(output.contains("Input ▸ Queue"), "{output}");
+        assert!(output.contains("Input ▸ Tasks"), "{output}");
         assert!(
             output.contains("T12345") && output.contains("…") && output.contains("Pending"),
             "{output}"
@@ -135,34 +131,24 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
         assert!(!hits.queue_rows.is_empty());
         for label in [
             "‹Refresh r›",
-            "‹Project c›",
-            "‹Details ↵›",
-            "‹Add a›",
+            "‹demo ▾ c›",
+            "‹Run details ↵›",
+            "‹Add task a›",
             "‹Help ?›",
+            "‹Close Esc›",
         ] {
             assert!(output.contains(label), "missing {label}: {output}");
         }
         assert!(!output.contains('╭'), "{output}");
-        let row = hits.queue_rows[0].0;
-        let panes = Panes::with_queue(buffer.area, &Config::default(), true);
-        assert_eq!(
-            buffer[(panes.queue.right() - 4, row)].bg,
-            ratatui::style::Color::Reset
-        );
-        for pane in [panes.queue, panes.tabs] {
-            for y in pane.y..pane.bottom() {
-                for x in pane.x..pane.right() {
-                    assert_eq!(
-                        buffer[(x, y)].bg,
-                        ratatui::style::Color::Reset,
-                        "background at {x},{y}"
-                    );
-                }
+        // The popup is one dialog surface over Agents and Viewer, which take no clicks.
+        let panes = Panes::new(buffer.area, &Config::default());
+        let overlay = saddle::theme::Theme::default().overlay;
+        for y in panes.tasks.y..panes.tasks.bottom() {
+            for x in panes.tasks.x..panes.tasks.right() {
+                assert_eq!(buffer[(x, y)].bg, overlay, "background at {x},{y}");
             }
         }
-        if w < 100 {
-            assert!(hits.agents.is_empty());
-        }
+        assert!(hits.agents.is_empty() && hits.terminal.is_empty());
     }
 }
 #[test]
@@ -367,7 +353,7 @@ fn agents_chrome_is_english_and_uses_terminal_colors_while_data_stays_verbatim()
         a.agents[0].state = Some(state.into());
         a.agents[0].last_tool = Some("读取文件".into());
         let (buffer, hits) = render(160, 60, &mut a, &mut q, Focus::Agents);
-        let panes = Panes::with_queue(buffer.area, &Config::default(), false);
+        let panes = Panes::new(buffer.area, &Config::default());
         let mut chrome = String::new();
         for y in panes.agents.y..panes.agents.bottom() {
             for x in panes.agents.x..panes.agents.right() {
@@ -478,7 +464,7 @@ fn agent_status_colors_are_distinct_and_bold() {
 
 #[test]
 fn agents_scrollbar_reaches_the_bottom_when_the_last_row_is_visible() {
-    for (extra, height) in [(1, 20), (12, 40)] {
+    for (extra, height) in [(3, 20), (12, 40)] {
         let (mut a, mut q) = fixture();
         for index in 0..extra {
             a.agents.push(Agent {
@@ -586,28 +572,33 @@ fn queue_history_scrollbar_reaches_the_end_with_the_last_task_visible() {
         ..Default::default()
     });
     q.select(39);
-    let (buffer, hits) = render(160, 60, &mut a, &mut q, Focus::Queue);
+    let (buffer, hits) = render(160, 40, &mut a, &mut q, Focus::Queue);
     assert!(
         text(&buffer).contains("History item 00"),
         "{}",
         text(&buffer)
     );
     let last = hits.queue_rows.last().unwrap().0;
-    assert_eq!(buffer[(50, last)].symbol(), "█");
+    // The list's scrollbar thumb reaches its last row, left of the content divider.
+    assert!(
+        (0..60).any(|x| buffer[(x, last)].symbol() == "█"),
+        "{}",
+        text(&buffer)
+    );
     q.select(0);
-    let (_, hits) = render(160, 60, &mut a, &mut q, Focus::Queue);
+    let (_, hits) = render(160, 40, &mut a, &mut q, Focus::Queue);
     let before = q.top;
     q.wheel(10, hits.queue_rows[0].0, 3);
-    render(160, 60, &mut a, &mut q, Focus::Queue);
+    render(160, 40, &mut a, &mut q, Focus::Queue);
     assert_eq!(q.selected, 0);
     assert_eq!(q.top, before + 3);
     q.absorb(q.snapshot.clone().unwrap());
-    render(160, 60, &mut a, &mut q, Focus::Queue);
+    render(160, 40, &mut a, &mut q, Focus::Queue);
     assert_eq!(q.top, before + 3);
     q.wheel(0, 0, 10); // Outside the list.
     assert_eq!(q.top, before + 3);
     q.select(0);
-    let (buffer, _) = render(160, 60, &mut a, &mut q, Focus::Queue);
+    let (buffer, _) = render(160, 40, &mut a, &mut q, Focus::Queue);
     assert!(text(&buffer).contains("History item 39"));
 }
 
@@ -615,8 +606,7 @@ fn render_queue(q: &mut queue::Panel, width: u16, height: u16) -> Buffer {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal
         .draw(|f| {
-            q.draw(&saddle::theme::Theme::default(), f, f.area(), true);
-            q.draw_overlay(&saddle::theme::Theme::default(), f);
+            q.draw(&saddle::theme::Theme::default(), f, f.area());
         })
         .unwrap();
     terminal.backend().buffer().clone()
@@ -657,7 +647,7 @@ fn queue_chrome_is_english_and_preserves_source_text() {
     });
     let check = |q: &mut queue::Panel| {
         let output = text(&render_queue(q, 80, 32));
-        if matches!(q.page, queue::Page::Detail(_)) {
+        if q.view == queue::View::Details {
             for value in ["原始任务", "原始正文", "原始原因"] {
                 assert!(output.contains(value), "{output}");
             }
@@ -695,7 +685,7 @@ fn queue_chrome_is_english_and_preserves_source_text() {
         crossterm::event::KeyCode::Enter,
         crossterm::event::KeyModifiers::NONE,
     ));
-    assert!(matches!(q.page, queue::Page::Detail(_)));
+    assert!(matches!(q.page, queue::Page::List) && q.view == queue::View::Details);
     check(&mut q);
 }
 
@@ -783,7 +773,7 @@ fn queue_states_and_operation_results_have_semantic_colors() {
 
 #[test]
 fn short_history_has_a_footer_at_the_bottom_of_its_available_area() {
-    for (width, height) in [(52, 32), (44, 24), (34, 24)] {
+    for (width, height) in [(80, 32), (64, 24), (52, 24)] {
         let mut q = queue::Panel::default();
         q.absorb(Snapshot {
             history: vec![Task {
@@ -796,17 +786,18 @@ fn short_history_has_a_footer_at_the_bottom_of_its_available_area() {
         let output = text(&buffer);
         assert!(output.contains("No active tasks"));
         assert!(output.contains("Past task"));
-        // Narrow panes may wrap the task buttons; the footer still sits directly above them.
+        // Beside or above the content, the footer is the list's last row, right above a rule.
         let lines: Vec<_> = output.lines().collect();
-        let buttons = lines.iter().position(|l| l.contains("Details")).unwrap();
+        let footer = lines
+            .iter()
+            .position(|l| l.contains("History 1–1/1 · End"))
+            .unwrap_or_else(|| panic!("{output}"));
+        let below: String = lines[footer + 1]
+            .chars()
+            .filter(|c| !matches!(c, '┃' | ' '))
+            .collect();
         assert!(
-            lines[buttons - 1].contains("History 1–1/1 · End"),
-            "{output}"
-        );
-        assert!(
-            lines[buttons..height as usize - 1]
-                .iter()
-                .all(|l| l.contains('‹')),
+            !below.is_empty() && below.chars().all(|c| matches!(c, '─' | '┴')),
             "{output}"
         );
     }
@@ -834,7 +825,7 @@ fn task_groups_and_row_statuses_have_distinct_colors() {
         ],
         ..Default::default()
     });
-    let buffer = render_queue(&mut q, 52, 40);
+    let buffer = render_queue(&mut q, 120, 40);
     for (label, color) in [
         ("Current 1", t::AGENT_WORKING),
         ("Awaiting 1", t::AGENT_BLOCKED),
@@ -915,12 +906,8 @@ fn all_pending_overlay_names_projects_reports_each_state_and_scrolls_to_the_last
     ] {
         assert!(output.contains(value), "missing {value}:\n{output}");
     }
-    let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
-    terminal
-        .draw(|f| q.draw_overlay(&saddle::theme::Theme::default(), f))
-        .unwrap();
-    // Only the overlay's interior: wrapped rows joined back must equal the source title.
-    let joined: String = text(terminal.backend().buffer())
+    // Only the popup's interior: wrapped rows joined back must equal the source title.
+    let joined: String = output
         .lines()
         .filter_map(|l| {
             let (start, end) = (l.find('┃')?, l.rfind('┃')?);
@@ -1067,9 +1054,9 @@ fn selecting_an_agent_keeps_its_effort_icon_tier() {
             .collect::<Vec<_>>()
     };
     a.selected = Some("demo/other".into());
-    let unselected = icon(&mut a, &mut q, Focus::Queue);
+    let unselected = icon(&mut a, &mut q, Focus::Viewer);
     a.selected = Some("demo/high".into());
-    for focus in [Focus::Agents, Focus::Queue] {
+    for focus in [Focus::Agents, Focus::Viewer] {
         assert_eq!(icon(&mut a, &mut q, focus), unselected, "{focus:?}");
     }
 }
@@ -1217,54 +1204,64 @@ fn find(buffer: &Buffer, label: &str) -> Option<(u16, u16)> {
 }
 
 #[test]
-fn task_details_replace_the_list_inside_the_queue_pane_only() {
+fn run_details_sit_beside_the_list_inside_the_popup_only() {
     let (mut a, _) = fixture();
     let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
     open_detail(&mut q, Some(show_json()));
     let (buffer, hits) = render(160, 48, &mut a, &mut q, Focus::Queue);
-    let panes = Panes::with_queue(buffer.area, &Config::default(), true);
+    let panes = Panes::new(buffer.area, &Config::default());
     assert!(
-        hits.queue_rows.is_empty(),
-        "the list is not behind the details"
+        !hits.queue_rows.is_empty(),
+        "the list stays beside the details"
     );
     let all = text(&buffer);
-    assert!(all.contains("demo/main") && all.contains("Viewer · demo/main"));
-    for label in ["Completion checks", "Back Esc", "Task details"] {
+    for label in [
+        "Completion checks",
+        "Run details ↵",
+        "Task text t",
+        "Close Esc",
+    ] {
         let (x, y) = find(&buffer, label).unwrap_or_else(|| panic!("{label}: {all}"));
-        assert!(panes.queue.contains((x, y).into()), "{label}");
+        assert!(panes.tasks.contains((x, y).into()), "{label}");
     }
     let outside: String = (0..buffer.area.height)
         .flat_map(|y| (0..buffer.area.width).map(move |x| (x, y)))
-        .filter(|(x, y)| !panes.queue.contains((*x, *y).into()))
+        .filter(|(x, y)| !panes.tasks.contains((*x, *y).into()))
         .map(|(x, y)| buffer[(x, y)].symbol().to_owned())
         .collect();
-    // No overlay: nothing of the details is drawn over Agents or Viewer.
-    for detail_text in ["没有收尾提交", "Completion", "Back Esc"] {
+    // Nothing of the details spills over Agents or Viewer outside the popup.
+    for detail_text in ["没有收尾提交", "Completion", "Close Esc"] {
         assert!(!outside.contains(detail_text), "{detail_text}: {all}");
     }
-    assert!(all.contains("Input ▸ Queue · Task details"), "{all}");
+    assert!(all.contains("Input ▸ Tasks · Run details"), "{all}");
 }
 
 #[test]
-fn detail_task_and_edit_buttons_work_with_mouse_and_restore_reading_positions() {
+fn content_views_and_edit_keep_reading_positions() {
     use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers};
     let (mut a, mut q) = fixture();
     q.snapshot.as_mut().unwrap().pending[0].body = (0..90)
         .map(|i| format!("Original body line {i}"))
         .collect::<Vec<_>>()
         .join("\n");
-    q.open(0);
-    render(160, 48, &mut a, &mut q, Focus::Queue);
+    q.select(0);
+    let (first, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    assert!(text(&first).contains("Original body line 0"));
     q.key(KeyEvent::new(K::PageDown, KeyModifiers::NONE));
     let (before, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
-    let (x, y) = find(&before, "Task t").expect("fixed Task button");
+    assert!(!text(&before).contains("Original body line 0 "));
+    let (x, y) = find(&before, "Run details ↵").expect("fixed view switch");
     q.click(x, y);
-    let (overlay, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
-    assert!(text(&overlay).contains("Original body line 0"));
-    assert!(q.overlay_open());
-    q.key(KeyEvent::new(K::PageDown, KeyModifiers::NONE));
-    let (overlay, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
-    let (x, y) = find(&overlay, "Edit e").expect("Task overlay Edit button");
+    let (details, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    assert_eq!(q.view, queue::View::Details);
+    assert!(find(&details, "T12345").is_some());
+    let (x, y) = find(&details, "Task text t").unwrap();
+    q.click(x, y);
+    assert_eq!(
+        text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
+        text(&before)
+    );
+    let (x, y) = find(&before, "Edit e").expect("pending Edit button");
     q.click(x, y);
     let (editor, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
     assert!(text(&editor).contains("Edit task"));
@@ -1272,34 +1269,18 @@ fn detail_task_and_edit_buttons_work_with_mouse_and_restore_reading_positions() 
     q.click(x, y);
     assert_eq!(
         text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
-        text(&overlay)
-    );
-    let (x, y) = find(&overlay, "Back Esc").unwrap();
-    q.click(x, y);
-    assert_eq!(
-        text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
-        text(&before)
-    );
-    let (x, y) = find(&before, "Edit e").expect("fixed detail Edit button");
-    q.click(x, y);
-    assert!(matches!(q.page, queue::Page::Edit { .. }));
-    q.key(KeyEvent::new(K::Esc, KeyModifiers::NONE));
-    assert_eq!(
-        text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
         text(&before)
     );
 
-    // Once the task starts, both detail and Task overlay lose the editing entry.
+    // Once the task starts, the editing entry goes away in both layouts.
     let mut fresh = q.snapshot.clone().unwrap();
     fresh.current = Some(fresh.pending.remove(0));
     q.absorb(fresh);
     for (w, h) in [(160, 48), (60, 24)] {
         let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
-        assert!(find(&buffer, "Task t").is_some());
+        assert!(find(&buffer, "Task text t").is_some());
         assert!(find(&buffer, "Edit e").is_none());
     }
-    q.key(KeyEvent::new(K::Char('t'), KeyModifiers::NONE));
-    assert!(find(&render(160, 48, &mut a, &mut q, Focus::Queue).0, "Edit e").is_none());
 }
 
 #[test]
@@ -1314,7 +1295,7 @@ fn task_details_present_each_contract_section_without_inventing_values() {
     value["completion"]["rows"][0]["why"] = "没有收尾提交 \u{1b}]0;title\u{7}".into();
     let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
     open_detail(&mut q, Some(value));
-    let out = text(&render_queue(&mut q, 70, 120));
+    let out = text(&render_queue(&mut q, 106, 120));
     for expected in [
         "T4",
         "Running",
@@ -1364,7 +1345,7 @@ fn task_details_present_each_contract_section_without_inventing_values() {
     let mut q =
         detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务", "at":"awaiting"}));
     open_detail(&mut q, Some(value));
-    let out = text(&render_queue(&mut q, 70, 120));
+    let out = text(&render_queue(&mut q, 106, 120));
     for expected in ["Awaiting release", "recorded done stands", "20s so far"] {
         assert!(out.contains(expected), "missing {expected}: {out}");
     }
@@ -1390,7 +1371,7 @@ fn task_details_present_each_contract_section_without_inventing_values() {
         serde_json::json!({"id":"T4", "title":"Detail target 任务", "status":"done", "at":"history"}),
     );
     open_detail(&mut q, Some(value));
-    let out = text(&render_queue(&mut q, 70, 120));
+    let out = text(&render_queue(&mut q, 106, 120));
     for expected in [
         "Done",
         "completion snapshot not recorded",
@@ -1418,7 +1399,7 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
     let key = open_detail(&mut q, None);
-    let out = text(&render_queue(&mut q, 60, 30));
+    let out = text(&render_queue(&mut q, 100, 40));
     assert!(
         out.contains("Loading details") && out.contains("Detail target 任务"),
         "{out}"
@@ -1431,7 +1412,7 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
         &key,
         Err(anyhow::anyhow!("drover show: task_not_found: 没有该任务")),
     );
-    let out = text(&render_queue(&mut q, 60, 30));
+    let out = text(&render_queue(&mut q, 100, 40));
     assert!(
         out.contains("task_not_found") && out.contains("Retrying"),
         "{out}"
@@ -1446,20 +1427,20 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
         .into();
     let detail: saddle::drover::Detail = serde_json::from_value(value).unwrap();
     q.absorb_detail(&key, Ok(detail.clone()));
-    render_queue(&mut q, 60, 30);
+    let top = text(&render_queue(&mut q, 100, 40));
     for _ in 0..3 {
         q.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
     }
-    let scrolled = text(&render_queue(&mut q, 60, 30));
-    assert!(!scrolled.contains("Detail target 任务"), "{scrolled}");
+    let scrolled = text(&render_queue(&mut q, 100, 40));
+    assert_ne!(scrolled, top);
     q.absorb_detail(&key, Ok(detail));
-    assert_eq!(text(&render_queue(&mut q, 60, 30)), scrolled);
-    let (x, y) = find(&render_queue(&mut q, 60, 30), "body line").unwrap();
+    assert_eq!(text(&render_queue(&mut q, 100, 40)), scrolled);
+    let (x, y) = find(&render_queue(&mut q, 100, 40), "body line").unwrap();
     q.wheel(x, y, -1);
-    assert_ne!(text(&render_queue(&mut q, 60, 30)), scrolled);
+    assert_ne!(text(&render_queue(&mut q, 100, 40)), scrolled);
 
     q.absorb_detail(&key, Err(anyhow::anyhow!("show cancelled or timed out")));
-    let out = text(&render_queue(&mut q, 60, 200));
+    let out = text(&render_queue(&mut q, 100, 200));
     for expected in ["timed out", "stale", "Completion checks", "Retrying"] {
         assert!(out.contains(expected), "missing {expected}: {out}");
     }
@@ -1477,7 +1458,7 @@ fn selected_agent_has_no_side_marker_but_bold_name_and_background_on_every_line(
         ..Default::default()
     });
     a.selected = Some("demo/main".into());
-    for focus in [Focus::Agents, Focus::Queue] {
+    for focus in [Focus::Agents, Focus::Viewer] {
         let (buffer, hits) = render(160, 60, &mut a, &mut q, focus);
         let rows = |name: &str| -> Vec<u16> {
             hits.agents
@@ -1607,4 +1588,107 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
             );
         }
     }
+}
+
+#[test]
+fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
+    let (mut a, mut q) = fixture();
+    let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Agents);
+    let screen = text(&buffer);
+    assert!(screen.contains("‹Tasks"), "{screen}");
+    assert!(!screen.contains("T12345"), "{screen}");
+    // The Agents border runs down to the status row.
+    assert_eq!(buffer[(0, 46)].symbol(), "┗");
+    let (buffer, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
+    let screen = text(&buffer);
+    let (x, y) = find(&buffer, " Tasks ").expect(&screen);
+    assert!(x <= 2 && y == 1, "popup opens from the left: {x},{y}");
+    // The list row and the selected task's text are both on screen, side by side.
+    let row = screen.lines().find(|l| l.contains("Task text")).unwrap();
+    assert!(
+        row.contains("Pending 1"),
+        "list and content share rows: {row}"
+    );
+    assert_eq!(screen.matches("T12345").count(), 2, "{screen}");
+    for label in ["Check & release g", "Refresh r", "Add task a", "Close Esc"] {
+        assert!(screen.contains(label), "{label}: {screen}");
+    }
+}
+
+#[test]
+fn closed_tasks_entry_keeps_the_projects_short_status_in_semantic_colors() {
+    use saddle::theme as t;
+    let (mut a, _) = fixture();
+    let task = || Task {
+        id: Some("T1".into()),
+        title: "Task".into(),
+        ..Default::default()
+    };
+    let entry = |a: &mut agents::Panel, q: &mut queue::Panel, width| {
+        let (buffer, _) = render(width, 40, a, q, Focus::Agents);
+        let top: String = (0..width)
+            .map(|x| buffer[(x, 0)].symbol().to_owned())
+            .collect();
+        (buffer, top)
+    };
+    let mut q = queue::Panel::default();
+    let (_, top) = entry(&mut a, &mut q, 160);
+    assert!(top.contains("‹Tasks · Loading… Tab›"), "{top}");
+    for (snapshot, label, color) in [
+        (
+            Snapshot {
+                awaiting: Some(task()),
+                current: Some(task()),
+                pending: vec![task()],
+                ..Default::default()
+            },
+            "Awaiting release",
+            t::AGENT_BLOCKED,
+        ),
+        (
+            Snapshot {
+                current: Some(task()),
+                pending: vec![task()],
+                ..Default::default()
+            },
+            "Running",
+            t::AGENT_WORKING,
+        ),
+        (
+            Snapshot {
+                paused: true,
+                pending: vec![task()],
+                ..Default::default()
+            },
+            "Paused",
+            t::AGENT_BLOCKED,
+        ),
+        (
+            Snapshot {
+                pending: vec![task(), task(), task()],
+                ..Default::default()
+            },
+            "3 pending",
+            t::AGENT_STARTING,
+        ),
+        (Snapshot::default(), "Idle", t::AGENT_IDLE),
+    ] {
+        q.absorb(snapshot);
+        let (buffer, top) = entry(&mut a, &mut q, 160);
+        assert!(top.contains(&format!("‹Tasks · {label} Tab›")), "{top}");
+        assert_label_color(&buffer, label, color);
+    }
+    // A failed read is shown as such, never as the last good state.
+    q.read_error = Some("synthetic".into());
+    let (buffer, top) = entry(&mut a, &mut q, 160);
+    assert!(top.contains("‹Tasks · Read failed Tab›"), "{top}");
+    assert_label_color(&buffer, "Read failed", t::AGENT_ERROR);
+    // Narrow Agents columns keep the status and drop the key hint first.
+    q.read_error = None;
+    q.absorb(Snapshot {
+        awaiting: Some(task()),
+        ..Default::default()
+    });
+    let (_, top) = entry(&mut a, &mut q, 80);
+    assert!(top.contains("‹Tasks · Awaiting›"), "{top}");
 }

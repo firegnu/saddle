@@ -152,7 +152,8 @@ struct App {
     viewer_area: Rect,
     hits: Hits,
     pointer: crate::buttons::Pointer,
-    left_queue: bool,
+    /// The input target to return to when Tasks closes.
+    tasks_return: Focus,
 }
 impl App {
     fn new(config: Config) -> Self {
@@ -222,20 +223,13 @@ impl App {
             viewer_area: Rect::default(),
             hits: Hits::default(),
             pointer: Default::default(),
-            left_queue: false,
+            tasks_return: Focus::Agents,
         }
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         loop {
             let size = terminal.size()?;
-            if self.focus != Focus::Viewer {
-                self.left_queue = self.focus == Focus::Queue;
-            }
-            let panes = Panes::with_queue(
-                Rect::new(0, 0, size.width, size.height),
-                &self.config,
-                self.left_queue,
-            );
+            let panes = Panes::new(Rect::new(0, 0, size.width, size.height), &self.config);
             self.tick(panes)?;
             let reply = self
                 .reply
@@ -408,7 +402,11 @@ impl App {
                 }
             }
         }
-        let wanted = self.queue.detail_key();
+        // Run details refresh only while Tasks is open to show them.
+        let wanted = self
+            .queue
+            .detail_key()
+            .filter(|_| self.focus == Focus::Queue);
         if self.detail.as_ref().map(|(key, _)| key) != wanted.as_ref() {
             // Dropping the old worker cancels its query and discards its results before a new
             // target (another task, project or reopened page) starts.
@@ -631,20 +629,27 @@ impl App {
                     }
                     return Ok(false);
                 }
-                match self.focus.route(key) {
+                let before = self.focus;
+                let route = self.focus.route(key);
+                if before != Focus::Queue && self.focus == Focus::Queue {
+                    self.tasks_return = before;
+                }
+                match route {
                     Route::Quit => return Ok(true),
                     Route::Panel => self.panel_key(key),
                     Route::Queue => {
-                        if key.code == KeyCode::Char('q')
-                            && !matches!(
-                                self.queue.page,
-                                queue::Page::Add { .. }
-                                    | queue::Page::Edit { .. }
-                                    | queue::Page::Project(_)
-                            )
+                        let typing = matches!(
+                            self.queue.page,
+                            queue::Page::Add { .. }
+                                | queue::Page::Edit { .. }
+                                | queue::Page::Project(_)
+                        );
+                        // Closing keeps the page, selection and scroll for the next opening.
+                        if (key.code == KeyCode::Char('q') && !typing)
+                            || (key.code == KeyCode::Esc
+                                && matches!(self.queue.page, queue::Page::List))
                         {
-                            self.queue.page = queue::Page::List;
-                            self.focus = Focus::Agents;
+                            self.focus = self.tasks_return;
                         } else if let Some(request) = self.queue.key(key) {
                             self.queue_request(request);
                         }
@@ -730,6 +735,12 @@ impl App {
                     .collect();
                 let captured = self.pointer.captured();
                 if let Some((focus, key)) = self.pointer.event(mouse, &controls) {
+                    if focus == Focus::Queue && self.focus != Focus::Queue {
+                        // The Tasks entry: open, remembering where input was.
+                        self.tasks_return = self.focus;
+                        self.focus = Focus::Queue;
+                        return Ok(false);
+                    }
                     if focus == Focus::Viewer {
                         if let Some((_, action)) = self
                             .hits
@@ -776,23 +787,40 @@ impl App {
                     }
                     return Ok(false);
                 }
-                if self.focus == Focus::Queue && self.queue.overlay_open() {
+                // The open Tasks popup takes all mouse input; outside it nothing happens.
+                if self.focus == Focus::Queue {
+                    let scroll = matches!(
+                        mouse.kind,
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                    );
+                    let delta = if mouse.kind == MouseEventKind::ScrollUp {
+                        -1
+                    } else {
+                        1
+                    };
                     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                         if let Some(request) = self.queue.click(mouse.column, mouse.row) {
                             self.queue_request(request);
+                        } else if self.queue.list_area.contains(point)
+                            && let Some((_, index)) = self
+                                .hits
+                                .queue_rows
+                                .iter()
+                                .find(|(row, _)| *row == mouse.row)
+                        {
+                            self.queue.select(*index);
                         }
-                    } else if matches!(
-                        mouse.kind,
-                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                    ) {
+                    } else if scroll && self.queue.overlay_open() {
                         self.queue.key(KeyEvent::new(
-                            if mouse.kind == MouseEventKind::ScrollUp {
+                            if delta < 0 {
                                 KeyCode::Up
                             } else {
                                 KeyCode::Down
                             },
                             crossterm::event::KeyModifiers::NONE,
                         ));
+                    } else if scroll {
+                        self.queue.wheel(mouse.column, mouse.row, delta);
                     }
                     return Ok(false);
                 }
@@ -804,15 +832,6 @@ impl App {
                     return Ok(false);
                 }
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                    if panes.tabs.contains(point) {
-                        self.focus = if mouse.column - panes.tabs.x < 9 {
-                            Focus::Agents
-                        } else {
-                            Focus::Queue
-                        };
-                        self.left_queue = self.focus == Focus::Queue;
-                        return Ok(false);
-                    }
                     self.panel.confirm = None;
                     if panes.agents.contains(point) {
                         self.focus = Focus::Agents;
@@ -823,21 +842,6 @@ impl App {
                             self.attach();
                             return Ok(false);
                         }
-                    } else if panes.queue.contains(point) {
-                        self.focus = Focus::Queue;
-                        if let Some(request) = self.queue.click(mouse.column, mouse.row) {
-                            self.queue_request(request);
-                            return Ok(false);
-                        }
-                        if let Some((_, index)) = self
-                            .hits
-                            .queue_rows
-                            .iter()
-                            .find(|(row, _)| *row == mouse.row)
-                        {
-                            self.queue.open(*index);
-                        }
-                        return Ok(false);
                     } else if panes.viewer.contains(point) {
                         self.focus = Focus::Viewer;
                         if let Some((id, rect)) = self
@@ -857,22 +861,7 @@ impl App {
                         }
                     }
                 }
-                if panes.queue.contains(point)
-                    && matches!(
-                        mouse.kind,
-                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                    )
-                {
-                    self.queue.wheel(
-                        mouse.column,
-                        mouse.row,
-                        if mouse.kind == MouseEventKind::ScrollUp {
-                            -1
-                        } else {
-                            1
-                        },
-                    );
-                } else if panes.agents.contains(point)
+                if panes.agents.contains(point)
                     && matches!(
                         mouse.kind,
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
@@ -1011,6 +1000,7 @@ impl App {
                 project: cwd.display().to_string(),
                 projects: std::mem::take(&mut self.queue.projects),
                 registry_error: self.queue.registry_error.take(),
+                view: self.queue.view,
                 ..Default::default()
             };
         } else {
