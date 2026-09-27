@@ -1,5 +1,13 @@
 # 交接
 
+## 2026-09-27：Agent 角色标题已发布收尾
+
+- New 创建时记录 role=controller / role=regular；右侧窗格按公开标签显示 Controller / Regular · 名称，无有效标签的旧 agent 显示 Agent · 名称，空窗格仍为 Viewer。完整设计和审查见 DESIGN 第 36 节、docs/任务/Agent角色标题.md。
+- 开发 d755024、合并 1978705、主控审查 81e3dd5、收尾空提交 681a365。主控标准检查 145 passed、1 failed、2 ignored；Clippy/diff 通过。唯一失败仍为已知 full_workflow 旧鼠标坐标超时，没有扩修；本次角色行为检查通过。
+- main release 已构建并同步共享 target 与仓库 target/release/saddle，SHA-256 均为 bb3a80662f6a57c6ae4ee93e62b6ba60ac89c85fe8b1ab8c279d49b350ef3256。默认 saddle 链接仍指向共享 release，重启后可体验；旧 agent 不补标签。
+- 核对 idle、attached=0、工作区干净且分支已合并后，正常删除 agent-role-title worktree/分支；工作目录已删，一并关闭自有 saddle/dev-role-title-1。只剩 main worktree，没有遗留自有开发 agent。派发流程、用户现有 agent、真实队列和其他仓库未改。
+- 本节随 main 推送；下一步等用户体验反馈，不自动启动其他待办。
+
 ## 2026-09-27：Tasks 页签与详情配色已发布收尾
 
 - 页签当前项 focus 色加粗加 ●，非当前项灰色 ○；悬停仍保留当前标识。详情结构化状态复用现有语义色，分节标题 reply_heading，普通内容中性。完整设计与审查见 DESIGN 第 35 节、docs/任务/Tasks页签与详情配色.md。
