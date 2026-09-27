@@ -548,3 +548,11 @@ Agents ‹Tasks›             Agent terminal
 - 窗格标题按公开 role 标签显示英文：`controller` → `Controller`，`implementer` → `Implementer`，`reviewer` → `Reviewer`，后接 ` · 名称`。保留 `regular` → `Regular`、无效或无标签 → `Agent`、空窗格 → `Viewer` 的现有规则，不以名字或模型猜职责。
 - Saddle 项目 AGENTS.md 补充派发标签约定：创建实现 agent 时传 `--label role=implementer`，独立审查 agent 时传 `--label role=reviewer`，主控创建时为 `role=controller`；不改变派发操作和 model/effort 标签。其他入口创建的 agent 同样可通过这些公开标签显示职责。
 - New 仍为 Controller / Regular，普通身份不等于实现职责；本轮不增加角色控件，不改名称或创建行为。旧 agent 不补标签，不修改 corral/drover 仓库、全局技能或其他项目规则。
+
+## 38. New Agent 可编辑名称前缀（2026-09-27）
+
+用户要求：「还有一个问题是，新建agent的时候，默认是agents/main 我觉得这个agents也要放出来让用户填写」。在 New 普通表单的 Name 前增加英文 `Prefix` 输入框，默认 `agents`，用户可以改为自己的分组名，例如 `saddle`；提交和预览使用同一完整名称 `Prefix/Name`。
+
+- Prefix 在 Controller 和 Regular 两种角色下均可编辑，沿用现有输入框、光标、键盘/粘贴、点击与短窗口焦点滚动。项目、工具和角色切换不覆盖前缀草稿；失败保留输入。前缀作为一个非空名称段，拒绝空白、斜杠、NUL 或开头 `-`；由现有表单校验反馈。
+- 第 34 节 Controller 的 Name 仍锁定为 `main`，Regular 的 Name 仍可编辑并保留草稿；前缀不受角色限制。仍按精确完整名称调用公开 `corral start`，不加 `--unique`。
+- 只扩展前缀输入和完整名称拼接，不改角色标签、启动命令、打开位置、派发工作流或现有 agent，不增加配置或自动推断前缀。
