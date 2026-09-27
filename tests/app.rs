@@ -119,6 +119,7 @@ fn first_frame(colorterm: Option<&str>) -> String {
     let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
     cmd.args(["--config", config.to_str().unwrap()]);
     cmd.env("TERM", "xterm-256color");
+    cmd.env("NO_COLOR", "");
     match colorterm {
         Some(value) => cmd.env("COLORTERM", value),
         None => cmd.env_remove("COLORTERM"),
