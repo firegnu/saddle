@@ -1234,6 +1234,7 @@ fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     h.see("‹Tasks");
     h.see("Synthetic title");
     h.send(b"n");
+    h.click("Regular");
     h.click("Name");
     h.send(b"\x15review-draft");
     h.see("review-draft");
@@ -1349,6 +1350,7 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
     h.see("New agent");
     h.see("● Codex");
     h.see("main");
+    h.click("Regular");
     h.click("Name");
     h.send("\x15\x1b[200~a中b\x1b[201~".as_bytes());
     h.see("a中b");
@@ -1383,6 +1385,12 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
         h.screen.screen().contents()
     );
     h.send("文\x1b[C\x1b[3~".as_bytes()); // Insert before 中, move past 中, delete b.
+    h.see("a文中");
+    h.click("Controller");
+    h.see("Controller name · read-only");
+    h.click("Name");
+    h.send(b"\x15\x1b[200~cannot-edit\x1b[201~");
+    h.click("Regular");
     h.see("a文中");
     assert!(!h.log("events").contains("start "));
     h.click("Create agent");
@@ -1441,7 +1449,6 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
                 .unwrap()
                 .to_string_lossy()
                 .into_owned(),
-            "--unique".into(),
             "--".into(),
         ];
         expected.extend(command.iter().map(|arg| arg.to_string()));
@@ -1458,6 +1465,7 @@ fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
     h.send(b"n");
     h.see("New agent");
     h.see("project-one");
+    h.click("Regular");
     h.click("Name");
     h.send(b"\x15p/new");
     h.click("Advanced");
@@ -1554,6 +1562,7 @@ fn closing_a_start_target_keeps_the_created_agent_available_without_attaching() 
     h.see("Synthetic title");
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
     h.send(b"n");
+    h.click("Regular");
     h.click("Name");
     h.send(b"\x15p/late\x13");
     h.event("start p/late");
@@ -1581,6 +1590,7 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     h.see("p/a READY");
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
     h.send(b"\x1dn");
+    h.click("Regular");
     h.click("Name");
     h.send(b"\x15p/hidden");
     h.click("Advanced");
