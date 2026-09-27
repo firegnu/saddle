@@ -125,6 +125,13 @@ impl Form {
             name.clone(),
             "--cwd".into(),
             expand_home(cwd).to_string_lossy().into_owned(),
+            "--label".into(),
+            if self.regular {
+                "role=regular"
+            } else {
+                "role=controller"
+            }
+            .into(),
         ];
         if !prompt.is_empty() {
             args.extend(["--prompt".into(), prompt.clone()]);
@@ -804,7 +811,16 @@ mod tests {
         press(&mut form, KeyCode::F(3));
         assert_eq!(
             form.args().unwrap(),
-            ["start", "reviewer", "--cwd", "/tmp/demo", "--", "claude"]
+            [
+                "start",
+                "reviewer",
+                "--cwd",
+                "/tmp/demo",
+                "--label",
+                "role=regular",
+                "--",
+                "claude"
+            ]
         );
         press(&mut form, KeyCode::F(6));
         assert_eq!(form.args().unwrap()[1], "main");
@@ -824,6 +840,8 @@ mod tests {
                 "reviewer",
                 "--cwd",
                 "/tmp/other",
+                "--label",
+                "role=regular",
                 "--",
                 "codex",
                 "--yolo"
@@ -954,6 +972,8 @@ mod tests {
             "main",
             "--cwd",
             "/tmp/demo",
+            "--label",
+            "role=controller",
             "--",
             "codex",
             "--yolo",
@@ -982,7 +1002,9 @@ mod tests {
                 .join("\n");
             assert!(text.contains("● Codex"));
             assert!(!text.contains("Custom command"));
-            assert!(text.contains("corral start main --cwd /tmp/demo -- codex --yolo"));
+            assert!(text.contains(
+                "corral start main --cwd /tmp/demo --label 'role=controller' -- codex --yolo"
+            ));
             assert!(text.contains("Controller name · read-only"));
         }
     }
@@ -1004,6 +1026,46 @@ mod tests {
         form.key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE), &[]);
         form.paste("尾");
         assert_eq!(form.fields[0].text, "首ab尾");
+    }
+
+    #[test]
+    fn role_is_passed_as_a_public_label_in_args_and_preview() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut form = Form::new("/tmp/demo".into());
+        press(&mut form, KeyCode::F(4)); // Show the preview.
+        let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
+        for (key, role, command) in [
+            (KeyCode::F(6), "role=controller", "codex --yolo"),
+            (KeyCode::F(7), "role=regular", "codex --yolo"),
+            (KeyCode::F(3), "role=regular", "claude"),
+            (KeyCode::F(6), "role=controller", "claude"),
+        ] {
+            press(&mut form, key);
+            let args = form.args().unwrap();
+            let mut expected = vec!["start", "main", "--cwd", "/tmp/demo", "--label", role, "--"];
+            expected.extend(command.split(' '));
+            assert_eq!(args, expected);
+            terminal
+                .draw(|frame| {
+                    form.draw(&Theme::default(), frame, "corral", &[]);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let text = (0..46)
+                .map(|y| {
+                    (0..106)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(
+                text.contains(&format!(
+                    "corral start main --cwd /tmp/demo --label '{role}' -- {command}"
+                )),
+                "{text}"
+            );
+        }
     }
 
     fn press(form: &mut Form, code: KeyCode) {
@@ -1028,6 +1090,8 @@ mod tests {
                 "main",
                 "--cwd",
                 "/tmp/second project",
+                "--label",
+                "role=controller",
                 "--",
                 "claude"
             ]
@@ -1066,6 +1130,8 @@ mod tests {
                 "mine",
                 "--cwd",
                 "/tmp/second project",
+                "--label",
+                "role=regular",
                 "--prompt",
                 "hello!\n你好，世界",
                 "--",

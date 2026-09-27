@@ -35,3 +35,31 @@
 
 ## 做完
 本文件末尾追加完成记录并提交：改动、验证、取舍、未做事项。回复带提交 SHA 和待主控决定的事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（saddle/dev-role-title，2026-09-27）
+
+### 改动
+- `src/corral.rs`：`Agent::role()` 只认公开标签 `role=controller` / `role=regular`（小写精确值），其他值、大小写不符或缺失都返回无角色；不看名字。
+- `src/launch.rs`：`Form::args()` 在 `--cwd` 之后按所选角色加 `--label role=controller` 或 `--label role=regular`；预览直接用同一组参数，所以一致（预览沿用现有 shell 引号，显示为 `--label 'role=controller'`）。
+- `src/ui.rs`：新增 `pane_title(showing, agents)`，在已有 `panel.agents` 快照里按名称找 agent，显示 `Controller · 名称` / `Regular · 名称` / `Agent · 名称`，空窗格为 `Viewer`。无 terminals 的渲染路径使用它。
+- `src/terminals.rs`：`terminals::draw` 多接一个 `agents: &[Agent]`，每个窗格用同一个 `pane_title` 显示各自 agent 的角色。
+- README / README.zh-CN：New 段落补一句角色标签和窗格标题。
+
+### 验证
+- RED（改代码前均为断言失败）：`launch::tests::role_is_passed_as_a_public_label_in_args_and_preview`（参数缺 `--label`）；`tests/ui.rs::viewer_title_shows_the_public_role_label_or_agent_without_guessing`（标题仍为 `Viewer · demo/main`）；workflow 的 `split_and_new_tab_…`、`new_agent_choices_…`、`new_agent_previews_…`（标题/参数不符）。
+- GREEN：上述定向检查全部通过。
+- `cargo test --all-targets`：除已知基线 `full_workflow_routes_input_switches_safely_and_survives_disappearance` 外全部通过；该用例仍在 tests/workflow.rs:293 等待鼠标事件 `input p/a 1b5b3c303b333b324d` 超时，与任务文件记载的旧终端鼠标坐标基线一致，未扩修。
+- `cargo clippy --all-targets -- -D warnings`：通过。`git diff --check`：通过。
+
+### 测试侧改动
+- 假 `corral`（tests/fixtures/corral.py）：`status` 返回可选的 `labels.json` 中该 agent 的标签；`start` 把 `--label` 记进 `labels.json`。只影响测试临时目录。
+- workflow：分屏用例给 p/a、p/b 设 controller/regular，断言两个窗格分别显示 `Controller · p/a`、`Regular · p/b` 且无 Viewer；New 用例断言 `Controller · main-actual`、`Regular · a文中-actual` 以及实际 start 参数带角色标签；其余无标签 agent 的断言由 `Viewer · p/…` 改为 `Agent · p/…`。
+- `tests/terminals.rs` 的 `terminals::draw` 调用补传 `&[]`。
+
+### 取舍
+- 角色来自 `corral status` 已返回的 labels（与 effort 同一条快照路径），没加轮询或配置。标签值只接受精确小写，避免猜测。
+- 底部状态栏的 `Viewer · disconnected` 提示不是窗格标题，没改。
+
+### 未做
+- 未合并、未推送、未构建 release；未操作任何真实 agent。
+- 已有 agent 不会补标签，它们显示 `Agent · 名称`，符合设计第 36 节。

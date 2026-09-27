@@ -19,6 +19,10 @@ def log(text):
 def agents():
     return json.loads((root / 'agents.json').read_text())
 
+def labels():
+    path = root / 'labels.json'
+    return json.loads(path.read_text()) if path.exists() else {}
+
 log(verb + ' ' + name)
 if verb == 'ls':
     print(json.dumps({'agents': [dict(name=n, cwd='/tmp/demo', instance='abcdef123', kind='claude') for n in agents()]}))
@@ -34,6 +38,9 @@ elif verb == 'start':
     state = agents()
     state[name] = 'idle'
     (root / 'agents.json').write_text(json.dumps(state))
+    given = dict(sys.argv[i + 1].split('=', 1) for i, a in enumerate(sys.argv) if a == '--label')
+    if given:
+        (root / 'labels.json').write_text(json.dumps({**labels(), name: given}))
     print(json.dumps(dict(ok=True, name=name)))
 elif verb == 'status':
     while (root / 'hold-status').exists():
@@ -42,7 +49,7 @@ elif verb == 'status':
         print(json.dumps({'ok': False, 'error': 'not_found'}))
         sys.exit(1)
     attached = int((root / name.replace('/', '-')).exists() or name == 'p/taken')
-    print(json.dumps(dict(ok=True, name=name, instance='abcdef123', kind='claude', state=agents()[name], attached=attached, title='Synthetic title', last_input_source='human', last_output=100, turn_started=100)))
+    print(json.dumps(dict(ok=True, name=name, instance='abcdef123', kind='claude', state=agents()[name], attached=attached, title='Synthetic title', last_input_source='human', last_output=100, turn_started=100, labels=labels().get(name, {}))))
 elif verb == 'reply':
     print(json.dumps(dict(ok=True, text='REPLY ' + name + '\n' + '\n'.join('line ' + str(i) for i in range(60)))))
 elif verb == 'stop':

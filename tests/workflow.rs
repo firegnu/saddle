@@ -1217,7 +1217,7 @@ else:
     );
     h.send(b"\x1b");
     h.see("Input ▸ p/a"); // Closing returns to the Viewer it was opened from.
-    h.see("Viewer · p/a");
+    h.see("Agent · p/a");
     h.until(|h| !h.screen.screen().contents().contains("Completion checks"));
     let after_close = shows(&h);
     let deadline = Instant::now() + Duration::from_secs(6);
@@ -1307,7 +1307,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     h.send(b"\x1b[200~paste-b\x1b[201~");
     h.event("input p/b 1b5b3230307e70617374652d621b5b3230317e");
     assert!(!h.log("events").contains("detached p/a"));
-    h.click("Viewer · p/a");
+    h.click("Agent · p/a");
     h.send(b"A");
     h.event("input p/a 41");
     h.click("│ + │");
@@ -1326,7 +1326,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     );
     h.click("Close pane");
     h.event("detached p/a");
-    h.until(|h| !h.screen.screen().contents().contains("Viewer · p/a"));
+    h.until(|h| !h.screen.screen().contents().contains("Agent · p/a"));
     h.see("p/b READY");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
@@ -1395,8 +1395,10 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
     assert!(!h.log("events").contains("start "));
     h.click("Create agent");
     h.see("a文中-actual READY");
+    h.see("Regular · a文中-actual");
     let args: Vec<String> = serde_json::from_str(h.log("start-args").trim()).unwrap();
     assert_eq!(args[1], "a文中");
+    assert!(args.windows(2).any(|w| w == ["--label", "role=regular"]));
     assert_eq!(&args[args.len() - 2..], ["codex", "--yolo"]);
     assert!(!args.iter().any(|a| a == "--unique"));
     println!("Observed edited name a文中 and fake CLI creation: {args:?}");
@@ -1415,6 +1417,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     h.see("main");
     h.click("Create agent");
     h.see("main-actual READY");
+    h.see("Controller · main-actual");
     h.send(b"\x1dn");
     h.click("Project:");
     h.click("project-two ·");
@@ -1449,6 +1452,8 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
                 .unwrap()
                 .to_string_lossy()
                 .into_owned(),
+            "--label".into(),
+            "role=controller".into(),
             "--".into(),
         ];
         expected.extend(command.iter().map(|arg| arg.to_string()));
@@ -1503,6 +1508,8 @@ fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
             "p/new",
             "--cwd",
             &cwd,
+            "--label",
+            "role=regular",
             "--prompt",
             "hello\n世界",
             "--",
@@ -1697,6 +1704,11 @@ fn reselecting_a_pending_agent_never_sends_input_to_the_old_session() {
 #[test]
 fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layout() {
     let mut h = Harness::start();
+    std::fs::write(
+        h.dir.path().join("labels.json"),
+        r#"{"p/a":{"role":"controller"},"p/b":{"role":"regular"}}"#,
+    )
+    .unwrap();
     h.see("Synthetic title");
     h.send(b"\x1b[<0;5;3M"); // Mouse: the first agent row opens p/a in the current pane.
     h.see("p/a READY");
@@ -1724,11 +1736,12 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     assert!(!h.contents().contains("Left ←"));
     assert_eq!(h.contents().matches(" ×│").count(), 1, "{}", h.contents());
     assert_eq!(
-        h.contents().matches("Viewer").count(),
+        h.contents().matches("Controller · p/a").count(),
         1,
         "{}",
         h.contents()
     );
+    assert!(!h.contents().contains("Viewer"), "{}", h.contents());
     assert!(!h.log("events").contains("attach p/b"));
     // The mouse path: Split → Right → agent. The pane's own agent is not a candidate.
     h.click("Split ▾");
@@ -1745,8 +1758,8 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     assert!(popup.contains("Cancel Esc"), "{popup}");
     h.click_in("Open agent on the right", "p/b");
     h.see("p/b READY");
-    let a = h.locate("Viewer · p/a", 0).unwrap();
-    let b = h.locate("Viewer · p/b", 0).unwrap();
+    let a = h.locate("Controller · p/a", 0).unwrap();
+    let b = h.locate("Regular · p/b", 0).unwrap();
     assert!(a.1 == b.1 && a.0 < b.0, "p/b must open right of p/a");
     h.send(b"B");
     h.event("input p/b 42");
@@ -1786,15 +1799,15 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     }
     h.click_in("Open agent in a new tab", "p/a");
     h.until(|h| h.contents().matches(" ×│").count() == 2);
-    h.see("Viewer · p/a");
+    h.see("Agent · p/a");
     // The moved pane keeps its session and output; p/b stays behind in Tab 1.
     assert!(h.contents().contains("INPUT RECEIVED"));
-    assert!(!h.contents().contains("Viewer · p/b"));
+    assert!(!h.contents().contains("Agent · p/b"));
     h.send(b"Z");
     h.event("input p/a 5a");
     h.click("│p/b ");
-    h.see("Viewer · p/b");
-    assert!(!h.contents().contains("Viewer · p/a"));
+    h.see("Agent · p/b");
+    assert!(!h.contents().contains("Agent · p/a"));
     // Moving it back as a split leaves its emptied tab nowhere.
     h.click("Split ▾");
     h.click("Below ↓");
@@ -1807,9 +1820,9 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     assert!(!popup.contains("p/b"), "{popup}");
     h.click_in("Open agent below", "p/a");
     h.until(|h| h.contents().matches(" ×│").count() == 1);
-    h.see("Viewer · p/a");
-    let a = h.locate("Viewer · p/a", 0).unwrap();
-    let b = h.locate("Viewer · p/b", 0).unwrap();
+    h.see("Agent · p/a");
+    let a = h.locate("Agent · p/a", 0).unwrap();
+    let b = h.locate("Agent · p/b", 0).unwrap();
     assert!(a.0 == b.0 && a.1 > b.1, "p/a must move below p/b");
     assert!(h.contents().contains("INPUT RECEIVED"));
     h.send(b"Y");
@@ -1848,7 +1861,7 @@ fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     h.send(b"B");
     h.event("input p/b 42");
     h.click("│p/a ");
-    h.see("Viewer · p/a");
+    h.see("Agent · p/a");
     h.until(|h| !h.contents().contains("p/b READY"));
     assert!(!h.contents().contains("Attaching p/b"));
     h.quit();

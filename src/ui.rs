@@ -63,10 +63,7 @@ pub fn draw_workspace(
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
     let mut hits = draw_agents(frame, panel, &view);
-    let title = view
-        .showing
-        .map(|name| format!("Viewer · {name}"))
-        .unwrap_or_else(|| "Viewer".into());
+    let title = pane_title(view.showing, &panel.agents);
     if let Some(terminals) = terminals {
         hits.terminal = crate::terminals::draw(
             t,
@@ -74,6 +71,7 @@ pub fn draw_workspace(
             view.panes.viewer,
             terminals,
             view.focus == Focus::Viewer && form.is_none() && placement.is_none(),
+            &panel.agents,
         );
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
@@ -346,6 +344,19 @@ fn tasks_entry(
 }
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
+}
+/// A terminal pane's title: the shown agent's public role label, or Viewer when empty.
+pub fn pane_title(showing: Option<&str>, agents: &[Agent]) -> String {
+    let Some(name) = showing else {
+        return "Viewer".into();
+    };
+    let role = agents.iter().find(|a| a.name == name).and_then(Agent::role);
+    let role = match role {
+        Some(crate::corral::Role::Controller) => "Controller",
+        Some(crate::corral::Role::Regular) => "Regular",
+        None => "Agent",
+    };
+    format!("{role} · {name}")
 }
 fn border(t: &Theme, title: &str, focused: bool) -> Block<'static> {
     t.block(title.to_string(), focused)

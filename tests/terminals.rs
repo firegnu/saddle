@@ -67,7 +67,7 @@ fn nested_layout_and_controls_stay_inside_small_screens() {
         screen
             .draw(|frame| {
                 let hits =
-                    saddle::terminals::draw(&Theme::default(), frame, area, &terminals, true);
+                    saddle::terminals::draw(&Theme::default(), frame, area, &terminals, true, &[]);
                 for (hit, _) in hits {
                     assert_eq!(hit.area.intersection(area), hit.area);
                 }
@@ -287,7 +287,7 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let mut screen = Terminal::new(TestBackend::new(60, 20)).unwrap();
     let mut hits = Vec::new();
     screen
-        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
+        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true, &[]))
         .unwrap();
     let buffer = screen.backend().buffer();
     let row = |y: u16| -> String { (0..60).map(|x| buffer[(x, y)].symbol()).collect() };
@@ -331,7 +331,7 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let second = terminals.active_pane().id;
     terminals.focus(terminals.tabs[0].active);
     screen
-        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
+        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true, &[]))
         .unwrap();
     let buffer = screen.backend().buffer();
     assert_eq!(buffer[(10, 0)].fg, theme::FOCUS, "accent follows selection");
@@ -342,7 +342,7 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     let original = terminals.active_pane().id;
     let long = terminals.reserve(Place::Right, Some("项目/非常长的开发agent名字-后缀".into()));
     screen
-        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
+        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true, &[]))
         .unwrap();
     let buffer = screen.backend().buffer();
     let mut text = String::new();
@@ -366,7 +366,7 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     assert!(active.right() <= area.right());
     terminals.focus(original);
     screen
-        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true))
+        .draw(|frame| hits = terminals::draw(&t, frame, area, &terminals, true, &[]))
         .unwrap();
     let text: String = (0..60)
         .map(|x| screen.backend().buffer()[(x, 1)].symbol())
@@ -375,7 +375,7 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
     terminals.focus(long.pane);
     let narrow = Rect::new(0, 0, 24, 20);
     screen
-        .draw(|frame| hits = terminals::draw(&t, frame, narrow, &terminals, true))
+        .draw(|frame| hits = terminals::draw(&t, frame, narrow, &terminals, true, &[]))
         .unwrap();
     assert!(
         hits.iter()
