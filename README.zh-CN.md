@@ -76,7 +76,7 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 输入框有标签、框线、占位提示、焦点高亮及真实插入光标。点击内容定位光标，Tab／Shift-Tab 切焦点，左右键、Home／End、Backspace／Delete、Ctrl-U 清空及粘贴都按当前位置编辑，支持中文宽字符。长行横向滚动，多行消息还可上下移动、纵向滚动及 Enter 换行；小窗口可切焦点或用滚轮访问字段，底部保留创建和取消入口。
 
-**Advanced / F4** 默认收起，包含完整命令、可选多行首条消息、**Open in** 打开位置（默认新标签页，可选当前窗格或四向分屏）和完整调用预览。明确点击 Codex／Claude 会把命令重置为 `codex`／`claude`；手填命令显示 **Custom command**，切焦点或收起高级设置不会丢弃。命令支持引号分组，直接拆为 argv 调用公开 `corral start`，不展开 shell 变量、管道或重定向，不自动添加模型或权限参数。PgUp／PgDn 或 Preview 聚焦后的滚轮查看完整预览；失败保留草稿。**Cancel / Esc**／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
+**Advanced / F4** 默认收起，包含完整命令、可选多行首条消息、**Open in** 打开位置（默认新标签页，可选当前窗格或四向分屏）和完整调用预览。明确点击 Codex／Claude 会把命令重置为 `codex --yolo`／`claude`；内置 Codex 默认使用 YOLO 模式。手填命令显示 **Custom command**，切焦点或收起高级设置不会丢弃，并按输入原样使用，不额外追加参数。命令支持引号分组，直接拆为 argv 调用公开 `corral start`，不展开 shell 变量、管道或重定向。PgUp／PgDn 或 Preview 聚焦后的滚轮查看完整预览；失败保留草稿。**Cancel / Esc**／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
 
 **Enter／点击 agent 行** 接入活动窗格；同一 agent 已经打开时跳到现有位置，不重复接入。布局从右侧开始，先选位置再选 agent：活动窗格底边的 **Split ▾** 打开紧凑菜单 **Left ←**／**Right →**／**Above ↑**／**Below ↓**（方向键同样可用），方向相对于该窗格；标签条的 **+ Tab** 表示新标签页。随后弹出以位置为标题的列表（例如 *Open agent on the right*），列出可选 agent，分屏时不列出该窗格自己的 agent。点击 agent（或 ↑↓ 加 Enter，列表长时可用滚轮）之后才创建窗格或 tab。已在别处打开的 agent 标出 **Move here**：选中后移动那个窗格，会话、输出和尚未完成的接入都随之移动，不重新接入，也不停止任何东西；它离开的分屏会合并，被搬空的 tab 会消失。任一步点 **Cancel Esc** 或按 Esc 回到 Viewer，Ctrl-] 回 Agents，布局保持原样；没有可选 agent 时显示空态并保留取消入口。左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
 
