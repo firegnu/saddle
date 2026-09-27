@@ -628,3 +628,8 @@ Agents ‹Tasks›             Agent terminal
 - Agents 专用配色沿用现有配置结构增加 `agents_*`，与 `agent_selected`、类型色一起作用于本栏；共享状态色与 effort 原取色保持。终端通过 COLORTERM=truecolor/24bit 声明真彩色时保留 RGB，否则只把 Agents 专用 RGB 转为距离最近的 xterm 256 色立方/灰阶，ANSI 配置保持，不扩展全局主题系统。
 - R5 非同组路径放得下时完整显示，超宽才去掉前面层级或左侧字符；同组目录沿原截图显示父目录末级与尾斜杠。已连接 `[Attached]` 显示正文色，但不再生成重复 attach 点击目标，显示状态与可点击性独立。
 - 默认排序按钮显示 `s Sort`，名称序为 `s Name`；折叠按钮显示下一步动作 `z Fold/Expand`。未读标记用时间列内单格 `•`；无公开待确认摘要时显示 `ASK waiting for input`，不猜测问题内容。
+
+
+### Working 动画与 effort 的视觉区分（2026-09-27）
+
+用户观察后确认：「我确认了。就是那个紫色的动画引起的。不working的时候，就正确显示effort了」。采用此前讨论的最小调整：去掉 working 状态文字前的紫色盲文动画，保留首列蓝色状态圆点每360ms旋转；effort 仍在类型后、状态前，两格信号柱的字形、颜色、标签来源及折叠呈现不变。不新增模型名显示，不改状态判断或实际模型 effort。本补充覆盖原稿第3节的 working 紫色动画要求，原稿留存不改。
