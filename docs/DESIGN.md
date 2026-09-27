@@ -520,3 +520,13 @@ Agents ‹Tasks›             Agent terminal
 - 角色与 Codex/Claude 独立，两种工具都能作为主控；启动命令、打开位置等默认值保持现状。角色仅约束 New 的名称，不自动配置队列或开启任务派发。
 - 默认和手工名称均按精确名称调用公开 `corral start`，不带 `--unique`；名称已占用时沿用公开 CLI 失败提示并保留草稿，不自动编号或改接已有 agent。
 - 保留启动预览及公开返回名处理，不重做表单风格，不改变主控派发开发 agent 的命名流程，也不重命名、停止或改动现有 agent。
+
+## 35. Tasks 页签选中态与运行详情配色（2026-09-27）
+
+用户反馈 Task text / Run details 看不出当前选中项，运行详情文字缺少状态颜色，要求主控考虑配色。沿用现有主题作局部显示调整：
+
+- 当前页签以 `●`、主题 `focus` 色的文字和边框及加粗明确标识，非当前项用 `○` 与灰色；保持无填充描边和小窗口紧凑降级。悬停仍能区分当前页签，切换后标识随所选视图更新。
+- Run details 分节标题使用现有 `reply_heading`；字段标签 muted、正文 text，时间、路径、SHA 和数量保持中性，不从文字内容推断状态。
+- 结构化任务状态复用现有颜色：Running 蓝色 agent_working，Done/检查通过绿色 agent_idle，Awaiting/待处理/未满足条件琥珀色 agent_blocked，失败 agent_error，Dropped 橙色 agent_stalled，Pending/启动中 agent_starting；未知、不可用、未运行或不适用保持 muted/dim。
+- 补齐 Hold、Attention、Unmet、Main agent 等仍用普通文字的状态展示：Hold 开启为琥珀色、关闭/未知中性；Attention 需要处理（suggested）或等待放行（awaiting_release）为琥珀色，其余未知/不适用保持中性；Main agent 的状态沿用 Agents 状态配色，仅给状态文字着色，名称与其他说明保持中性。保留 inferred、历史范围、旧数据等已有说明，不能用颜色暗示尚未发生的状态。
+- 本次只改显示和对应命中区域，不改 CLI 请求、任务/agent 状态语义、焦点和操作规则；不新增颜色配置项，复用现有主题键并服从用户配置。
