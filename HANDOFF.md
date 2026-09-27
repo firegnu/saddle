@@ -1,15 +1,13 @@
 # 交接
 
-## 2026-09-27：T20 R1 返工完成，第二轮独立复核中
+## 2026-09-27：T20 已合并发布并清理收尾
 
-- 用户已确认新 tab／四方向 split、普通 shell／已有 agent／新 agent 三类选择、来源目录、鼠标聚焦／prompt 保持焦点，以及关闭显示与停止 agent 的不同语义，并授权「好的。开干吧！」。设计已写入 DESIGN 第 39 节，任务文件 docs/任务/T20-终端工作区与命令控制.md；main 设计提交 99df00e。
-- 实现者 saddle/dev-t20-workspace-1（instance b88a3745035c），Codex gpt-6-astra / xhigh，role=implementer；分支 t20-terminal-workspace，worktree ../saddle-worktrees/t20-terminal-workspace。这是同一件集成任务，不要收到 T20 再开重复实现者。
-- 初始实现提交 4ce462e，主控首轮全套 157 passed、2 ignored，Clippy/fmt/diff 通过。四项返工提交 0585f42af5a724b15d55b2843000961e8a84cf52，已 DONE；开发工作区干净、agent idle/attached=0。主控核对全部返工 diff，重跑 37 项相关检查全部通过，diff 检查通过；本轮没有重跑无关全套。R1 最新修复 a35be72392ec6f9ce6fe58e03c17effdefdba534 已 DONE，工作区干净；主控审查新增差异并实跑 9 项定向检查通过，diff 检查通过。RED/GREEN 与取舍在开发分支实施任务末尾。
-- 独立审查者 saddle/dev-t20-review-1（instance 2c1d3b65bd6f），Codex gpt-6-astra / xhigh，role=reviewer；detached worktree ../saddle-worktrees/review-t20-terminal-workspace 已由主控更新并核实 HEAD 为 a35be72。任务及唯一输出文件为主仓库 docs/任务/T20-主控与交叉审查.md（主控任务提交 76158d4）。独立审查已 DONE：必须改 4、建议改 0、可以不改 5；主控逐条采纳，裁定和返工范围已追加在同一审查文件。四项为失败替换污染身份/cwd、取消位置 New 丢草稿、晚到 attach 抢焦点、attach 失败误报完成。第一轮复核已 DONE，原四项均关闭；新增相关必须改 R1：启动中的新 Pane 已知目录未被来源读取采用，后续 shell 错误回退 Tasks。主控认可并交回原实现者，只修 R1 及直接回归，裁定在审查文件末尾。
-- 路由重／交叉审查要／碰要害。审查通过后按项目规则合并推送、清理 worktree／自有 agent、空提交收尾和更新交接。发布时重建 main release 并同步既有两处路径，安装已验证的仓库 skills/saddle 新技能；尚未合并、发布或安装。单实例保留 256 次修改记录、满后拒绝新修改是已公开的实现限制，最终交付需说明。
-- corral/drover 仓库和现有用户 agent 不动。测试只用假 CLI、隔离 socket 与合成 shell；已有 full_workflow 鼠标坐标基线失败如实记录，T20 允许修正直接受新布局影响的几何／同步，保留断言。
-- T20 已通过公开 drover next 正常送达，退出 0；实时队列为 current=T20/doing、awaiting=null、pending=[]，起点 57a08a3。一次性续接已完成退出，不再重发 next。收到正常 T20 正文时已核对同一实现者仍 working、暂无完成回复，继续等待原有完成提醒，不重复分派。实现者不得操作真实队列。
-- R1 开发完成提醒已处理；主控核对新提交/证据并跑完相关检查，现交原审查者第二轮独立复核，只核 R1 与此次修复引入的问题，任务在审查文件末尾，挂审查完成提醒。收到后先查 status/reply；working 则重挂，不重复分派。第二轮仍不通过就向用户报告并询问，不自动第三轮。通过后合并推送、发布、安装 saddle skill、清理 worktree/自有 agent/分支并空提交收尾、更新交接，最后公开 drover done T20。用户 agent corral/main、drover/main、saddle/main 未操作。
+- 新 tab／四方向 split 已支持 Terminal、New agent、已有 agent；新增公开 `saddle ctl` 与配套 saddle skill。行为与边界见 DESIGN 第 39 节，实施及完整审查记录见 docs/任务/T20-终端工作区与命令控制.md、T20-主控与交叉审查.md。
+- 实现 4ce462e、返工 0585f42/a35be72；主控与独立审查通过，原四项及 R1 全部关闭，无剩余必须改/建议改。主控首轮全套 157 passed、2 ignored，两次返工定向 37 项/9 项通过，Clippy/fmt 由实现者验证；独立复核通过。没有把旧全套结果当作最终提交重新实跑。
+- 合并 7c753ff 已推送；发布记录 8667a53，清理后空提交 7eb65e9（收尾: T20）。main release 已构建并同步共享 target 与仓库 target/release/saddle；默认 ~/.local/bin/saddle 指向共享 release，SHA-256 均为 03df25780a76cfae7571b08f4ca6c6912c386c5309481f45da6ce0263f25ad97。用户重启 saddle 后体验，未重启当前现场。
+- saddle skill 已通过 quick_validate，安装至 ~/.codex/skills/saddle，与仓库版本一致。未改其他 skill、corral/drover 仓库或用户 agent。单实例最多保留 256 次 ctl 修改记录，满后拒绝新修改，是已公开边界。
+- 开发及审查 worktree 已正常移除，t20-terminal-workspace 分支已删除。确认 idle/attached=0、工作区干净且已合并后，工作目录已删，一并关闭自有 saddle/dev-t20-workspace-1、saddle/dev-t20-review-1。当前只剩 main worktree；原有 corral/main、drover/main、saddle/main 留存。迟到的完成提醒若查到 not_found，忽略，不重开。
+- 下一步：本交接推送后执行公开 drover done T20 并核对结果；当前最近实查仍为 T20 doing、队列空、放行模式。不要再 next，也不自动 go/启动新任务。除该完成登记外，等用户重启体验反馈。
 
 ## 2026-09-27：New Agent 名称前缀已发布收尾
 
