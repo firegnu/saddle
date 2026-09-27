@@ -1,10 +1,10 @@
 # 交接
 
-## 2026-09-27：颜色测试环境隔离已合并，待确认关闭显示中的开发 agent
+## 2026-09-27：颜色测试环境隔离已合并并清理收尾
 
 - 简单 effort 观察任务已完成：实现 6412032，主控审查通过，合并 93d044a 已推送 origin/main。仅 tests/app.rs 子进程清空 NO_COLOR 与任务记录；不用重建发布产品二进制，未操作 drover/T20。记录见 docs/任务/颜色测试环境隔离.md。
 - 主控 NO_COLOR=1 标准测试一次：app 目标通过；workflow 57 passed、1 failed、2 ignored，唯一失败为此前已记录的 picker/close confirmation 偶发问题，其他已执行目标均过，退出101。不称全套全绿，不重复套件；Clippy/fmt/diff 通过。开发者自己一轮标准检查通过，分别记录。
-- saddle/dev-color-env-1（a50196acd7b6，gpt-5.6-luna / medium）idle，但清理前查到 attached=1；已向用户询问是否允许停止并清理，尚未收到答复。因此保留 color-test-env 分支与 ../saddle-worktrees/color-test-env，未写收尾空提交。收到同意后核对干净/已合并，正常删 worktree/分支并停止此自有 agent，补空提交、更新交接与推送。若用户要保留，则照其要求留存。
+- 用户明确答复「可以，关闭并清理」后，核对实现者 idle/attached=0、worktree干净且分支已合入main，正常删除 color-test-env worktree/分支；工作目录已删，一并关闭 saddle/dev-color-env-1。清理记录91a7202，收尾空提交d1d611f；目前仅main worktree，无本任务遗留。交接随main推送。
 - effort 参数与标签一致，绿色 medium 图标正常；用户截图反馈它与新增 working 紫色点阵动画混淆。主控提议去掉紫色动画、保留左侧转动圆点，但用户尚未确认；不要在此测试任务改 UI。是否还要显示 luna 模型名也未确认。
 - corral/main、drover/main、saddle/main 不动；原普通 saddle/codex-right 已不在公开 ls，本任务未关闭它。迟到提醒不重新分派。
 
