@@ -45,7 +45,7 @@ impl Form {
         let mut form = Self {
             fields: [project, String::new(), "codex".into(), String::new()].map(edit::Input::new),
             field: PROJECT,
-            place: 1,
+            place: 0,
             busy: None,
             error: String::new(),
             visible: true,
@@ -67,21 +67,7 @@ impl Form {
         if self.manual_name {
             return;
         }
-        let path = expand_home(&self.fields[0].text);
-        let project = path.file_name().unwrap_or_default().to_string_lossy();
-        let name: String = project
-            .chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
-                    c
-                } else {
-                    '-'
-                }
-            })
-            .collect();
-        let name = name.trim_matches('-');
-        let name = if name.is_empty() { "project" } else { name };
-        self.fields[1] = edit::Input::new(format!("{name}/{}", ["codex", "claude"][self.agent]));
+        self.fields[1] = edit::Input::new("main".into());
     }
     fn invalid(&self, field: usize) -> Option<String> {
         let value = &self.fields[field].text;
@@ -817,10 +803,17 @@ mod tests {
     fn default_project_and_codex_can_create_without_typing_a_command() {
         let form = Form::new("/tmp/demo".into());
         assert_eq!(
+            form.place,
+            Place::ALL
+                .iter()
+                .position(|p| *p == Place::Current)
+                .unwrap()
+        );
+        assert_eq!(
             form.args().unwrap(),
             [
                 "start",
-                "demo/codex",
+                "main",
                 "--cwd",
                 "/tmp/demo",
                 "--unique",
@@ -868,7 +861,7 @@ mod tests {
             form.args().unwrap(),
             [
                 "start",
-                "second-project/claude",
+                "main",
                 "--cwd",
                 "/tmp/second project",
                 "--unique",
@@ -922,7 +915,7 @@ mod tests {
         press(&mut form, KeyCode::BackTab);
         press(&mut form, KeyCode::F(4)); // Expand
         assert_eq!(form.args().unwrap(), args);
-        assert_eq!(form.place, 2);
+        assert_eq!(form.place, 1);
         press(&mut form, KeyCode::Esc);
         assert!(!form.visible);
         assert_eq!(form.args().unwrap(), args);

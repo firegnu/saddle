@@ -28,5 +28,12 @@ New Agent 默认名字改为 `main`，默认使用当前窗格打开。
 - 不合并到 main，不推送，不构建 release；只在本分支提交。
 - 遇到范围外失败记录并报告，不擅自扩大修复。
 
+## 完成记录
+
+- 做了什么：New Agent 默认名称改为 `main`，默认打开位置改为当前窗格；同步更新直接受影响的单元测试与工作流测试。
+- 验证了什么：先将定向断言改为目标值并确认旧实现 RED，最小实现后定向测试 GREEN；执行项目标准 `cargo test --all-targets` 时，除本任务定向测试及其他测试通过外，既有 `full_workflow_routes_input_switches_safely_and_survives_disappearance` 因未产生 `attach p/b` 失败，单独串行复跑仍复现；该测试不涉及 New Agent 表单。`cargo clippy --all-targets -- -D warnings` 与 `git diff --check` 另行执行。
+- 拿主意的地方：按本任务“默认名字改为 `main`”的字面要求使用精确名称 `main`，不保留项目名前缀或 agent 类型后缀；当前窗格对应 `Place::ALL[0]`，因此将初值设为 `0`。
+- 没做的事：未扩展名称冲突规则、布局操作、PTY 生命周期或 UI 样式；未操作真实 agent、drover 队列或其他仓库，未合并、推送或构建 release。
+
 ## 做完
 在本文件末尾追加「## 完成记录」并提交：做了什么、验证了什么、拿主意的地方、没做的事。回复加提交 SHA 和有没有要主控决定的事。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
