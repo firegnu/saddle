@@ -1,10 +1,12 @@
 # 交接
 
-## 2026-09-27：Working 紫色动画移除已派发
+## 2026-09-27：Working 紫色动画已移除并发布收尾
 
-- 用户确认 working 前紫色点阵导致 effort 视觉混淆，按此前建议只去掉该动画、保留左侧圆点旋转与 effort 原样；DESIGN 第40节末尾已更新，任务 docs/任务/Working动画与effort区分.md。
-- 实现者 saddle/dev-working-mark-1（83a546e6aca5），Claude Code sonnet / medium，role=implementer；分支 working-mark，worktree ../saddle-worktrees/working-mark，起点 c67a610。已 working/attached=0，完成提醒已挂；不要重复分派。
-- 轻档／看得见／无需交叉审查，限 src/ui.rs、直接相关 tests/ui.rs、README中英及完成记录；不改状态、effort、生命周期，不新增模型名。主控只核对 diff/定向证据，不跑全套。DONE 后审查、合并推送发布、清理、空提交和交接；attached非0时先确认，其他用户agent不动。不操作drover/T20。
+- working 前的紫色盲文动画已删除；左侧蓝色圆点继续旋转，effort 首行位置、字形、颜色、折叠呈现与标签规则全部保留。不显示模型名。设计依据见 DESIGN 第40节末尾；任务、完成记录及主控审查见 docs/任务/Working动画与effort区分.md。
+- 实现 c4df28d，合并 dda65e7，主控审查 b8ccee0；纯视觉预算核对完整diff、UI39项直接证据和diff检查，不重复套件、无交叉审查。实现者额外跑全套/Clippy超预算已记录；其全套通过不表示旧picker偶发问题修复，本任务未改相关逻辑。
+- main release 构建并同步共享target和仓库target/release/saddle，默认 ~/.local/bin/saddle 指向共享release；三入口 SHA-256 均为70068fdb01bee765b7e58b0501590b1e6c824db9d623b870b38a0db1d6851dc3。未重启用户现场，下一步用户重启体验。
+- 清理前核对idle/attached=0、worktree干净、分支已合并，正常删working-mark worktree/分支；工作目录已删，一并关闭saddle/dev-working-mark-1。发布清理记录84979c8，收尾空提交94e3e85，交接随main推送。只剩main worktree；corral/main、drover/main、saddle/main保留。迟到提醒查not_found即忽略，不重开。
+- 未操作drover/T20，不自动开始其他任务；等待用户体验反馈。
 
 ## 2026-09-27：颜色测试环境隔离已合并并清理收尾
 
