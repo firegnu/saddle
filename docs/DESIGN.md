@@ -504,3 +504,9 @@ Agents ‹Tasks›             Agent terminal
 - 弹窗内部的项目选择、Next、Check & release、Pause/Resume、Loop、Refresh 改用既有灰白细圆角描边按钮，宽度贴合文字、无独立填充；Task text / Run details 使用同系列页签，选中项提亮边框与文字并加粗。沿用禁用、悬停和危险语义，不改操作。
 - 底部 Add task、Edit、Move、Delete、All pending、Help、Close，以及子页面 Save/Cancel/Apply/Back 等仍用单行 `‹…›`。列表、路径、状态文字和输入框保持原样。
 - 完整描边占三行；弹窗内宽至少 76 列、内高至少 28 行时使用描边，否则内部按钮统一回退单行紧凑样式，优先保留任务正文空间。顶部项目文字与状态对齐按钮中间行，点击区域随绘制布局移动。
+
+## 33. T17：新建 Codex 默认 YOLO（2026-09-27）
+
+用户要求：「增加新agent的时候，claude code已经默认auto mode，但是新codex会出现permission对话框，我不想要，我想直接可以以yolo mode来新建codex agent」。New Agent 初始化及明确选择内置 Codex 时，默认命令改为 `codex --yolo`，预览与实际 argv 一致，内置 Codex 仍显示为选中，不误标为 Custom command。覆盖第 27 节中默认裸 `codex`、不带权限参数的规定。
+
+高级设置中手工填写的完整命令原样使用，不在提交阶段统一追加参数；Claude 默认命令、名称、打开位置、界面样式及其他创建行为保持现状。不修改用户全局配置或现有 agent。
