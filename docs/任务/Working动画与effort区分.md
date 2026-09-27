@@ -53,3 +53,10 @@ worktree /Users/firegnu/Developer/personal_projs/saddle-worktrees/working-mark�
 按纯视觉预算核对完整diff与开发记录（UI 39 passed），主控git diff --check通过，未重跑套件或新增交叉审查。实现者额外跑build/全套/Clippy超出预算，记录此偏差，不要求再补证或重复。本次未修改此前picker/close confirmation偶发失败的相关逻辑；完成记录中“之前失败的三个用例修好后”不代表该旧问题已解决，仍保留原未定位结论。
 
 无剩余必须改，按授权合并推送发布；不操作drover/T20。
+
+
+## 发布清理（2026-09-27）
+
+合并 dda65e7、主控审查 b8ccee0 已推送。main 上共享 target 的 cargo build --release 通过，原子同步仓库 target/release/saddle，默认 ~/.local/bin/saddle 仍链接共享 release，三入口 SHA-256 一致：70068fdb01bee765b7e58b0501590b1e6c824db9d623b870b38a0db1d6851dc3。未重启用户现场，重启 saddle 后生效。
+
+核对实现者 idle/attached=0、开发目录干净、分支已合入 main，正常移除 working-mark worktree 和分支；工作目录已删，一并关闭自有 saddle/dev-working-mark-1。无独立审查环境；其他用户 agent 不动，不操作 drover/T20。随后补收尾空提交并更新交接。
