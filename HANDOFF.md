@@ -1,5 +1,14 @@
 # 交接
 
+## 2026-09-27：Agents 侧栏 3a 微调已分派
+
+- 用户已提供 Desktop/export 的 Agents Panel Spec.md 与 agents-panel-3a.png，要求据此微调左侧 Agents。两份原稿已原样归档 docs/设计稿/agents-panel-3a/；Markdown 优先。主控设计补充在 DESIGN 第 40 节，实施任务 docs/任务/Agents侧栏3a微调.md，main 起点 fc7e131。
+- 路由常规／交叉审查不要／改行为。实现者 saddle/dev-agents-panel-1（instance 047de6644ab4），Claude Code opus[1m] / high，role=implementer；worktree ../saddle-worktrees/agents-panel-3a，分支 agents-panel-3a。公开 status 已确认 working，不重复分派。
+- 已核对 C<n> 是领先基准，不是落后；按规格允许的字段修正显示 ↑n，不修改 Git 采集。ATT 为公开连接数，本机连接标记与光标独立。其余主要内容按原稿执行，不能顺带改 Tasks 弹窗/右侧终端。effort 去留已向用户发可选澄清，已给等待时间并说明暂按推荐保留于展开信息行；若用户后续指定其他选项，更新设计并通知同一实现者。
+- 当前代码尚未交付、合并或发布。开发完成后取 status/reply 与完成记录，主控审 diff，并按改行为预算重跑标准测试一次；只为真实未达标项交回原实现者。通过后按项目规则合并推送、构建并同步 release，正常清理 worktree/分支后关闭自有 agent、空提交收尾、更新交接。
+- 该任务由本轮用户直接要求，尚未登记 drover 队列；不要擅自重发/放行已完成 T20。最新公开 drover list 为无 current、队列空。T20 的代码/skill 安装已完成，之后按用户要求也将同一 skill 安装到 ~/.claude/skills/saddle 并核对一致。
+- 当前 agent corral/main、drover/main、saddle/main 不动。所有测试仅假 CLI/合成数据、隔离 runtime；不操作用户现场，不读 corral/drover 内部文件。收到开发提醒先查状态，仍 working 则重挂，DONE 才进入审查。
+
 ## 2026-09-27：T20 已合并发布并清理收尾
 
 - 新 tab／四方向 split 已支持 Terminal、New agent、已有 agent；新增公开 `saddle ctl` 与配套 saddle skill。行为与边界见 DESIGN 第 39 节，实施及完整审查记录见 docs/任务/T20-终端工作区与命令控制.md、T20-主控与交叉审查.md。
