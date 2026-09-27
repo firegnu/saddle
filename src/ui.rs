@@ -863,13 +863,6 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
             brand_label.split(' ').next().unwrap_or("").to_owned()
         };
         let mut state = Vec::new();
-        if status == Status::Working {
-            state.push(Span::styled(
-                ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"][(now * 1000.0 / 120.0) as usize % 8],
-                Style::default().fg(t.agents_purple),
-            ));
-            state.push(Span::raw(" "));
-        }
         state.push(Span::styled(
             look.label,
             Style::default().fg(look.color).add_modifier(Modifier::BOLD),
