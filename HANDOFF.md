@@ -1,15 +1,15 @@
 # 交接
 
-## 2026-09-27：T20 独立审查发现四项必须改，交回原实现者
+## 2026-09-27：T20 四项返工完成，第一轮独立复核中
 
 - 用户已确认新 tab／四方向 split、普通 shell／已有 agent／新 agent 三类选择、来源目录、鼠标聚焦／prompt 保持焦点，以及关闭显示与停止 agent 的不同语义，并授权「好的。开干吧！」。设计已写入 DESIGN 第 39 节，任务文件 docs/任务/T20-终端工作区与命令控制.md；main 设计提交 99df00e。
 - 实现者 saddle/dev-t20-workspace-1（instance b88a3745035c），Codex gpt-6-astra / xhigh，role=implementer；分支 t20-terminal-workspace，worktree ../saddle-worktrees/t20-terminal-workspace。这是同一件集成任务，不要收到 T20 再开重复实现者。
-- 实现提交 4ce462e，开发工作区干净，开发 agent idle、attached=0。主控已审 diff 并验证：cargo test --all-targets 157 passed、2 ignored，Clippy/fmt/diff 通过；旧 full_workflow 在保留原断言的情况下已通过。实现与取舍记录在开发分支任务文件末尾。
-- 独立审查者 saddle/dev-t20-review-1（instance 2c1d3b65bd6f），Codex gpt-6-astra / xhigh，role=reviewer；detached worktree ../saddle-worktrees/review-t20-terminal-workspace 固定 4ce462e。任务及唯一输出文件为主仓库 docs/任务/T20-主控与交叉审查.md（主控任务提交 76158d4）。独立审查已 DONE：必须改 4、建议改 0、可以不改 5；主控逐条采纳，裁定和返工范围已追加在同一审查文件。四项为失败替换污染身份/cwd、取消位置 New 丢草稿、晚到 attach 抢焦点、attach 失败误报完成。不能因原测试绿就提前合并。
+- 初始实现提交 4ce462e，主控首轮全套 157 passed、2 ignored，Clippy/fmt/diff 通过。四项返工提交 0585f42af5a724b15d55b2843000961e8a84cf52，已 DONE；开发工作区干净、agent idle/attached=0。主控核对全部返工 diff，重跑 37 项相关检查全部通过，diff 检查通过；本轮没有重跑无关全套。RED/GREEN 与取舍在开发分支实施任务末尾。
+- 独立审查者 saddle/dev-t20-review-1（instance 2c1d3b65bd6f），Codex gpt-6-astra / xhigh，role=reviewer；detached worktree ../saddle-worktrees/review-t20-terminal-workspace 已由主控更新并核实 HEAD 为 0585f42。任务及唯一输出文件为主仓库 docs/任务/T20-主控与交叉审查.md（主控任务提交 76158d4）。独立审查已 DONE：必须改 4、建议改 0、可以不改 5；主控逐条采纳，裁定和返工范围已追加在同一审查文件。四项为失败替换污染身份/cwd、取消位置 New 丢草稿、晚到 attach 抢焦点、attach 失败误报完成。不能因原测试绿就提前合并。
 - 路由重／交叉审查要／碰要害。审查通过后按项目规则合并推送、清理 worktree／自有 agent、空提交收尾和更新交接。发布时重建 main release 并同步既有两处路径，安装已验证的仓库 skills/saddle 新技能；尚未合并、发布或安装。单实例保留 256 次修改记录、满后拒绝新修改是已公开的实现限制，最终交付需说明。
 - corral/drover 仓库和现有用户 agent 不动。测试只用假 CLI、隔离 socket 与合成 shell；已有 full_workflow 鼠标坐标基线失败如实记录，T20 允许修正直接受新布局影响的几何／同步，保留断言。
 - T20 已通过公开 drover next 正常送达，退出 0；实时队列为 current=T20/doing、awaiting=null、pending=[]，起点 57a08a3。一次性续接已完成退出，不再重发 next。收到正常 T20 正文时已核对同一实现者仍 working、暂无完成回复，继续等待原有完成提醒，不重复分派。实现者不得操作真实队列。
-- 首轮开发和独立审查完成提醒均已处理；本轮交回同一开发 agent 修四项并补定向 RED/GREEN，挂开发完成提醒，不另开实现者。收到后先查 status/reply，仍 working 则重新挂提醒；DONE 后复核新提交，再把原 reviewer detached worktree checkout 到新 SHA，交同一审查者做第一轮复核（最多两轮）。审查者现 idle、attached=0，留待复核。通过后才合并、发布、安装 skill、清理收尾，最后公开 drover done T20。用户 agent corral/main、drover/main、saddle/main 未操作。
+- 首轮开发、独立审查和四项返工完成提醒均已处理；本轮交同一审查者做第一轮复核，范围只含原四项与修复引入的问题，具体任务已追加在主仓库审查文件。按审查完成提醒继续，先查 status/reply；仍 working 则重新挂提醒，不重复分派。复核最多两轮，仍不通过则问用户。通过后合并、发布、安装 skill、清理收尾，最后公开 drover done T20。用户 agent corral/main、drover/main、saddle/main 未操作。
 
 ## 2026-09-27：New Agent 名称前缀已发布收尾
 
