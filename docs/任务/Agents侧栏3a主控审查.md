@@ -27,3 +27,14 @@
 交回原 `saddle/dev-agents-panel-1`，只处理上述三项规格偏差及直接回归，在原 worktree/分支提交。先读取本主仓库文件（只读），以及主仓库 DESIGN 第40节和原稿。纯视觉修正不伪造 RED；如涉及新的颜色能力分支，按 AGENTS.md 定向行为检查。仅运行直接相关检查及必要 Clippy/fmt/diff，不重复全套、录屏、基线多轮实验或新交叉审查。
 
 继续原任务所有范围限制；不再委派，不操作现场 agent/TUI/socket/队列，不改 corral/drover、Git采集、生命周期/PTY/ctl，不 merge/push/release。主仓库文档由主控维护；本文件只读，完成记录写到自己分支原实施任务末尾。命令均设置共享 target 并前台完成，回复新 SHA，最后一行 DONE。
+
+
+## 三处规格修正复核：可以合并
+
+2026-09-27，核对原实现者 idle、attached=0、新回复 DONE，最新提交 `8872c5c`，只审 `c3c2346..8872c5c` 与直接相关变化；未重复主控已通过的全套标准检查，无独立交叉审查。
+
+- 三项必须改均关闭：非同组路径放得下时完整显示、超宽才左侧缩短；Agents 专用 RGB 在无 COLORTERM=truecolor/24bit 时取最近 xterm 256 色；已连接 `[Attached]` 正文色且无重复 Enter 点击目标。effort 首行类型后/状态前及折叠呈现保持不变。
+- 主控定向实跑：UI 39、layout_config 8、workflow 指定6项通过；app 原启动检查通过，新增颜色检查首次受主控环境 NO_COLOR=1 影响失败（输出确实全部无色），以 `NO_COLOR= cargo test --test app agents_colors_follow_the_terminals_announced_color_depth` 隔离禁色变量后通过。两次结果均保留，不称原命令全绿。`git diff --check fc7e131..HEAD` 通过；开发者本提交 Clippy/fmt 通过，未重复。
+- 同意 COLORTERM 最小能力判定、只转换 Agents 专用 RGB、保留 ANSI/共享状态色与 effort 既有取色；同意为直接检查点击命中公开 Hits.buttons，以及 workflow 显式设置 COLORTERM 的环境隔离。未改生命周期、PTY、ctl、Git 采集或队列。
+- **建议改（不阻塞）**：tests/app.rs 的 first_frame 可像 workflow harness 一样显式清空 NO_COLOR，避免禁色环境下颜色测试假失败。当前用受控环境已验证产品两条颜色路径，属于测试环境兼容性，不交回增加一轮产品返工；本轮保留，后续由用户决定是否另行处理。
+- 首轮记录的 picker 偶发测试问题基线亦能复现，根因仍未定位，本次不重试整套、不宣称修复。无剩余必须改；按授权合并、推送、发布和清理，不操作 drover/T20。
