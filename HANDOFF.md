@@ -1,5 +1,12 @@
 # 交接
 
+## 2026-09-27：颜色测试环境隔离已派发（effort 观察小任务）
+
+- 用户要求开一个不太难的新任务以观察 effort；主控选择上轮留下的 NO_COLOR 测试环境问题。任务 docs/任务/颜色测试环境隔离.md，起点 88ae021，分支 color-test-env，worktree ../saddle-worktrees/color-test-env。只改 tests/app.rs 与完成记录，不改产品功能或 effort。
+- 实现者 saddle/dev-color-env-1（instance a50196acd7b6），Codex gpt-5.6-luna / medium；公开 role=implementer、model 与 effort=medium 标签匹配实际启动参数。状态已 working，attached=0；用户可在 Agents 首行观察绿色 ⣄⡀。原普通 saddle/codex-right 已不在公开 ls，本轮未关闭或复用它。
+- 路由轻／无需交叉审查／改行为。先以 NO_COLOR=1 复现现有颜色检查失败再最小修复；标准检查一次，不重复旧 picker 偶发实验。完成提醒已挂到 saddle/main，查 DONE 后主控审查、合并推送、清理、空提交与交接；仅测试修改无需发布产品二进制，不操作 drover/T20。若仍 working 则重挂，不重复分派。
+- 此任务环境需保留至审查收尾；若用户 attach 观察，清理时先核对 attached，不能打断用户。其余 corral/main、drover/main、saddle/main 保留。
+
 ## 2026-09-27：Agents 侧栏 3a 已发布并收尾
 
 - 已按归档两份设计稿完成 Agents 侧栏 3a；effort 遵照用户明确要求保留首行类型之后、状态之前，两格信号柱，折叠也显示。设计与取舍见 DESIGN 第40节，原实施记录及最终审查见 docs/任务/Agents侧栏3a微调.md、Agents侧栏3a主控审查.md。
