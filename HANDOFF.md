@@ -1,11 +1,11 @@
 # 交接
 
-## 2026-09-27：T21 已由用户触发并派发
+## 2026-09-27：T21 已合并清理，准备公开完成核对
 
-- 公开 drover show T21 确认 current/doing，起点d0b2008；任务为把README中英文的effort三档说明整理成表，纯文档，不改产品/设计。任务文件 docs/任务/T21-effort图标对照说明.md，分支t21-effort-docs，worktree ../saddle-worktrees/t21-effort-docs，建分支起点69ca0da。
-- 实现者 saddle/dev-t21-effort-docs-1（a622278c24ea），Codex gpt-5.6-luna / medium；公开role=implementer、model和effort标签与实际启动参数一致，已working/attached=0，完成提醒已挂。无需重复分派。用户可观察绿色medium图标。
-- 用户明确纯文档预算：核对中英文与实现一致、diff检查，不跑全套、不交叉审查、不发布二进制。DONE后主控审查、合并推送、正常清理worktree/分支及自有agent、空提交收尾和更新交接，最后公开drover done T21，等待用户放行，不go/next。清理前如attached非0先确认。
-- 当前其他agent corral/main、drover/main、saddle/main不动；上一任务已完全清理。
+- README中英文已将effort三档图标/默认颜色整理为表格，保留公开标签、非运行时实际effort、未知不显示和对齐语义。用户现场确认「我看到了，已经好了。等任务结束。」；不新增产品行为或模型显示。记录见 docs/任务/T21-effort图标对照说明.md。
+- 实现cddbce4、合并90fda11、主控审查e14f6d0、清理记录a1e52f6、收尾空提交2b012cf。主控核对完整diff、中英与实现一致，diff检查通过；纯文档未跑套件/交叉审查/构建发布，原二进制保留。
+- 确认idle/attached=0、工作区干净、分支合入main后正常删除t21-effort-docs worktree/分支；工作目录已删，一并关闭saddle/dev-t21-effort-docs-1。目前仅main worktree，原有corral/main、drover/main、saddle/main保留。迟到提醒not_found即忽略。
+- 本节推送后公开drover done T21并核对返回；用户指定做完等放行，禁止自动go/next，不开始新任务。
 
 ## 2026-09-27：Working 紫色动画已移除并发布收尾
 
