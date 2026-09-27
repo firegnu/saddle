@@ -558,3 +558,50 @@ Agents ‹Tasks›             Agent terminal
 - 只扩展前缀输入和完整名称拼接，不改角色标签、启动命令、打开位置、派发工作流或现有 agent，不增加配置或自动推断前缀。
 
 实现取舍：Prefix 与 Name 同行并排，Prefix 占约三分之一宽，不增加表单高度。Name 沿用原校验（可含 `/`），按字面合成完整名；不额外引入名称规范。Prefix 与其他草稿同生命周期，Esc 隐藏再开保留，成功创建或重启后回到默认 `agents`，不增加记忆配置。
+
+## 39. T20：终端工作区与 agent 命令控制（2026-09-27）
+
+用户与主控已讨论并确认本节产品行为，随后授权「好的。开干吧！」。本节覆盖前文“右侧只能显示 corral attach”及布局入口只能选择已有 agent 的限制。只修改 saddle；corral、drover 的仓库和内部文件均不动，继续使用公开 CLI。开窗格不分派任务、不推进队列。
+
+### 已确认的产品行为
+
+- 位置与内容分开：新 tab 或左／右／上／下 split 都可以放普通 shell、已有 corral agent、新创建的 corral agent。普通 shell 由 saddle 管理；agent 仍由 corral 托管，saddle 只显示其 attach。已有 agent 已显示在别处时移动整个 Pane/会话，不重复 attach。
+- 鼠标入口沿用现有英文弹层和按钮：点 `＋` 或选定分屏方向后，内容选择显示 `Terminal`、`New agent…`，以及现有 agent 列表（保留 `Move here`）。选择前不改布局，取消不留空位。`New agent…` 打开已有创建表单并绑定发起位置；取消无布局变化。Agents 原有 New 表单保留。
+- 命令默认相对调用 agent 所在窗格，而非用户当时的活动窗格。用户切换 tab 不改变目标。新 shell 默认使用来源窗格已知的项目／启动目录，显式目录优先；不追踪 shell 内后续 `cd`。已有 agent 不改 cwd。空窗格没有来源目录时使用当前 Tasks 项目目录，并在查询／创建结果中明确显示。
+- 鼠标创建／移动后聚焦目标；命令创建／移动默认保留原有 tab、窗格和输入焦点，显式要求聚焦才切换。异步完成不得抢走用户后来选择的焦点。
+- 关闭 agent 窗格／tab 仅断开 saddle 自有 attach，不停止 agent。关闭含运行 shell 的窗格／tab 前确认会结束哪些 shell；正常退出整个 saddle 时统一确认。取消不影响任何会话。shell 自行退出后保留退出状态，可直接关闭，不自动重启。
+- prompt 操作按明确意图区分：关闭显示走 saddle；明确停止某个 agent 走公开 `corral stop`（沿用既有身份确认），不把含糊的“关闭”默认为停止。不新增 agent 生命周期管理或任务分派系统。
+
+### 主控确定的命令接口
+
+沿用同一个二进制：无子命令仍启动 TUI；新增 `saddle ctl`，输出 JSON，成功退出 0、错误非 0，不能启动第二个 TUI。帮助列出实际接口。第一版仅包含：
+
+| 命令 | 用途 |
+| --- | --- |
+| `saddle ctl instances` | 列出可连接的本用户 saddle 实例；不自动选择“最新”实例 |
+| `saddle ctl inspect [--instance ID]` | 查询实例 ID、活动 tab／窗格、布局和窗格内容／cwd／状态，以及能确定时的调用者窗格 |
+| `saddle ctl open --relative-to self\|active\|PANE --place tab\|left\|right\|up\|down …` | 在指定位置打开内容；默认 self，不提供替换当前窗格的命令 |
+| `saddle ctl request REQUEST --instance ID` | 查询一次操作的进度／结果，不重做操作 |
+| `saddle ctl close --pane PANE\|--tab TAB --instance ID` | 关闭指定显示位置；涉及运行 shell 时先返回确认需求与目标列表 |
+
+`open` 的内容参数三选一：`--shell [--cwd PATH]`、`--agent NAME`、`--name NAME [--cwd PATH] [--role ROLE] [--prompt TEXT] -- PROGRAM ARG…`。新 agent 使用精确完整名称、不自动加后缀，role 默认 regular；直接传 argv，不经 shell。Codex 的常用 skill 示例使用 `codex --yolo`，但自定义 argv 不追加参数。`--focus` 显式切换焦点，否则保留。`--instance ID` 可显式选择进程。
+
+修改命令接受 `--request-id ID`，客户端发出前生成或使用调用者提供的编号，返回对应操作记录。实例存活期间，同编号同参数查询／重试不能重复创建；同编号不同参数报冲突。记录分开表示请求已接受、agent 已创建、PTY 接入状态及失败／目标失效，不以 start 成功冒充显示完成，更不宣称模型已就绪。CLI 有有限等待，超时返回已知请求编号和未确定状态；不能自动用新编号重发。saddle 重启后实例 ID 变化，旧请求查询明确不可用，不承诺跨重启 exactly-once。
+
+关闭运行 shell 首次返回 `confirmation_required`、稳定目标身份和确认凭据，不改变布局。用户已确认所列影响后，客户端带原确认凭据和 `--confirm-shells` 完成；目标变化后旧确认无效。一个混合 tab 的关闭先整体确认，再统一执行，不先关闭其中的 agent 窗格。UI 使用相同规则。明确停止 agent 由 skill 调用 corral，不再添加一套 ctl stop 命令。
+
+### 定位、通信与会话实现约束
+
+- 每个 TUI 进程有独立的随机实例 ID 和 Unix socket，放在 saddle 自己的本用户私有运行目录中（目录 0700，socket 0600；优先 XDG_RUNTIME_DIR，否则用户缓存目录）。路径必须符合本机 Unix socket 长度限制；不使用 TCP、独立守护进程、tmux 或 zellij。退出仅清理自己的入口，不删除其他实例文件。测试运行目录必须隔离，不能发现或调用用户正在运行的 saddle。
+- 发现只是查询本机活实例。agent 调用用当前 `CORRAL_NAME`、`CORRAL_INSTANCE` 与 saddle 通过公开 CLI 获得并绑定的实例身份匹配；不存在、正在替换或多义时给结构化错误，不猜焦点、不只按可复用名称认人。显式目标同时绑定 saddle 实例、稳定窗格 ID 与修订号。`active` 只在明确指定时于接收请求当刻解析并绑定。
+- 普通 shell 通过已选择的 `$SHELL`（缺失回退 `/bin/sh`）以交互模式启动，cwd 在创建时固定。子进程按需获得自己的 saddle 实例／窗格定位环境，不能通过修改进程全局环境污染其他会话；避免把父 agent 的身份错误继承为新 shell 的身份。corral agent 的定位以 corral 身份优先，不能被继承的旧 shell 窗格提示误导。
+- socket 接收／读写不阻塞 UI；请求进入现有主循环，布局由主循环唯一写入，耗时创建／status／PTY 工作继续后台执行。保留现有 Ticket／generation、输入隔离和关闭回收。新增入口不能借用单一 New 表单作为所有请求的完成状态；命令完成不得清空用户草稿。
+- 使用有界请求、超时及有限结果记录，不把慢客户端或请求堆积变成卡死 UI。布局弹层、New 表单或关闭确认正在操作时，冲突的远程修改返回 busy，不破坏当时的目标／确认。无效参数或已消失的目标返回错误，不能触发内部 unwrap 崩溃。
+- 普通 shell 与 agent attach 明确区分类型、标题、输入目标及退出状态。shell 的关闭只回收该 shell 所有的 PTY／进程及相应前台任务；不能沿用对 attach 发 Ctrl-C 的路径打断 corral agent，不能按名字／项目路径批量杀进程。不承诺回收用户主动 daemonize 的进程。
+- corral 目前按名称 attach；公开实例核对用于拒绝已发现的身份变化，不把它描述成 corral 提供的原子按实例 attach。遇到创建超时等不能确定外部结果的情况，如实保留未确定状态，不自动停止／重建 agent。
+
+### 配套 skill 与交付
+
+仓库新增 `skills/saddle/SKILL.md`，教 agent 发现自身、选择位置与内容、解析实际返回 ID、查询异步结果和按明确意图区分关闭显示／停止 agent。示例只使用实际实现的命令。它不委派开发任务、不代替 corral-dispatch、不推进 drover；自然语言开新 agent 不等同于授权给它发送任务。主控在功能合并验证后安装新 skill，不修改其他已有技能。
+
+不增加终端布局持久化、会话恢复、拖拽比例调整、shell 中输入命令／读取输出的远程控制接口、网络控制、通用插件框架或新的调度器。本轮能力为新建和显示、布局及关闭；继续复用现有终端输入和渲染。
