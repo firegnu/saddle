@@ -24,7 +24,23 @@ pub struct Placement {
     pub selected: usize,
     /// The candidate a pick is bound to when it starts (mouse press or Enter). A refresh can
     /// put another agent on the same row before the release, which must not open it.
-    pub pressed: Option<String>,
+    pub pressed: Option<Choice>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Choice {
+    Terminal,
+    NewAgent,
+    Agent(String),
+}
+impl Choice {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Terminal => "Terminal",
+            Self::NewAgent => "New agent…",
+            Self::Agent(name) => name,
+        }
+    }
 }
 
 const SIDES: [(&str, KeyCode, Place); 4] = [
@@ -45,7 +61,7 @@ pub fn candidates(
     agents: &[Agent],
     terminals: &Terminals,
     placement: &Placement,
-) -> Vec<(String, bool)> {
+) -> Vec<(Choice, bool)> {
     let mut list: Vec<_> = agents
         .iter()
         .filter_map(|a| {
@@ -56,7 +72,13 @@ pub fn candidates(
         })
         .collect();
     list.sort();
-    list
+    [(Choice::Terminal, false), (Choice::NewAgent, false)]
+        .into_iter()
+        .chain(
+            list.into_iter()
+                .map(|(name, open)| (Choice::Agent(name), open)),
+        )
+        .collect()
 }
 
 pub fn draw(
@@ -80,15 +102,19 @@ pub fn draw(
             )
         }
         Some(place) => {
-            let longest = candidates.iter().map(|(n, _)| n.width()).max().unwrap_or(0);
+            let longest = candidates
+                .iter()
+                .map(|(n, _)| n.label().width())
+                .max()
+                .unwrap_or(0);
             (
                 match place {
-                    Place::Tab => " Open agent in a new tab ",
-                    Place::Left => " Open agent on the left ",
-                    Place::Right => " Open agent on the right ",
-                    Place::Up => " Open agent above ",
-                    Place::Down => " Open agent below ",
-                    Place::Current => " Open agent here ",
+                    Place::Tab => " Open content in a new tab ",
+                    Place::Left => " Open content on the left ",
+                    Place::Right => " Open content on the right ",
+                    Place::Up => " Open content above ",
+                    Place::Down => " Open content below ",
+                    Place::Current => " Open content here ",
                 }
                 .into(),
                 (longest as u16 + 16).clamp(32, 60),
@@ -166,7 +192,7 @@ pub fn draw(
         let row = Rect::new(list.x, list.y + offset as u16, list.width, 1);
         let tag = if *open { "Move here " } else { "" };
         let room = usize::from(row.width).saturating_sub(tag.width() + 2);
-        let name = crate::ui::clip(name, room);
+        let name = crate::ui::clip(name.label(), room);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::raw(crate::ui::pad(&format!(" {name}"), room + 2)),

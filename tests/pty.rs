@@ -71,3 +71,56 @@ while True:
     );
     assert!(temp.path().join("agent-alive").exists());
 }
+
+#[test]
+fn closing_owned_shell_signals_its_foreground_job_without_using_attach_interrupt() {
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "shell",
+        r#"#!/usr/bin/env python3
+import os, signal, sys
+from pathlib import Path
+root = Path(__file__).parent
+signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+def end_shell(*_):
+    (root / 'shell-hup').write_text('HUP')
+    os.waitpid(child, 0)
+    sys.exit(0)
+child = os.fork()
+if child == 0:
+    os.setpgid(0, 0)
+    def end_job(*_):
+        (root / 'job-hup').write_text('HUP')
+        sys.exit(0)
+    signal.signal(signal.SIGHUP, end_job)
+    os.tcsetpgrp(0, os.getpid())
+    os.write(1,b'JOB READY\r\n')
+    while True: signal.pause()
+signal.signal(signal.SIGHUP, end_shell)
+while True: signal.pause()
+"#,
+    );
+    let mut session = Session::spawn_shell(
+        &[program, "-i".into()],
+        temp.path(),
+        Size { rows: 10, cols: 40 },
+        &[],
+    )
+    .unwrap();
+    wait_for(&session, "JOB READY");
+    session.interrupt().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while !session.poll_exit().unwrap() {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("job-hup")).unwrap(),
+        "HUP"
+    );
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("shell-hup")).unwrap(),
+        "HUP"
+    );
+}

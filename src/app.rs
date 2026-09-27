@@ -33,6 +33,10 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[path = "app_control.rs"]
+mod control_impl;
+use control_impl::{Closing, Record, Replacement};
+
 #[derive(Clone)]
 enum Action {
     Attach(String, Ticket),
@@ -125,13 +129,17 @@ impl Drop for TerminalGuard {
 }
 
 pub fn run(config: Config) -> Result<()> {
-    let mut app = App::new(config);
+    let mut app = App::new(config)?;
     let _guard = TerminalGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
     app.run(&mut terminal)
 }
 struct App {
+    control: crate::control::Server,
+    records: Vec<Record>,
+    closing: Option<Closing>,
+    quit: bool,
     config: Config,
     panel: Panel,
     focus: Focus,
@@ -156,7 +164,7 @@ struct App {
     tasks_return: Focus,
 }
 impl App {
-    fn new(config: Config) -> Self {
+    fn new(config: Config) -> Result<Self> {
         let client = Client {
             program: expand_home(&config.corral).to_string_lossy().into_owned(),
         };
@@ -194,7 +202,11 @@ impl App {
             .to_string();
         let queue_worker =
             drover::Worker::start(queue_client, Duration::from_millis(config.refresh_ms));
-        Self {
+        Ok(Self {
+            control: crate::control::Server::start()?,
+            records: Vec::new(),
+            closing: None,
+            quit: false,
             poller: Poller::start(client.clone(), Duration::from_millis(config.refresh_ms)),
             git: git::Poller::start("git".into(), Duration::from_secs(5)),
             actions: Actions::new(client.clone()),
@@ -224,19 +236,23 @@ impl App {
             hits: Hits::default(),
             pointer: Default::default(),
             tasks_return: Focus::Agents,
-        }
+        })
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         loop {
             let size = terminal.size()?;
             let panes = Panes::new(Rect::new(0, 0, size.width, size.height), &self.config);
             self.tick(panes)?;
+            if self.quit {
+                break;
+            }
             let reply = self
                 .reply
                 .as_ref()
                 .filter(|(name, _)| Some(name) == self.panel.selected.as_ref())
                 .map(|(_, text)| text.as_str())
-                .unwrap_or("loading…");
+                .unwrap_or("loading…")
+                .to_owned();
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
                     frame,
@@ -249,7 +265,7 @@ impl App {
                         viewer: self.viewer.active_pane().viewer.session.as_ref(),
                         queue: &mut self.queue,
                         viewer_note: &self.viewer.active_pane().viewer.note,
-                        reply,
+                        reply: &reply,
                         now: now(),
                         pointer: &self.pointer,
                     },
@@ -258,8 +274,10 @@ impl App {
                         placement: self.placement.as_ref(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
+                        modal: self.closing.is_some(),
                     }),
                 );
+                self.draw_closing(frame);
             })?;
             if event::poll(Duration::from_millis(30))? && self.event(event::read()?, panes)? {
                 break;
@@ -298,58 +316,102 @@ impl App {
         let results: Vec<_> = self.actions.receiver.try_iter().collect();
         for result in results {
             match result.action {
-                Action::Attach(name, ticket) if self.viewer.valid(ticket) => match result.result {
-                    Ok(status) if status["attached"].as_u64().unwrap_or(0) > 0 => {
-                        self.viewer.complete(ticket, None)?;
-                        self.panel.message =
-                            format!("{name} is attached elsewhere; Ctrl-] there first")
-                    }
-                    Ok(_) => {
-                        self.viewer.complete(ticket, Some(name))?;
-                        self.panel.message.clear();
-                        if self.focus == Focus::Agents
-                            && self.panel.confirm.is_none()
-                            && self.placement.is_none()
-                            && !self.new_agent.as_ref().is_some_and(|f| f.visible)
-                            && self.viewer.active_pane().id == ticket.pane
-                        {
-                            self.focus = Focus::Viewer;
+                Action::Attach(name, ticket) if self.viewer.valid(ticket) => {
+                    let expected = self
+                        .viewer
+                        .get(ticket.pane)
+                        .and_then(|p| p.viewer.agent_instance.clone());
+                    let checked = result.result.and_then(|status| {
+                        anyhow::ensure!(
+                            status["attached"].as_u64().unwrap_or(0) == 0,
+                            "{name} is attached elsewhere; Ctrl-] there first"
+                        );
+                        if let Some(expected) = expected {
+                            anyhow::ensure!(
+                                status["instance"].as_str() == Some(&expected),
+                                "agent identity changed before attach"
+                            );
+                        }
+                        Ok(status)
+                    });
+                    match checked {
+                        Ok(status) => {
+                            self.viewer
+                                .get_mut(ticket.pane)
+                                .unwrap()
+                                .viewer
+                                .agent_instance = status["instance"].as_str().map(str::to_owned);
+                            self.viewer.complete(ticket, Some(name))?;
+                            self.operation_update(ticket, "attaching", None, None);
+                            self.panel.message.clear();
+                            if !self.command_ticket(ticket)
+                                && self.focus == Focus::Agents
+                                && self.panel.confirm.is_none()
+                                && self.placement.is_none()
+                                && self.closing.is_none()
+                                && !self.new_agent.as_ref().is_some_and(|f| f.visible)
+                                && self.viewer.active_pane().id == ticket.pane
+                            {
+                                self.focus = Focus::Viewer;
+                            }
+                        }
+                        Err(error) => {
+                            self.viewer.complete(ticket, None)?;
+                            self.panel.message = format!("{error:#}");
+                            self.viewer
+                                .get_mut(ticket.pane)
+                                .unwrap()
+                                .viewer
+                                .note
+                                .clone_from(&self.panel.message);
+                            self.operation_update(
+                                ticket,
+                                "failed",
+                                None,
+                                Some(&format!("{error:#}")),
+                            );
                         }
                     }
-                    Err(error) => {
-                        self.viewer.complete(ticket, None)?;
-                        self.panel.message = format!("{error:#}");
-                    }
-                },
+                }
                 Action::Start(_, ticket) => {
+                    let owns_form = self
+                        .new_agent
+                        .as_ref()
+                        .is_some_and(|f| f.busy == Some(ticket));
                     let result = result.result.and_then(|value| {
                         value["name"]
                             .as_str()
                             .filter(|n| !n.is_empty())
-                            .map(str::to_owned)
+                            .map(|name| {
+                                (
+                                    name.to_owned(),
+                                    value["instance"].as_str().map(str::to_owned),
+                                )
+                            })
                             .ok_or_else(|| {
                                 anyhow::anyhow!(
-                                    "corral start returned no name; check Agents before retrying"
+                                    "corral start returned no name; external result uncertain"
                                 )
                             })
                     });
                     match result {
-                        Ok(name) => {
-                            let visible = self.new_agent.as_ref().is_some_and(|f| f.visible);
-                            self.new_agent = None;
+                        Ok((name, instance)) => {
+                            if owns_form {
+                                self.new_agent = None;
+                            }
                             self.panel.message = format!("Started {name}");
                             self.poller.refresh();
                             if self.viewer.valid(ticket) {
-                                if let Some(id) = self.viewer.find(&name) {
-                                    self.viewer.complete(ticket, None)?;
-                                    if visible {
-                                        self.viewer.focus(id);
-                                    }
-                                } else {
-                                    self.viewer.expect(ticket, name.clone());
-                                    self.actions.start(Action::Attach(name, ticket));
-                                }
+                                self.viewer
+                                    .get_mut(ticket.pane)
+                                    .unwrap()
+                                    .viewer
+                                    .agent_instance = instance;
+                                self.viewer.expect(ticket, name.clone());
+                                self.operation_update(ticket, "attaching", Some(&name), None);
+                                self.actions.start(Action::Attach(name, ticket));
                             } else {
+                                self.operation_update(ticket, "target_invalid", Some(&name), None);
                                 self.panel
                                     .message
                                     .push_str("; target closed or replaced. Open it from Agents.");
@@ -358,7 +420,17 @@ impl App {
                         Err(error) => {
                             self.viewer.complete(ticket, None)?;
                             self.panel.message = format!("{error:#}");
-                            if let Some(form) = &mut self.new_agent {
+                            let uncertain = self.panel.message.contains("timed out")
+                                || self.panel.message.contains("timeout")
+                                || self.panel.message.contains("uncertain")
+                                || self.panel.message.contains("invalid JSON");
+                            self.operation_update(
+                                ticket,
+                                if uncertain { "uncertain" } else { "failed" },
+                                None,
+                                Some(&format!("{error:#}")),
+                            );
+                            if owns_form && let Some(form) = &mut self.new_agent {
                                 form.busy = None;
                                 form.error = format!("{error:#}");
                             }
@@ -391,6 +463,7 @@ impl App {
             }
         }
         self.viewer.tick(panes.viewer)?;
+        self.control_tick();
         for update in self.queue_worker.updates.try_iter() {
             match update {
                 drover::Update::Snapshot(Ok(snapshot)) => self.queue.absorb(*snapshot),
@@ -467,10 +540,28 @@ impl App {
                 }
                 Ok(false) => {}
             }
-            let ticket = self.viewer.reserve(Place::Current, Some(name.clone()));
-            self.actions.start(Action::Attach(name.clone(), ticket));
-            self.panel.message = format!("attaching {name}…");
+            let id = self.viewer.active_pane().id;
+            if self.viewer.active_pane().viewer.shell_live() {
+                if let Err(error) = self.request_replace(id, Replacement::Attach(name)) {
+                    self.panel.message = error.to_string();
+                }
+                return;
+            }
+            self.viewer.get_mut(id).unwrap().viewer.shell = None;
+            self.attach_at(id, name);
         }
+    }
+    fn attach_at(&mut self, id: u64, name: String) {
+        let ticket = self
+            .viewer
+            .reserve_at(id, Place::Current, Some(name.clone()));
+        if let Some(agent) = self.panel.agents.iter().find(|a| a.name == name) {
+            let pane = self.viewer.get_mut(ticket.pane).unwrap();
+            pane.cwd = agent.cwd.clone();
+            pane.viewer.agent_instance = agent.instance.clone();
+        }
+        self.actions.start(Action::Attach(name.clone(), ticket));
+        self.panel.message = format!("attaching {name}…");
     }
     /// Opens the candidate the pick is bound to at the placement's location, only if row
     /// `index` still shows it; otherwise the pick is cancelled and the list stays open. The
@@ -492,15 +583,35 @@ impl App {
         };
         let anchor = placement.pane;
         self.placement = None;
-        match self.viewer.place(anchor, place, &name) {
-            Ok(Some(ticket)) => {
-                self.actions.start(Action::Attach(name.clone(), ticket));
-                self.panel.message = format!("attaching {name}…");
+        let content = match name {
+            placement::Choice::Terminal => crate::control::Content::Shell { cwd: None },
+            placement::Choice::NewAgent => {
+                let project = self
+                    .viewer
+                    .get(anchor)
+                    .and_then(|p| p.cwd.clone())
+                    .unwrap_or_else(|| self.queue.project.clone());
+                let mut form = crate::launch::Form::new(project);
+                form.anchor = self.viewer.get(anchor).map(|p| p.ticket());
+                form.place = Place::ALL.iter().position(|p| *p == place).unwrap();
+                self.new_agent = Some(form);
+                return;
             }
-            Ok(None) => self.panel.message.clear(),
+            placement::Choice::Agent(name) => crate::control::Content::Agent { name },
+        };
+        match self.open_content(anchor, place, content, true) {
+            Ok((ticket, _, _)) => {
+                self.panel.message = self
+                    .viewer
+                    .get(ticket.pane)
+                    .and_then(|p| p.requested())
+                    .map(|name| format!("attaching {name}…"))
+                    .unwrap_or_default();
+            }
             Err(error) => self.panel.message = format!("{error:#}"),
         }
     }
+
     fn placement_key(&mut self, key: KeyEvent) -> Result<()> {
         let Some(placement) = &mut self.placement else {
             return Ok(());
@@ -568,8 +679,8 @@ impl App {
             Control::Cancel => self.placement = None,
             Control::Tab(id) => self.viewer.active = id,
             Control::Pane(id) => self.viewer.focus(id),
-            Control::CloseTab(id) => self.viewer.close_tab(id)?,
-            Control::ClosePane(id) => self.viewer.close_pane(id)?,
+            Control::CloseTab(id) => self.request_close(crate::control::CloseTarget::Tab(id))?,
+            Control::ClosePane(id) => self.request_close(crate::control::CloseTarget::Pane(id))?,
             Control::Previous | Control::Next => {
                 let index = self
                     .viewer
@@ -596,14 +707,67 @@ impl App {
                 if key.kind == KeyEventKind::Release {
                     return Ok(false);
                 }
+                if self.closing.is_some() {
+                    match key.code {
+                        KeyCode::Char('y' | 'Y') => self.confirm_close()?,
+                        KeyCode::Up | KeyCode::PageUp => {
+                            let c = self.closing.as_mut().unwrap();
+                            c.scroll = c.scroll.saturating_sub(3);
+                        }
+                        KeyCode::Down | KeyCode::PageDown => {
+                            let c = self.closing.as_mut().unwrap();
+                            c.scroll = c
+                                .scroll
+                                .saturating_add(3)
+                                .min(c.snapshot.as_array().unwrap().len() as u16 * 3);
+                        }
+                        _ => self.closing = None,
+                    }
+                    return Ok(self.quit);
+                }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
-                    if form.key(key, &self.queue.projects) {
-                        match form.args() {
-                            Ok(args) => {
-                                let ticket = self.viewer.reserve(Place::ALL[form.place], None);
-                                form.busy = Some(ticket);
+                    let submit = form.key(key, &self.queue.projects);
+                    let bound = form.anchor;
+                    if !form.visible && bound.is_some() && form.busy.is_none() {
+                        self.new_agent = None;
+                        self.focus = if key
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            Focus::Agents
+                        } else {
+                            Focus::Viewer
+                        };
+                        return Ok(false);
+                    }
+                    if submit {
+                        let args = form.args();
+                        let place = Place::ALL[form.place];
+                        let anchor = bound.map_or(self.viewer.active_pane().id, |t| t.pane);
+                        let result = args.and_then(|args| {
+                            anyhow::ensure!(
+                                bound.is_none_or(|t| self.viewer.valid(t)),
+                                "originating pane changed"
+                            );
+                            if place == Place::Current
+                                && self
+                                    .viewer
+                                    .get(anchor)
+                                    .is_some_and(|p| p.viewer.shell_live())
+                            {
+                                self.request_replace(anchor, Replacement::Start(args))?;
+                                return Ok(None);
+                            }
+                            if place == Place::Current {
+                                self.viewer.get_mut(anchor).unwrap().viewer.shell = None;
+                            }
+                            self.begin_start(anchor, place, args).map(Some)
+                        });
+                        let form = self.new_agent.as_mut().unwrap();
+                        match result {
+                            Ok(ticket) => {
+                                form.busy = ticket;
                                 form.error.clear();
-                                self.actions.start(Action::Start(args, ticket));
                             }
                             Err(error) => {
                                 form.error = format!("{error:#}");
@@ -635,7 +799,10 @@ impl App {
                     self.tasks_return = before;
                 }
                 match route {
-                    Route::Quit => return Ok(true),
+                    Route::Quit => {
+                        self.request_close(crate::control::CloseTarget::All)?;
+                        return Ok(self.quit);
+                    }
                     Route::Panel => self.panel_key(key),
                     Route::Queue => {
                         let typing = matches!(
@@ -669,6 +836,9 @@ impl App {
                 }
             }
             Event::Paste(text) => {
+                if self.closing.is_some() {
+                    return Ok(false);
+                }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
                     form.paste(&text);
                     return Ok(false);
@@ -752,7 +922,9 @@ impl App {
                         }
                         return Ok(false);
                     }
-                    self.focus = focus;
+                    if self.closing.is_none() {
+                        self.focus = focus;
+                    }
                     return self.event(Event::Key(key), panes);
                 }
                 if captured || self.pointer.captured() {
@@ -768,7 +940,28 @@ impl App {
                     }
                     return Ok(false);
                 }
-                if self.panel.confirm.is_some() || self.placement.is_some() {
+                if self.closing.is_some()
+                    || self.panel.confirm.is_some()
+                    || self.placement.is_some()
+                {
+                    if self.closing.is_some()
+                        && matches!(
+                            mouse.kind,
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
+                        )
+                    {
+                        return self.event(
+                            Event::Key(KeyEvent::new(
+                                if mouse.kind == MouseEventKind::ScrollUp {
+                                    KeyCode::Up
+                                } else {
+                                    KeyCode::Down
+                                },
+                                crossterm::event::KeyModifiers::NONE,
+                            )),
+                            panes,
+                        );
+                    }
                     // The wheel moves through a long candidate list; sides take no wheel.
                     if self.placement.as_ref().is_some_and(|p| p.place.is_some())
                         && matches!(

@@ -81,6 +81,31 @@ impl Harness {
         cmd.env("TERM", "xterm-256color");
         cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
+        cmd.env("SADDLE_RUNTIME_DIR", dir.path().join("run"));
+        cmd.env("CORRAL_NAME", "synthetic-parent");
+        cmd.env("CORRAL_INSTANCE", "synthetic-parent-instance");
+        let shell = common::script(
+            dir.path(),
+            "shell",
+            r#"#!/usr/bin/env python3
+import os, signal, sys, tty, json
+from pathlib import Path
+root = Path(__file__).parent
+(root / ('shell-' + os.environ['SADDLE_PANE'])).write_text(json.dumps(dict(os.environ)))
+tty.setraw(0)
+def stop(*_):
+    sys.exit(0)
+signal.signal(signal.SIGHUP, stop)
+os.write(1, b'SHELL READY\r\n')
+received = b''
+while True:
+    data = os.read(0, 4096)
+    received += data
+    if received.endswith(b'exit'): sys.exit(7)
+    os.write(1, b'SHELL INPUT:' + data + b'\r\n')
+"#,
+        );
+        cmd.env("SHELL", shell);
         cmd.cwd(dir.path());
         let child = pair.slave.spawn_command(cmd).unwrap();
         drop(pair.slave);
@@ -289,7 +314,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     h.event("input p/a 71");
     h.send("\x1b[200~中文\nhello\x1b[201~".as_bytes());
     h.event("1b5b3230307ee4b8ade696870a68656c6c6f1b5b3230317e");
-    h.send(b"\x1b[<0;56;4M");
+    h.send(b"\x1b[<0;56;6M");
     h.event("input p/a 1b5b3c303b333b324d");
     h.send(b"\x1dj\r");
     h.see("p/b READY");
@@ -313,7 +338,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(44, 160);
-    h.event("size p/b 106x40");
+    h.event("size p/b 106x38");
     // Agents keep the whole left column; Tasks opens over the Viewer without resizing it.
     h.until(|h| h.screen.screen().cell(42, 0).unwrap().contents() == "└");
     h.send(b"\x1d\t");
@@ -328,8 +353,9 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         r#"{"p/a":"blocked","p/new":"idle","p/taken":"idle"}"#,
     )
     .unwrap();
-    h.see("attach exited");
     h.event("detached p/b");
+    h.send(b"\x1d"); // Reveal the Viewer after the Tasks popup has observed disappearance.
+    h.see("attach exited");
     h.send(b"\x1dr");
     h.send(b"xq"); // cancel stop with q; cancellation must not quit.
     h.see("cancelled");
@@ -1254,14 +1280,14 @@ fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     h.see("Input ▸ Agents");
     for cancel in [b"\x1b".as_slice(), b"", b"\x1d"] {
         h.click("│ + │");
-        h.see("Open agent in a new tab");
+        h.see("Open content in a new tab");
         h.see("p/a");
         if cancel.is_empty() {
             h.click("Cancel Esc");
         } else {
             h.send(cancel);
         }
-        h.until(|h| !h.contents().contains("Open agent in a new tab"));
+        h.until(|h| !h.contents().contains("Open content in a new tab"));
         // Esc and Cancel return to the Viewer that opened it; Ctrl-] returns to Agents.
         h.see(if cancel == b"\x1d" {
             "Input ▸ Agents"
@@ -1300,7 +1326,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     );
     h.click("Split ▾");
     h.click("Right →");
-    h.click_in("Open agent on the right", "p/b");
+    h.click_in("Open content on the right", "p/b");
     h.see("p/b READY");
     h.send(b"B");
     h.event("input p/b 42");
@@ -1311,7 +1337,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
     h.send(b"A");
     h.event("input p/a 41");
     h.click("│ + │");
-    h.click_in("Open agent in a new tab", "p/b"); // Moves B's pane into Tab 2.
+    h.click_in("Open content in a new tab", "p/b"); // Moves B's pane into Tab 2.
     h.until(|h| h.contents().matches(" ×│").count() == 2);
     h.send(b"\x1dk\r"); // Already open: jump to a's existing pane, no second attach.
     h.see("p/a READY");
@@ -1532,7 +1558,7 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     h.send(b"\r"); // A belongs to Tab 1.
     h.see("attaching p/a");
     h.click("│ + │");
-    h.click_in("Open agent in a new tab", "p/b"); // B belongs to Tab 2.
+    h.click_in("Open content in a new tab", "p/b"); // B belongs to Tab 2.
     h.see("attaching p/b");
     h.click("│p/a ");
     h.send(b"\x1d");
@@ -1541,7 +1567,7 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     // Another tab remains active while B finishes in the background; p/taken is attached
     // elsewhere, so its tab stays empty.
     h.click("│ + │");
-    h.click_in("Open agent in a new tab", "p/taken");
+    h.click_in("Open content in a new tab", "p/taken");
     h.send(b"\x1d\t");
     h.see("Native queue task"); // Add waits for queue data.
     h.send(b"a");
@@ -1638,7 +1664,7 @@ fn closing_a_tab_detaches_all_its_splits_and_leaves_an_empty_tab() {
     h.see("p/a READY");
     h.click("Split ▾");
     h.click("Below ↓");
-    h.click_in("Open agent below", "p/b");
+    h.click_in("Open content below", "p/b");
     h.see("p/b READY");
     h.click("Close tab");
     h.event("detached p/a");
@@ -1728,13 +1754,13 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     h.click("Split ▾");
     h.see("Right →");
     h.send(b"\x1b[C"); // The arrow key picks the same side as the button.
-    h.see("Open agent on the right");
+    h.see("Open content on the right");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Open agent on the right"));
+    h.until(|h| !h.contents().contains("Open content on the right"));
     h.click("│ + │");
-    h.see("Open agent in a new tab");
+    h.see("Open content in a new tab");
     h.click("Cancel Esc");
-    h.until(|h| !h.contents().contains("Open agent in a new tab"));
+    h.until(|h| !h.contents().contains("Open content in a new tab"));
     h.click("Split ▾");
     h.see("Left ←");
     h.send(b"\x1d"); // Ctrl-] closes the menu and returns to Agents.
@@ -1752,8 +1778,8 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     // The mouse path: Split → Right → agent. The pane's own agent is not a candidate.
     h.click("Split ▾");
     h.click("Right →");
-    h.see("Open agent on the right");
-    let popup = h.popup("Open agent on the right");
+    h.see("Open content on the right");
+    let popup = h.popup("Open content on the right");
     println!("PICKER:\n{}", h.contents());
     assert!(
         popup.contains("p/b") && popup.contains("p/taken"),
@@ -1762,7 +1788,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     assert!(!popup.contains("p/a"), "{popup}");
     assert!(!popup.contains("Move here"), "{popup}");
     assert!(popup.contains("Cancel Esc"), "{popup}");
-    h.click_in("Open agent on the right", "p/b");
+    h.click_in("Open content on the right", "p/b");
     h.see("p/b READY");
     let a = h.locate("Controller · p/a", 0).unwrap();
     let b = h.locate("Regular · p/b", 0).unwrap();
@@ -1790,11 +1816,11 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     h.see("INPUT RECEIVED");
     h.click("Split ▾");
     h.click("Right →");
-    h.click_in("Open agent on the right", "p/b");
+    h.click_in("Open content on the right", "p/b");
     h.see("p/b READY");
     h.click("│ + │");
-    h.see("Open agent in a new tab");
-    let popup = h.popup("Open agent in a new tab");
+    h.see("Open content in a new tab");
+    let popup = h.popup("Open content in a new tab");
     println!("MOVE picker:\n{}", h.contents());
     for line in popup.lines() {
         if line.contains("p/a") || line.contains("p/b") {
@@ -1803,7 +1829,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
             assert!(!line.contains("Move here"), "{popup}");
         }
     }
-    h.click_in("Open agent in a new tab", "p/a");
+    h.click_in("Open content in a new tab", "p/a");
     h.until(|h| h.contents().matches(" ×│").count() == 2);
     h.see("Agent · p/a");
     // The moved pane keeps its session and output; p/b stays behind in Tab 1.
@@ -1817,14 +1843,14 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     // Moving it back as a split leaves its emptied tab nowhere.
     h.click("Split ▾");
     h.click("Below ↓");
-    h.see("Open agent below");
-    let popup = h.popup("Open agent below");
+    h.see("Open content below");
+    let popup = h.popup("Open content below");
     assert!(
         popup.contains("p/a") && popup.contains("Move here"),
         "{popup}"
     );
     assert!(!popup.contains("p/b"), "{popup}");
-    h.click_in("Open agent below", "p/a");
+    h.click_in("Open content below", "p/a");
     h.until(|h| h.contents().matches(" ×│").count() == 1);
     h.see("Agent · p/a");
     let a = h.locate("Agent · p/a", 0).unwrap();
@@ -1849,18 +1875,18 @@ fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.click("Split ▾");
     h.click("Right →");
-    h.click_in("Open agent on the right", "p/b");
+    h.click_in("Open content on the right", "p/b");
     h.see("Attaching p/b");
     h.click("│ + │");
-    h.see("Open agent in a new tab");
-    let popup = h.popup("Open agent in a new tab");
+    h.see("Open content in a new tab");
+    let popup = h.popup("Open content in a new tab");
     assert!(
         popup
             .lines()
             .any(|l| l.contains("p/b") && l.contains("Move here")),
         "{popup}"
     );
-    h.click_in("Open agent in a new tab", "p/b");
+    h.click_in("Open content in a new tab", "p/b");
     h.until(|h| h.contents().matches(" ×│").count() == 2);
     std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
     h.see("p/b READY");
@@ -1878,7 +1904,7 @@ fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
 
 #[test]
 fn a_candidate_click_opens_only_the_agent_it_was_pressed_on() {
-    const TITLE: &str = "Open agent in a new tab";
+    const TITLE: &str = "Open content in a new tab";
     let mut h = Harness::start();
     h.see("Synthetic title");
     h.click("│ + │");
@@ -1960,4 +1986,489 @@ fn tasks_entry_opens_the_popup_and_closing_returns_to_the_previous_target() {
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
     h.quit();
+}
+
+impl Harness {
+    fn ctl(&self, args: &[&str]) -> serde_json::Value {
+        self.ctl_as(args, &[])
+    }
+    fn ctl_as(&self, args: &[&str], env: &[(&str, &str)]) -> serde_json::Value {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"));
+        cmd.arg("ctl")
+            .args(args)
+            .env("SADDLE_RUNTIME_DIR", self.dir.path().join("run"))
+            .env_remove("CORRAL_NAME")
+            .env_remove("CORRAL_INSTANCE")
+            .env_remove("SADDLE_INSTANCE")
+            .env_remove("SADDLE_PANE")
+            .env_remove("SADDLE_REVISION");
+        for (key, value) in env {
+            cmd.env(key, value);
+        }
+        let output = cmd.output().unwrap();
+        serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&output.stderr)))
+    }
+    fn operation(&mut self, initial: &serde_json::Value) -> serde_json::Value {
+        let id = initial["request_id"].as_str().unwrap();
+        let instance = initial["instance"].as_str().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let value = self.ctl(&["request", id, "--instance", instance]);
+            if !matches!(
+                value["state"].as_str(),
+                Some("accepted" | "starting" | "attaching")
+            ) {
+                return value;
+            }
+            assert!(Instant::now() < deadline, "{value}");
+            self.pump();
+        }
+    }
+}
+
+#[test]
+fn ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    let initial = h.ctl(&["inspect"]);
+    assert_eq!(initial["ok"], true, "{initial}");
+    let instance = initial["instance"].as_str().unwrap();
+    let open = [
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "active",
+        "--place",
+        "right",
+        "--shell",
+        "--request-id",
+        "shell-one",
+    ];
+    let accepted = h.ctl(&open);
+    assert_eq!(accepted["accepted"], true, "{accepted}");
+    let result = h.operation(&accepted);
+    assert_eq!(result["state"], "complete", "{result}");
+    let pane = result["pane"].as_u64().unwrap().to_string();
+    let current = h.ctl(&["inspect", "--instance", instance]);
+    assert_eq!(current["active_pane"], initial["active_pane"]);
+    assert_eq!(current["focus"], initial["focus"]);
+    assert_eq!(current["tabs"][0]["panes"].as_array().unwrap().len(), 2);
+    assert_eq!(h.ctl(&open)["pane"], result["pane"]);
+    let conflict = h.ctl(&[
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "active",
+        "--place",
+        "left",
+        "--shell",
+        "--request-id",
+        "shell-one",
+    ]);
+    assert_eq!(conflict["error"]["code"], "request_conflict");
+    h.until(|h| h.dir.path().join(format!("shell-{pane}")).exists());
+    let env: serde_json::Value = serde_json::from_str(&h.log(&format!("shell-{pane}"))).unwrap();
+    assert!(env.get("CORRAL_NAME").is_none());
+    assert_eq!(env["SADDLE_INSTANCE"], instance);
+    assert_eq!(env["SADDLE_PANE"], pane);
+    let close = h.ctl(&[
+        "close",
+        "--instance",
+        instance,
+        "--pane",
+        &pane,
+        "--request-id",
+        "close-one",
+    ]);
+    assert_eq!(close["state"], "confirmation_required", "{close}");
+    assert_eq!(
+        h.ctl(&["inspect"])["tabs"][0]["panes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let confirmed = h.ctl(&[
+        "close",
+        "--instance",
+        instance,
+        "--pane",
+        &pane,
+        "--confirmation",
+        close["confirmation"].as_str().unwrap(),
+        "--confirm-shells",
+        "--request-id",
+        "close-confirmed",
+    ]);
+    assert_eq!(confirmed["state"], "complete", "{confirmed}");
+    assert_eq!(
+        h.ctl(&["inspect"])["tabs"][0]["panes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    h.quit();
+}
+
+#[test]
+fn ctl_self_uses_corral_identity_and_late_start_preserves_user_draft() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let initial = h.ctl(&["inspect"]);
+    let instance = initial["instance"].as_str().unwrap();
+    let caller = [
+        ("CORRAL_NAME", "p/a"),
+        ("CORRAL_INSTANCE", "abcdef123"),
+        ("SADDLE_INSTANCE", "stale-shell-hint"),
+        ("SADDLE_PANE", "999"),
+    ];
+    let own = h.ctl_as(&["inspect"], &caller);
+    assert_eq!(own["caller"]["pane"], initial["active_pane"], "{own}");
+    let invalid = h.ctl_as(
+        &[
+            "open",
+            "--instance",
+            instance,
+            "--place",
+            "tab",
+            "--agent",
+            "p/b",
+        ],
+        &[("CORRAL_NAME", "p/a"), ("CORRAL_INSTANCE", "reused-name")],
+    );
+    assert_eq!(invalid["ok"], false);
+    let opened = h.ctl_as(
+        &[
+            "open",
+            "--place",
+            "right",
+            "--agent",
+            "p/b",
+            "--request-id",
+            "show-b",
+        ],
+        &caller,
+    );
+    assert_eq!(h.operation(&opened)["state"], "complete");
+    let unchanged = h.ctl(&["inspect"]);
+    assert_eq!(unchanged["active_pane"], initial["active_pane"]);
+    assert_eq!(unchanged["focus"], initial["focus"]);
+    h.see("p/b READY");
+    h.click("Agent · p/b");
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    let project = h.dir.path().join("project-one");
+    let args = [
+        "open",
+        "--instance",
+        instance,
+        "--place",
+        "down",
+        "--name",
+        "p/new-exact",
+        "--cwd",
+        project.to_str().unwrap(),
+        "--request-id",
+        "new-one",
+        "--",
+        "program",
+        "one argument",
+        "$(literal)",
+    ];
+    let start = h.ctl_as(&args, &caller);
+    assert_eq!(start["relative_to"]["pane"], initial["active_pane"]);
+    h.event("start p/new-exact");
+    let repeated = h.ctl_as(&args, &caller);
+    assert_eq!(repeated["pane"], start["pane"]);
+    h.send(b"\x1dn");
+    h.see("New agent");
+    h.click("Regular");
+    h.click("Name");
+    h.send(b"\x15my-draft");
+    h.see("my-draft");
+    let busy = h.ctl_as(
+        &[
+            "open",
+            "--instance",
+            instance,
+            "--place",
+            "left",
+            "--agent",
+            "p/b",
+        ],
+        &caller,
+    );
+    assert_eq!(busy["error"]["code"], "busy");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    let completed = h.operation(&start);
+    assert_eq!(completed["state"], "complete", "{completed}");
+    assert_eq!(completed["agent_created"]["name"], "p/new-exact-actual");
+    assert!(h.contents().contains("my-draft"));
+    let after = h.ctl(&["inspect"]);
+    assert_eq!(after["active_pane"], opened["pane"]);
+    let argv: serde_json::Value =
+        serde_json::from_str(h.log("start-args").lines().next().unwrap()).unwrap();
+    assert_eq!(
+        argv,
+        serde_json::json!([
+            "start",
+            "p/new-exact",
+            "--cwd",
+            project.canonicalize().unwrap().to_str().unwrap(),
+            "--label",
+            "role=regular",
+            "--",
+            "program",
+            "one argument",
+            "$(literal)"
+        ])
+    );
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|l| *l == "start p/new-exact")
+            .count(),
+        1
+    );
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("my-draft"));
+    h.quit();
+}
+
+#[test]
+fn terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Synthetic title");
+    let initial = h.ctl(&["inspect"]);
+    h.click("Split ▾");
+    h.click("Below ↓");
+    h.click_in("Open content below", "New agent…");
+    h.see("Create agent");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Create agent"));
+    assert_eq!(h.ctl(&["inspect"])["tabs"], initial["tabs"]);
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "New agent…");
+    h.click("Create agent");
+    h.see("agents/main-actual READY");
+    let layout = h.ctl(&["inspect"]);
+    assert_eq!(layout["tabs"][0]["panes"].as_array().unwrap().len(), 2);
+    assert_eq!(layout["tabs"][0]["layout"]["value"]["vertical"], false);
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Terminal");
+    h.see("SHELL READY");
+    let shell = h.ctl(&["inspect"]);
+    let instance = shell["instance"].as_str().unwrap();
+    let pane = shell["active_pane"].as_u64().unwrap().to_string();
+    let env: serde_json::Value = serde_json::from_str(&h.log(&format!("shell-{pane}"))).unwrap();
+    let own = h.ctl_as(
+        &["inspect"],
+        &[
+            ("SADDLE_INSTANCE", instance),
+            ("SADDLE_PANE", &pane),
+            ("SADDLE_REVISION", env["SADDLE_REVISION"].as_str().unwrap()),
+        ],
+    );
+    assert_eq!(own["caller"]["pane"], shell["active_pane"]);
+    h.click("Close pane");
+    h.see("End these running terminals");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("End these running terminals"));
+    h.send(b"x");
+    h.see("SHELL INPUT:x");
+    h.send(b"\x1dq");
+    h.see("End these running terminals");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("End these running terminals"));
+    h.send(b"\x1b[Zexit");
+    h.see("exited 7");
+    h.click("Close pane");
+    h.until(|h| !h.contents().contains("exited 7"));
+    assert!(!h.contents().contains("End these running terminals"));
+    h.quit();
+}
+
+#[test]
+fn ctl_mixed_tab_confirmation_is_atomic_and_expires_after_layout_change() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let initial = h.ctl(&["inspect"]);
+    let instance = initial["instance"].as_str().unwrap();
+    let tab = initial["active_tab"].as_u64().unwrap().to_string();
+    let shell = h.ctl(&[
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "active",
+        "--place",
+        "right",
+        "--shell",
+        "--cwd",
+        h.dir.path().to_str().unwrap(),
+    ]);
+    assert_eq!(h.operation(&shell)["state"], "complete");
+    let first = h.ctl(&["close", "--instance", instance, "--tab", &tab]);
+    assert_eq!(first["state"], "confirmation_required");
+    assert_eq!(first["targets"].as_array().unwrap().len(), 2);
+    assert!(!h.log("events").contains("detaching p/a"));
+    let b = h.ctl(&[
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "active",
+        "--place",
+        "down",
+        "--agent",
+        "p/b",
+    ]);
+    assert_eq!(h.operation(&b)["state"], "complete");
+    let stale = h.ctl(&[
+        "close",
+        "--instance",
+        instance,
+        "--tab",
+        &tab,
+        "--confirmation",
+        first["confirmation"].as_str().unwrap(),
+        "--confirm-shells",
+    ]);
+    assert_eq!(stale["ok"], false);
+    assert_eq!(
+        h.ctl(&["inspect"])["tabs"][0]["panes"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let fresh = h.ctl(&["close", "--instance", instance, "--tab", &tab]);
+    let done = h.ctl(&[
+        "close",
+        "--instance",
+        instance,
+        "--tab",
+        &tab,
+        "--confirmation",
+        fresh["confirmation"].as_str().unwrap(),
+        "--confirm-shells",
+    ]);
+    assert_eq!(done["state"], "complete", "{done}");
+    h.event("detached p/a");
+    h.event("detached p/b");
+    assert!(!h.log("events").contains("stop "));
+    h.quit();
+}
+
+#[test]
+fn ctl_closed_start_target_records_creation_without_attaching_or_stopping() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Synthetic title");
+    let initial = h.ctl(&["inspect"]);
+    let instance = initial["instance"].as_str().unwrap();
+    std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
+    let start = h.ctl(&[
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "active",
+        "--place",
+        "tab",
+        "--name",
+        "p/orphan",
+        "--",
+        "codex",
+        "--yolo",
+    ]);
+    h.event("start p/orphan");
+    let pane = start["pane"].as_u64().unwrap().to_string();
+    let close = h.ctl(&["close", "--instance", instance, "--pane", &pane]);
+    assert_eq!(close["state"], "complete");
+    std::fs::remove_file(h.dir.path().join("hold-start")).unwrap();
+    let result = h.operation(&start);
+    assert_eq!(result["state"], "target_invalid", "{result}");
+    assert_eq!(result["agent_created"]["name"], "p/orphan-actual");
+    assert!(!h.log("events").contains("attach p/orphan-actual"));
+    assert!(!h.log("events").contains("stop "));
+    h.quit();
+}
+
+#[test]
+fn replacing_a_running_shell_confirms_then_keeps_the_same_pane() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Synthetic title");
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Terminal");
+    h.see("SHELL READY");
+    let initial = h.ctl(&["inspect"]);
+    h.send(b"\x1d\r");
+    h.see("End these running terminals");
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("End these running terminals"));
+    assert_eq!(h.ctl(&["inspect"])["tabs"], initial["tabs"]);
+    h.send(b"\r");
+    h.see("End these running terminals");
+    h.click("End shells y");
+    h.see("p/a READY");
+    assert_eq!(h.ctl(&["inspect"])["active_pane"], initial["active_pane"]);
+    h.send(b"A");
+    h.event("input p/a 41");
+    assert!(!h.log("events").contains("stop "));
+    h.quit();
+}
+
+#[test]
+fn control_socket_is_private_and_slow_clients_do_not_block_terminal_input() {
+    use std::os::unix::{fs::PermissionsExt, net::UnixStream};
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let view = h.ctl(&["inspect"]);
+    let instance = view["instance"].as_str().unwrap();
+    let run = h.dir.path().join("run");
+    let socket = run.join(format!("{instance}.sock"));
+    assert_eq!(
+        std::fs::metadata(&run).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert_eq!(
+        std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let mut slow: Vec<_> = (0..4)
+        .map(|_| UnixStream::connect(&socket).unwrap())
+        .collect();
+    for stream in &mut slow {
+        stream.write_all(b"{").unwrap();
+    }
+    h.send(b"Z");
+    h.event("input p/a 5a");
+    drop(slow);
+    let bad = h.ctl(&[
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "999999",
+        "--place",
+        "right",
+        "--shell",
+    ]);
+    assert_eq!(bad["ok"], false);
+    h.quit();
+    assert!(!socket.exists());
+    assert_eq!(
+        h.ctl(&["inspect", "--instance", instance])["error"]["code"],
+        "instance_unavailable"
+    );
 }

@@ -262,7 +262,7 @@ fn placement_popups_stay_inside_small_screens_and_show_an_empty_list() {
                     text.contains(if place.is_none() {
                         "│ Right → │"
                     } else {
-                        "No agents to open here."
+                        "New agent…"
                     }),
                     "{text}"
                 );
@@ -408,4 +408,40 @@ fn compact_agent_tabs_and_outlined_split_sides_match_their_targets() {
         assert_eq!(buffer[(s.x, s.y)].symbol(), "╭");
         assert_eq!(buffer[(s.x, s.y)].fg, theme::MUTED);
     }
+}
+
+#[test]
+fn content_picker_offers_terminal_and_new_agent_even_without_agents() {
+    use saddle::placement::{self, Placement};
+    let terminals = Terminals::new("unused-fake-corral".into());
+    let placement = Placement {
+        pane: terminals.active_pane().id,
+        place: Some(Place::Tab),
+        selected: 0,
+        pressed: None,
+    };
+    let mut screen = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    screen
+        .draw(|f| {
+            placement::draw(
+                &Theme::default(),
+                f,
+                Rect::new(0, 0, 80, 24),
+                &terminals,
+                &placement,
+                &[],
+            );
+        })
+        .unwrap();
+    let text: String = screen
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|c| c.symbol())
+        .collect();
+    assert!(
+        text.contains("Terminal") && text.contains("New agent…"),
+        "{text}"
+    );
 }

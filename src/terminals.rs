@@ -3,7 +3,8 @@ use crate::{pty::Session, terminal::Size, viewer::Viewer};
 use anyhow::Result;
 use ratatui::layout::Rect;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Place {
     Current,
     Tab,
@@ -35,24 +36,41 @@ impl Place {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ticket {
     pub pane: u64,
-    revision: u64,
+    pub revision: u64,
 }
 pub struct Pane {
     pub id: u64,
     pub viewer: Viewer,
     revision: u64,
     requested: Option<String>,
+    reserved: bool,
+    pub starting: bool,
     observed: bool,
+    pub cwd: Option<String>,
 }
 impl Pane {
     pub fn input_session(&self) -> Option<&Session> {
         // A pending target may share a pane with a different, still-live session.
-        if self.requested.is_some() || self.viewer.showing.is_none() {
+        if self.reserved || (self.viewer.showing.is_none() && self.viewer.shell.is_none()) {
             return None;
         }
-        self.viewer.session.as_ref().filter(|s| !s.is_stopping())
+        self.viewer.session.as_ref().filter(|s| s.running())
+    }
+    pub fn ticket(&self) -> Ticket {
+        Ticket {
+            pane: self.id,
+            revision: self.revision,
+        }
+    }
+    pub fn replacing(&self) -> bool {
+        self.reserved || self.viewer.state() == "attaching"
+    }
+    pub fn requested(&self) -> Option<&str> {
+        self.requested.as_deref()
     }
 }
+#[derive(serde::Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 enum Node {
     Leaf(u64),
     Split {
@@ -155,6 +173,11 @@ pub struct Tab {
     pub panes: Vec<Pane>,
     tree: Node,
 }
+impl Tab {
+    pub fn layout(&self) -> serde_json::Value {
+        serde_json::to_value(&self.tree).unwrap()
+    }
+}
 pub struct Terminals {
     pub tabs: Vec<Tab>,
     pub active: u64,
@@ -181,7 +204,10 @@ impl Terminals {
             viewer: Viewer::new(self.corral.clone()),
             revision: 0,
             requested: None,
+            reserved: false,
+            starting: false,
             observed: false,
+            cwd: None,
         }
     }
     pub fn new_tab(&mut self) -> u64 {
@@ -206,7 +232,7 @@ impl Terminals {
     pub fn get(&self, id: u64) -> Option<&Pane> {
         self.tabs.iter().flat_map(|t| &t.panes).find(|p| p.id == id)
     }
-    fn get_mut(&mut self, id: u64) -> Option<&mut Pane> {
+    pub fn get_mut(&mut self, id: u64) -> Option<&mut Pane> {
         self.tabs
             .iter_mut()
             .flat_map(|t| &mut t.panes)
@@ -246,10 +272,21 @@ impl Terminals {
             return Ok(None);
         };
         let pane = self.get_mut(id).unwrap();
-        if pane.requested.as_deref() != Some(name) {
+        if (pane.starting && pane.viewer.showing.as_deref() == Some(name))
+            || (pane.reserved && pane.requested.as_deref() != Some(name))
+            || (pane.requested.is_none() && pane.viewer.target() != Some(name))
+            || (pane.viewer.showing.as_deref() == Some(name)
+                && pane
+                    .viewer
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.is_stopping()))
+        {
             // Reopening the displayed agent cancels an older replacement, including a start.
             pane.revision += 1;
             pane.requested = None;
+            pane.reserved = false;
+            pane.starting = false;
             if pane.viewer.showing.as_deref() == Some(name) {
                 pane.viewer.select(name.into())?;
             }
@@ -260,6 +297,8 @@ impl Terminals {
     /// keeps its pane, so its session, output and pending request move with it; otherwise the
     /// returned ticket reserves a new pane. `place` is `Tab` or a split direction.
     pub fn place(&mut self, anchor: u64, place: Place, name: &str) -> Result<Option<Ticket>> {
+        anyhow::ensure!(self.get(anchor).is_some(), "target pane disappeared");
+        anyhow::ensure!(place != Place::Current, "placement requires a tab or split");
         if let Some(id) = self.claim(name)? {
             // A pane cannot split itself; it stays where it is.
             if id != anchor || place == Place::Tab {
@@ -319,7 +358,7 @@ impl Terminals {
     pub fn reserve(&mut self, place: Place, name: Option<String>) -> Ticket {
         self.reserve_at(self.tab().active, place, name)
     }
-    fn reserve_at(&mut self, anchor: u64, place: Place, name: Option<String>) -> Ticket {
+    pub(crate) fn reserve_at(&mut self, anchor: u64, place: Place, name: Option<String>) -> Ticket {
         let id = match place {
             Place::Current => anchor,
             Place::Tab => self.new_tab(),
@@ -333,6 +372,8 @@ impl Terminals {
         let pane = self.get_mut(id).unwrap();
         pane.revision += 1;
         pane.requested = name;
+        pane.reserved = true;
+        pane.starting = false;
         pane.viewer.cancel_pending();
         Ticket {
             pane: id,
@@ -341,7 +382,9 @@ impl Terminals {
     }
     pub fn expect(&mut self, ticket: Ticket, name: String) {
         if self.valid(ticket) {
-            self.get_mut(ticket.pane).unwrap().requested = Some(name);
+            let pane = self.get_mut(ticket.pane).unwrap();
+            pane.requested = Some(name);
+            pane.starting = false;
         }
     }
     pub fn valid(&self, ticket: Ticket) -> bool {
@@ -354,11 +397,34 @@ impl Terminals {
         }
         let pane = self.get_mut(ticket.pane).unwrap();
         pane.requested = None;
+        pane.reserved = false;
+        pane.starting = false;
         if let Some(name) = name {
             pane.observed = false;
             pane.viewer.select(name)?;
         }
         Ok(true)
+    }
+    pub fn focus_snapshot(&self) -> Vec<(u64, u64)> {
+        let mut values: Vec<_> = self.tabs.iter().map(|t| (t.id, t.active)).collect();
+        values.push((self.active, self.active_pane().id));
+        values
+    }
+    pub fn restore_focus(&mut self, snapshot: &[(u64, u64)]) {
+        for (id, pane) in snapshot {
+            if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == *id)
+                && tab.panes.iter().any(|p| p.id == *pane)
+            {
+                tab.active = *pane;
+            }
+        }
+        if let Some((tab, pane)) = snapshot.last() {
+            if self.get(*pane).is_some() {
+                self.focus(*pane);
+            } else if self.tabs.iter().any(|t| t.id == *tab) {
+                self.active = *tab;
+            }
+        }
     }
     pub fn close_pane(&mut self, id: u64) -> Result<()> {
         let Some(mut pane) = self.take(id) else {
@@ -514,7 +580,11 @@ pub fn draw(
                     .requested
                     .as_deref()
                     .or(pane.viewer.target())
-                    .unwrap_or("Empty");
+                    .unwrap_or(if pane.viewer.shell.is_some() {
+                        "Terminal"
+                    } else {
+                        "Empty"
+                    });
                 crate::ui::clip(name, available.saturating_sub(4).min(20))
             })
             .collect();
@@ -588,7 +658,19 @@ pub fn draw(
         }
         let pane = terminals.get(id).unwrap();
         let active = id == terminals.tab().active;
-        let title = crate::ui::pane_title(pane.viewer.showing.as_deref(), agents);
+        let title = if let Some(shell) = &pane.viewer.shell {
+            format!(
+                " Terminal · {} · {} ",
+                if shell.state == "exited" {
+                    format!("exited {}", shell.exit_code.unwrap_or(0))
+                } else {
+                    shell.state.into()
+                },
+                shell.cwd
+            )
+        } else {
+            crate::ui::pane_title(pane.viewer.showing.as_deref(), agents)
+        };
         frame.render_widget(t.block(title.clone(), focused && active), rect);
         let inside = crate::ui::inner(rect);
         if let Some(session) = &pane.viewer.session {
@@ -599,6 +681,7 @@ pub fn draw(
                 .render(inside, frame.buffer_mut());
             if focused
                 && active
+                && pane.input_session().is_some()
                 && let Some(cursor) = cursor
             {
                 frame.set_cursor_position(cursor);
@@ -608,7 +691,16 @@ pub fn draw(
                 Paragraph::new(
                     pane.requested
                         .as_ref()
-                        .map(|n| format!("Attaching {n}…"))
+                        .map(|n| {
+                            format!(
+                                "{} {n}…",
+                                if pane.starting {
+                                    "Starting"
+                                } else {
+                                    "Attaching"
+                                }
+                            )
+                        })
                         .unwrap_or_else(|| pane.viewer.note.clone()),
                 )
                 .wrap(Default::default()),
