@@ -3,6 +3,7 @@ pub mod app;
 pub mod buttons;
 mod command;
 pub mod config;
+pub mod control;
 pub mod corral;
 pub mod detail;
 pub mod drover;

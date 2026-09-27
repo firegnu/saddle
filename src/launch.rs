@@ -30,6 +30,7 @@ pub struct Form {
     fields: [edit::Input; 4],
     field: usize,
     pub place: usize,
+    pub anchor: Option<Ticket>,
     pub busy: Option<Ticket>,
     pub error: String,
     pub visible: bool,
@@ -53,6 +54,7 @@ impl Form {
                 .map(edit::Input::new),
             field: PROJECT,
             place: 0,
+            anchor: None,
             busy: None,
             error: String::new(),
             visible: true,
@@ -308,7 +310,7 @@ impl Form {
                 self.advanced = !self.advanced;
                 self.field = ADVANCED;
             }
-            KeyCode::F(5) if self.advanced => {
+            KeyCode::F(5) if self.advanced && self.anchor.is_none() => {
                 self.place = (self.place + 1) % 6;
                 self.field = 4;
             }
@@ -333,8 +335,12 @@ impl Form {
             KeyCode::Enter | KeyCode::Char(' ') if self.field == ADVANCED => {
                 self.advanced = !self.advanced;
             }
-            KeyCode::Left if self.field == 4 => self.place = (self.place + 5) % 6,
-            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') if self.field == 4 => {
+            KeyCode::Left if self.field == 4 && self.anchor.is_none() => {
+                self.place = (self.place + 5) % 6
+            }
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ')
+                if self.field == 4 && self.anchor.is_none() =>
+            {
                 self.place = (self.place + 1) % 6
             }
             KeyCode::PageUp | KeyCode::PageDown if self.advanced => {
@@ -682,12 +688,24 @@ impl Form {
                     hits.extend(controls);
                 }
                 4 => {
-                    let label = format!("Open in: {} (←/→)", Place::ALL[self.place].label());
+                    let label = format!(
+                        "Open in: {} {}",
+                        Place::ALL[self.place].label(),
+                        if self.anchor.is_some() {
+                            "(bound)"
+                        } else {
+                            "(←/→)"
+                        }
+                    );
                     let (_, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
                         rect,
-                        &[Button::new(&label, KeyCode::F(5), enabled)],
+                        &[Button::new(
+                            &label,
+                            KeyCode::F(5),
+                            enabled && self.anchor.is_none(),
+                        )],
                     );
                     hits.extend(controls);
                 }

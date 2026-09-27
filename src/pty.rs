@@ -20,15 +20,48 @@ pub struct Session {
     size: Size,
     stopping: Option<Instant>,
     exited: bool,
+    exit_code: Option<u32>,
+    shell: bool,
+    groups: Vec<i32>,
 }
 impl Session {
     pub fn spawn(command: &[String], cwd: Option<&Path>, size: Size) -> Result<Self> {
+        Self::spawn_owned(command, cwd, size, None)
+    }
+    pub fn spawn_shell(
+        command: &[String],
+        cwd: &Path,
+        size: Size,
+        env: &[(String, String)],
+    ) -> Result<Self> {
+        Self::spawn_owned(command, Some(cwd), size, Some(env))
+    }
+    fn spawn_owned(
+        command: &[String],
+        cwd: Option<&Path>,
+        size: Size,
+        env: Option<&[(String, String)]>,
+    ) -> Result<Self> {
         let program = command.first().context("empty terminal command")?;
         let pair = native_pty_system().openpty(pty_size(size))?;
         let mut cmd = CommandBuilder::new(program);
         cmd.args(&command[1..]);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        if let Some(env) = env {
+            for key in [
+                "CORRAL_NAME",
+                "CORRAL_INSTANCE",
+                "SADDLE_INSTANCE",
+                "SADDLE_PANE",
+                "SADDLE_REVISION",
+            ] {
+                cmd.env_remove(key);
+            }
+            for (key, value) in env {
+                cmd.env(key, value);
+            }
+        }
         if let Some(cwd) = cwd {
             cmd.cwd(cwd);
         }
@@ -78,6 +111,9 @@ impl Session {
             size,
             stopping: None,
             exited: false,
+            exit_code: None,
+            shell: env.is_some(),
+            groups: Vec::new(),
         })
     }
     pub fn send(&self, bytes: Vec<u8>) -> Result<()> {
@@ -100,12 +136,38 @@ impl Session {
     pub(crate) fn is_stopping(&self) -> bool {
         self.stopping.is_some()
     }
+    pub fn exit_code(&self) -> Option<u32> {
+        self.exit_code
+    }
+    pub fn running(&self) -> bool {
+        !self.exited && !self.is_stopping()
+    }
     pub fn interrupt(&mut self) -> Result<()> {
         if self.stopping.is_none() && !self.poll_exit()? {
-            self.signal(libc::SIGINT);
+            if self.shell {
+                if let Some(pid) = self.child.process_id() {
+                    self.groups.push(pid as i32);
+                }
+                if let Some(group) = self.master.process_group_leader().filter(|p| *p > 1)
+                    && !self.groups.contains(&group)
+                {
+                    self.groups.push(group);
+                }
+                self.signal_groups(libc::SIGHUP);
+            } else {
+                self.signal(libc::SIGINT);
+            }
             self.stopping = Some(Instant::now());
         }
         Ok(())
+    }
+    fn signal_groups(&self, signal: i32) {
+        for group in &self.groups {
+            // These are the process groups of this owned PTY, captured before shutdown.
+            unsafe {
+                libc::kill(-*group, signal);
+            }
+        }
     }
     fn signal(&self, signal: i32) {
         if let Some(pid) = self.child.process_id() {
@@ -119,7 +181,11 @@ impl Session {
         if self.exited {
             return Ok(true);
         }
-        if self.child.try_wait()?.is_some() {
+        if let Some(status) = self.child.try_wait()? {
+            self.exit_code = Some(status.exit_code());
+            if self.shell && self.stopping.is_some() {
+                self.signal_groups(libc::SIGKILL);
+            }
             self.exited = true;
             return Ok(true);
         }
@@ -127,6 +193,9 @@ impl Session {
             .stopping
             .is_some_and(|start| start.elapsed() >= Duration::from_secs(3))
         {
+            if self.shell {
+                self.signal_groups(libc::SIGKILL);
+            }
             self.signal(libc::SIGKILL);
         }
         Ok(false)

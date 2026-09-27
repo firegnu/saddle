@@ -48,6 +48,7 @@ pub struct Workspace<'a> {
     pub placement: Option<&'a crate::placement::Placement>,
     pub form: Option<&'a mut crate::launch::Form>,
     pub program: &'a str,
+    pub modal: bool,
 }
 pub fn draw_workspace(
     frame: &mut Frame,
@@ -55,9 +56,9 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, placement, mut form, program) = match workspace {
-        Some(w) => (Some(w.terminals), w.placement, w.form, w.program),
-        None => (None, None, None, "corral"),
+    let (terminals, placement, mut form, program, modal) = match workspace {
+        Some(w) => (Some(w.terminals), w.placement, w.form, w.program, w.modal),
+        None => (None, None, None, "corral", false),
     };
     let t = view.colors;
     let screen_area = frame.area();
@@ -70,7 +71,7 @@ pub fn draw_workspace(
             frame,
             view.panes.viewer,
             terminals,
-            view.focus == Focus::Viewer && form.is_none() && placement.is_none(),
+            view.focus == Focus::Viewer && form.is_none() && placement.is_none() && !modal,
             &panel.agents,
         );
     } else {
@@ -213,7 +214,14 @@ pub fn draw_workspace(
             " ↑↓ Select  t Text  ↵ Run details  PgUp/PgDn Scroll  a Add  c Projects  ? Help  Esc Close",
         ),
         Focus::Viewer => (
-            view.showing.unwrap_or("Viewer · disconnected").to_string(),
+            view.showing
+                .or_else(|| {
+                    terminals
+                        .filter(|t| t.active_pane().viewer.shell.is_some())
+                        .map(|_| "Terminal")
+                })
+                .unwrap_or("Viewer · disconnected")
+                .to_string(),
             " Keys go to terminal  Ctrl-] Agents",
         ),
     };

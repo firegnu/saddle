@@ -66,7 +66,7 @@ saddle
 2. 在 Viewer 中直接输入，与 agent 交互。
 3. 按 **Ctrl-]** 回到 Agents，Viewer 保持连接。
 4. 按 **Tab** 或点击 Agents 顶部的 **Tasks** 打开任务弹窗，用顶部的项目选择切换已登记项目；**Esc** 关闭弹窗，输入回到打开前的位置。
-5. 从任意位置退出：先按 **Ctrl-]**，再按 **q**。退出只断开 saddle 的全部 Viewer，agent 继续运行。
+5. 从任意位置退出：先按 **Ctrl-]**，再按 **q**。退出会统一确认并结束运行中的 shell，断开 agent 的显示；corral agent 继续运行。
 
 如果其他终端已经接入某个 agent，请先在那里断开，再通过 saddle 接入。停止 agent 是独立操作，需要确认。
 
@@ -76,13 +76,38 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 输入框有标签、框线、占位提示、焦点高亮及真实插入光标。点击内容定位光标，Tab／Shift-Tab 切焦点，左右键、Home／End、Backspace／Delete、Ctrl-U 清空及粘贴都按当前位置编辑，支持中文宽字符。长行横向滚动，多行消息还可上下移动、纵向滚动及 Enter 换行；小窗口可切焦点或用滚轮访问字段，底部保留创建和取消入口。
 
-**Advanced / F4** 默认收起，包含完整命令、可选多行首条消息、**Open in** 打开位置（默认新标签页，可选当前窗格或四向分屏）和完整调用预览。明确点击 Codex／Claude 会把命令重置为 `codex --yolo`／`claude`；内置 Codex 默认使用 YOLO 模式。手填命令显示 **Custom command**，切焦点或收起高级设置不会丢弃，并按输入原样使用，不额外追加参数。命令支持引号分组，直接拆为 argv 调用公开 `corral start`，不展开 shell 变量、管道或重定向。PgUp／PgDn 或 Preview 聚焦后的滚轮查看完整预览；失败保留草稿。**Cancel / Esc**／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
+**Advanced / F4** 默认收起，包含完整命令、可选多行首条消息、**Open in** 打开位置（默认当前窗格，可选新标签页或四向分屏；内容选择入口打开的表单绑定该位置）和完整调用预览。明确点击 Codex／Claude 会把命令重置为 `codex --yolo`／`claude`；内置 Codex 默认使用 YOLO 模式。手填命令显示 **Custom command**，切焦点或收起高级设置不会丢弃，并按输入原样使用，不额外追加参数。命令支持引号分组，直接拆为 argv 调用公开 `corral start`，不展开 shell 变量、管道或重定向。PgUp／PgDn 或 Preview 聚焦后的滚轮查看完整预览；失败保留草稿。**Cancel / Esc**／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
 
-**Enter／点击 agent 行** 接入活动窗格；同一 agent 已经打开时跳到现有位置，不重复接入。布局从右侧开始，先选位置再选 agent：活动窗格底边的 **Split ▾** 打开紧凑菜单 **Left ←**／**Right →**／**Above ↑**／**Below ↓**（方向键同样可用），方向相对于该窗格；标签条的 **+ Tab** 表示新标签页。随后弹出以位置为标题的列表（例如 *Open agent on the right*），列出可选 agent，分屏时不列出该窗格自己的 agent。点击 agent（或 ↑↓ 加 Enter，列表长时可用滚轮）之后才创建窗格或 tab。已在别处打开的 agent 标出 **Move here**：选中后移动那个窗格，会话、输出和尚未完成的接入都随之移动，不重新接入，也不停止任何东西；它离开的分屏会合并，被搬空的 tab 会消失。任一步点 **Cancel Esc** 或按 Esc 回到 Viewer，Ctrl-] 回 Agents，布局保持原样；没有可选 agent 时显示空态并保留取消入口。左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
+**Enter／点击 agent 行** 接入活动窗格；同一 agent 已经打开时跳到现有位置，不重复接入。布局从右侧开始，先选位置再选内容：活动窗格底边的 **Split ▾** 打开紧凑菜单 **Left ←**／**Right →**／**Above ↑**／**Below ↓**（方向键同样可用），方向相对于该窗格；标签条的 **+ Tab** 表示新标签页。随后弹出以位置为标题的列表（例如 *Open content on the right*），列出 **Terminal**、**New agent…** 和已有 agent，分屏时不列出该窗格自己的 agent。点击 agent（或 ↑↓ 加 Enter，列表长时可用滚轮）之后才创建窗格或 tab。已在别处打开的 agent 标出 **Move here**：选中后移动那个窗格，会话、输出和尚未完成的接入都随之移动，不重新接入，也不停止任何东西；它离开的分屏会合并，被搬空的 tab 会消失。任一步点 **Cancel Esc** 或按 Esc 回到 Viewer，Ctrl-] 回 Agents，布局保持原样；没有已有 agent 时仍可选 Terminal 和 New agent。New agent 打开绑定该位置的原有创建表单，取消不留空位。左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
 
-每个 tab 保存自己的分屏和活动窗格，切换 tab 保留接入。**Close pane** 关闭活动窗格并合并分屏；**× / Close tab** 断开该 tab 的所有接入。最后一个 tab 关闭后留一个空 tab。关闭显示或退出 saddle 都只断开自有 attach，agent 继续运行；停止仍走原来的独立确认操作。异步启动／接入始终归属于提交时预留的窗格，目标关闭或被替换后不会接到别处，也不会停止新建 agent。启动失败可能留下预留的空窗格。
+每个 tab 保存自己的分屏和活动窗格，切换 tab 保留接入。**Close pane** 关闭活动窗格并合并分屏；**× / Close tab** 断开该 tab 的所有接入。最后一个 tab 关闭后留一个空 tab。关闭 agent 显示只断开自有 attach，agent 继续运行；含运行 shell 的关闭或退出先统一确认，取消不影响任何会话；停止仍走原来的独立确认操作。异步启动／接入始终归属于提交时预留的窗格，目标关闭或被替换后不会接到别处，也不会停止新建 agent。启动失败可能留下预留的空窗格。
 
 尺寸不足以容纳某处分屏时暂时只画其中一侧，放大后恢复完整关系；内容区为空的终端不接收输入。本轮布局只保存在内存，不做恢复或持久化。
+
+## 普通终端与 ctl 命令
+
+Terminal 启动 `$SHELL -i`，缺失时回退 `/bin/sh`。目录取来源窗格的已知项目／启动目录，空窗格回退当前 Tasks 项目；不跟踪 shell 后续 cd。自行退出后保留屏幕与退出状态，不重启。关闭、替换运行中的 shell 或退出 saddle 时先确认，混合 tab 整体确认后统一关闭。只回收自有 PTY 的 shell 和前台进程组，不承诺回收主动 daemonize 的进程。
+
+同一个二进制提供 JSON 命令，不启动第二个 TUI：
+
+```sh
+saddle ctl instances
+saddle ctl inspect [--instance ID]
+saddle ctl open --place right --shell
+saddle ctl open --place tab --agent project/review
+saddle ctl open --place down --name project/helper --cwd /absolute/project --role regular -- codex --yolo
+saddle ctl request REQUEST --instance ID
+saddle ctl close --pane PANE --instance ID
+saddle ctl close --tab TAB --instance ID --confirmation TOKEN --confirm-shells
+```
+
+open 默认 `--relative-to self`，按 corral 名称与实例身份定位，或使用 shell 的 saddle 窗格环境。只有明确写 `--relative-to active` 才使用接收请求时的活动窗格；也可传查询得到的 Pane ID。place 为 tab/left/right/up/down。命令默认保留焦点，`--focus` 在提交时切换；异步完成不抢后来的焦点，也不清空用户表单。shell／新 agent 可传 cwd；新 agent 可传 prompt，名称精确使用，argv 不经 shell、不追加参数。
+
+读取实际返回的 instance、request_id、pane、revision、cwd 和 cwd_source。starting／attaching 时用 request 查询；accepted、agent_created、pty 分别表示接收、创建和显示步骤，不代表模型就绪。超时保留未确定状态，用原请求 ID、相同参数查询或重试，不自动换编号重建。修改可传 `--request-id`，否则发送前生成。相同编号不同参数报冲突。每实例最多记录 256 次修改，满后拒绝新修改、保留旧记录；重启变更实例 ID，旧请求不可用。
+
+含运行 shell 的 close 首次返回 confirmation_required、targets 和 confirmation，不改变布局。确认所列影响后，携带原凭据与 `--confirm-shells`，用一个新请求 ID 完成；重试这次确认操作时仍用这个新 ID。目标变化使旧凭据失效。正在操作布局弹层、表单或关闭确认时，远程修改返回 busy。没有 ctl stop、发键、读屏、运行脚本或调度接口；明确停止 agent 仍核对身份后用公开 corral stop。
+
+每个 TUI 有独立随机实例 ID 和 Unix socket：目录 0700、socket 0600，优先 `$XDG_RUNTIME_DIR/saddle`，否则 `$XDG_CACHE_HOME/saddle/run` 或 `~/.cache/saddle/run`。绝对路径 `SADDLE_RUNTIME_DIR` 可覆盖目录，测试完全隔离；路径超过 Unix socket 限制时明确报错。发现只列活实例，不选“最新”；退出只移除自己的 socket。传输限制 64 KiB、有界队列／线程和超时。实际语法见 `saddle ctl --help`，agent 操作说明见 [skills/saddle/SKILL.md](skills/saddle/SKILL.md)。
 
 ## 配置
 
@@ -137,7 +162,7 @@ agent_selected = "#302a23"
 | Agents | ↑↓ / j k | 选择 agent |
 | Agents | Enter / 点击行 | 接入活动窗格，已打开时跳到现有位置 |
 | Agents | n / New | 创建新 agent |
-| Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选要打开或移过去的 agent |
+| Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |
 | Agents | Tab / Shift-Tab | 打开 Tasks / 焦点到 Viewer |
 | 任意位置 | 点击 Agents 顶部的 Tasks | 打开 Tasks；关闭后回到打开前的输入目标 |

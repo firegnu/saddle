@@ -1665,6 +1665,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                         placement: None,
                         form: None,
                         program: "unused-fake-corral",
+                        modal: false,
                     }),
                 );
             })
@@ -1861,10 +1862,7 @@ fn viewer_title_shows_the_public_role_label_or_agent_without_guessing() {
             serde_json::json!({ "role": "reviewer" }),
             "Reviewer · demo/main",
         ),
-        (
-            serde_json::json!({ "role": "tester" }),
-            "Agent · demo/main",
-        ),
+        (serde_json::json!({ "role": "tester" }), "Agent · demo/main"),
         (
             serde_json::json!({ "role": "Controller" }),
             "Agent · demo/main",
