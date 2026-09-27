@@ -565,11 +565,6 @@ fn agent_states_have_the_designed_dots_colors_labels_and_activity() {
                 },
                 "{case}"
             );
-            if case == "working" {
-                // Braille spinner in purple before the label, and a blue time.
-                assert_eq!(buffer[(start - 2, y)].fg, t::AGENTS_PURPLE);
-                assert!("⣾⣽⣻⢿⡿⣟⣯⣷".contains(buffer[(start - 2, y)].symbol()));
-            }
             let rows: String = hits
                 .agents
                 .iter()
@@ -592,7 +587,7 @@ fn agent_states_have_the_designed_dots_colors_labels_and_activity() {
 }
 
 #[test]
-fn working_spinners_advance_at_their_own_rates() {
+fn working_dot_advances_every_360ms() {
     let (mut a, mut q) = fixture();
     let frame = |a: &mut agents::Panel, q: &mut queue::Panel, now: f64| {
         let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
@@ -620,21 +615,11 @@ fn working_spinners_advance_at_their_own_rates() {
             .unwrap();
         let buffer = terminal.backend().buffer().clone();
         let y = (0..40).find(|y| buffer[(6, *y)].symbol() == "m").unwrap();
-        let spinner = (6..50)
-            .find(|x| "⣾⣽⣻⢿⡿⣟⣯⣷".contains(buffer[(*x, y)].symbol()))
-            .unwrap();
-        (
-            buffer[(4, y)].symbol().to_owned(),
-            buffer[(spinner, y)].symbol().to_owned(),
-        )
+        buffer[(4, y)].symbol().to_owned()
     };
-    // Braille steps every 120 ms and the dot every 360 ms.
     let start = frame(&mut a, &mut q, 100.1);
     assert_eq!(frame(&mut a, &mut q, 100.15), start);
-    let braille = frame(&mut a, &mut q, 100.23);
-    assert_eq!(braille.0, start.0);
-    assert_ne!(braille.1, start.1);
-    assert_ne!(frame(&mut a, &mut q, 100.47).0, start.0);
+    assert_ne!(frame(&mut a, &mut q, 100.47), start);
 }
 
 #[test]
@@ -2234,7 +2219,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
         " │   be790d · ATT 0 · VIA agent                   ",
         "                                                  ",
         " saddle/ ──────────────────────────────────── (2) ",
-        " │ ◓ dev-t20-workspace-1 >_ codex ⣽ working    0s ",
+        " │ ◓ dev-t20-workspace-1 >_ codex working      0s ",
         " │   ⠪ t20-terminal-workspace                     ",
         " │   DOING apply_patch · 8m                       ",
         " │   ⎇ t20-terminal-workspace ↑0 main  +127 -3 ?3 ",
@@ -2364,7 +2349,7 @@ fn forty_two_columns_show_agent_icons_and_keep_columns_aligned() {
         );
         // State column after it; times end at the right edge.
         let state = buffer[(27, *y)].symbol();
-        assert!(state == "i" || "⣾⣽⣻⢿⡿⣟⣯⣷".contains(state), "{line}");
+        assert!(state == "i" || state == "w", "{line}");
         assert_ne!(buffer[(right, *y)].symbol(), " ", "{line}");
         assert_eq!(buffer[(right + 1, *y)].symbol(), " ", "{line}");
     }
@@ -2458,7 +2443,7 @@ fn effort_keeps_its_first_row_slot_when_folded_and_narrow() {
             }
             assert_eq!(buffer[(effort_x as u16 + 2, *y)].symbol(), " ", "{line}");
             let state = buffer[(effort_x as u16 + 3, *y)].symbol();
-            assert!(state == "i" || "⣾⣽⣻⢿⡿⣟⣯⣷".contains(state), "{line}");
+            assert!(state == "i" || state == "w", "{line}");
         }
         let text = agents_lines(&buffer).join("\n");
         assert!(text.contains(&format!("{cut} ")), "{text}");
