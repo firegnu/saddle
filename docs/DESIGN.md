@@ -873,3 +873,28 @@ Initial project       [ Automatic   ]
 - 外部修改在 Save 时检查，不持续监听。冲突提供 Keep my edits（重读并保留编辑项为未保存草稿）、Discard my edits（重读并丢弃草稿）、Back（不重读），不自动保存。未改动时 Save 关闭，不写文件或声称已保存。
 - 设置弹窗打开时，新 ctl 修改请求沿用表单 busy 保护；Inspect／Request 等只读查询不受此限制。运行中的终端与后台读取继续。
 - 保存用 toml_edit 保留未修改内容，同目录临时文件替换；有效配置符号链接写入目标并保留文件权限；链接目标无法解析时拒绝保存，保留链接及草稿。Keep 重载失败后的重试继续保留草稿选择，不静默变为 Discard。两项保护已通过独立复核；不将实现方式等同于已验证全部文件系统并发。
+
+## 48. 任务通知渠道与内部提示（2026-09-28）
+
+T33 仅调研已完成。用户确认关键节点才弹、复用 Attention，在 Settings 选择系统／内部通知，按单 saddle 使用场景设计；随后同意两项目串行实施：「可以，按照你的计划开干吧」。这是调研后的独立实施，不扩大原调研任务。
+
+- Settings General 增加 `Task notifications`，选项 `System`／`In saddle`，注明控制本用户跨登记项目的 Drover 任务通知。保持现有 Settings 风格、草稿和 Save／Cancel。系统通知开关是 Drover 所有的偏好，saddle 通过公开 CLI 查询和设置，不直接读写内部文件，不在自己的 config 留另一份开关。
+- 首版只对“任务完成且正在等待放行”弹出，主控普通 idle 推断不弹。任务完成判据、next／done／go、loop、gate 和公开 attention 语义不变；Hammerspoon 的阈值系统提醒保留。
+- System 时由 Drover 提示，saddle 不生成内部任务提示。In saddle 时关闭 Drover 系统通知，由 saddle 的既有任务刷新生成内部提示；saddle 未运行时不回退 OS，不补发离线事件。
+- 内部提示位于右下角，短英文文案，例如 `saddle · T34 ready for review`，约 5 秒后消失，可关闭；点击定位项目任务，多项合并为一条并跳 Attention。不抢键盘焦点、不打断终端输入；提示的鼠标操作不透传给终端。
+- 关闭／查看提示不放行，实际待处理事项仍在 Attention。首次成功快照为启动／首次启用／渠道切换建立基线，旧 awaiting 不补弹；读取失败不算空基线。同次任务运行不因刷新、文字变化、观察暂缺或正常重启重复提示。
+- 保存成功指偏好已保存，引擎后续检查应用，不承诺撤回在途发送或 OS 旧横幅。接口不支持／错误要如实呈现；未确认渠道时不猜测或弹内部提示。外部偏好与本地 config 保存不能假装是一次原子操作，部分成功时明确指出并保留未保存草稿。
+- 首版不做通知历史中心、消息接收服务、离线补发、自动重试、多实例选举或远程功能，不承诺跨渠道精确一次投递。去重留存仅为防重复，不作为事件历史。
+
+```text
+Settings / General
+Task notifications    [ System | In saddle ]
+                      Drover tasks across projects
+                                     [Cancel] [Save]
+
+                  ┌────────────────────────────────────┐
+                  │ saddle · T34 ready for review   [×] │
+                  └────────────────────────────────────┘
+```
+
+跨项目接口、生效／去重边界和集成顺序见 `docs/任务/任务通知-接口与集成约定.md`。Drover 主控负责该仓库实现与审查；saddle/main 负责消费方和集成，两边联调通过前不分别合并发布。实施任务分别见 `任务通知-Drover实施委托.md`、`任务通知-saddle实施.md`。
