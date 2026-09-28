@@ -1,28 +1,26 @@
 # 交接
 
-更新：2026-09-28。设计与理由见 `docs/DESIGN.md` 第 42 节；本次证据见 `docs/任务/T22-统一待处理入口.md`。
+更新：2026-09-28。设计与理由见 `docs/DESIGN.md` 第 43 节；本次证据见 `docs/任务/T27-绑定打开位置说明.md`。
 
 ## 当前状态
 
-T22 Attention 已实现、主控审查通过、本地合并并构建发布。实现 `212d295`，合并 `67519b1`，审查与设计取舍记录 `e59ee2c`，收尾空提交 `6790397`。本次交接随收尾文档提交推送 origin/main；后续以实时 Git 状态为准。
+T27 绑定打开位置说明已实现、主控审查通过、本地合并并构建发布。实现 `3633bd2`，合并 `a90d8cb`，审查与设计取舍记录 `8daf3fb`，收尾空提交 `4a44769`。本次交接随收尾文档提交推送 origin/main；后续以实时 Git 状态为准。
 
-- Agents 标题下增加 `Attention · N`，点击或在 Agents 按 `a` 打开；弹层分 Needs attention 和 New replies。
-- 跨项目汇总等待输入、错误、待放行、历史失败和本次运行内未读回复；打开行进入对应 agent 或项目任务，已打开的 agent 复用原窗格。
-- 查看不处理等待／待放行；历史失败可显式 Mark seen，本次运行内隐藏，不改 drover 历史。读取失败显示失败来源。
-- T23 已获用户现场验证“基本满足我的要求”；T22 用户已看到入口，公开队列已无待放行。用户已手动派发 TASK T27，按设计第 43 节与 `docs/任务/T27-绑定打开位置说明.md` 启动实施。
+- 从 + Tab／Split 打开的 New agent，在 Advanced 中以静态灰字说明打开位置与来源（`Opens in … · set by …`），无点击命中，Tab 焦点跳过该行。
+- 从 Agents → New 进入仍保留位置选择器；创建命令、绑定规则和终端行为不变。
+- T23 已获用户现场验证“基本满足我的要求”；T22 已放行，Attention 入口可用。T27 尚待用户现场验收与放行。
 
 ## 验证与发布
 
-- T22 主控标准检查：`cargo test --all-targets` 195 passed、0 failed、2 ignored（workflow 62 passed、2 ignored）；Clippy 全 targets、fmt、diff 检查通过。
-- 实现者首轮标准检查曾遇旧 T20 picker 偶发失败，主控本轮未复现；不据此认定 T29 已修复，详见任务完成记录与主控审查。
-- main 的 `cargo build --release` 通过；共享 target/release/saddle、仓库 target/release/saddle 和默认 ~/.local/bin/saddle 三入口 SHA-256：`21b5f85ecab1554d40e417f8f1320c9d4b0c9692e04c08cca3cc8c5b5e916be9`。默认入口仍链接共享 release，`--help` 已包含 Attention。未重启用户现场；下次启动使用新版本。
+- T27 实现者定向渲染测试 `bound_location_is_static_text_and_new_keeps_the_selector`、fmt、diff 检查通过。主控核对 diff、测试内容和完成记录，diff 检查通过；按纯呈现调整预算未重跑套件或执行全套测试、Clippy。
+- 最近一次全套为 T22 主控检查：195 passed、0 failed、2 ignored；Clippy 通过。旧 T20 picker 偶发失败仍归 T29，不宣称已修复。
+- main 的 `cargo build --release` 通过；共享 target/release/saddle、仓库 target/release/saddle 和默认 ~/.local/bin/saddle 三入口 SHA-256：`768918c8c948b2b1600372efa74536cbb1863ea8bddffdb1beef81a6ce8e36a3`。默认入口仍链接共享 release。未重启用户现场；下次启动使用新版本。
 
 ## 队列与开发环境
 
-- 最新公开队列 current=T27（doing）、awaiting=null，loop=false、gate=true、paused=false。未调用 go/next。
+- `drover done T27` 核对通过，返回 8 表示等待用户放行；current=null、awaiting=T27（done），loop=false、gate=true、paused=false。未调用 go/next。
 - Pending 顺序：T29 偶发测试失败 → T28 ctl 上限 → T24 终端历史搜索复制 → T25 布局恢复 → T26 任务产物跳转。逐项讨论后再实施，不自动派发下一件。
-- 自有 `t22-attention` worktree／分支与实现者已清理；用户 agent 未动。迟到提醒查到 not_found 即忽略。
-- T27 实现者 `saddle/dev-t27-bound-location-1`（instance `d5e214c9e1e2`，Claude Code opus[1m] / high，role=implementer），分支 `t27-bound-location`，worktree `../saddle-worktrees/t27-bound-location`，基线 `2ca8fdd`。
+- 自有 `t27-bound-location` worktree／分支已清理，确认 idle、attached=0、工作区干净且分支合并后，删除 worktree 并一并关闭 `saddle/dev-t27-bound-location-1`（instance `d5e214c9e1e2`）。当前仅 main worktree；用户 agent 未动。迟到提醒查到 not_found 即忽略。
 
 ## 仍需注意
 
@@ -33,4 +31,4 @@ T22 Attention 已实现、主控审查通过、本地合并并构建发布。实
 
 ## 下一步
 
-等待 T27 实现者完成提醒，读取状态与回复，做主控审查、合并和收尾；其余待办继续等逐项讨论，不自动推进队列。
+等待用户现场验证 T27 并放行。下一项 T29 先讨论排查范围；其余待办继续等逐项讨论，不自动推进队列。
