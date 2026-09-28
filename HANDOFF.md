@@ -6,7 +6,7 @@ saddle 已落地：固定实现 `409e34c`，合并 `fadce6f`，收尾空提交 `
 
 - saddle release 已构建，默认链接、共享 target 和仓库 target 三入口 SHA-256 相同：`f19b4d78848a7c1a119e2d4de044a99bbab130babc337d725b4ef9971bc1287a`；未重启当前 saddle、未修改用户渠道偏好。
 - 实现者 `saddle/dev-task-notifications-1`（b012b3c82a77）关闭前 idle、attached=0、worktree 干净、分支已合并；worktree 和分支成功移除后已关闭。临时 baseline worktree 也已移除。
-- 下一步：通知 Drover 主控联调通过，按既有联合实施授权协调其代码落地及旧引擎加载新版；等待其固定落地 SHA、部署状态和清理回报。saddle 发布不代表 Drover 常驻旧引擎已经更新。不得推进真实队列，不关闭用户主控 drover/main；其实现 agent 和 worktree 由它管理。
+- 已通过 corral 向 Drover 主控 a781ee31bc67 送达联调通过和联合落地要求（confirmed），按既有授权协调其代码落地及旧引擎加载新版；等待固定落地 SHA、部署状态和清理回报。saddle 发布不代表 Drover 常驻旧引擎已经更新。不得推进真实队列，不关闭用户主控 drover/main；其实现 agent 和 worktree 由它管理。
 - Drover 已审查通过的固定交付 `2b20205eb3ae423aa5f3eb9cc4a289ca84fd8340`（实现 9b6d9c2），branch m35-notifications，worktree `../drover-worktrees/m35-notifications`。公开契约 `docs/通知JSON接口.md`；没有修改六字段、命令或身份编码。saddle 收紧去重只影响消费方内部，不要求 Drover 返工。
 - T33 是已完成调研、待用户决定保留的研究分支／worktree，agent 已按用户指示关闭；不把本次功能落地记作 T33 队列完成。不动真实 done／go／next。新增 T34 沙箱与定时任务仅入队，不自动设计实施。
 - 主仓库两份未提交的 T33 研究／咨询记录继续保留；下文为历史背景，不代表当前实施状态。
