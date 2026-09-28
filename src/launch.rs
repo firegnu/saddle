@@ -194,7 +194,11 @@ impl Form {
         }
         order.push(ADVANCED);
         if self.advanced {
-            order.extend([2, 3, 4, PREVIEW]);
+            order.extend([2, 3]);
+            if self.anchor.is_none() {
+                order.push(4);
+            }
+            order.push(PREVIEW);
         }
         order
     }
@@ -687,25 +691,24 @@ impl Form {
                     );
                     hits.extend(controls);
                 }
-                4 => {
-                    let label = format!(
-                        "Open in: {} {}",
-                        Place::ALL[self.place].label(),
-                        if self.anchor.is_some() {
-                            "(bound)"
-                        } else {
-                            "(←/→)"
-                        }
+                4 if self.anchor.is_some() => {
+                    // The + Tab / Split entry already chose the location: state it, no selector.
+                    frame.render_widget(
+                        Paragraph::new(vec![
+                            "Open in".into(),
+                            bound_place(Place::ALL[self.place]).into(),
+                        ])
+                        .style(Style::default().fg(t.muted)),
+                        rect,
                     );
+                }
+                4 => {
+                    let label = format!("Open in: {} (←/→)", Place::ALL[self.place].label());
                     let (_, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
                         rect,
-                        &[Button::new(
-                            &label,
-                            KeyCode::F(5),
-                            enabled && self.anchor.is_none(),
-                        )],
+                        &[Button::new(&label, KeyCode::F(5), enabled)],
                     );
                     hits.extend(controls);
                 }
@@ -818,6 +821,18 @@ impl Form {
     }
 }
 
+/// Static text for a location fixed by the + Tab or Split entry.
+fn bound_place(place: Place) -> &'static str {
+    match place {
+        Place::Current => "Opens in the current pane",
+        Place::Tab => "Opens in a new tab · set by + Tab",
+        Place::Left => "Opens in a split on the left · set by Split",
+        Place::Right => "Opens in a split on the right · set by Split",
+        Place::Up => "Opens in a split above · set by Split",
+        Place::Down => "Opens in a split below · set by Split",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -918,6 +933,50 @@ mod tests {
         assert!(form.args().is_err());
         press(&mut form, KeyCode::Left);
         assert_eq!(form.args().unwrap()[1], "agents/main");
+    }
+
+    #[test]
+    fn bound_location_is_static_text_and_new_keeps_the_selector() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let render = |form: &mut Form| {
+            let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
+            let mut hits = Vec::new();
+            terminal
+                .draw(|frame| hits = form.draw(&Theme::default(), frame, "corral", &[]))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let screen: String = (0..46)
+                .map(|y| {
+                    (0..106)
+                        .map(|x| buffer[(x, y)].symbol())
+                        .collect::<String>()
+                        + "\n"
+                })
+                .collect();
+            (screen, hits.iter().any(|h| h.key.code == KeyCode::F(5)))
+        };
+        let mut form = Form::new("/tmp/demo".into());
+        press(&mut form, KeyCode::F(4));
+        let (screen, selector) = render(&mut form);
+        assert!(screen.contains("Open in: Current pane (←/→)"), "{screen}");
+        assert!(selector);
+        for (place, text) in [
+            (Place::Tab, "Opens in a new tab · set by + Tab"),
+            (Place::Right, "Opens in a split on the right · set by Split"),
+        ] {
+            let mut form = Form::new("/tmp/demo".into());
+            form.anchor = Some(Ticket {
+                pane: 1,
+                revision: 0,
+            });
+            form.place = Place::ALL.iter().position(|p| *p == place).unwrap();
+            press(&mut form, KeyCode::F(4));
+            let (screen, selector) = render(&mut form);
+            assert!(screen.contains(text), "{screen}");
+            assert!(!screen.contains("Open in:") && !screen.contains("(bound)"));
+            assert!(!selector);
+            assert!(!form.focus_order().contains(&4));
+        }
     }
 
     #[test]
