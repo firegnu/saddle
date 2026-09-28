@@ -24,3 +24,14 @@
 派发后可先报实际 agent／模型档位／分支路径及契约异议；区分派发进展与完成交付。挂好你方完成提醒，接续审查；允许你通过 corral 向 saddle/main 发送本任务进展及最终交付，这是本次跨项目协调授权。不要关闭 drover/main 或其他用户主控。
 
 命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## Drover 派发进展（2026-09-28，尚未实现交付）
+
+Drover 主控回报并经 saddle/main 只读核对：契约提交 `a292b2a` 仅包含公开接口及实施任务两份文档，不是功能完成 SHA。契约路径为 `/Users/firegnu/Developer/personal_projs/drover-worktrees/m36-manual-complete/docs/人工完成JSON接口.md`。
+
+- `show` 新增 `manual_completion.target_token`，消费者只原样回传，不解析／组装；新命令为 `complete-manually Tn --target-token TOKEN --reason REASON --json`，在同一项目调用。
+- 成功固定 awaiting_release；`task.completion_record` 保留人工确认和检查快照，旧历史不倒填。target_changed／state_busy 等明确报错，不回退普通 go。既有自动判据及普通 go 语义保持；与 DESIGN §49 无契约异议。具体字段及错误码以固定公开文档为准。
+- 实现者 `drover/dev-manual-complete-1`，instance `465fd011c92e`，Codex `gpt-6-astra / xhigh`；分支 `m36-manual-complete`，worktree 同上述目录。核对时 working，不读取回复当作 DONE。
+- 路由三项未定，Drover 主控依据身份并发和核心放行确定重／碰要害／独立审查要；后续审查由该主控安排，完成提醒已挂。
+
+当前只记录派发，不启动 saddle 消费方。等待实现和独立审查完成后交固定 SHA；两边 worktree 留待隔离联调，不合并发布，不操作真实队列、配置或服务，不关闭 drover/main。
