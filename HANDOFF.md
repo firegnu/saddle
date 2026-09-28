@@ -21,7 +21,8 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 
 - T27 已完成并放行；最新公开队列 current=T24（doing）、awaiting=null，loop=false、gate=true。未调用 go/next。
 - Pending 顺序：T25 布局恢复 → T26 任务产物跳转 → T29 偶发测试失败 → T28 ctl 上限。逐项讨论后再实施，不自动派发下一件。
-- 自有 `t27-bound-location` worktree／分支已清理，确认 idle、attached=0、工作区干净且分支合并后，删除 worktree 并一并关闭 `saddle/dev-t27-bound-location-1`（instance `d5e214c9e1e2`）。当前仅 main worktree；用户 agent 未动。迟到提醒查到 not_found 即忽略。
+- 自有 `t27-bound-location` worktree／分支及实现者已清理；用户 agent 未动。迟到提醒查到 not_found 即忽略。
+- T24 实现者 `saddle/dev-t24-terminal-history-1`（instance `5af2844012f4`，Claude Code opus[1m] / high，role=implementer），分支 `t24-terminal-history`，worktree `../saddle-worktrees/t24-terminal-history`，基线 `bfe7068`。
 
 ## 仍需注意
 
@@ -32,4 +33,4 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 
 ## 下一步
 
-派出 T24 实现者后等待完成提醒，读取状态和回复，按任务单做主控审查、合并和收尾。其余待办继续等逐项讨论，不自动推进队列。
+等待 T24 实现者完成提醒，读取状态和回复，按任务单做主控审查、合并和收尾。其余待办继续等逐项讨论，不自动推进队列。
