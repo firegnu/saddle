@@ -9,7 +9,7 @@ pub(super) struct LinkAttach {
     deadline: Instant,
 }
 impl App {
-    fn task_link_current(&self, request: &AgentRequest) -> bool {
+    pub(super) fn task_link_current(&self, request: &AgentRequest) -> bool {
         self.focus == Focus::Queue
             && self.queue.view == queue::View::Links
             && matches!(self.queue.page, queue::Page::List)
@@ -20,7 +20,7 @@ impl App {
                 .is_some_and(|key| key.same_task(&request.key))
             && self.queue.links.checking_agent.as_ref() == Some(request)
     }
-    fn task_link_error(&mut self, message: String) {
+    pub(super) fn task_link_error(&mut self, message: String) {
         self.queue.links.checking_agent = None;
         self.queue.links.agent_request = None;
         self.queue.links.message = message;

@@ -546,6 +546,11 @@ impl App {
         if let Some(closing) = self.closing.take() {
             if self.close_snapshot(closing.target).ok().as_ref() != Some(&closing.snapshot) {
                 self.panel.message = "Close target changed; review and close again.".into();
+                if let Some(Replacement::TaskLink(request)) = closing.replacement
+                    && self.task_link_current(&request)
+                {
+                    self.task_link_error("Close target changed; retry the link.".into());
+                }
                 return Ok(());
             }
             if let Some(replacement) = closing.replacement {

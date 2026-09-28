@@ -3907,3 +3907,79 @@ fn task_links_attach_failure_stays_in_tasks_and_unknown_identity_is_disabled() {
     assert!(!h.log("events").contains("attach p/b"));
     h.quit();
 }
+
+#[test]
+fn task_links_shell_exit_during_replacement_confirmation_releases_the_request() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            std::fs::write(
+                root.join("metadata.json"),
+                r#"{"p/a":{"instance":"012345abcdef"}}"#,
+            )
+            .unwrap();
+            std::fs::write(root.join("recovery.txt"), "RECOVERY FILE CONTENT").unwrap();
+            std::fs::write(root.join("queue-state.json"), serde_json::json!({
+                "mode": {}, "paused": false, "history": [],
+                "pending": [{"id":"T1", "title":"Shell link recovery", "body":"Artifact: recovery.txt\nAgent: p/a | instance=012345abcdef"}]
+            }).to_string()).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    common::script(
+        h.dir.path(),
+        "shell",
+        r#"#!/usr/bin/env python3
+from pathlib import Path
+import os, time, sys
+root = Path(__file__).parent
+os.write(1, b'SHELL READY\r\n')
+while not (root / 'exit-shell').exists():
+    time.sleep(0.01)
+sys.exit(7)
+"#,
+    );
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Terminal");
+    h.see("SHELL READY");
+    h.click("Tasks · ");
+    h.click("Links");
+    h.see("› recovery.txt");
+    h.send(b"\x1b[B\r");
+    h.see("End these running terminals");
+    std::fs::write(h.dir.path().join("exit-shell"), "").unwrap();
+    // Wait for the synthetic shell's actual exit, not a timing-dependent delay.
+    h.until(|h| h.ctl(&["inspect"])["tabs"][1]["panes"][0]["state"] == "exited");
+    let exited = h.ctl(&["inspect"]);
+    h.send(b"y");
+    // The popup can disappear partway through a PTY frame; wait for the new Tasks message.
+    h.see("Close target changed; retry the link.");
+    assert!(!h.contents().contains("End these running terminals"));
+    assert!(
+        !h.contents().contains("Checking agent"),
+        "a rejected replacement must finish its Links request"
+    );
+    h.see("› p/a");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], exited["tabs"]);
+    assert!(!h.log("events").contains("attach p/a"));
+    // Both actions work without switching away from Links or losing its selection.
+    h.send(b"\x1b[A\r");
+    h.see("RECOVERY FILE CONTENT");
+    h.send(b"\x1b");
+    h.see("› recovery.txt");
+    h.send(b"\x1b[B\r");
+    h.see("p/a READY");
+    h.see("Input ▸ p/a");
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|line| *line == "attach p/a")
+            .count(),
+        1
+    );
+    assert!(!h.log("events").contains("stop "));
+    h.quit();
+}
