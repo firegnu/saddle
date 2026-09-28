@@ -25,11 +25,13 @@ T25 重开后恢复工作布局已实现，主控与独立审查通过，合并�
 - T25 已完成并由用户放行；用户已手动下放 T26，最新公开队列 current=T26（doing）、awaiting=null，loop=false、gate=true。本轮未调用 go/next。
 - Pending 顺序：T29 偶发测试失败 → T28 ctl 上限。逐项讨论后由用户手动下放，不自动派发下一件。
 - T25 实现与独立审查 worktree、实现分支已清理；两个 agent 均在 idle、attached=0、工作区干净且提交已合并后，随工作目录删除一并关闭：`saddle/dev-t25-layout-restore-1`（2410a2971081）、`saddle/dev-t25-review-1`（78197c46589e）。记录保留在 main，迟到提醒查到 not_found 即忽略。
-- saddle 只剩主控 `saddle/main`，cwd 为主仓库；corral/main、drover/main、globalmesh/main、owlet/main 原有用户 agent 保留在各自工作目录。
+- T25 收尾时 saddle 仅保留主控 `saddle/main`，cwd 为主仓库；本轮新建的 T26 实现者见下文。corral/main、drover/main、globalmesh/main、owlet/main 原有用户 agent 保留在各自工作目录。
 
 ## 仍需注意与下一步
 
-T26 用户手动下放后回复「按照你的建议来」，主控已定稿 `docs/任务/T26-任务与交付结果跳转.md`、DESIGN 第 46 节：只改 saddle，Tasks 增加 Links，明确引用加一层任务书，项目内文本／Git 在弹窗内只读查看，agent 校验原实例。路由重／交叉审查要／碰要害，交给 Codex gpt-6-astra / xhigh。队列当前正文保留派发时的旧审查稿；它已是 current，公开 edit 只支持 pending，因此不改上游历史，实施以最新任务书、设计和用户本轮确认准。下一步在 t26-task-links worktree 派出实现者；完成后主控审查并安排独立审查，不自动推进下一任务。
+T26 用户手动下放后回复「按照你的建议来」，主控已定稿 `docs/任务/T26-任务与交付结果跳转.md`、DESIGN 第 46 节：只改 saddle，Tasks 增加 Links，明确引用加一层任务书，项目内文本／Git 在弹窗内只读查看，agent 校验原实例。路由重／交叉审查要／碰要害，交给 Codex gpt-6-astra / xhigh。队列当前正文保留派发时的旧审查稿；它已是 current，公开 edit 只支持 pending，因此不改上游历史，实施以最新任务书、设计和用户本轮确认为准。
+
+已创建实现者 `saddle/dev-t26-task-links-1`（instance `96c48b700af7`，role=implementer），分支 `t26-task-links`，worktree `../saddle-worktrees/t26-task-links`，基线 `a3bb249`。等待完成提醒后主控审查并按路由安排独立审查，不自动推进下一任务。
 
 - T29 的 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
 - 共用 target 跨 checkout 曾复用旧二进制；后续检查需核实构建对应当前源码。
