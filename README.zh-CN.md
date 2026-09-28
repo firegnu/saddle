@@ -32,6 +32,7 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](http
   未亮柱只留底点，选中与否图标一致。没有有效标签时不显示图标但保留对齐；所有 agent 都没有有效标签时不占该列。图标只反映委派时的公开标签，不代表运行时实际 effort。
 - **每个 agent 的 Git 摘要：** 目录上面一行，例如 `⎇ dev-t12 ↑2 main     +18 -4 ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支（与 agent 名称相同时只显示 `⎇`）；`↑n 基准`，即比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；增删放不进分支那一行时整组移到下一行右对齐；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
 - **Tasks：** 点 Agents 顶部的 **Tasks** 入口（或按 **Tab**）打开的大弹窗。弹窗关闭时入口仍以状态色显示当前项目的简短状态：`Awaiting release`、`Running`、`Paused`、待办数量或 `Idle`（尚未读到时为 `Loading…`，读取失败为 `Read failed`），不用打开就知道是否需要处理。顶部是项目和队列操作；左侧列出当前任务、待放行、待办和历史记录，右侧并排显示选中任务的原文或运行详情。原生控件支持新增任务、编辑、调整次序和删除待办、汇总查看所有登记项目的待办、切换项目、放行、暂停和循环设置。
+- **Attention：** Agents 标题下的 `Attention · N` 汇总 agent 和 `~/.drover/projects` 中每个项目需要你处理的事项；点击或在 Agents 按 **a** 打开。**Needs attention** 列出等待输入或出错的 agent、待放行任务和队列历史中的失败任务；**New replies** 列出本次运行中看到的 agent 未读回复。同一 agent 只占一行，需处理状态优先。条目只在公开状态真正变化（已回答、已放行）后消失，新回复在查看该 agent 后清除。**Mark seen / m** 仅在本次运行中隐藏一条历史失败，不修改队列历史，重启后会再次出现。读取失败的来源（corral、项目登记表或某个项目）显示为失败条目，不当作没有事项；尚未读到时显示 `…` / `loading…`。项目约每 5 个刷新周期重读一次，打开 Attention 时立即重读。打开条目只显示 agent 终端，或打开该项目的 Tasks 并按任务 id 选中；不会回答、放行或推进任务。
 - **内置启动：** 原生表单填写目录、名称、命令与首条消息，预览确认后调用公开 corral start。
 - **Viewer 标签页和分屏：** 每个 tab 保存一组可四向分割的窗格，各自运行实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
 - **鼠标与键盘：** 紧凑的可点击按钮、鼠标滚轮、触控板和快捷键。滚动列表不改变选择，正常刷新保留滚动位置。
@@ -171,6 +172,7 @@ agent_selected = "#2b2621"
 | Agents | Enter / 点击行 | 接入活动窗格，已打开时跳到现有位置 |
 | Agents | n / New | 创建新 agent |
 | Agents | / / Search | 按项目名或 agent 名称过滤；Enter 或点击进入对应终端（已打开时跳到现有位置），Esc 取消 |
+| Agents | a / Attention · N | 打开 Attention；↑↓ 选择，Enter 或点击打开对应 agent 或任务，m 把历史失败标为已看，Esc 取消 |
 | Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
 | Viewer 边框 | Zoom / Restore | 多窗格时让当前窗格临时占满右侧终端区域（保留 Agents 和 tab 条）；Restore 回到原分屏和比例，焦点仍在该窗格。其他窗格继续运行；切到其他窗格、关闭该窗格或新建分屏都会结束放大 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |

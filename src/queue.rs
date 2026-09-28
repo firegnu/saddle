@@ -65,6 +65,8 @@ pub struct Panel {
     pub busy: bool,
     pub(crate) selection_after_write: Option<(usize, Task)>,
     pub all_pending: Vec<ProjectPending>,
+    /// A task to select once the list has it, found by identity rather than position.
+    pub(crate) locate: Option<Task>,
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -272,6 +274,31 @@ impl Panel {
             .unwrap_or(self.selected)
             .min(tasks.len().saturating_sub(1));
         self.sync_content();
+        self.apply_locate();
+    }
+    /// Shows the list with `task` selected now, or as soon as a snapshot arrives.
+    pub fn locate(&mut self, task: Task) {
+        self.page = Page::List;
+        self.locate = Some(task);
+        self.apply_locate();
+    }
+    fn apply_locate(&mut self) {
+        if self.snapshot.is_none() {
+            return;
+        }
+        let Some(task) = self.locate.take() else {
+            return;
+        };
+        match self.tasks().iter().position(|(_, t)| same_task(t, &task)) {
+            Some(index) => self.select(index),
+            None => {
+                self.message_failed = true;
+                self.message = format!(
+                    "{} is no longer in this project's queue.",
+                    task.id.as_deref().unwrap_or(&task.title)
+                );
+            }
+        }
     }
     /// Selects a task row; the content beside the list follows it.
     pub fn select(&mut self, index: usize) {

@@ -52,6 +52,13 @@ pub struct Workspace<'a> {
     pub form: Option<&'a mut crate::launch::Form>,
     pub program: &'a str,
     pub modal: bool,
+    pub attention: Attention<'a>,
+}
+/// The Attention entry's items and, while open, its popup.
+pub struct Attention<'a> {
+    pub items: &'a [crate::attention::Item],
+    pub loading: bool,
+    pub popup: Option<&'a mut crate::attention::Popup>,
 }
 pub fn draw_workspace(
     frame: &mut Frame,
@@ -59,7 +66,7 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, placement, mut search, mut form, program, modal) = match workspace {
+    let (terminals, placement, mut search, mut form, program, modal, attention) = match workspace {
         Some(w) => (
             Some(w.terminals),
             w.placement,
@@ -67,13 +74,46 @@ pub fn draw_workspace(
             w.form,
             w.program,
             w.modal,
+            w.attention,
         ),
-        None => (None, None, None, None, "corral", false),
+        None => (
+            None,
+            None,
+            None,
+            None,
+            "corral",
+            false,
+            Attention {
+                items: &[],
+                loading: false,
+                popup: None,
+            },
+        ),
     };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
     let mut hits = draw_agents(frame, panel, &view);
+    let header = agents_header(view.panes.agents);
+    let row = Rect {
+        y: header.y + 1,
+        ..header
+    }
+    .intersection(inner(view.panes.agents));
+    let area = crate::attention::entry(t, frame, row, attention.items, attention.loading);
+    if !area.is_empty() {
+        hits.buttons.push(crate::buttons::Hit {
+            area,
+            danger: false,
+            key: crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('a'),
+                crossterm::event::KeyModifiers::NONE,
+            ),
+        });
+    }
+    let mut attention_popup = attention
+        .popup
+        .map(|popup| (popup, attention.items, attention.loading));
     let title = pane_title(view.showing, &panel.agents);
     if let Some(terminals) = terminals {
         hits.terminal = crate::terminals::draw(
@@ -182,6 +222,16 @@ pub fn draw_workspace(
         view.queue.fields.clear();
         view.queue.project_rows.clear();
     }
+    if let Some((popup, items, loading)) = attention_popup.as_mut() {
+        // Only the popup stays clickable; its rows are kept by the popup itself.
+        hits.buttons = popup.draw(t, frame, items, *loading);
+        hits.terminal.clear();
+        hits.agents.clear();
+        hits.queue_rows.clear();
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
+    }
     let controls: Vec<_> = hits
         .buttons
         .iter()
@@ -225,7 +275,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  / Search  n New  z Fold  Tab Tasks  q Quit",
+            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  Tab Tasks  q Quit",
         ),
         Focus::Queue => (
             match view.queue.view {
@@ -304,6 +354,10 @@ pub fn draw_workspace(
         target = "Search agents".into();
         help = " Type to filter  ↑↓ Select  Enter Open  Esc Cancel";
     }
+    if attention_popup.is_some() {
+        target = "Attention".into();
+        help = " ↑↓ Select  Enter Open  m Mark seen  Esc Cancel";
+    }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
         help = " y Stop  Any other key cancels";
@@ -320,6 +374,7 @@ pub fn draw_workspace(
                     || form.is_some()
                     || placement.is_some()
                     || search.is_some()
+                    || attention_popup.is_some()
                 {
                     help
                 } else if queue_modal && !view.queue.message.is_empty() {
@@ -552,8 +607,9 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         ),
         Rect::new(content.x, content.y, content.width, 1),
     );
-    if content.height >= 2 {
-        rule(frame, content.y + 1);
+    // The second row carries the Attention entry, drawn with the workspace.
+    if content.height >= 3 {
+        rule(frame, content.y + 2);
     }
     use crossterm::event::KeyCode as K;
     let selected = panel.selected.is_some();
@@ -623,11 +679,11 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     let bar = bar_rows(&controls, content.width);
     let bar_height = bar.len() as u16;
     let mut hits = Hits::default();
-    // Header, rule, at least one list row, rule and the bar; with less room the list keeps
-    // the space.
-    let body_top = content.y + 2.min(content.height);
+    // Header, Attention, rule, at least one list row, rule and the bar; with less room the
+    // list keeps the space.
+    let body_top = content.y + 3.min(content.height);
     let mut body_bottom = content.bottom();
-    if content.height > 3 + bar_height {
+    if content.height > 4 + bar_height {
         body_bottom = content.bottom() - bar_height - 1;
         rule(frame, body_bottom);
         for (row, placed) in bar.iter().enumerate() {
@@ -808,7 +864,7 @@ fn width_of(spans: &[Span<'_>]) -> usize {
     spans.iter().map(|s| s.content.width()).sum()
 }
 /// Cuts spans to `width` display columns, ending with … when anything was dropped.
-fn clip_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+pub(crate) fn clip_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
     if width_of(&spans) <= width {
         return spans;
     }
