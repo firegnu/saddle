@@ -706,3 +706,5 @@ Agents ‹Tasks›             Agent terminal
 - 位置已由入口确定时，用静态说明文字呈现，避免显示为不能操作的单选项选择器；沿用英文界面风格，例如 `Opens in a new tab`。
 - 从 Agents 的 New 进入：继续允许选择打开位置。
 - 仅改 saddle 的呈现和文案，创建命令、位置绑定与终端行为保持原规则；不涉及 corral、drover 或 corral-dispatch。任务见 `docs/任务/T27-绑定打开位置说明.md`。
+
+实施保留原 Advanced 中的 Open in 位置，以静态灰字显示，Tab 焦点跳过该说明。文案为 `Opens in a new tab · set by + Tab` 或 `Opens in a split on the right · set by Split`（其他方向对应替换），同时解释打开位置和固定原因；本轮不调整折叠区布局。
