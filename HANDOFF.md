@@ -1,22 +1,15 @@
 # 交接
 
-## 当前工作：任务通知实施（2026-09-28，以本节为准）
+## 当前工作：任务通知联合落地（2026-09-28，以本节为准）
 
-当前固定交付为 `409e34c9cebf5a0453ed3ca926ab4df69bba0f1e`，实现者 DONE、idle、attached=0，开发 worktree 干净；临时 baseline worktree 已移除。用户确认收紧审查：撤回持久去重阻塞，只按正常使用验收处理必须改项，停止统计式重跑。此前补齐要求 not_idle 未送达，不再发送。
+saddle 已落地：固定实现 `409e34c`，合并 `fadce6f`，收尾空提交 `94f50be`。主控接受正常使用验收，与 Drover 固定 `2b20205` 的隔离主流程一次通过；Clippy 通过。标准测试 255 passed／1 failed／3 ignored，旧 T20 窗格用例超时，单项核对一次通过，不宣称整套全绿或无负载回归，T29 仍未解决。用户确认撤回持久去重阻塞，接受 saddle 会话去重／启动基线，边界见 DESIGN §48 和 `docs/任务/任务通知-主控审查.md`。
 
-主控审查接受交付，与 Drover `2b20205` 的隔离主流程一次通过；Clippy 通过。标准检查 255 passed／1 failed／3 ignored，旧 T20 窗格用例超时，单项核对一次通过；不宣称整套全绿或无负载回归，未重跑基线统计。进入联合落地。接受 saddle 会话去重与启动基线，边界与最终结论记录在 `docs/任务/任务通知-主控审查.md`。联调通过前不合并发布、清开发 worktree 或推进真实队列；不关闭 drover/main。
-
-用户已授权「可以，按照你的计划开干吧」。按两项目串行计划推进：先委托 drover/main 派 Codex 做公开通知开关与稳定去重，审查通过后 saddle/main 再派 Claude Code 接 Settings 与内部提示，最后联调。设计见 DESIGN 第 48 节，共同接口与两份实施任务书见 `docs/任务/任务通知-*`。
-
-- 当前阶段：Drover 已审查通过待集成，saddle 已派发 `saddle/dev-task-notifications-1`（instance `b012b3c82a77`，Claude Code `opus[1m] / high`，role=implementer）。分支 `task-notifications`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/task-notifications`，基线为派发文档提交 `3cb5cb3`；路由常规／改行为／不独立审查。任务 `docs/任务/任务通知-saddle实施.md`，收到完成提醒后主控审查并组织隔离联调。
-- Drover 固定交付 `2b20205eb3ae423aa5f3eb9cc4a289ca84fd8340`，实现 `9b6d9c2`，末提交仅主控审查记录；m35-notifications worktree 干净。公开接口为该 worktree 的 `docs/通知JSON接口.md`，命令为该 worktree 的 `bin/drover`。其主控审查通过无必须改项，无独立审查 agent；开发 8 项 RED→GREEN、一次 CLI 回归，主控一次 CLI 回归和错误 JSON 定点检查通过。
-- saddle/main 已核对固定 HEAD、末提交文档范围与差异检查，并在临时 HOME 用交付命令执行 status→off→off→on→status，确认六字段、revision 幂等和 status 无落盘。未重复上游测试套件、未调用安装主分支命令或真实 loop／通知。t0 六元组身份按公开 binary64 大端十六进制规范接入，不猜 JSON 十进制格式。
-- Drover 主控已回报派发进展（尚未完成实现）：契约与 `40be7f0` 一致、暂无异议；实现者 `drover/dev-notifications-1`，Codex `gpt-6-astra / high`；路由三项拿不准后回退常规／改行为／不独立交叉审查，完成后由 Drover 主控审查。分支 `m35-notifications`，worktree `/Users/firegnu/Developer/personal_projs/drover-worktrees/m35-notifications`，任务 `docs/任务/m35-notifications 通知开关与稳定去重.md`，任务提交 `8bdb4a6`。对方已挂完成提醒自行接续审查；此处记录其回报，不把任务提交当作实现交付 SHA，不提前启动 saddle。
-- 共同设计及三份实施／接口文档已本地提交 `40be7f0`，未推送。正式实施委托已通过 corral 发给 `drover/main`（instance `a781ee31bc67`），返回 confirmed；要求它先报实际派发信息，并在后续开发与审查完成后向 saddle/main 交付固定 SHA。当前 HANDOFF 与 T33 研究／咨询记录仍未提交，均为本会话文档，不覆盖。
-- 两边在集成通过前保留分支／worktree／自开开发 agent，不先合并、发布或清理。Drover 主控保持运行，由其管理实现者及审查；不得关闭用户主控。
-- 用户再次明确：drover/main 不是本主控委派开的，任务完成后也不得主动关闭。其实现者 `drover/dev-notifications-1` 由 Drover 主控管理；我只管理自己开的 saddle 实现者。
-- T33 仍保留原调研边界与报告分支；原研究 worktree 保留是用户决定，不作为未收尾功能分支清理。调研 agent 已关闭。不用这次授权倒填 T33 为已实现，不用虚构收尾提交推进研究队列。
-- 实施采用独立任务书协调，当前真实队列仍 current=T33，未调用 done／go／next；其他待办顺序不动。收到 Drover 回复先分清“已派发”与“开发及审查完成”，只有后者才能开始依赖的 saddle 实施。
+- saddle release 已构建，默认链接、共享 target 和仓库 target 三入口 SHA-256 相同：`f19b4d78848a7c1a119e2d4de044a99bbab130babc337d725b4ef9971bc1287a`；未重启当前 saddle、未修改用户渠道偏好。
+- 实现者 `saddle/dev-task-notifications-1`（b012b3c82a77）关闭前 idle、attached=0、worktree 干净、分支已合并；worktree 和分支成功移除后已关闭。临时 baseline worktree 也已移除。
+- 下一步：通知 Drover 主控联调通过，按既有联合实施授权协调其代码落地及旧引擎加载新版；等待其固定落地 SHA、部署状态和清理回报。saddle 发布不代表 Drover 常驻旧引擎已经更新。不得推进真实队列，不关闭用户主控 drover/main；其实现 agent 和 worktree 由它管理。
+- Drover 已审查通过的固定交付 `2b20205eb3ae423aa5f3eb9cc4a289ca84fd8340`（实现 9b6d9c2），branch m35-notifications，worktree `../drover-worktrees/m35-notifications`。公开契约 `docs/通知JSON接口.md`；没有修改六字段、命令或身份编码。saddle 收紧去重只影响消费方内部，不要求 Drover 返工。
+- T33 是已完成调研、待用户决定保留的研究分支／worktree，agent 已按用户指示关闭；不把本次功能落地记作 T33 队列完成。不动真实 done／go／next。新增 T34 沙箱与定时任务仅入队，不自动设计实施。
+- 主仓库两份未提交的 T33 研究／咨询记录继续保留；下文为历史背景，不代表当前实施状态。
 
 ## T33 当前进展（2026-09-28，以本节为准）
 
