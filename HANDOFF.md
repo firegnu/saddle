@@ -1,6 +1,6 @@
 # 交接
 
-更新：2026-09-28。T26 设计与理由见 `docs/DESIGN.md` 第 46 节；实施、审查及发布证据见 `docs/任务/T26-任务与交付结果跳转.md`、`T26-主控审查.md`、`T26-独立审查.md`。
+更新：2026-09-28。T30 Settings 已按用户确认派发，见下文；当前发布仍为 T26。T26 设计与理由见 `docs/DESIGN.md` 第 46 节；实施、审查及发布证据见 `docs/任务/T26-任务与交付结果跳转.md`、`T26-主控审查.md`、`T26-独立审查.md`。
 
 ## 当前状态
 
@@ -20,15 +20,20 @@ T26 任务与交付结果跳转已通过主控和独立审查，合并并本机�
 
 ## 队列与开发环境
 
-- `drover done T26` 核对通过，返回 8 等用户放行。公开状态 current=null、awaiting=T26(done)，loop=false、gate=true；没有调用 go／next。
-- Pending 顺序：T30 Settings 配置入口 → T29 偶发测试失败 → T28 ctl 上限 → T31 评估并行派发多个不同任务。T30／T31 仅记录需求，待讨论细化；不自动设计或派发下一件。
+- T26 已完成并由用户放行，用户已手动下放 T30；最新公开状态 current=T30(doing)、awaiting=null，loop=false、gate=true。本轮未调用 go／next。
+- 最新公开 Pending 顺序：T31 评估并行派发多个不同任务 → T29 偶发测试失败 → T28 ctl 上限。后续任务仍待讨论细化，不自动派发。
 - 队列 T26 正文保留派发时旧审查稿，历史不改；后续已获用户「按照你的建议来」确认，最新定稿与完成记录以任务书和 DESIGN 为准。
 - T26 实现与独立审查 worktree、实现分支已删除。两个自建 agent 在 idle、attached=0、工作区干净、提交已合并后，随工作目录删除一并关闭：`saddle/dev-t26-task-links-1`（96c48b700af7）、`saddle/dev-t26-review-1`（7e6f0a94ce23）。迟到提醒查到 not_found 即忽略。
-- saddle 仅保留主控 `saddle/main`，cwd 为主仓库。原有 corral/main、drover/main、globalmesh/main、owlet/main 保留在各自工作目录。
+- saddle 主控 `saddle/main` 在主仓库；T30 实现者见下文。原有 corral/main、drover/main、globalmesh/main、owlet/main 保留在各自工作目录。
 
 ## 仍需注意与下一步
 
-等用户体验 T26 并放行，再逐项讨论后续任务。入口为 Tasks → 选任务 → Links。
+T30 已完成共同设计并正式开始实施。任务书 `docs/任务/T30-Settings配置入口.md`，设计 `docs/DESIGN.md` 第 47 节，定稿提交／分支基线 `99c7f34`。用户先要求只改任务书，主控当时未改队列；手动下放带出旧占位稿后，用户再次确认以最新任务书正式委派，故以定稿为准，不修改上游历史。
+
+- 实现者 `saddle/dev-t30-settings-1`（instance `acef3e8b5939`），Claude Code 常规 `opus[1m]` / `high`，role=implementer。
+- 分支 `t30-settings`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t30-settings`。只改 saddle；尚未完成、审查、合并或发布。
+- route.py 三项 verdict 均为 null；主控判断常规／交叉审查要／碰要害：用户配置持久化和外部修改冲突需要独立审查。实现结束先主控审查，再安排独立 Codex 审查，通过后合并发布收尾。
+- 完成提醒通过 corral `send --after` 交回主控；收到后先查 status／reply 和任务完成记录。不要重复创建实现者或因迟到旧 TASK 改回占位稿。
 
 - T29 的 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
 - 共用 target 跨 checkout 曾复用旧二进制；后续检查需核实构建对应当前源码。
