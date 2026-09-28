@@ -4,7 +4,7 @@
 
 ## 当前任务：T23 实现分派
 
-用户已从队列派发 T23。范围为 Agents 搜索切换与 split 窗格 Zoom／Restore，只改 saddle。方案见 DESIGN 第 41 节，实施任务见 `docs/任务/T23-快速切换与临时放大.md`。分支 `t23-search-zoom`，worktree `../saddle-worktrees/t23-search-zoom`，按常规 Claude Code opus[1m] / high 实现、主控审查。
+用户已从队列派发 T23。范围为 Agents 搜索切换与 split 窗格 Zoom／Restore，只改 saddle。方案见 DESIGN 第 41 节，实施任务见 `docs/任务/T23-快速切换与临时放大.md`。分支 `t23-search-zoom`，worktree `../saddle-worktrees/t23-search-zoom`，按常规 Claude Code opus[1m] / high 实现、主控审查。已启动 `saddle/dev-t23-search-zoom-1`（instance `d3284f259e7e`，role=implementer），公开状态 working；已挂完成提醒。
 
 当前只推进 T23；其余 T22/T27/T29/T28/T24/T25/T26 保持待办。loop=false、gate=true。实现完成后按任务记录审查、合并、发布及清理，不自动重启用户现场。
 
