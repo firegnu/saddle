@@ -9,6 +9,7 @@ pub mod corral;
 pub mod detail;
 pub mod drover;
 pub mod git;
+pub mod history;
 pub mod input;
 mod launch;
 pub mod layout;

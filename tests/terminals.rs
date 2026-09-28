@@ -614,3 +614,56 @@ fn search_matches_project_or_name_and_stays_inside_small_screens() {
         assert!(cursor.x < width && cursor.y < height);
     }
 }
+
+#[test]
+fn history_entry_sits_in_the_pane_footer_and_switches_to_copy_and_live() {
+    use saddle::{
+        pty::Session,
+        terminal::Size,
+        terminals::{self, Control},
+    };
+    let area = Rect::new(0, 0, 70, 23);
+    let footer = |terminals: &Terminals| -> Vec<String> {
+        let mut screen = Terminal::new(TestBackend::new(70, 23)).unwrap();
+        let mut hits = Vec::new();
+        screen
+            .draw(|frame| {
+                hits = terminals::draw(&Theme::default(), frame, area, terminals, true, &[])
+            })
+            .unwrap();
+        let buffer = screen.backend().buffer().clone();
+        let mut hits: Vec<_> = hits
+            .iter()
+            .filter(|(_, c)| matches!(c, Control::History(_) | Control::Copy(_) | Control::Live(_)))
+            .collect();
+        hits.sort_by_key(|(h, _)| h.area.x);
+        hits.iter()
+            .map(|(h, _)| {
+                (h.area.x..h.area.right())
+                    .map(|x| buffer[(x, h.area.y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    };
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    assert!(
+        footer(&terminals).is_empty(),
+        "an empty pane has no history"
+    );
+    let id = terminals.active_pane().id;
+    let session = Session::spawn(&["/bin/cat".into()], None, Size { rows: 20, cols: 68 }).unwrap();
+    terminals.get_mut(id).unwrap().viewer.session = Some(session);
+    assert_eq!(footer(&terminals), [" History "]);
+    let screen = terminals
+        .active_pane()
+        .viewer
+        .session
+        .as_ref()
+        .unwrap()
+        .screen
+        .clone();
+    screen.lock().unwrap().enter_history();
+    assert_eq!(footer(&terminals), [" Copy ", " Live Esc "]);
+    screen.lock().unwrap().exit_history();
+    assert_eq!(footer(&terminals), [" History "]);
+}

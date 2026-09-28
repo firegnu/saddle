@@ -748,6 +748,32 @@ impl App {
             Control::Tab(id) => self.viewer.active = id,
             Control::Pane(id) => self.viewer.focus(id),
             Control::Zoom(id) => self.viewer.toggle_zoom(id),
+            Control::History(id) | Control::Live(id) => {
+                self.viewer.focus(id);
+                if let Some(session) = self.viewer.get(id).and_then(|p| p.viewer.session.as_ref()) {
+                    let mut screen = session.screen.lock().unwrap();
+                    if matches!(control, Control::History(_)) {
+                        screen.enter_history();
+                    } else {
+                        screen.exit_history();
+                    }
+                }
+            }
+            Control::Copy(id) => {
+                self.viewer.focus(id);
+                if let Some(session) = self.viewer.get(id).and_then(|p| p.viewer.session.as_ref()) {
+                    // The terminal keeps receiving output while the clipboard is written.
+                    let text = session.screen.lock().unwrap().selected_text();
+                    let status = match text {
+                        None => "select text first".into(),
+                        Some(text) => match copy_to_clipboard(&text) {
+                            Ok(()) => format!("copied {} lines", text.lines().count()),
+                            Err(error) => format!("copy failed: {error:#}"),
+                        },
+                    };
+                    session.screen.lock().unwrap().history_status(status);
+                }
+            }
             Control::CloseTab(id) => self.request_close(crate::control::CloseTarget::Tab(id))?,
             Control::ClosePane(id) => self.request_close(crate::control::CloseTarget::Pane(id))?,
             Control::Previous | Control::Next => {
@@ -910,7 +936,9 @@ impl App {
                         }
                     }
                     Route::Terminal => {
-                        if let Some(session) = self.focused_session() {
+                        if let Some(screen) = self.history_screen() {
+                            screen.lock().unwrap().history_key(key);
+                        } else if let Some(session) = self.focused_session() {
                             let mode = *session.screen.lock().unwrap().term.mode();
                             if let Err(error) = session.send(encode_key(
                                 key,
@@ -943,6 +971,8 @@ impl App {
                 }
                 if self.focus == Focus::Queue {
                     self.queue.paste(&text);
+                } else if let Some(screen) = self.history_screen() {
+                    screen.lock().unwrap().history_paste(&text);
                 } else if let Some(session) = self.focused_session() {
                     let bracketed = session
                         .screen
@@ -1213,6 +1243,25 @@ impl App {
                         self.panel.top = self.panel.top.saturating_add_signed(delta);
                         self.panel.follow = false;
                     }
+                } else if let Some(screen) = self.history_screen() {
+                    // History takes the pane's mouse: the wheel scrolls, a drag selects.
+                    let area = self.active_inner(panes.viewer);
+                    let cell = (
+                        mouse.column.saturating_sub(area.x),
+                        mouse.row.saturating_sub(area.y),
+                    );
+                    let mut screen = screen.lock().unwrap();
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            screen.history_select(cell, true)
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            screen.history_select(cell, false)
+                        }
+                        MouseEventKind::ScrollUp => screen.history_scroll(3),
+                        MouseEventKind::ScrollDown => screen.history_scroll(-3),
+                        _ => {}
+                    }
                 } else if let Some(session) = self.focused_session() {
                     let area = self
                         .viewer
@@ -1424,6 +1473,22 @@ impl App {
             self.queue_worker.request(request);
         }
     }
+    fn active_inner(&self, viewer: Rect) -> Rect {
+        self.viewer
+            .rects(viewer)
+            .into_iter()
+            .find(|(id, _)| *id == self.viewer.active_pane().id)
+            .map(|(_, r)| ui::inner(r))
+            .unwrap_or_default()
+    }
+    /// The focused pane's screen while it shows history; its keys and mouse stay in saddle.
+    fn history_screen(&self) -> Option<std::sync::Arc<std::sync::Mutex<crate::terminal::Screen>>> {
+        if self.focus != Focus::Viewer {
+            return None;
+        }
+        let screen = &self.viewer.active_pane().viewer.session.as_ref()?.screen;
+        screen.lock().unwrap().in_history().then(|| screen.clone())
+    }
     fn focused_session(&self) -> Option<&Session> {
         match self.focus {
             Focus::Agents => None,
@@ -1448,4 +1513,8 @@ fn now() -> f64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64()
+}
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    arboard::Clipboard::new()?.set_text(text)?;
+    Ok(())
 }

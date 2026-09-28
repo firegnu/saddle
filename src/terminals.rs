@@ -562,6 +562,10 @@ pub enum Control {
     ClosePane(u64),
     /// Zoom a split pane over its tab's terminal area, or restore it.
     Zoom(u64),
+    /// Look back through a pane's output; Copy and Live act on that history view.
+    History(u64),
+    Copy(u64),
+    Live(u64),
     Pane(u64),
     Previous,
     Next,
@@ -791,6 +795,21 @@ pub fn draw(
                 Control::Zoom(id),
             )
         });
+        // A pane with output offers its history; inside it, Copy and the way back replace it.
+        let screen = pane
+            .viewer
+            .session
+            .as_ref()
+            .map(|s| s.screen.lock().unwrap());
+        let history = screen.as_ref().and_then(|s| s.history());
+        let entry = match (&screen, history) {
+            (None, _) => vec![],
+            (Some(_), None) => vec![Some((" History ", Control::History(id)))],
+            (Some(_), Some(_)) => vec![
+                Some((" Copy ", Control::Copy(id))),
+                Some((" Live Esc ", Control::Live(id))),
+            ],
+        };
         let sets: Vec<Vec<_>> = [
             vec![
                 Some(split),
@@ -804,7 +823,11 @@ pub fn draw(
             vec![Some(cross)],
         ]
         .into_iter()
-        .map(|set| set.into_iter().flatten().collect())
+        .flat_map(|set| {
+            // Narrow panes drop the history controls before the ones they had before.
+            [entry.iter().cloned().chain(set.clone()).collect(), set]
+        })
+        .map(|set: Vec<_>| set.into_iter().flatten().collect())
         .collect();
         let width = |set: &Vec<(&str, Control)>| {
             set.iter()
@@ -818,6 +841,20 @@ pub fn draw(
             && let Some(set) = sets.iter().find(|set| width(set) <= rect.width)
         {
             let mut end = rect.right() - 1;
+            if let Some(history) = history {
+                // The history state on the left of the bottom border.
+                let label = match &history.input {
+                    Some(input) => format!(" /{input}▏"),
+                    None if history.status.is_empty() => " History ".into(),
+                    None => format!(" History · {} ", history.status),
+                };
+                let room = rect.width.saturating_sub(width(set) + 1);
+                let label = crate::ui::clip(&label, usize::from(room));
+                frame.render_widget(
+                    Paragraph::new(label).style(Style::default().fg(t.focus)),
+                    Rect::new(rect.x + 1, rect.bottom() - 1, room, 1),
+                );
+            }
             for (label, control) in set.iter().rev() {
                 let w = unicode_width::UnicodeWidthStr::width(*label) as u16;
                 button(
