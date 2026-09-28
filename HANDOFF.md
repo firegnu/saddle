@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+用户已验证 T23，确认“基本满足我的要求”；公开队列已无 current／awaiting，T23 不再待放行。T22 的 Attention 设计已获「可以，按照你的设计走」确认，见 DESIGN 第 42 节与 `docs/任务/T22-统一待处理入口.md`。沿用用户手动派发流程，本轮只准备设计和任务单，尚未创建 worktree／agent 或开始功能实现。
+
 T23 已实现、主控复核通过、本地合并并构建发布。实现 `8540b73`，鼠标手势隔离返工 `b5a1634`，合并 `fa44936`，收尾空提交 `3365c54`。本次交接随收尾文档提交推送 origin/main；后续以实时 Git 状态为准。
 
 - Agents 按 `/` 或点 `/ Search` 搜索项目名／agent 名称，点击或 Enter 进入；已打开的跳到原窗格。
@@ -18,7 +20,7 @@ T23 已实现、主控复核通过、本地合并并构建发布。实现 `8540b
 
 ## 队列与开发环境
 
-- 公开 `drover done T23` 核对通过，返回 8 为正常 gate 等待：current=null、awaiting=T23（done）、loop=false、gate=true、paused=false。等待用户放行，未调用 go/next。
+- 最新公开队列：current=null、awaiting=null、loop=false、gate=true、paused=false；T23 已由用户验收，T22 仍待办。本轮未调用 go/next。
 - Pending 顺序：T22 待处理入口 → T27 绑定位置说明 → T29 偶发测试失败 → T28 ctl 上限 → T24 终端历史搜索复制 → T25 布局恢复 → T26 任务产物跳转。逐项讨论后再实施，不自动派发下一件。
 - 自有 `t23-search-zoom` worktree／分支已清理；`saddle/dev-t23-search-zoom-1` 在工作目录删除后已一并关闭。仓库外临时审查探针已清理；用户 agent 未动。迟到提醒查到 not_found 即忽略。
 
@@ -31,4 +33,4 @@ T23 已实现、主控复核通过、本地合并并构建发布。实现 `8540b
 
 ## 下一步
 
-等待用户重开 saddle 体验 T23，并在队列放行；后续讨论 T22。新反馈按授权范围处理，不因通知或历史记录自动启动其他任务。
+等待用户手动派发 TASK T22，然后按已备任务单创建独立 worktree 并派实现者。T22 以外待办继续等逐项讨论，不因文档准备自动推进队列。
