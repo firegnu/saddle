@@ -83,7 +83,9 @@ fn startup_selects_absolute_xdg_then_home_with_explicit_path_taking_priority() {
         (Some(xdg.as_os_str()), &explicit, true),
     ] {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"));
-        cmd.env("HOME", &home).env_remove("XDG_CONFIG_HOME");
+        cmd.env("HOME", &home)
+            .env("XDG_STATE_HOME", dir.path().join("state"))
+            .env_remove("XDG_CONFIG_HOME");
         if let Some(value) = value {
             cmd.env("XDG_CONFIG_HOME", value);
         }

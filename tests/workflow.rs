@@ -36,6 +36,21 @@ impl Harness {
         extra: &str,
         read_chunk: usize,
     ) -> Self {
+        let mut harness = Self::start_prepared(queue_script, registered, extra, read_chunk, |_| {});
+        // Wait for a unique selected row as well as the updated sort mode.
+        harness.see("Synthetic title");
+        harness.send(b"skk");
+        harness.see("┃ ○ a ");
+        harness.see("s Name");
+        harness
+    }
+    fn start_prepared(
+        queue_script: &str,
+        registered: bool,
+        extra: &str,
+        read_chunk: usize,
+        prepare: impl FnOnce(&std::path::Path),
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         std::fs::create_dir_all(home.join(".drover")).unwrap();
@@ -68,6 +83,7 @@ impl Harness {
             format!("corral = {corral:?}\nrefresh_ms = 100\n[queue]\ndrover = {queue:?}\n{extra}"),
         )
         .unwrap();
+        prepare(dir.path());
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 40,
@@ -83,6 +99,7 @@ impl Harness {
         cmd.env("COLORTERM", "truecolor");
         cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
+        cmd.env("XDG_STATE_HOME", dir.path().join("state"));
         cmd.env("SADDLE_RUNTIME_DIR", dir.path().join("run"));
         cmd.env("CORRAL_NAME", "synthetic-parent");
         cmd.env("CORRAL_INSTANCE", "synthetic-parent-instance");
@@ -94,6 +111,7 @@ import os, signal, sys, tty, json
 from pathlib import Path
 root = Path(__file__).parent
 (root / ('shell-' + os.environ['SADDLE_PANE'])).write_text(json.dumps(dict(os.environ)))
+(root / ('shell-cwd-' + os.environ['SADDLE_PANE'])).write_text(os.getcwd())
 tty.setraw(0)
 def stop(*_):
     sys.exit(0)
@@ -125,7 +143,7 @@ while True:
                 }
             }
         });
-        let mut harness = Self {
+        Self {
             dir,
             child,
             master: pair.master,
@@ -134,14 +152,7 @@ while True:
             screen: vt100::Parser::new(40, 140, 0),
             cursor_answered: false,
             raw: Vec::new(),
-        };
-        // Agents lists by status first by default; these scenarios start from the first agent in
-        // name order (p/a, p/b, p/taken), so switch to it and select the top once it is up.
-        harness.see("Synthetic title");
-        harness.send(b"skk");
-        harness.see("┃ ○ a ");
-        harness.see("s Name");
-        harness
+        }
     }
     fn pump(&mut self) {
         if let Ok(bytes) = self.output.recv_timeout(Duration::from_millis(30)) {
@@ -2008,6 +2019,7 @@ impl Harness {
         cmd.arg("ctl")
             .args(args)
             .env("SADDLE_RUNTIME_DIR", self.dir.path().join("run"))
+            .env("XDG_STATE_HOME", self.dir.path().join("state"))
             .env_remove("CORRAL_NAME")
             .env_remove("CORRAL_INSTANCE")
             .env_remove("SADDLE_INSTANCE")
@@ -3379,4 +3391,355 @@ fn history_keeps_its_keys_and_mouse_from_the_agent_until_esc_returns_to_live_inp
         .collect();
     assert_eq!(inputs.len(), 21, "{inputs:?}");
     assert_eq!(inputs.last().unwrap(), "input p/a 71");
+}
+
+#[test]
+fn t25_layout_is_saved_while_open_and_retains_an_exited_agent_on_quit() {
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+    let path = h.dir.path().join("state/saddle/layout.json");
+    h.until(|_| path.exists());
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["version"], 1);
+    assert_eq!(saved["tabs"][0]["panes"][0]["content"]["name"], "p/a");
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/b":"working","p/taken":"idle"}"#,
+    )
+    .unwrap();
+    h.event("detached p/a");
+    h.until(|h| h.ctl(&["inspect"])["tabs"][0]["panes"][0]["state"] == "disconnected");
+    h.quit();
+    let saved: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(saved["tabs"][0]["panes"][0]["content"]["name"], "p/a");
+    assert_eq!(saved["tabs"][0]["panes"][0]["content"]["cwd"], "/tmp/demo");
+    assert_eq!(
+        saved["tabs"][0]["panes"][0]["content"]["instance"],
+        "abcdef123"
+    );
+    assert!(!h.log("events").contains("stop "));
+}
+
+fn t25_seed(root: &std::path::Path) {
+    use serde_json::json;
+    let file = root.join("state/saddle/layout.json");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let layout = json!({"version":1,"active":4,"tabs":[
+        {"id":1,"active":2,"tree":{"kind":"split","value":{"vertical":false,"ratio":30,
+            "first":{"kind":"leaf","value":1},"second":{"kind":"leaf","value":2}}},"panes":[
+            {"id":1,"content":{"kind":"agent","name":"p/a","cwd":root,"instance":"abcdef123"}},
+            {"id":2,"content":{"kind":"agent","name":"p/gone","cwd":root,"instance":"old"}}]},
+        {"id":4,"active":4,"tree":{"kind":"leaf","value":4},"panes":[
+            {"id":4,"content":{"kind":"shell","cwd":root}}]}
+    ]});
+    std::fs::write(file, serde_json::to_vec_pretty(&layout).unwrap()).unwrap();
+}
+
+#[test]
+fn t25_startup_restores_tabs_splits_focus_and_only_reconnects_original_live_agents() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        t25_seed,
+    );
+    h.see("Tasks · ");
+    let state = h.ctl(&["inspect"]);
+    assert_eq!(state["tabs"].as_array().unwrap().len(), 2, "{state}");
+    assert_eq!(state["active_tab"], 4);
+    assert_eq!(state["active_pane"], 4);
+    assert_eq!(state["tabs"][0]["layout"]["value"]["ratio"], 30);
+    h.event("attach p/a");
+    h.until(|h| h.ctl(&["inspect"])["tabs"][0]["panes"][0]["state"] == "running");
+    let state = h.ctl(&["inspect"]);
+    assert_eq!(state["active_tab"], 4, "restore completion stole focus");
+    assert_eq!(state["tabs"][0]["panes"][1]["agent"], "p/gone");
+    assert_eq!(state["tabs"][1]["panes"][0]["kind"], "shell");
+    h.see("Open terminal");
+    assert!(!h.dir.path().join("shell-4").exists());
+    assert!(!h.log("events").contains("attach p/gone"));
+    assert!(!h.log("events").contains("start "));
+    h.quit();
+}
+
+#[test]
+fn t25_placeholders_create_on_confirmation_choose_existing_and_open_fresh_shell() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        t25_seed,
+    );
+    h.see("Open terminal");
+    h.click("Open terminal");
+    h.see("SHELL READY");
+    assert_eq!(
+        std::fs::read_to_string(h.dir.path().join("shell-cwd-4")).unwrap(),
+        h.dir.path().canonicalize().unwrap().display().to_string()
+    );
+    assert!(!h.contents().contains("SHELL INPUT:"));
+    h.send(b"exit");
+    h.see("exited 7");
+    h.click("p/gone");
+    h.see("Create new agent");
+    h.click("Create new agent");
+    h.see("Input ▸ New agent");
+    assert!(
+        !h.dir.path().join("start-args").exists(),
+        "opening the form must not start anything"
+    );
+    h.send(b"\x13");
+    h.event("start p/gone");
+    h.see("p/gone-actual READY");
+    let args: Vec<String> =
+        serde_json::from_str(h.log("start-args").lines().next().unwrap()).unwrap();
+    assert_eq!(
+        args,
+        [
+            "start",
+            "p/gone",
+            "--cwd",
+            h.dir.path().to_str().unwrap(),
+            "--label",
+            "role=regular",
+            "--",
+            "codex",
+            "--yolo"
+        ]
+    );
+    // An attach exit retains the same location and allows selecting a different live agent.
+    h.send(b"X");
+    h.see("Choose existing agent");
+    h.click("Choose existing agent");
+    h.see("Open content here");
+    h.send(b"j\r"); // Sorted choices: p/a, p/b; use the modal's keyboard selection.
+    h.see("p/b READY");
+    let state = h.ctl(&["inspect"]);
+    assert_eq!(state["active_pane"], 2);
+    assert_eq!(state["tabs"][0]["panes"][1]["agent"], "p/b");
+    h.send(b"X");
+    h.see("Choose existing agent");
+    h.click("Choose existing agent");
+    h.see("Open content here");
+    h.send(b"\r"); // p/a is already open in the neighboring pane: move that session.
+    h.until(|h| {
+        h.ctl(&["inspect"])["tabs"][0]["panes"]
+            .as_array()
+            .unwrap()
+            .len()
+            == 1
+    });
+    assert_eq!(h.ctl(&["inspect"])["active_pane"], 1);
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|line| *line == "attach p/a")
+            .count(),
+        1
+    );
+    assert!(!h.log("events").contains("stop "));
+    h.quit();
+}
+
+#[test]
+fn t25_changed_or_busy_identity_stays_placeholder_and_corrupt_file_survives_exit() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            t25_seed(root);
+            std::fs::write(
+                root.join("metadata.json"),
+                r#"{"p/a":{"instance":"replacement"}}"#,
+            )
+            .unwrap();
+        },
+    );
+    h.click("p/gone");
+    h.see("identity changed");
+    assert!(!h.log("events").contains("attach p/a"));
+    h.quit();
+
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            t25_seed(root);
+            std::fs::write(root.join("p-a"), "other attachment").unwrap();
+        },
+    );
+    h.click("p/gone");
+    h.until(|h| {
+        h.ctl(&["inspect"])["tabs"][0]["panes"][0]["note"]
+            .as_str()
+            .is_some_and(|note| note.contains("attached elsewhere"))
+    });
+    h.see("elsewhere;");
+    assert!(!h.log("events").contains("attach p/a"));
+    h.quit();
+
+    for original in ["{broken", r#"{"version":999,"active":1,"tabs":[]}"#] {
+        let mut h = Harness::start_prepared(
+            include_str!("fixtures/drover.py"),
+            false,
+            "",
+            16384,
+            |root| {
+                t25_seed(root);
+                std::fs::write(root.join("state/saddle/layout.json"), original).unwrap();
+            },
+        );
+        h.see("Cannot restore layout");
+        let state = h.ctl(&["inspect"]);
+        assert_eq!(state["tabs"][0]["panes"][0]["kind"], "empty");
+        assert_eq!(state["tabs"].as_array().unwrap().len(), 1);
+        h.quit();
+        assert_eq!(
+            std::fs::read_to_string(h.dir.path().join("state/saddle/layout.json")).unwrap(),
+            original
+        );
+    }
+}
+
+#[test]
+fn t25_delayed_restore_discards_closed_or_replaced_targets_and_keeps_new_focus() {
+    for close in [true, false] {
+        let mut h = Harness::start_prepared(
+            include_str!("fixtures/drover.py"),
+            false,
+            "",
+            16384,
+            |root| {
+                t25_seed(root);
+                std::fs::write(root.join("hold-status"), "").unwrap();
+            },
+        );
+        h.see("Open terminal");
+        h.event("status p/a");
+        let state = h.ctl(&["inspect"]);
+        let instance = state["instance"].as_str().unwrap().to_owned();
+        if close {
+            let result = h.ctl(&[
+                "close",
+                "--instance",
+                &instance,
+                "--pane",
+                "1",
+                "--request-id",
+                "close-restore",
+            ]);
+            assert_eq!(result["state"], "complete", "{result}");
+        } else {
+            // Replace a pending restore using the ordinary New form at that location.
+            h.click("p/gone");
+            h.click("Agent · p/a");
+            h.send(b"\x1dn");
+            h.see("Input ▸ New agent");
+            h.send(b"\x13");
+            h.event("start agents/main");
+            h.until(|h| {
+                h.ctl(&["inspect"])["tabs"][0]["panes"][0]["agent"] == "agents/main-actual"
+            });
+        }
+        std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+        h.see("Synthetic title");
+        h.until(|h| {
+            h.ctl(&["inspect"])["tabs"][0]["panes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|p| p["state"] != "accepted")
+        });
+        if !close {
+            h.see("agents/main-actual READY");
+        }
+        assert!(
+            !h.log("events").contains("attach p/a"),
+            "{}",
+            h.log("events")
+        );
+        if close {
+            assert_eq!(h.ctl(&["inspect"])["active_tab"], 4);
+        }
+        h.quit();
+    }
+}
+
+#[test]
+fn t25_exited_original_status_is_not_reattached() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            t25_seed(root);
+            std::fs::write(root.join("agents.json"), r#"{"p/a":"exited"}"#).unwrap();
+        },
+    );
+    h.see("Tasks · ");
+    h.until(|h| {
+        !matches!(
+            h.ctl(&["inspect"])["tabs"][0]["panes"][0]["state"].as_str(),
+            Some("accepted" | "attaching")
+        )
+    });
+    let state = h.ctl(&["inspect"]);
+    assert_eq!(
+        state["tabs"][0]["panes"][0]["state"], "disconnected",
+        "{state}"
+    );
+    assert!(!h.log("events").contains("attach p/a"));
+    h.quit();
+}
+
+#[test]
+fn t25_save_failure_is_visible_and_app_remains_usable() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            let parent = root.join("state/saddle");
+            std::fs::create_dir_all(&parent).unwrap();
+            std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+        },
+    );
+    h.see("Layout save failed");
+    h.see("Synthetic title");
+    let state = h.ctl(&["inspect"]);
+    let instance = state["instance"].as_str().unwrap();
+    let opened = h.ctl(&[
+        "open",
+        "--instance",
+        instance,
+        "--relative-to",
+        "active",
+        "--place",
+        "tab",
+        "--agent",
+        "p/a",
+        "--request-id",
+        "write-failed-open",
+    ]);
+    assert_eq!(h.operation(&opened)["state"], "complete");
+    assert!(!h.dir.path().join("state/saddle/layout.json").exists());
+    std::fs::set_permissions(
+        h.dir.path().join("state/saddle"),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    h.quit();
+    let saved: serde_json::Value =
+        serde_json::from_str(&h.log("state/saddle/layout.json")).unwrap();
+    assert_eq!(saved["tabs"].as_array().unwrap().len(), 2);
 }

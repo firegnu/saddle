@@ -22,6 +22,7 @@ pub struct Viewer {
     pub note: String,
     pub shell: Option<Shell>,
     pub metadata: AgentMetadata,
+    pub remembered: crate::layout_state::Content,
     pub exit_code: Option<u32>,
     failed: bool,
     closing: bool,
@@ -41,6 +42,7 @@ impl Viewer {
             spawning: None,
             shell: None,
             metadata: AgentMetadata::default(),
+            remembered: Default::default(),
             exit_code: None,
             failed: false,
             closing: false,
@@ -66,6 +68,11 @@ impl Viewer {
             return Ok(());
         }
         self.cancel_pending();
+        self.remembered = crate::layout_state::Content::Agent {
+            name: name.clone(),
+            cwd: metadata.cwd.clone(),
+            instance: metadata.instance.clone(),
+        };
         self.pending = Some((name, metadata));
         self.exit_code = None;
         self.failed = false;
@@ -200,6 +207,10 @@ impl Viewer {
                             &std::sync::atomic::AtomicBool::new(false),
                         )?;
                         anyhow::ensure!(
+                            status["state"].as_str() != Some("exited"),
+                            "agent has exited before attach"
+                        );
+                        anyhow::ensure!(
                             status["instance"].as_str() == Some(&instance),
                             "agent identity changed before attach"
                         );
@@ -264,6 +275,10 @@ impl Viewer {
         };
         self.exit_code = None;
         self.failed = false;
+        self.remembered = crate::layout_state::Content::Shell {
+            cwd: shell.cwd.clone(),
+        };
+        self.showing = None;
         self.shell = Some(shell);
         self.note = "Starting terminal…".into();
     }

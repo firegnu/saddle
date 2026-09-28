@@ -67,13 +67,15 @@ pub fn candidates(
         .filter_map(|a| {
             let open = terminals.find(&a.name);
             // A pane's own agent cannot be split beside itself.
-            (placement.place == Some(Place::Tab) || open != Some(placement.pane))
-                .then(|| (a.name.clone(), open.is_some()))
+            (matches!(placement.place, Some(Place::Tab | Place::Current))
+                || open != Some(placement.pane))
+            .then(|| (a.name.clone(), open.is_some()))
         })
         .collect();
     list.sort();
     [(Choice::Terminal, false), (Choice::NewAgent, false)]
         .into_iter()
+        .filter(|_| placement.place != Some(Place::Current))
         .chain(
             list.into_iter()
                 .map(|(name, open)| (Choice::Agent(name), open)),

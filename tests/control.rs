@@ -6,6 +6,7 @@ fn ctl_instances_returns_json_without_starting_a_tui() {
     let output = Command::new(env!("CARGO_BIN_EXE_saddle"))
         .args(["ctl", "instances"])
         .env("SADDLE_RUNTIME_DIR", dir.path().join("run"))
+        .env("XDG_STATE_HOME", dir.path().join("state"))
         .env_remove("SADDLE_INSTANCE")
         .output()
         .unwrap();

@@ -30,6 +30,7 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     cmd.args(["--config", config.to_str().unwrap()]);
     cmd.env("TERM", "xterm-256color");
     cmd.env("HOME", temp.path());
+    cmd.env("XDG_STATE_HOME", temp.path().join("state"));
     cmd.env("SADDLE_RUNTIME_DIR", temp.path().join("run"));
     cmd.cwd(temp.path());
     let mut child = pair.slave.spawn_command(cmd).unwrap();
@@ -125,6 +126,7 @@ fn first_frame(colorterm: Option<&str>) -> String {
         None => cmd.env_remove("COLORTERM"),
     }
     cmd.env("HOME", temp.path());
+    cmd.env("XDG_STATE_HOME", temp.path().join("state"));
     cmd.env("SADDLE_RUNTIME_DIR", temp.path().join("run"));
     cmd.cwd(temp.path());
     let mut child = pair.slave.spawn_command(cmd).unwrap();
