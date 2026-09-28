@@ -153,3 +153,9 @@ Initial project       [ Automatic   ]
 - R2 覆盖悬空符号链接：`write` 中 `canonicalize` 失败时，若配置路径本身是符号链接，就报保存失败（"symbolic link whose target cannot be resolved; the link is kept"）。Save 返回 Stay，保留链接和草稿，不再落回链接路径替换目录项。普通首次创建（路径不存在且不是链接）和有效链接保存照旧。
 - RED／GREEN：`tests/settings.rs` 新增 `a_failed_reload_after_keep_my_edits_still_keeps_them_on_retry`（按审查探针合成：Keep → 文件无效 → 修复 → Ctrl-R，修复前得到 52 而不是 60），以及 `a_dangling_config_link_is_kept_and_saving_reports_failure`（修复前 Save 返回 Saved）。两条都先因目标缺陷失败，修复后通过。
 - 限定回归：`cargo test --test settings`（12 条）、`cargo test --test app settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once -- --exact` 通过。`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 干净。未跑全套，未改主仓库，未动审查探针。
+
+## 主控最终审查（2026-09-28）
+
+- 主控与独立审查通过；首轮 R1/R2 经修复及同一审查者复核关闭，必须改 0。首轮取舍均获认可，详见 [主控审查](T30-主控审查.md) 与 [独立审查](T30-独立审查.md)。
+- 主控首轮标准测试 242 passed／0 failed／2 ignored，Clippy／fmt／diff 通过；返工主控 Settings 12 项及 app 1 项通过，独立复核 Settings 12 项通过。合并后 src、tests、Cargo.toml、Cargo.lock 与审查提交一致，不重复无关全套。
+- 实现 `85ead03` 已合入 main，合并提交 `5b88932`。保留非阻塞 S1：长配置路径可能挤掉单行保存错误的原因文字，失败本身仍明确、草稿保留；本轮不扩展处理，也不自动新增任务。
