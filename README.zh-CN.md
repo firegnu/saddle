@@ -170,7 +170,9 @@ agent_selected = "#2b2621"
 | Agents | ↑↓ / j k | 选择 agent |
 | Agents | Enter / 点击行 | 接入活动窗格，已打开时跳到现有位置 |
 | Agents | n / New | 创建新 agent |
+| Agents | / / Search | 按项目名或 agent 名称过滤；Enter 或点击进入对应终端（已打开时跳到现有位置），Esc 取消 |
 | Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
+| Viewer 边框 | Zoom / Restore | 多窗格时让当前窗格临时占满右侧终端区域（保留 Agents 和 tab 条）；Restore 回到原分屏和比例，焦点仍在该窗格。其他窗格继续运行；切到其他窗格、关闭该窗格或新建分屏都会结束放大 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |
 | Agents | Tab / Shift-Tab | 打开 Tasks / 焦点到 Viewer |
 | 任意位置 | 点击 Agents 顶部的 Tasks | 打开 Tasks；关闭后回到打开前的输入目标 |

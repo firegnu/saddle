@@ -157,6 +157,7 @@ struct App {
     reply_busy: bool,
     reply_due: Instant,
     placement: Option<Placement>,
+    search: Option<crate::search::Search>,
     native_mouse: bool,
     new_agent: Option<crate::launch::Form>,
     /// Agents New draft parked while a location-bound form is in use.
@@ -236,6 +237,7 @@ impl App {
             reply_busy: false,
             reply_due: Instant::now(),
             placement: None,
+            search: None,
             native_mouse: false,
             new_agent: None,
             agent_draft: None,
@@ -289,6 +291,7 @@ impl App {
                     Some(ui::Workspace {
                         terminals: &self.viewer,
                         placement: self.placement.as_ref(),
+                        search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
                         modal: self.closing.is_some(),
@@ -715,6 +718,7 @@ impl App {
             Control::Cancel => self.placement = None,
             Control::Tab(id) => self.viewer.active = id,
             Control::Pane(id) => self.viewer.focus(id),
+            Control::Zoom(id) => self.viewer.toggle_zoom(id),
             Control::CloseTab(id) => self.request_close(crate::control::CloseTarget::Tab(id))?,
             Control::ClosePane(id) => self.request_close(crate::control::CloseTarget::Pane(id))?,
             Control::Previous | Control::Next => {
@@ -825,6 +829,11 @@ impl App {
                     self.placement_key(key)?;
                     return Ok(false);
                 }
+                if let Some(search) = &mut self.search {
+                    let outcome = search.key(key, &self.panel.agents);
+                    self.search_outcome(outcome);
+                    return Ok(false);
+                }
                 if self.focus == Focus::Agents
                     && let Some(name) = self.panel.confirm.take()
                 {
@@ -888,6 +897,10 @@ impl App {
                     return Ok(false);
                 }
                 if self.placement.is_some() {
+                    return Ok(false);
+                }
+                if let Some(search) = &mut self.search {
+                    search.paste(&text);
                     return Ok(false);
                 }
                 if self.focus == Focus::Queue {
@@ -972,6 +985,23 @@ impl App {
                     return self.event(Event::Key(key), panes);
                 }
                 if captured || self.pointer.captured() {
+                    return Ok(false);
+                }
+                // The search popup takes all mouse input: a row opens the agent drawn on it.
+                if let Some(search) = &mut self.search {
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            if let Some(name) = search.click(point) {
+                                // The popup closes on the press; the rest of the gesture
+                                // must not reach the terminal that opening focuses.
+                                self.native_mouse = true;
+                                self.search_outcome(crate::search::Outcome::Open(name));
+                            }
+                        }
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => search
+                            .scroll(mouse.kind == MouseEventKind::ScrollDown, &self.panel.agents),
+                        _ => {}
+                    }
                     return Ok(false);
                 }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
@@ -1144,12 +1174,30 @@ impl App {
         }
         Ok(false)
     }
+    /// Closing the search keeps Agents as the input target; opening uses the normal attach,
+    /// which jumps to a pane already showing the agent.
+    fn search_outcome(&mut self, outcome: crate::search::Outcome) {
+        match outcome {
+            crate::search::Outcome::Stay => {}
+            crate::search::Outcome::Cancel => {
+                self.search = None;
+                self.focus = Focus::Agents;
+            }
+            crate::search::Outcome::Open(name) => {
+                self.search = None;
+                self.focus = Focus::Agents;
+                self.panel.select(Some(name));
+                self.attach();
+            }
+        }
+    }
     fn panel_key(&mut self, key: KeyEvent) {
         self.panel.message.clear();
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => self.panel.move_selection(-1, now()),
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
+            KeyCode::Char('/') => self.search = Some(Default::default()),
             KeyCode::Char('n') => {
                 self.reload_projects();
                 if self.new_agent.as_ref().is_some_and(|f| f.anchor.is_some()) {

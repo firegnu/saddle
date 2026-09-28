@@ -8,7 +8,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
-pub(super) struct Input {
+pub(crate) struct Input {
     pub text: String,
     pub cursor: usize,
     area: Rect,

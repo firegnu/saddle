@@ -3033,3 +3033,184 @@ fn fold_toggles_by_key_and_bar_and_background_tab_agents_keep_the_local_mark() {
     assert!(!row(&h, "taken").contains('⦿'), "{}", h.contents());
     h.quit();
 }
+
+#[test]
+fn t23_search_opens_agents_by_name_or_project_and_jumps_to_open_panes() {
+    let mut h = Harness::start();
+    std::fs::write(
+        h.dir.path().join("metadata.json"),
+        r#"{"p/b":{"cwd":"/tmp/zebra-project"}}"#,
+    )
+    .unwrap();
+    h.see("/ Search");
+    // `/` in Agents opens the popup; typing filters and never reaches a terminal.
+    h.send(b"/");
+    h.see("Search agents");
+    h.see("Input ▸ Search agents");
+    h.send(b"zebra");
+    h.until(|h| {
+        let popup = h.popup("Search agents");
+        popup.contains("p/b") && !popup.contains("p/a") && !popup.contains("p/taken")
+    });
+    h.send(b"\r");
+    h.see("p/b READY");
+    h.until(|h| !h.contents().contains("Search agents"));
+    h.send(b"B");
+    h.event("input p/b 42");
+    // Esc cancels and keeps the display target; nothing is attached.
+    h.send(b"\x1d/a");
+    h.see("Search agents");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Search agents"));
+    h.see("Input ▸ Agents");
+    // The bar entry opens it too; clicking a candidate opens that agent by its name.
+    h.click("/ Search");
+    h.see("Search agents");
+    h.send(b"p/a");
+    h.until(|h| {
+        let popup = h.popup("Search agents");
+        popup.contains("p/a") && !popup.contains("p/b")
+    });
+    h.click_in("Search agents", "p/a  demo");
+    h.see("p/a READY");
+    h.until(|h| !h.contents().contains("Search agents"));
+    // Put p/b beside p/a and focus p/a; searching p/b jumps to its open pane.
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "p/b");
+    h.see("p/b READY");
+    h.click("Agent · p/a");
+    h.see("Input ▸ p/a");
+    h.send(b"\x1d/");
+    h.see("Search agents");
+    h.send(b"p/");
+    h.until(|h| {
+        let popup = h.popup("Search agents");
+        popup.contains("p/taken") && popup.matches("Open").count() == 2
+    });
+    h.click("Cancel Esc");
+    h.until(|h| !h.contents().contains("Search agents"));
+    let attaches = |h: &Harness| {
+        h.log("events")
+            .lines()
+            .filter(|l| l.starts_with("attach "))
+            .count()
+    };
+    let before = attaches(&h);
+    h.send(b"/p/b");
+    h.see("Search agents");
+    h.until(|h| h.popup("Search agents").contains("p/b  zebra-project"));
+    h.send(b"\r");
+    h.until(|h| !h.contents().contains("Search agents"));
+    h.see("Input ▸ p/b");
+    h.send(b"Q");
+    h.event("input p/b 51");
+    assert_eq!(attaches(&h), before, "an open agent is not attached again");
+    h.quit();
+    let events = h.log("events");
+    let inputs: Vec<_> = events.lines().filter(|l| l.starts_with("input ")).collect();
+    assert_eq!(
+        inputs,
+        ["input p/b 42", "input p/b 51"],
+        "search typing must not reach a terminal"
+    );
+    assert!(!events.contains("stop "));
+}
+
+#[test]
+fn t23_zoom_fills_the_terminal_area_and_restore_keeps_layout_and_focus() {
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.event("size p/a ");
+    let full = h
+        .log("events")
+        .lines()
+        .find(|l| l.starts_with("size p/a "))
+        .unwrap()
+        .trim_start_matches("size p/a ")
+        .to_owned();
+    // A single pane has nothing to zoom.
+    h.see("Split ▾");
+    assert!(!h.contents().contains("Zoom"), "{}", h.contents());
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "p/b");
+    h.see("p/b READY");
+    h.see("Zoom");
+    let layout = |h: &Harness| {
+        (
+            h.locate("Agent · p/a", 0),
+            h.locate("Agent · p/b", 0),
+            h.locate("Agents · ", 0),
+        )
+    };
+    let before = layout(&h);
+    let (a, b, _) = before;
+    assert!(a.unwrap().1 == b.unwrap().1 && a.unwrap().0 < b.unwrap().0);
+    h.click("Zoom");
+    h.see("Restore");
+    h.until(|h| !h.contents().contains("Agent · p/a"));
+    h.event(&format!("size p/b {full}"));
+    let zoomed = h.locate("Agent · p/b", 0).unwrap();
+    assert_eq!(
+        zoomed.0,
+        a.unwrap().0,
+        "zoomed pane starts where the split did"
+    );
+    assert!(h.contents().contains("Agents · 3"), "Agents stay visible");
+    assert_eq!(h.contents().matches(" ×│").count(), 1, "tab strip stays");
+    // Terminal keys still go to the zoomed pane; the hidden pane keeps running.
+    h.send(b"Z");
+    h.event("input p/b 5a");
+    h.click("Restore");
+    h.until(|h| h.contents().contains("Agent · p/a"));
+    h.see("Zoom");
+    assert_eq!(
+        layout(&h),
+        before,
+        "restore returns the same split and ratio"
+    );
+    h.send(b"Y");
+    h.event("input p/b 59");
+    h.quit();
+    let events = h.log("events");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
+    assert_eq!(events.lines().filter(|l| *l == "attach p/b").count(), 1);
+    let quit_at = events.find("detaching").unwrap();
+    assert!(
+        !events[..quit_at].contains("detach"),
+        "zoom must not reattach or close sessions: {events}"
+    );
+    assert!(
+        !events.contains("1b5b3c"),
+        "native controls send no mouse input"
+    );
+}
+
+#[test]
+fn t23_search_click_on_an_open_agent_consumes_the_whole_mouse_gesture() {
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"\x1d/p/a");
+    h.see("Input ▸ Search agents");
+    h.until(|h| {
+        let popup = h.popup("Search agents");
+        popup.contains("p/a  demo") && !popup.contains("p/b") && !popup.contains("p/taken")
+    });
+    // Press on the row body over the Viewer; the popup closes and p/a takes focus before the
+    // release, which must not reach its terminal.
+    let (col, row) = h.locate("p/a  demo", 0).unwrap();
+    let (x, y) = (col + 21, row + 1);
+    h.send(format!("\x1b[<0;{x};{y}M").as_bytes());
+    h.see("Input ▸ p/a");
+    h.send(format!("\x1b[<0;{x};{y}m").as_bytes());
+    h.send(b"Q");
+    h.event("input p/a 51");
+    h.quit();
+    let events = h.log("events");
+    let inputs: Vec<_> = events.lines().filter(|l| l.starts_with("input ")).collect();
+    assert_eq!(inputs, ["input p/a 51"], "search click leaked mouse bytes");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
+}

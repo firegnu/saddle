@@ -48,6 +48,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
 pub struct Workspace<'a> {
     pub terminals: &'a crate::terminals::Terminals,
     pub placement: Option<&'a crate::placement::Placement>,
+    pub search: Option<&'a mut crate::search::Search>,
     pub form: Option<&'a mut crate::launch::Form>,
     pub program: &'a str,
     pub modal: bool,
@@ -58,9 +59,16 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, placement, mut form, program, modal) = match workspace {
-        Some(w) => (Some(w.terminals), w.placement, w.form, w.program, w.modal),
-        None => (None, None, None, "corral", false),
+    let (terminals, placement, mut search, mut form, program, modal) = match workspace {
+        Some(w) => (
+            Some(w.terminals),
+            w.placement,
+            w.search,
+            w.form,
+            w.program,
+            w.modal,
+        ),
+        None => (None, None, None, None, "corral", false),
     };
     let t = view.colors;
     let screen_area = frame.area();
@@ -162,6 +170,18 @@ pub fn draw_workspace(
         view.queue.fields.clear();
         view.queue.project_rows.clear();
     }
+    if let Some(search) = search.as_mut() {
+        // Only the popup stays clickable; its rows are kept by the search itself.
+        hits.buttons = search.draw(t, frame, &panel.agents, |name| {
+            terminals.is_some_and(|t| t.find(name).is_some())
+        });
+        hits.terminal.clear();
+        hits.agents.clear();
+        hits.queue_rows.clear();
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
+    }
     let controls: Vec<_> = hits
         .buttons
         .iter()
@@ -205,7 +225,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  n New  z Fold  Tab Tasks  q Quit",
+            " ↑↓ Select  ↵ Attach  / Search  n New  z Fold  Tab Tasks  q Quit",
         ),
         Focus::Queue => (
             match view.queue.view {
@@ -280,6 +300,10 @@ pub fn draw_workspace(
             )
         };
     }
+    if search.is_some() {
+        target = "Search agents".into();
+        help = " Type to filter  ↑↓ Select  Enter Open  Esc Cancel";
+    }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
         help = " y Stop  Any other key cancels";
@@ -295,6 +319,7 @@ pub fn draw_workspace(
                     || view.queue.overlay_open() && queue_modal
                     || form.is_some()
                     || placement.is_some()
+                    || search.is_some()
                 {
                     help
                 } else if queue_modal && !view.queue.message.is_empty() {
@@ -553,6 +578,14 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
                 danger: false,
                 lit: false,
             }
+        },
+        Control {
+            key: "/",
+            label: "Search",
+            code: K::Char('/'),
+            enabled: true,
+            danger: false,
+            lit: false,
         },
         Control {
             key: "n",
