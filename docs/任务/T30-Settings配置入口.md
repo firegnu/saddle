@@ -159,3 +159,8 @@ Initial project       [ Automatic   ]
 - 主控与独立审查通过；首轮 R1/R2 经修复及同一审查者复核关闭，必须改 0。首轮取舍均获认可，详见 [主控审查](T30-主控审查.md) 与 [独立审查](T30-独立审查.md)。
 - 主控首轮标准测试 242 passed／0 failed／2 ignored，Clippy／fmt／diff 通过；返工主控 Settings 12 项及 app 1 项通过，独立复核 Settings 12 项通过。合并后 src、tests、Cargo.toml、Cargo.lock 与审查提交一致，不重复无关全套。
 - 实现 `85ead03` 已合入 main，合并提交 `5b88932`。保留非阻塞 S1：长配置路径可能挤掉单行保存错误的原因文字，失败本身仍明确、草稿保留；本轮不扩展处理，也不自动新增任务。
+
+## 发布与清理（2026-09-28）
+
+- 合并后 main 使用共享 target 的 `cargo build --release` 通过；已同步仓库 release。共享 `../saddle-worktrees/.target/release/saddle`、仓库 `target/release/saddle`、默认 `~/.local/bin/saddle` 三入口 SHA-256 一致：`61a169b9fb6db2faab8e35d999777c9053d6c2e2f8822bb8151d6edb7851bd7c`，默认入口仍链接共享 release，`--help` 已核对 Settings 入口。未重启正在运行的用户 saddle，下次启动使用新版本。
+- 清理前再次核实两 agent 均 idle、attached=0，worktree 干净且最终提交已合入 main；实现和独立审查 worktree、实现分支均已删除，住在其中的两个自建 agent 一并关闭：`saddle/dev-t30-settings-1`（acef3e8b5939）、`saddle/dev-t30-review-1`（3bbf22741dd6）。原有用户 agent 保留，记录已落盘。
