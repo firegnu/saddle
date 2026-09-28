@@ -43,3 +43,9 @@ Drover 主控回报实现 `b50d36091d54085ba56beba6768fb28f215fe6cf` 已完成�
 独立审查者 `drover/dev-manual-review-1`，instance `99562bc7194c`，Codex gpt-6-astra/xhigh，worktree `/Users/firegnu/Developer/personal_projs/drover-worktrees/review-m36-manual-complete`，detached HEAD `ef0a723`；核对时 working，重点身份并发及放行边界。范围和公开契约无变更／异议，Drover main 仍 `46d7699`。
 
 当前不是最终交付。等待独立审查通过后的固定 SHA，再启动 saddle 消费方；未合并发布或操作真实状态，不清任何开发／审查 worktree，不关闭 drover/main。
+
+## 最终交付接收（2026-09-28）
+
+固定 `0e4d031d3a570ef00e66b4df2f1e97b191f6607f`，实现 b50d360、审查点 ef0a723。已核对最终 HEAD、开发／审查工作区干净，最终提交与 ef0a723 的 bin／tests 无差异，仅文档归档；主控与独立审查均通过（必须改 0、建议改 0）。独立 10 项通过和标准检查结果由 Drover 审查记录提供，本主控未重复执行。公开契约已读，无消费方异议。
+
+公共写命令非阻塞互斥忙时退出 4，这是新增操作与原写操作之间的协调；正常 go／自动判据语义保留。该锁只协调新版 CLI，旧版已启动写进程的切换留待联合落地核对，不在此操作服务。保留 Drover 两个 worktree／agent 以待联调。下一步按 `T36-saddle人工完成实施.md` 派消费方，独立审查后只走一次隔离主流程。
