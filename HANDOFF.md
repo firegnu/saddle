@@ -23,7 +23,8 @@ T24 历史查看、搜索与复制已实现、返工复核通过、本地合并�
 
 - T24 已完成并放行；最新公开队列 current=T25（doing）、awaiting=null，loop=false、gate=true。未调用 go/next。
 - Pending 顺序：T26 任务产物跳转 → T29 偶发测试失败 → T28 ctl 上限。逐项讨论后再实施，不自动派发下一件。
-- 确认实现者 idle、attached=0、工作区干净且分支已合入 main 后，清理 `t24-terminal-history` worktree／分支，并一并关闭自有 `saddle/dev-t24-terminal-history-1`（instance `5af2844012f4`）。主控临时探针及路径标记已删除。当前仅 main worktree；用户 agent 未动，迟到提醒查到 not_found 即忽略。
+- T24 worktree／分支／实现者及主控临时探针已清理；用户 agent 未动，迟到提醒查到 not_found 即忽略。
+- T25 实现者 `saddle/dev-t25-layout-restore-1`（instance `2410a2971081`，Codex gpt-6-astra / xhigh，role=implementer），分支 `t25-layout-restore`，worktree `../saddle-worktrees/t25-layout-restore`，基线 `8ee564d`。上一轮中断时尚未创建 agent，本次无重复派发。
 
 ## 仍需注意
 
@@ -34,4 +35,4 @@ T24 历史查看、搜索与复制已实现、返工复核通过、本地合并�
 
 ## 下一步
 
-派出 T25 实现者后等待完成提醒，主控审查后按路由安排独立审查，再合并、发布和收尾。其余待办继续逐项讨论，不自动推进队列；T24 实际系统剪贴板写入仍未获得明确现场验证反馈。
+等待 T25 实现者完成提醒，主控审查后按路由安排独立审查，再合并、发布和收尾。其余待办继续逐项讨论，不自动推进队列；T24 实际系统剪贴板写入仍未获得明确现场验证反馈。
