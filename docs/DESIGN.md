@@ -797,3 +797,71 @@ Agents ‹Tasks›             Agent terminal
 - agent：独立字段 `Agent: 完整名称 | instance=原实例ID`，中文 `代理:` 同义；实例 ID 为 corral 公开返回的 12 位十六进制。缺少实例的明确 Agent 字段仍显示名称，但标为 `Identity unknown` 并禁用接入；其他叙述不识别。点击时核对公开状态及原实例，换实例、已退出或其他终端占用时提示并拒绝；已在 saddle 打开的也须核对身份，不能只按同名定位。它只是 saddle 可选识别的文档写法，不要求修改 corral 标签、分派技能或既有任务文件。
 
 任务书：`docs/任务/T26-任务与交付结果跳转.md`。以上是主控按用户授权选定的首版交互与范围，不将其写成用户逐字提出的验收要求。
+
+
+## 47. T30：Settings 配置入口（2026-09-28）
+
+用户已共同确认设置范围、保存与生效行为、线框及入口，并在手动下放 T30 后确认以最新任务书正式实施。此节补充第 8 节原来的启动加载规则：保留配置来源及字段语义，增加界面编辑，并允许已保存的颜色和侧栏宽度在本次运行生效。
+
+### 目标与范围
+
+只改 saddle。Settings 是现有 `config.toml` 的界面编辑入口，继续使用同一个配置文件，让用户在 saddle 内查看、修改和保存已有设置。
+
+不新增模型、agent 启动命令或其他配置能力；不改 corral、drover、corral-dispatch、全局技能或分派流程。布局状态文件仍与配置文件分开。
+
+### 已确认的入口
+
+Settings 固定放在 Agents 顶部第二行右侧，与 Attention 同行；不随 agent 列表滚动。第一行继续放 Agents 标题和 Tasks。
+
+```text
+Agents · 6                  Tasks · Running
+Attention · 2                    Settings
+─────────────────────────────────────────
+agent 列表……
+```
+
+- 点击英文 `Settings` 打开独立设置弹窗，沿用现有按钮与弹窗样式。
+- 左栏太窄、Attention 与 Settings 放不下时，Settings 单独占下一行，避免重叠。
+- 快捷键为 `,`，仅在 Agents 获得焦点时打开设置；终端输入中的逗号照常传给终端。
+- 关闭设置后回到打开前的焦点。设置弹窗期间，agent 和终端继续运行，设置操作不传入终端。
+
+### 已确认的设置界面
+
+```text
+Settings
+Config: ~/.config/saddle/config.toml
+
+[ General ] [ Colors ] [ Advanced ]
+
+Sidebar width         [ 52          ]
+Refresh interval      [ 1000     ] ms
+Initial project       [ Automatic   ]
+
+                       [Cancel] [Save]
+```
+
+图中的路径和数值只是示意，实际显示当前使用的配置路径和值。分组如下：
+
+| 分组 | 内容 |
+|---|---|
+| General | 侧栏宽度 `left_width`、刷新间隔 `refresh_ms`、初始 Tasks 项目 `queue.cwd`；未指定项目表示 Automatic，沿用现有启动选择规则 |
+| Colors | 现有 `[colors]` 字段，按通用界面、Agents、状态、agent 类型等用途分组，提供色块和颜色值；保留现有颜色格式与语义 |
+| Advanced | corral 命令名或路径 `corral`、drover 命令名或路径 `queue.drover` |
+
+- 已无显示作用的 `left_split` 不放入设置界面，保留旧文件兼容。
+- 颜色编辑提供小范围效果预览，不在编辑草稿时实时改变整个界面。
+- 每项可恢复默认值，仍需点击 Save 才保存。
+- 沿用英文界面。表单编辑、页签切换和滚动沿用现有交互；具体尺寸、长路径呈现及字段排版在上述线框范围内适配。
+
+### 保存、生效与失败行为
+
+- 修改先保留在草稿中，点击 Save 才保存；Cancel 不改变配置。
+- 颜色和侧栏宽度保存成功后立即在当前 saddle 生效；终端内 agent 输出仍保持自己的颜色。
+- 刷新间隔、corral／drover 命令路径和初始项目标注 `Restart required`，下次启动生效；不因保存而切换当前项目或运行中的后台连接。
+- 顶部显示实际保存路径。启动使用 `--config PATH` 时保存到该文件；否则沿用绝对 `XDG_CONFIG_HOME` 下的 `saddle/config.toml`，或默认 `~/.config/saddle/config.toml`。
+- 文件不存在时仍正常使用默认值，首次保存创建文件及缺失目录；省略项继续沿用现有默认语义。
+- 保留原文件注释和未编辑内容，不把设置保存变成整份配置的无关重写。
+- 配置值沿用现有校验，错误明确显示；保存失败保留草稿，不把未保存值当作已生效。
+- 检测配置文件的外部修改，冲突时提示重新加载，避免覆盖其他编辑。重新加载会涉及草稿取舍，应明确呈现，不静默丢弃草稿。
+
+任务书：`docs/任务/T30-Settings配置入口.md`。
