@@ -920,11 +920,20 @@ T36 评估源于 T33 的调研分支按约定保留、却被 Drover branches_mer
 - Drover 提供公开人工完成操作及 list／show 的人工确认记录；具体命令与字段待 Drover 主控核实后固定。saddle 只负责入口、确认、公开调用和结果展示，不复制完成判据或读写内部文件。旧版本不支持须明确提示，不回退成其他写操作。corral 与全局技能首版不改。
 - 人工确认不是分支归属修复，保留研究分支仍可能阻挡后续自动检查。成果保存方式仍由用户决定，不自动清理或永久忽略分支，不将 T31 的并行／分支归属问题扩入首版。
 
-状态：用户已指出 T36 正式下发，进入实施；先由 Drover 主控固定最小公开契约并实施、审查，再安排 saddle 接入。两边隔离联调通过前不分别合并发布。委托见 `任务/T36-Drover人工完成实施委托.md`。
+状态：T36 已完成两边合并、发布和清理；用户决定直接收尾，取消 saddle 独立审查并结束追加验证，隔离联调未执行、不记为通过。随后用户通过 saddle 人工完成 T36 并成功手动放行。最终记录见 `任务/T36-主控审查.md`。
 
-### T36 saddle 实现取舍（实现者记录，待主控审查）
+### T36 saddle 实现取舍（主控已接受，用户实际使用闭环）
 
 - 按 Drover 固定契约（`人工完成JSON接口.md`，schema_version 1）接入。`Mark complete manually…` 只在选中 Current 且有编号的任务时出现在底部任务操作区，只能点击，没有键盘快捷键；打开后在同一 Tasks 弹窗内切到确认子页，显示项目、T 编号／标题、说明文字、show 报告的完成检查与 Last check（标明未运行、留存样本），底部一行 Reason 与 `Mark complete ↵`／`Refresh ^r`／`Cancel Esc`。
 - 每次打开或 Refresh 用新序号单独读一次 `show Tn --json --with-agent-status`，不按 5 秒周期续读，以免令牌在用户不知情时换成另一运行；结果只进同一序号的页面。关闭 Tasks 时丢弃进行中的读取，重开同一页重新读取。令牌只从这次结果的 `manual_completion.target_token` 原样取用；结果任务号不符、已不在 current、缺 `manual_completion`（旧版本）、令牌为 null 或已判过期时不可确认并说明原因。
 - 确认经项目的既有队列 worker 串行执行 `complete-manually Tn --target-token … --reason … --json`，执行前核对操作记录的项目与 worker 项目一致；只接受退出 0、schema_version=1、ok=true、task_id 相同、state=awaiting_release。失败 JSON 按 code 报告，非 JSON 输出按“此 drover 不支持”报告，均不改用其他写命令。`target_changed` 后该页标为过期，须 Refresh 取得新目标并再次确认；其他失败（如 state_busy）留在原页由用户决定是否再按。进行中不可取消或切换项目。
 - 取消不写入，原因按任务号留作草稿，下次打开同一任务时恢复；切换项目时随整个 Tasks 状态丢弃。成功后显示结果页（原因、时间、确认时保存的检查、工作区），Run details 另起 `Manual completion` 段读 `task.completion_record`，与 `Completion checks · recomputed now` 分开；待放行提示注明“marked complete manually, not by checks”。无该字段的历史不显示也不补。
+
+## 50. 核心稳定与后续增强原则（2026-09-28）
+
+用户希望保持整套流程核心稳定，日常功能优先在 saddle 增强；同时明确 Drover 通知控制和人工完成属于真实需求，核心并非禁止修改。
+
+- corral 保持 agent 生命周期与会话管理职责；corral-dispatch 保持委派、审查、收尾方法；Drover 保持任务状态、完成判据和放行职责。saddle 承接展示、入口、配置、交互及已有公开能力的组合。
+- 新需求先使用现有公开接口。真实职责需求必须扩展核心时，先说明接口缺口、最小改动和既有行为影响，再由用户决定；不为界面方便顺手扩展、重构核心或修改全局技能。
+- 派发时明确范围、验证预算与收尾条件；中途围绕具体缺陷处理，不不断追加验收或统计式重跑。
+- 用户批准 T37「只读诊断入口」、T38「近期操作结果记录」仅加入待办，留到明天再讨论细化；尚未确定入口、记录范围或持久化方案，不据此开始设计、实现或委派。
