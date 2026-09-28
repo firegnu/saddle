@@ -4,7 +4,7 @@
 
 ## 会话摘要
 
-完成 Drover 系统通知与 saddle 内提示的渠道设置、联合审查、隔离联调和两边发布。用户已选择 In saddle，并亲自看到 T35 完成提示、完成手动放行；通知主流程验证闭合。随后开展 T36 评估，用户已确认“人工确认完成→等待放行”方案；用户随后明确 T36 已正式下发，现已送达 Drover 主控开展第一阶段，消费方等待固定交付。
+完成 Drover 系统通知与 saddle 内提示的渠道设置、联合审查、隔离联调和两边发布。用户已选择 In saddle，并亲自看到 T35 完成提示、完成手动放行；通知主流程验证闭合。随后开展 T36 评估，用户已确认“人工确认完成→等待放行”方案；用户随后明确 T36 已正式下发，现已送达 Drover 主控开展第一阶段，现已接收最终固定交付并派发 saddle 消费方，最新信息见下一步。
 
 ## 已完成
 
@@ -27,7 +27,7 @@
 - T29 仍未解决：任务通知主控标准测试一次为 255 passed／1 failed／3 ignored，旧 T20 窗格替换用例超时，单项核对一次通过；Clippy、通知相关检查及真实 Drover 隔离主流程通过。不能称整套全绿，也不能从旧基线失败推断新增轮询无负载回归。
 - 用户已确认收紧范围：撤回 saddle 持久去重阻塞，接受会话去重／启动基线；限制和理由见 DESIGN §48。不得恢复旧的返工要求或继续统计式重跑。Drover 发送端持久去重不变。
 - Hammerspoon 限流／上下文／用量系统提醒保留。CCNotify 已按单独授权移除，数据和配置备份保留在 `~/.local/state/ccnotify-removal/20260928-171636/`；细节见 T33 任务记录，不再操作。
-- T36 已正式开工。委托文件 `docs/任务/T36-Drover人工完成实施委托.md`，提交 `11c106b`；corral 已向原 drover/main（a781ee31bc67）送达 confirmed。Drover 已固定契约 `a292b2a`，实现者 drover/dev-manual-complete-1（465fd011c92e），Codex gpt-6-astra/xhigh，worktree `../drover-worktrees/m36-manual-complete`。路由三项未定后判重／碰要害／独立审查要。实现 b50d360 已完成，Drover 主控初审通过并提交记录 ef0a723；独立审查者 drover/dev-manual-review-1（99562bc7194c，Codex gpt-6-astra/xhigh）正在 detached `../drover-worktrees/review-m36-manual-complete` 审查 ef0a723。尚非最终交付；上一任务 worktree 已全部收尾。
+- T36 已正式开工。委托文件 `docs/任务/T36-Drover人工完成实施委托.md`，提交 `11c106b`；corral 已向原 drover/main（a781ee31bc67）送达 confirmed。Drover 已固定契约 `a292b2a`，实现者 drover/dev-manual-complete-1（465fd011c92e），Codex gpt-6-astra/xhigh，worktree `../drover-worktrees/m36-manual-complete`。路由三项未定后判重／碰要害／独立审查要。实现 b50d360 已完成，Drover 主控初审通过并提交记录 ef0a723；独立审查者 drover/dev-manual-review-1（99562bc7194c，Codex gpt-6-astra/xhigh）正在 detached `../drover-worktrees/review-m36-manual-complete` 审查 ef0a723。此为阶段历史，最终交付和消费方派发见下一步；上一任务 worktree 已全部收尾。
 
 ## 接手先读
 
@@ -40,4 +40,8 @@
 
 ## 下一步
 
-已接收 Drover T36 实现和主控初审进展，核对实现 b50d360、主控记录 ef0a723，等待独立审查通过后的最终固定交付。上游主控报告标准 CLI／criteria／show 16 项／list JSON 各一次通过，本主控未重跑。公开契约 `../drover-worktrees/m36-manual-complete/docs/人工完成JSON接口.md`（a292b2a）：show 取不透明 target_token，新 complete-manually 命令确认并固定等待放行，task.completion_record 供历史展示。只有实现固定 SHA、公开契约及审查通过后才安排 saddle 消费方，不能把文档提交当完工。产品流程已确认，见 DESIGN §49，不再让用户重复下发。两边隔离联调通过前不分别合并发布或清开发／审查 worktree，不操作真实队列，不关闭 drover/main。实现预算保持简短，不扩成任务类型、分支归属或历史迁移系统。
+T36 Drover 最终固定交付已接收：`0e4d031d3a570ef00e66b4df2f1e97b191f6607f`，主控和独立审查通过，必须改／建议改均 0；最后文档提交与审查点 ef0a723 的 bin／tests 完全一致。公开契约在 `../drover-worktrees/m36-manual-complete/docs/人工完成JSON接口.md`，执行路径为同 worktree `bin/drover`。两边联调前保留 Drover dev/review worktree 和 agent，不合并发布。
+
+已派 saddle 消费方 `saddle/dev-t36-manual-complete-1`（instance `6c6a55cdb0df`，Claude Code opus[1m]/high，role=implementer），分支 `t36-manual-complete`，worktree `../saddle-worktrees/t36-manual-complete`，基线／任务提交 `50d1fb9`，任务 `docs/任务/T36-saddle人工完成实施.md`。路由三项拿不准后定常规／碰要害／独立审查要，原因是异步确认错绑会完成错误任务。
+
+收到完成提醒后先核对状态、回复和固定 SHA；实际完成再主控审查，并派独立 Codex 审查身份／结果归属和确认边界。开发标准检查各一次，不再做基线统计。然后由 saddle/main 组织一次真实公开 CLI 的隔离主流程；消费方本轮不提前跑真实联调。通过后协调两边落地，注意旧版已启动写进程不受新互斥锁协调的切换限制。不得操作真实 T36 或关闭 drover/main，不把契约／派发进展当完工。
