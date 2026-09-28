@@ -187,6 +187,7 @@ impl App {
         }
         if self.placement.is_some()
             || self.search.is_some()
+            || self.settings.is_some()
             || self.new_agent.as_ref().is_some_and(|f| f.visible)
             || self.closing.is_some()
             || self.panel.confirm.is_some()

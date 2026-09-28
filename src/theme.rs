@@ -214,41 +214,106 @@ pub fn nearest_256(color: Color) -> Color {
 
 fn deserialize_color<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Color, D::Error> {
     let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-    let color = match value.as_str() {
-        "default" | "reset" => Color::Reset,
-        "black" => Color::Black,
-        "red" => Color::Red,
-        "green" => Color::Green,
-        "yellow" => Color::Yellow,
-        "blue" => Color::Blue,
-        "magenta" => Color::Magenta,
-        "cyan" => Color::Cyan,
-        "gray" => Color::Gray,
-        "dark_gray" => Color::DarkGray,
-        "light_red" => Color::LightRed,
-        "light_green" => Color::LightGreen,
-        "light_yellow" => Color::LightYellow,
-        "light_blue" => Color::LightBlue,
-        "light_magenta" => Color::LightMagenta,
-        "light_cyan" => Color::LightCyan,
-        "white" => Color::White,
-        _ => {
-            if let Some(hex) = value.strip_prefix('#')
-                && hex.len() == 6
-                && hex.bytes().all(|b| b.is_ascii_hexdigit())
-                && let Ok(rgb) = u32::from_str_radix(hex, 16)
-            {
-                return Ok(Color::Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8));
-            }
-            return Err(serde::de::Error::custom(format!(
-                "invalid color {value:?}: expected default, an ANSI color name, or #RRGGBB"
-            )));
-        }
-    };
-    Ok(color)
+    parse_color(&value).map_err(serde::de::Error::custom)
+}
+
+const NAMES: [(&str, Color); 16] = [
+    ("black", Color::Black),
+    ("red", Color::Red),
+    ("green", Color::Green),
+    ("yellow", Color::Yellow),
+    ("blue", Color::Blue),
+    ("magenta", Color::Magenta),
+    ("cyan", Color::Cyan),
+    ("gray", Color::Gray),
+    ("dark_gray", Color::DarkGray),
+    ("light_red", Color::LightRed),
+    ("light_green", Color::LightGreen),
+    ("light_yellow", Color::LightYellow),
+    ("light_blue", Color::LightBlue),
+    ("light_magenta", Color::LightMagenta),
+    ("light_cyan", Color::LightCyan),
+    ("white", Color::White),
+];
+
+/// A configured color: `default`/`reset`, an ANSI name or `#RRGGBB`.
+pub fn parse_color(value: &str) -> Result<Color, String> {
+    if matches!(value, "default" | "reset") {
+        return Ok(Color::Reset);
+    }
+    if let Some((_, color)) = NAMES.iter().find(|(name, _)| *name == value) {
+        return Ok(*color);
+    }
+    if let Some(hex) = value.strip_prefix('#')
+        && hex.len() == 6
+        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+        && let Ok(rgb) = u32::from_str_radix(hex, 16)
+    {
+        return Ok(Color::Rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8));
+    }
+    Err(format!(
+        "invalid color {value:?}: expected default, an ANSI color name, or #RRGGBB"
+    ))
+}
+/// How a configured color is written in the config file.
+pub fn color_name(color: Color) -> String {
+    match color {
+        Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+        Color::Reset => "default".into(),
+        other => NAMES
+            .iter()
+            .find(|(_, color)| *color == other)
+            .map_or_else(|| format!("{other}"), |(name, _)| (*name).into()),
+    }
 }
 
 impl Theme {
+    /// Every configurable color by its `[colors]` key.
+    pub fn named_mut(&mut self) -> [(&'static str, &mut Color); 41] {
+        [
+            ("bg", &mut self.bg),
+            ("overlay", &mut self.overlay),
+            ("selected", &mut self.selected),
+            ("agent_selected", &mut self.agent_selected),
+            ("agent_working", &mut self.agent_working),
+            ("agent_idle", &mut self.agent_idle),
+            ("agent_blocked", &mut self.agent_blocked),
+            ("agent_stalled", &mut self.agent_stalled),
+            ("agent_error", &mut self.agent_error),
+            ("agent_starting", &mut self.agent_starting),
+            ("border", &mut self.border),
+            ("text", &mut self.text),
+            ("bright", &mut self.bright),
+            ("muted", &mut self.muted),
+            ("dim", &mut self.dim),
+            ("focus", &mut self.focus),
+            ("connected", &mut self.connected),
+            ("working", &mut self.working),
+            ("danger", &mut self.danger),
+            ("unread", &mut self.unread),
+            ("input_text", &mut self.input_text),
+            ("reply_code", &mut self.reply_code),
+            ("reply_heading", &mut self.reply_heading),
+            ("agents_bg", &mut self.agents_bg),
+            ("agents_border", &mut self.agents_border),
+            ("agents_rule", &mut self.agents_rule),
+            ("agents_faint", &mut self.agents_faint),
+            ("agents_text", &mut self.agents_text),
+            ("agents_branch", &mut self.agents_branch),
+            ("agents_dim", &mut self.agents_dim),
+            ("agents_dimmer", &mut self.agents_dimmer),
+            ("agents_accent", &mut self.agents_accent),
+            ("agents_green", &mut self.agents_green),
+            ("agents_red", &mut self.agents_red),
+            ("agents_blue", &mut self.agents_blue),
+            ("agents_yellow", &mut self.agents_yellow),
+            ("agents_purple", &mut self.agents_purple),
+            ("claude", &mut self.claude),
+            ("codex", &mut self.codex),
+            ("pi", &mut self.pi),
+            ("omp", &mut self.omp),
+        ]
+    }
     /// Without 24-bit color, the Agents-only colors take their nearest 256-color entries;
     /// colors shared with other areas, and ANSI names, are left as configured.
     pub fn for_terminal(mut self, truecolor: bool) -> Self {

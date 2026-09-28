@@ -20,6 +20,7 @@ pub mod placement;
 pub mod pty;
 pub mod queue;
 pub mod search;
+pub mod settings;
 pub mod terminal;
 pub mod terminals;
 pub mod ui;
