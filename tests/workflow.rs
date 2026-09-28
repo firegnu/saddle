@@ -3332,3 +3332,51 @@ fn t22_attention_gathers_agents_and_every_project_and_opens_targets() {
         "{events}"
     );
 }
+
+#[test]
+fn history_keeps_its_keys_and_mouse_from_the_agent_until_esc_returns_to_live_input() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/a READY");
+    for i in 1..=20 {
+        h.send(b"C");
+        h.until(|h| h.log("events").matches("input p/a 43").count() == i);
+    }
+    h.until(|h| h.contents().matches("AGENT COLORS").count() > 5);
+    h.until(|h| !h.contents().contains("p/a READY"));
+    h.click(" History ");
+    h.see(" Live Esc ");
+    // Nothing selected yet, so this does not touch the clipboard.
+    h.click(" Copy ");
+    h.see("select text first");
+    h.send(b"\x1b[5~/READY");
+    h.see("/READY");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"n\x1b[A\x1b[B\x1b[6~");
+    let (col, row) = h.locate("AGENT COLORS", 0).unwrap();
+    let (x, y) = (col + 1, row + 1);
+    h.send(
+        format!(
+            "\x1b[<0;{x};{y}M\x1b[<32;{};{y}M\x1b[<0;{};{y}m",
+            x + 4,
+            x + 4
+        )
+        .as_bytes(),
+    );
+    h.send(format!("\x1b[<64;{x};{y}M").as_bytes());
+    h.send(b"\x1b");
+    h.see(" History ");
+    h.until(|h| !h.contents().contains(" Live Esc "));
+    h.send(b"q");
+    h.event("input p/a 71");
+    let inputs: Vec<_> = h
+        .log("events")
+        .lines()
+        .filter(|l| l.starts_with("input p/a"))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(inputs.len(), 21, "{inputs:?}");
+    assert_eq!(inputs.last().unwrap(), "input p/a 71");
+}

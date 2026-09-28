@@ -33,6 +33,7 @@ pub struct Screen {
     pub term: Term<Events>,
     parser: Processor,
     events: Receiver<Event>,
+    pub(crate) history: Option<crate::history::History>,
 }
 impl Screen {
     pub fn new(size: Size) -> Self {
@@ -41,6 +42,7 @@ impl Screen {
             term: Term::new(Default::default(), &size, Events(tx)),
             parser: Processor::new(),
             events,
+            history: None,
         }
     }
     pub fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
@@ -117,9 +119,20 @@ impl Screen {
         use ratatui::style::{Modifier, Style};
         let rows = area.height.min(self.term.screen_lines() as u16);
         let cols = area.width.min(self.term.columns() as u16);
+        // Outside history the view is always at the bottom and nothing is selected.
+        let offset = self.term.grid().display_offset() as i32;
+        let selection = self
+            .history
+            .as_ref()
+            .and(self.term.selection.as_ref())
+            .and_then(|s| s.to_range(&self.term));
         for y in 0..rows {
             for x in 0..cols {
-                let cell = &self.term.grid()[Line(i32::from(y))][Column(usize::from(x))];
+                let point = alacritty_terminal::index::Point::new(
+                    Line(i32::from(y) - offset),
+                    Column(usize::from(x)),
+                );
+                let cell = &self.term.grid()[point];
                 if cell
                     .flags
                     .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
@@ -142,6 +155,13 @@ impl Screen {
                         style = style.add_modifier(modifier);
                     }
                 }
+                if selection.as_ref().is_some_and(|s| s.contains(point)) {
+                    style = if style.add_modifier.contains(Modifier::REVERSED) {
+                        style.remove_modifier(Modifier::REVERSED)
+                    } else {
+                        style.add_modifier(Modifier::REVERSED)
+                    };
+                }
                 let mut symbol = cell.c.to_string();
                 if let Some(chars) = cell.zerowidth() {
                     symbol.extend(chars);
@@ -155,7 +175,8 @@ impl Screen {
             }
         }
         let point = self.term.grid().cursor.point;
-        if self.term.mode().contains(TermMode::SHOW_CURSOR)
+        if self.history.is_none()
+            && self.term.mode().contains(TermMode::SHOW_CURSOR)
             && point.line.0 >= 0
             && point.line.0 < i32::from(rows)
             && point.column.0 < usize::from(cols)

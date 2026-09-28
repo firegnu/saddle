@@ -562,6 +562,10 @@ pub enum Control {
     ClosePane(u64),
     /// Zoom a split pane over its tab's terminal area, or restore it.
     Zoom(u64),
+    /// Look back through a pane's output; Copy and Live act on that history view.
+    History(u64),
+    Copy(u64),
+    Live(u64),
     Pane(u64),
     Previous,
     Next,
@@ -791,7 +795,22 @@ pub fn draw(
                 Control::Zoom(id),
             )
         });
-        let sets: Vec<Vec<_>> = [
+        // A pane with output offers its history; inside it, Copy and the way back replace it.
+        let screen = pane
+            .viewer
+            .session
+            .as_ref()
+            .map(|s| s.screen.lock().unwrap());
+        let history = screen.as_ref().and_then(|s| s.history());
+        let entry = match (&screen, history) {
+            (None, _) => vec![],
+            (Some(_), None) => vec![Some((" History ", Control::History(id)))],
+            (Some(_), Some(_)) => vec![
+                Some((" Copy ", Control::Copy(id))),
+                Some((" Live Esc ", Control::Live(id))),
+            ],
+        };
+        let base = [
             vec![
                 Some(split),
                 zoom,
@@ -802,10 +821,21 @@ pub fn draw(
             vec![Some(split), zoom, Some(cross)],
             vec![zoom, Some(cross)],
             vec![Some(cross)],
-        ]
-        .into_iter()
-        .map(|set| set.into_iter().flatten().collect())
-        .collect();
+        ];
+        // Narrow panes shorten the other controls first and keep the history ones, with room
+        // for the history state; only the smallest panes fall back to the controls alone.
+        let reserve = if history.is_some() { 10 } else { 0 };
+        let sets: Vec<(Vec<_>, u16)> = base
+            .iter()
+            .map(|set| {
+                (
+                    entry.iter().chain(set).cloned().collect::<Vec<_>>(),
+                    reserve,
+                )
+            })
+            .chain(base.iter().map(|set| (set.clone(), 0)))
+            .map(|(set, reserve)| (set.into_iter().flatten().collect(), reserve))
+            .collect();
         let width = |set: &Vec<(&str, Control)>| {
             set.iter()
                 .map(|(label, _)| unicode_width::UnicodeWidthStr::width(*label) as u16)
@@ -815,9 +845,25 @@ pub fn draw(
         };
         if active
             && rect.height >= 2
-            && let Some(set) = sets.iter().find(|set| width(set) <= rect.width)
+            && let Some((set, _)) = sets
+                .iter()
+                .find(|(set, reserve)| width(set) + reserve <= rect.width)
         {
             let mut end = rect.right() - 1;
+            if let Some(history) = history {
+                // The history state on the left of the bottom border.
+                let label = match &history.input {
+                    Some(input) => format!(" /{input}▏"),
+                    None if history.status.is_empty() => " History ".into(),
+                    None => format!(" History · {} ", history.status),
+                };
+                let room = rect.width.saturating_sub(width(set) + 1);
+                let label = crate::ui::clip(&label, usize::from(room));
+                frame.render_widget(
+                    Paragraph::new(label).style(Style::default().fg(t.focus)),
+                    Rect::new(rect.x + 1, rect.bottom() - 1, room, 1),
+                );
+            }
             for (label, control) in set.iter().rev() {
                 let w = unicode_width::UnicodeWidthStr::width(*label) as u16;
                 button(
