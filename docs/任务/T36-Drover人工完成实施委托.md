@@ -35,3 +35,11 @@ Drover 主控回报并经 saddle/main 只读核对：契约提交 `a292b2a` 仅�
 - 路由三项未定，Drover 主控依据身份并发和核心放行确定重／碰要害／独立审查要；后续审查由该主控安排，完成提醒已挂。
 
 当前只记录派发，不启动 saddle 消费方。等待实现和独立审查完成后交固定 SHA；两边 worktree 留待隔离联调，不合并发布，不操作真实队列、配置或服务，不关闭 drover/main。
+
+## Drover 主控初审通过、独立审查中（2026-09-28）
+
+Drover 主控回报实现 `b50d36091d54085ba56beba6768fb28f215fe6cf` 已完成、初审通过；标准 CLI／criteria／show 16 项／list JSON 各复跑一次通过，主控记录 `ef0a7233554f52316ef0c396a02779deef1afadf`。saddle/main 已核对两个提交存在，未重复上游测试；通过结论和测试结果为 Drover 主控交付的阶段记录。
+
+独立审查者 `drover/dev-manual-review-1`，instance `99562bc7194c`，Codex gpt-6-astra/xhigh，worktree `/Users/firegnu/Developer/personal_projs/drover-worktrees/review-m36-manual-complete`，detached HEAD `ef0a723`；核对时 working，重点身份并发及放行边界。范围和公开契约无变更／异议，Drover main 仍 `46d7699`。
+
+当前不是最终交付。等待独立审查通过后的固定 SHA，再启动 saddle 消费方；未合并发布或操作真实状态，不清任何开发／审查 worktree，不关闭 drover/main。
