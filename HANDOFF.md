@@ -31,7 +31,7 @@ T26 任务与交付结果跳转已通过主控和独立审查，合并并本机�
 T30 已完成共同设计并正式开始实施。任务书 `docs/任务/T30-Settings配置入口.md`，设计 `docs/DESIGN.md` 第 47 节，定稿提交／分支基线 `99c7f34`。用户先要求只改任务书，主控当时未改队列；手动下放带出旧占位稿后，用户再次确认以最新任务书正式委派，故以定稿为准，不修改上游历史。
 
 - 实现者 `saddle/dev-t30-settings-1`（instance `acef3e8b5939`），Claude Code 常规 `opus[1m]` / `high`，role=implementer。
-- 分支 `t30-settings`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t30-settings`，实现提交 `857f154`，回复 DONE、工作区干净。corral 仍报告 working，公开输出尾部已回输入提示符；用户指出已完成，主控在固定提交的独立目录审查，不清理原 worktree／agent，不修改上游状态。具体原因未诊断。
+- 分支 `t30-settings`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t30-settings`，实现提交 `857f154`，回复 DONE、工作区干净。此前 corral 报告 working 而输出已回输入提示符，主控按用户指示在固定提交的独立目录完成审查；迟到提醒到达后已核实实现者 idle、attached=0，最新回复原地待命，提交不变。状态不同步的具体原因未诊断。
 - route.py 三项 verdict 均为 null；主控判断常规／交叉审查要／碰要害：用户配置持久化和外部修改冲突需要独立审查。实现结束先主控审查，再安排独立 Codex 审查，通过后合并发布收尾。
 - 主控固定 `857f154` 审查通过：242 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T30-主控审查.md`。已建 detached `../saddle-worktrees/review-t30-settings`，固定 `857f154`；独立审查者 `saddle/dev-t30-review-1`（instance `3bbf22741dd6`，Codex `gpt-6-astra` / `xhigh`，role=reviewer）按 `T30-独立审查.md` 工作，待结论后裁决；未合并发布。实现者迟到提醒先核对状态／SHA，不重复派发或审查。
 
