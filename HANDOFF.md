@@ -1,6 +1,6 @@
 # 交接
 
-更新：2026-09-28。当前 main；T36 已按用户最新决定直接收尾，Drover 侧部署交接待回报。
+更新：2026-09-28。当前 main；T36 两边已按用户最新决定完成合并、推送、发布及清理，部署交接完成。
 
 ## 当前状态
 
@@ -8,12 +8,12 @@
 - 用户明确「不用再安排审查了……收尾吧」，取消 saddle 独立审查并结束追加验证。隔离联调没有执行，不能记作通过。取舍、验证和裁决见 `docs/任务/T36-主控审查.md`。
 - release 构建已成功，默认 `~/.local/bin/saddle` 仍链接共享 release 文件。用户需自行重启 saddle 使用新版；未替用户重启。
 - saddle 实现 worktree／分支已删除，idle、attached=0 的 `saddle/dev-t36-manual-complete-1` 随工作目录一并关闭；没有创建审查 agent。saddle 仅剩主仓库 worktree。
-- Drover 已审固定交付 `0e4d031`，主控和独立审查通过。已向现有 `drover/main` confirmed 送达联合落地指示，见 `docs/任务/T36-Drover人工完成实施委托.md` 最后一节。请其合并推送、确认 CLI 生效、处理旧写进程切换及清理其自开 dev/review；目前在执行，不能提前称两边全部发布完成。
+- Drover 已审交付 `0e4d031` 合并为 `2b6e657`，收尾 `d3605ef`；最终 main/origin 已核对为 `be3bdbd7e0786ee72012dfade2bda5dde385a23d`。CLI 软链生效，原引擎已重载为 PID 37103；其主控报告无遗留部署项，真实状态未变，开发／审查 worktree、分支和自开 agent 已清理。正式 CLI `../drover/bin/drover`，契约 `../drover/docs/人工完成JSON接口.md`；不要使用已删除的 m36 worktree 路径。
 - **不关闭 drover/main**，它是用户主控。不得干扰其他用户 agent。
 
 ## 下一步
 
-接收 Drover 落地回报，核对 main/origin 固定 SHA、公开 CLI 路径、旧进程加载和清理结果，将实际情况归档。只做部署交接，不重跑套件、另派审查或恢复取消的联调。
+等待用户使用反馈或新指示。T36 部署与清理已闭合，不重跑套件、另派审查或恢复取消的联调。若重复完成提醒到达，只核对本记录，勿再次合并、发布或清理。
 
 真实队列未操作：最后公开状态为 T36 doing、loop=false、gate=true。不要调用 done/go/next 或人工完成替用户推进，后续任务由用户处理。待办仍是 T31、T29、T28、T32、T34。
 

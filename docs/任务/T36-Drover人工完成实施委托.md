@@ -55,3 +55,7 @@ Drover 主控回报实现 `b50d36091d54085ba56beba6768fb28f215fe6cf` 已完成�
 用户最新原话：「我觉得可以结束这个任务了，不用再安排审查了。我碰到问题会再次提问题的。收尾吧」。saddle 固定实现 `3d21879f5bbc672df2cbbf382fc0a436b7aed808` 已主控检查，标准测试一次 262 passed／0 failed／3 ignored，clippy 一次通过；没有新增必须改项。按用户决定取消 saddle 独立审查、结束追加验证，不再以未执行隔离联调阻塞落地；不得记为联调通过。
 
 请 Drover 主控现按已审固定 `0e4d031` 合并、推送，确认既有 CLI 软链生效，并处理此前指出的旧版写进程／引擎切换。只做必要部署核对，沿用现有服务入口；若有活跃任务或写进程使安全切换不能完成，如实报告，不停止用户 agent、不推进任务或修改真实队列／配置。不要重跑测试、加审查或扩展实现。完成后按你方流程清理已合并且干净、idle、无人 attach 的自开 dev/review worktree 与 agent，保留 `drover/main`。回传固定 main/origin SHA、部署情况、清理结果及未完成项，并通知 saddle/main。此前两边联调前不得合并清理的阶段限制由本次用户收尾指示取代。
+
+## 最终落地回报接收
+
+已核对 Drover main/origin `be3bdbd7e0786ee72012dfade2bda5dde385a23d`、公开软链与主控 idle／DONE；合并 `2b6e657`，收尾 `d3605ef`。其主控已完成旧引擎加载新版（PID 37103）及自开工作区／agent 清理，无遗留部署项。正式契约改用 `/Users/firegnu/Developer/personal_projs/drover/docs/人工完成JSON接口.md`，CLI 为同仓库 `bin/drover`；旧 worktree 路径失效。部署细节与未执行联调的界限已归档 `T36-主控审查.md`，本委托完成，不追加操作。
