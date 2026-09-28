@@ -1,42 +1,40 @@
 # 交接
 
-更新：2026-09-28。T30 Settings 已按用户确认派发，见下文；当前发布仍为 T26。T26 设计与理由见 `docs/DESIGN.md` 第 46 节；实施、审查及发布证据见 `docs/任务/T26-任务与交付结果跳转.md`、`T26-主控审查.md`、`T26-独立审查.md`。
+更新：2026-09-28。T30 设计与理由见 `docs/DESIGN.md` 第 47 节；实施、审查和发布证据见 `docs/任务/T30-Settings配置入口.md`、`T30-主控审查.md`、`T30-独立审查.md`。
 
 ## 当前状态
 
-T26 任务与交付结果跳转已通过主控和独立审查，合并并本机构建发布。实现 `7e2df89`，合并 `8eb3b66`，收尾空提交 `c48af1d`。本交接随最终文档提交推送 origin/main；后续以实时 Git 状态为准。
+T30 Settings 配置入口已通过主控及独立复核，合并并本机构建发布。实现 `85ead03`，合并 `5b88932`，收尾空提交 `27e18d2`。本交接随最终文档提交推送 origin/main；后续以实时 Git 状态为准。
 
-- Tasks 选中任务后的详情区新增 Links，按 Files／Commits／Agents 查看明确关联，显示来源、缺失和失败。
-- 读取任务正文及明确任务书的一层引用，项目内普通 UTF-8 文本和 Git 提交／记录区间在 Tasks 内只读查看；Back／Esc 返回原 Links。agent 仅按明确名称和原实例接入或定位，不猜关联、不自动创建。
-- 首轮独立审查发现 shell 在替换确认期间退出会使 Links 卡在 Checking。R1 已修复，确认失效后释放当前请求并提示重试；同一独立审查者复核可以合并，剩余必须改 0、建议改 0，三项取舍均同意。
-- 只改 saddle；未改 corral／drover／corral-dispatch 或全局技能。未重启当前用户 saddle，下次启动使用新版本。
+- Settings 固定在 Agents 顶部第二行右侧，与 Attention 同行，窄栏另起一行；点击或在 Agents 按逗号打开，关闭回原焦点。
+- General／Colors／Advanced 编辑现有 config.toml；提供草稿、单项恢复默认、颜色局部预览、Save／Cancel。颜色及侧栏宽度保存后立即生效，其余项标 Restart required，下次启动生效。
+- 保留注释和未编辑内容，外部修改在 Save 时检测，冲突提供 Keep／Discard／Back；失败保留草稿。Keep 重载失败后重试仍保留草稿，无法解析目标的符号链接拒绝保存而不覆盖链接。
+- 局部快捷键 F1–F3 切页、Tab／↑↓ 选字段、Ctrl-U 清空、Ctrl-D 默认、Ctrl-S 保存、Esc 取消。设置打开时新 ctl 修改请求返回 busy，Inspect／Request 等查询正常。
+- 只改 saddle；未改 corral／drover／corral-dispatch 或全局技能。未重启用户当前 saddle，下次启动使用新版本。
 
 ## 验证与发布
 
-- 主控首轮标准测试 229 passed／0 failed／2 ignored，Clippy、fmt、diff 通过；R1 主控 Links 5 项和 shell 替换 1 项通过，受影响 Clippy、fmt、diff 通过。独立复核 2 项通过。未重复无关全套，不宣称 T29 偶发问题已修复。
+- 主控首轮标准测试 242 passed／0 failed／2 ignored，Clippy、fmt、diff 通过。返工主控 Settings 12 项和 app 1 项通过，受影响 Clippy、fmt、diff 通过；独立复核 Settings 12 项通过。未重复无关全套，不宣称 T29 偶发问题已修复。
+- 首轮独立审查 R1 草稿丢失、R2 悬空链接被覆盖均修复并关闭；最终必须改 0，原非阻塞建议 S1 1，新增相关问题 0。首轮取舍全部认可。
 - 合并后 src、tests、Cargo.toml、Cargo.lock 与审查提交完全一致。
-- main 的共享 target `cargo build --release` 通过。共享 `../saddle-worktrees/.target/release/saddle`、仓库 `target/release/saddle`、默认 `~/.local/bin/saddle` 三入口 SHA-256 一致：`20c0d53803dd131d245c993673ecf5e6f740db844072e1d18ce096feb742c6ea`。默认入口仍链接共享 release，`--help` 成功。
-- 测试只用假 CLI、合成 shell／文件／Git 和临时 HOME／状态／runtime，未访问用户真实布局、agent 或 saddle socket。独立审查的未验证边界保留在审查文件，不宣称覆盖全部并发时序或真实现场。
+- main 共享 target `cargo build --release` 通过。共享 `../saddle-worktrees/.target/release/saddle`、仓库 `target/release/saddle`、默认 `~/.local/bin/saddle` 三入口 SHA-256 一致：`61a169b9fb6db2faab8e35d999777c9053d6c2e2f8822bb8151d6edb7851bd7c`。默认入口仍链接共享 release，`--help` 已核对 Settings。
+- 测试只用临时配置、合成文件／链接、假 CLI 及隔离状态和 runtime；未访问用户真实配置、布局、agent 或 saddle socket。未验证断电、ACL／owner／xattr、网络文件系统及最终替换时同步竞写，不作额外保证。
 
 ## 队列与开发环境
 
-- T26 已完成并由用户放行，用户已手动下放 T30；最新公开状态 current=T30(doing)、awaiting=null，loop=false、gate=true。本轮未调用 go／next。
-- 最新公开 Pending 顺序：T31 评估并行派发多个不同任务 → T29 偶发测试失败 → T28 ctl 上限 → T32 统一接入本地与远程 corral agents。后续任务仍待讨论细化，不自动派发。
-- 队列 T26 正文保留派发时旧审查稿，历史不改；后续已获用户「按照你的建议来」确认，最新定稿与完成记录以任务书和 DESIGN 为准。
-- T26 实现与独立审查 worktree、实现分支已删除。两个自建 agent 在 idle、attached=0、工作区干净、提交已合并后，随工作目录删除一并关闭：`saddle/dev-t26-task-links-1`（96c48b700af7）、`saddle/dev-t26-review-1`（7e6f0a94ce23）。迟到提醒查到 not_found 即忽略。
-- saddle 主控 `saddle/main` 在主仓库；T30 实现者见下文。原有 corral/main、drover/main、globalmesh/main、owlet/main 保留在各自工作目录。
+- `drover done T30` 核对通过，退出 8 等用户放行。公开状态 current=null、awaiting=T30(done)，loop=false、gate=true；没有调用 go／next。
+- Pending 顺序：T31 评估并行派发多个不同任务 → T29 偶发测试失败 → T28 ctl 上限 → T32 统一接入本地与远程 corral agents。后续需求待逐项讨论，不自动设计或派发。
+- T30 队列正文保留派发时旧占位稿；手动下放后用户已明确确认按最新任务书正式实施，设计和完成记录以任务书与 DESIGN 为准，不改上游历史。
+- T30 实现与独立审查 worktree、实现分支均已清理。删除前确认两 agent idle、attached=0、工作区干净且提交已合入 main，随工作目录删除一并关闭：`saddle/dev-t30-settings-1`（acef3e8b5939）、`saddle/dev-t30-review-1`（3bbf22741dd6）。迟到提醒查到 not_found 即忽略。
+- saddle 仅保留主控 `saddle/main`，cwd 主仓库；原有 corral/main、drover/main、globalmesh/main、owlet/main 保留在各自目录。
 
 ## 仍需注意与下一步
 
-T30 已完成共同设计并正式开始实施。任务书 `docs/任务/T30-Settings配置入口.md`，设计 `docs/DESIGN.md` 第 47 节，定稿提交／分支基线 `99c7f34`。用户先要求只改任务书，主控当时未改队列；手动下放带出旧占位稿后，用户再次确认以最新任务书正式委派，故以定稿为准，不修改上游历史。
+等用户体验 Settings 并放行，再讨论下一项。
 
-- 实现者 `saddle/dev-t30-settings-1`（instance `acef3e8b5939`），Claude Code 常规 `opus[1m]` / `high`，role=implementer。
-- 分支 `t30-settings`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t30-settings`，实现提交 `857f154`，回复 DONE、工作区干净。此前 corral 报告 working 而输出已回输入提示符，主控按用户指示在固定提交的独立目录完成审查；迟到提醒到达后已核实实现者 idle、attached=0，最新回复原地待命，提交不变。状态不同步的具体原因未诊断。
-- route.py 三项 verdict 均为 null；主控判断常规／交叉审查要／碰要害：用户配置持久化和外部修改冲突需要独立审查。实现结束先主控审查，再安排独立 Codex 审查，通过后合并发布收尾。
-- 主控固定 `857f154` 审查通过：242 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T30-主控审查.md`。已建 detached `../saddle-worktrees/review-t30-settings`，固定 `857f154`；独立审查者 `saddle/dev-t30-review-1`（instance `3bbf22741dd6`，Codex `gpt-6-astra` / `xhigh`，role=reviewer）按 `T30-独立审查.md` 工作，首轮结论改完再合并：R1 重载失败后重试丢草稿、R2 保存覆盖悬空配置链接，主控均认可；S1 长路径错误原因截断暂不纳入本轮。按 `T30-主控审查.md` 第 1 轮定向返工交原实现者修复，完成后先更新 review worktree 再请原审查者复核。两 agent 已核实 idle、attached=0。返工已交付 `85ead03`，主控定向 12 项 Settings＋1 项 app 检查、受影响 Clippy／fmt／diff 通过。review worktree 已先更新并核对到 `85ead03`，同一审查者按第 1 轮复核委派继续核对 R1/R2。当前未合并发布，等待独立复核；迟到提醒核对状态／SHA，不重复派发。
-
-- T29 的 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
-- 共用 target 跨 checkout 曾复用旧二进制；后续检查需核实构建对应当前源码。
-- T28 的 ctl 单实例 256 次修改上限仍在。
-- T24 用户已看到历史功能，但系统剪贴板真实 Copy 写入仍未获得明确现场验证反馈。
+- T30 S1：长配置路径可能把单行保存错误的实际原因挤掉，保存失败本身仍可见且保留草稿。本轮记录为非阻塞建议，已告知用户，尚未另立任务，不自动扩大修复。
+- T30 实现者曾回复 DONE、输出回到输入提示符而 corral 仍显示 working。主控按用户指示对固定提交继续审查；之后公开状态恢复 idle，清理前再次确认。原因未诊断，不据此宣称上游已修复。
+- T29 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
+- 共用 target 跨 checkout 曾复用旧二进制，检查须核实构建对应当前源码。
+- T28 ctl 单实例 256 次修改上限仍在；T24 系统剪贴板真实 Copy 写入仍无明确现场验证反馈。
 - effort 图标仅表示创建标签，不表示运行时实际推理强度。
