@@ -23,6 +23,7 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 - Pending 顺序：T25 布局恢复 → T26 任务产物跳转 → T29 偶发测试失败 → T28 ctl 上限。逐项讨论后再实施，不自动派发下一件。
 - 自有 `t27-bound-location` worktree／分支及实现者已清理；用户 agent 未动。迟到提醒查到 not_found 即忽略。
 - T24 实现者 `saddle/dev-t24-terminal-history-1`（instance `5af2844012f4`，Claude Code opus[1m] / high，role=implementer），分支 `t24-terminal-history`，worktree `../saddle-worktrees/t24-terminal-history`，基线 `bfe7068`。
+- T24 首轮实现 `e864cf7`／完成记录 `105546e` 未合并。主控发现正常分屏无 History、50 列窗格进入历史后无 Copy，定向探针已复现；返工与验证记录见 `docs/任务/T24-主控审查.md`。首轮主控全套 200 passed、1 个旧 T20 picker 失败、2 ignored；Clippy／fmt／diff 通过。
 
 ## 仍需注意
 
@@ -33,4 +34,4 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 
 ## 下一步
 
-等待 T24 实现者完成提醒，读取状态和回复，按任务单做主控审查、合并和收尾。其余待办继续等逐项讨论，不自动推进队列。
+等待 T24 实现者修复底栏控件缺失后定向复核；通过前不合并或发布。主控临时探针目录记于 `/tmp/saddle-t24-review-path`，复核后清理。其余待办继续等逐项讨论，不自动推进队列。
