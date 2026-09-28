@@ -1,7 +1,17 @@
 # 实施任务：Settings 任务通知渠道与 saddle 内部提示
 
-2026-09-28，用户已授权实施；本任务等待 Drover 接口实现及其主控审查通过后再派发。家：Claude Code，常规档 `opus[1m] / high`；worktree 与 agent 名在正式派发时补齐，不得提前启动。
+2026-09-28，用户已授权实施；Drover 接口已通过其主控审查并交付固定 SHA，现正式派发 saddle 接入。实现者 `saddle/dev-task-notifications-1`，Claude Code，常规档 `opus[1m] / high`。
 路由：常规 / 交叉审查不要 / 影响面：改行为（路由三项均拿不准；按已有方案接入公开 CLI 与 UI 的常规行为改动判定，不碰任务推进／权限／业务核心规则）。若接口交付带来实际范围变化，再说明理由调整。
+
+## 工作位置与前置交付
+
+- 分支 `task-notifications`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/task-notifications`，由 main 建好。所有实现、测试和完成记录只写本 worktree。
+- Drover 固定交付 `2b20205eb3ae423aa5f3eb9cc4a289ca84fd8340`（实现 `9b6d9c25a560bff75b797e47e4b847c8f6196318`，末提交仅审查记录），其 worktree 干净、主控审查通过；不重复它的全套审查。
+- 公开契约：`/Users/firegnu/Developer/personal_projs/drover-worktrees/m35-notifications/docs/通知JSON接口.md`。只读此契约和联调用公开 CLI，不读取 Drover 内部数据文件或修改其源码。
+- 联调命令：`/Users/firegnu/Developer/personal_projs/drover-worktrees/m35-notifications/bin/drover`。**必须隔离 HOME／XDG／runtime、假 OS 发送器和合成项目，不调用 PATH 中已安装的主分支 Drover。** 常规测试继续用假 CLI；真实公开接口联调只走共同约定主流程一遍。
+- 下游 saddle/main 已在隔离 HOME 核对 status→off→off→on→status：开关值和 revision 为 true/0、false/1、false/1、true/2、true/2，status 不落盘。未调用真实 loop、队列或发送器。
+- 身份六元组及编码以交付契约为准：事件类型 `awaiting_release`；t0 为有限 JSON number 转 binary64，大端 8 字节的 16 位小写十六进制，±0 统一 +0。不得直接用原 JSON 十进制文本作身份。
+- 错误码已明确为 `invalid_arguments`、`preferences_invalid`、`preferences_unreadable`、`preferences_write_failed`，仍须兼容未知码及旧版本不支持。生效是 next_notification_check，不是引擎确认回执。
 
 ## 用户原话
 
@@ -13,7 +23,7 @@
 
 ## 先读与范围
 
-AGENTS.md、docs/DESIGN.md 第 48 节、`docs/任务/任务通知-接口与集成约定.md`，以及正式派发时指定的 Drover 固定 SHA 和公开契约。你是被委派实现者，不再派发。只改 saddle 中直接相关的 Settings、公开 CLI worker、提示状态／UI、去重存储、测试和文档；不改 Drover、corral、技能、用户配置或运行中服务。
+AGENTS.md、docs/DESIGN.md 第 47／48 节、`docs/任务/任务通知-接口与集成约定.md`，以及上述 Drover 公开契约。你是被委派实现者，不再派发。只改 saddle 中直接相关的 Settings、公开 CLI worker、提示状态／UI、去重存储、测试和文档；不改 Drover、corral、技能、用户配置或运行中服务。遇到契约缺口向 saddle/main 报告，不向其他用户 agent 送话或自己改上游。
 
 ## 已确认方案
 
