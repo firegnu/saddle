@@ -103,6 +103,14 @@ pub enum Operation {
         pending: Vec<Task>,
         index: usize,
     },
+    /// The user's confirmation that one run is complete, bound by the token `drover show` gave
+    /// for it in `project`.
+    CompleteManually {
+        project: String,
+        id: String,
+        token: String,
+        reason: String,
+    },
 }
 impl Operation {
     pub fn args(&self) -> Vec<String> {
@@ -133,11 +141,25 @@ impl Operation {
                 (index + 1).to_string(),
                 "Deleted in saddle".into(),
             ],
+            Self::CompleteManually {
+                id, token, reason, ..
+            } => vec![
+                "complete-manually".into(),
+                id.clone(),
+                "--target-token".into(),
+                token.clone(),
+                "--reason".into(),
+                reason.trim().into(),
+                "--json".into(),
+            ],
         }
     }
 }
 impl Client {
     pub fn execute(&self, operation: &Operation, cancel: &AtomicBool) -> Result<String> {
+        if let Operation::CompleteManually { project, id, .. } = operation {
+            return self.complete_manually(project, id, &operation.args(), cancel);
+        }
         if let Operation::Edit { pending, index, .. }
         | Operation::Move { pending, index, .. }
         | Operation::Delete { pending, index } = operation
@@ -305,6 +327,15 @@ pub struct Detail {
     pub hold: Hold,
     pub attention: Attention,
     pub warnings: Vec<Warning>,
+    /// Absent from a drover without manual completion.
+    #[serde(default)]
+    pub manual_completion: Option<ManualTarget>,
+}
+/// The run `drover show` read, as an opaque token to hand back unchanged.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct ManualTarget {
+    pub target_token: Option<String>,
+    pub unavailable_reason: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct DetailTask {
@@ -316,6 +347,36 @@ pub struct DetailTask {
     pub location: String,
     #[serde(default)]
     pub reason: Option<String>,
+    /// A manual completion's saved record; absent for every other task, never back-filled.
+    #[serde(default)]
+    pub completion_record: Option<CompletionRecord>,
+}
+/// What the user confirmed and what the checks said then; not a check that passed.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct CompletionRecord {
+    pub method: String,
+    pub reason: String,
+    pub confirmed_at: Option<f64>,
+    /// Snapshots saved at confirmation; one that does not parse is left out, not guessed.
+    #[serde(default, deserialize_with = "lenient")]
+    pub completion: Option<Completion>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub last_check: Option<LastCheck>,
+    #[serde(default, deserialize_with = "lenient")]
+    pub workspace: Option<Workspace>,
+}
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct Workspace {
+    pub state: String,
+    pub tracked_dirty: bool,
+}
+fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Timing {
@@ -443,6 +504,118 @@ impl Client {
         }
         serde_json::from_value(value)
             .context("drover show: response does not match schema_version 1")
+    }
+}
+/// A public `complete-manually` failure code, with Drover's text shown but never parsed.
+#[derive(Debug)]
+pub struct ManualError {
+    pub code: String,
+    pub why: String,
+}
+impl std::fmt::Display for ManualError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let meaning = match self.code.as_str() {
+            "target_changed" => {
+                "The task run changed since this page read it; nothing was completed. Refresh, then confirm again"
+            }
+            "state_busy" => {
+                "Drover is busy with another queue write; nothing was completed. Try again"
+            }
+            "invalid_arguments" => "Drover rejected the request",
+            "repository_unavailable" => "The project repository is unavailable",
+            "not_configured" => "The project is not set up for drover",
+            "configuration_unreadable" => "Drover cannot read the project configuration",
+            "state_unreadable" => "Drover cannot read the task state",
+            "state_invalid" => "Drover cannot determine the current run",
+            "snapshot_unavailable" => "Drover cannot take a reliable check snapshot",
+            "write_failed" => "Drover could not save the completion",
+            _ => "Manual completion failed",
+        };
+        write!(f, "{meaning} ({}): {}", self.code, self.why)
+    }
+}
+impl std::error::Error for ManualError {}
+impl Client {
+    /// Runs `complete-manually` in this project only, and accepts nothing but this target now
+    /// awaiting release. Never falls back to another write.
+    fn complete_manually(
+        &self,
+        project: &str,
+        id: &str,
+        args: &[String],
+        cancel: &AtomicBool,
+    ) -> Result<String> {
+        let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
+        if real(&self.cwd) != real(std::path::Path::new(project)) {
+            bail!("The project changed; manual completion not sent.");
+        }
+        let output = crate::command::run(
+            &self.program,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            Some(&self.cwd),
+            Duration::from_secs(120),
+            cancel,
+        )?;
+        let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 300);
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+            bail!(
+                "This drover does not support manual completion ({}); nothing else was sent: {}{}",
+                output.status,
+                text(&output.stdout),
+                text(&output.stderr)
+            );
+        };
+        if value["schema_version"] != 1 {
+            bail!(
+                "drover complete-manually: unsupported schema_version {}",
+                value["schema_version"]
+            );
+        }
+        if value["ok"] == false {
+            return Err(ManualError {
+                code: value["error"]["code"]
+                    .as_str()
+                    .unwrap_or("unknown_error")
+                    .into(),
+                why: value["error"]["why"].as_str().unwrap_or_default().into(),
+            }
+            .into());
+        }
+        if value["ok"] != true
+            || value["task_id"] != id
+            || value["state"] != "awaiting_release"
+            || !output.status.success()
+        {
+            bail!(
+                "drover complete-manually ({} exit): unexpected answer for {id}; check the queue before retrying: {}",
+                output.status,
+                crate::ui::clip(&value.to_string(), 300)
+            );
+        }
+        let record: Option<CompletionRecord> =
+            serde_json::from_value(value["completion_record"].clone()).ok();
+        let mut lines = vec![format!("{id} marked complete manually · Awaiting release")];
+        if let Some(record) = record {
+            lines.push(format!("Reason: {}", record.reason));
+            if let Some(at) = record.confirmed_at {
+                lines.push(format!("Confirmed: {}", crate::detail::clock(at)));
+            }
+            if let Some(rows) = record.completion.and_then(|c| c.rows) {
+                let rows: Vec<_> = rows
+                    .iter()
+                    .map(|r| format!("{} {}", r.id.replace('_', " "), r.state.replace('_', " ")))
+                    .collect();
+                lines.push(format!("Checks saved at confirmation: {}", rows.join(", ")));
+            }
+            if let Some(workspace) = record.workspace {
+                lines.push(format!("Workspace: {}", workspace.state));
+            }
+        }
+        lines.push(String::new());
+        lines.push(
+            "Checks were not run and are not counted as passed. The task waits for your release (Check & release); saddle did not send go or next, change loop or pause, touch Git, or stop agents.".into(),
+        );
+        Ok(lines.join("\n"))
     }
 }
 /// Queries one task's details until dropped; the next query starts only after the previous one

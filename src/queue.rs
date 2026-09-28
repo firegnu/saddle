@@ -31,6 +31,69 @@ pub enum Page {
         pending: Vec<Task>,
         index: usize,
     },
+    /// Confirming that the running task is complete, without its checks.
+    Manual(Box<Manual>),
+}
+/// The confirmation page for one running task, bound to the run its own `drover show` read.
+pub struct Manual {
+    /// The project and task it opened on; `seq` is new for each reading of the target.
+    pub key: DetailKey,
+    pub title: String,
+    /// That reading: `None` while it runs.
+    pub target: Option<Result<Box<crate::drover::Detail>, String>>,
+    pub reason: String,
+    /// Drover said the run changed; only a new reading and a new confirmation go on.
+    pub expired: bool,
+}
+/// The Mark complete manually… button's key. No key press produces it: terminals never send
+/// Null, and the list ignores Alt combinations.
+pub fn manual_click() -> KeyEvent {
+    KeyEvent::new(KeyCode::Null, KeyModifiers::ALT)
+}
+/// Why the page cannot confirm its target now, or `None` when it can.
+pub fn manual_problem(manual: &Manual) -> Option<String> {
+    let id = &manual.key.id;
+    let detail = match &manual.target {
+        None => return Some(format!("Reading {id}'s current run…")),
+        Some(Err(error)) => {
+            return Some(format!(
+                "Could not read {id}'s current run: {error}. Refresh to retry."
+            ));
+        }
+        Some(Ok(detail)) => detail,
+    };
+    if detail.task.id != *id {
+        return Some(format!(
+            "drover answered for {} instead of {id}; nothing can be confirmed. Refresh.",
+            detail.task.id
+        ));
+    }
+    if detail.task.location != "current" {
+        return Some(format!(
+            "{id} is no longer running (now {}); nothing to confirm.",
+            detail.task.location
+        ));
+    }
+    let Some(target) = &detail.manual_completion else {
+        return Some(
+            "This drover does not support manual completion (show has no manual_completion). Update drover; nothing was sent."
+                .into(),
+        );
+    };
+    if manual.expired {
+        return Some("This run's confirmation expired. Refresh, then confirm again.".into());
+    }
+    match &target.target_token {
+        Some(_) => None,
+        None => Some(format!(
+            "Manual completion unavailable now: {}. Refresh to try again.",
+            target
+                .unavailable_reason
+                .as_deref()
+                .map(crate::detail::phrase)
+                .unwrap_or_else(|| "no reason given".into())
+        )),
+    }
 }
 /// Read-only views of the selected task beside the list.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -71,6 +134,8 @@ pub struct Panel {
     pub all_pending: Vec<ProjectPending>,
     /// A task to select once the list has it, found by identity rather than position.
     pub(crate) locate: Option<Task>,
+    /// A cancelled manual completion's reason, by task id, for the next opening.
+    pub(crate) manual_draft: Option<(String, String)>,
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,6 +166,9 @@ impl Panel {
         }
         let point = (column, row).into();
         if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
+            if hit.key == manual_click() {
+                return self.key(hit.key);
+            }
             if hit.key.code == KeyCode::Null {
                 self.view = View::Links;
                 return None;
@@ -149,6 +217,20 @@ impl Panel {
                     !self.busy && self.read_error.is_none(),
                 )
                 .danger(),
+                B::new("Cancel Esc", K::Esc, !self.busy),
+            ],
+            Page::Manual(ref manual) => vec![
+                B::new(
+                    "Mark complete ↵",
+                    K::Enter,
+                    !self.busy && manual_problem(manual).is_none(),
+                )
+                .primary(),
+                B::control(
+                    "Refresh ^r",
+                    K::Char('r'),
+                    !self.busy && manual.target.is_some(),
+                ),
                 B::new("Cancel Esc", K::Esc, !self.busy),
             ],
             Page::Project(_) => vec![
@@ -234,6 +316,122 @@ impl Panel {
                 Err(error) => detail.error = Some(format!("{error:#}")),
             }
         }
+    }
+    /// The target reading the confirmation page waits for, if any.
+    pub fn manual_key(&self) -> Option<DetailKey> {
+        match &self.page {
+            Page::Manual(manual) if manual.target.is_none() => Some(manual.key.clone()),
+            _ => None,
+        }
+    }
+    /// Takes a target reading only if it is the one the open page waits for.
+    pub fn absorb_manual(
+        &mut self,
+        key: &DetailKey,
+        result: anyhow::Result<crate::drover::Detail>,
+    ) {
+        if let Page::Manual(manual) = &mut self.page
+            && manual.key == *key
+            && manual.target.is_none()
+        {
+            manual.target = Some(result.map(Box::new).map_err(|e| format!("{e:#}")));
+        }
+    }
+    /// Opens the confirmation page on the selected running task.
+    fn open_manual(&mut self) {
+        if self.busy || self.read_error.is_some() {
+            return;
+        }
+        let Some(("Current", task)) = self.tasks().get(self.selected).copied() else {
+            return;
+        };
+        let (Some(id), title) = (task.id.clone(), task.title.clone()) else {
+            return;
+        };
+        let reason = match self.manual_draft.take() {
+            Some((draft, reason)) if draft == id => reason,
+            _ => String::new(),
+        };
+        self.page = Page::Manual(Box::new(Manual {
+            key: DetailKey {
+                project: self.project.clone(),
+                id,
+                seq: crate::detail::opening(),
+            },
+            title,
+            target: None,
+            reason,
+            expired: false,
+        }));
+        self.scroll = 0;
+        self.message.clear();
+    }
+    fn manual_key_press(&mut self, key: KeyEvent) -> Option<Request> {
+        let Page::Manual(manual) = &mut self.page else {
+            return None;
+        };
+        if self.busy {
+            return None;
+        }
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Esc => {
+                let reason = std::mem::take(&mut manual.reason);
+                self.manual_draft = Some((manual.key.id.clone(), reason));
+                self.page = Page::List;
+                self.scroll = 0;
+                self.message.clear();
+            }
+            KeyCode::Char('r') if control => {
+                // A new reading; the old one's answer no longer matches the key.
+                manual.key.seq = crate::detail::opening();
+                manual.target = None;
+                manual.expired = false;
+                self.message.clear();
+            }
+            KeyCode::Char('u') if control => manual.reason.clear(),
+            KeyCode::Enter => {
+                if let Some(problem) = manual_problem(manual) {
+                    self.message_failed = true;
+                    self.message = problem;
+                    return None;
+                }
+                if manual.reason.trim().is_empty() {
+                    self.message_failed = true;
+                    self.message = "Reason is required".into();
+                    return None;
+                }
+                let Some(Ok(detail)) = &manual.target else {
+                    return None;
+                };
+                let token = detail.manual_completion.as_ref()?.target_token.clone()?;
+                self.busy = true;
+                self.message_failed = false;
+                self.message = "Marking complete manually…".into();
+                return Some(Request::Run(Operation::CompleteManually {
+                    project: manual.key.project.clone(),
+                    id: manual.key.id.clone(),
+                    token,
+                    reason: manual.reason.trim().into(),
+                }));
+            }
+            KeyCode::Backspace => {
+                manual.reason.pop();
+            }
+            KeyCode::Up => self.scroll = self.scroll.saturating_sub(1),
+            KeyCode::Down => self.scroll = self.scroll.saturating_add(1),
+            KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
+            KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                manual.reason.push(c)
+            }
+            _ => {}
+        }
+        None
     }
     /// Keeps the content beside the list on the selected task; a different task starts
     /// afresh at the top.
@@ -377,6 +575,12 @@ impl Panel {
             path.extend(text.chars().filter(|c| !c.is_control()));
             return;
         }
+        if let Page::Manual(manual) = &mut self.page {
+            manual
+                .reason
+                .extend(text.chars().map(|c| if c.is_control() { ' ' } else { c }));
+            return;
+        }
         if let Page::Add {
             title,
             body,
@@ -405,6 +609,11 @@ impl Panel {
                 if matches!(operation, Operation::Go | Operation::Next) {
                     self.page = Page::Feedback(text);
                     self.scroll = 0;
+                } else if matches!(operation, Operation::CompleteManually { .. }) {
+                    // Run details then show the saved record from `drover show`.
+                    self.page = Page::Feedback(text);
+                    self.scroll = 0;
+                    self.view = View::Details;
                 } else if let Operation::Edit {
                     pending,
                     index,
@@ -449,6 +658,13 @@ impl Panel {
             Err(error) => {
                 self.message_failed = true;
                 self.message = format!("{error:#}");
+                if let Page::Manual(manual) = &mut self.page {
+                    // Never retried here: an expired target needs a new reading and consent.
+                    manual.expired |= error
+                        .downcast_ref::<crate::drover::ManualError>()
+                        .is_some_and(|e| e.code == "target_changed");
+                    return;
+                }
                 if !matches!(self.page, Page::Add { .. } | Page::Edit { .. }) {
                     self.page = Page::Feedback(self.message.clone());
                     self.scroll = 0;
@@ -458,6 +674,15 @@ impl Panel {
     }
     pub fn key(&mut self, key: KeyEvent) -> Option<Request> {
         if key.kind == KeyEventKind::Release {
+            return None;
+        }
+        if matches!(self.page, Page::Manual(_)) {
+            return self.manual_key_press(key);
+        }
+        if key == manual_click() {
+            if matches!(self.page, Page::List) {
+                self.open_manual();
+            }
             return None;
         }
         if matches!(self.page, Page::Projects) {
@@ -1022,6 +1247,7 @@ impl Panel {
             Page::Add { .. } => " Add task ",
             Page::Edit { .. } => " Edit task ",
             Page::Delete { .. } => " Delete task ",
+            Page::Manual(_) => " Mark complete manually ",
         };
         let mut line = vec![ratatui::text::Span::styled(
             "─".repeat(usize::from(rule.width)),
@@ -1077,6 +1303,10 @@ impl Panel {
         );
         self.buttons.extend(hits);
         let mut controls = vec![B::new("Add task a", K::Char('a'), ready)];
+        let running = self
+            .tasks()
+            .get(self.selected)
+            .is_some_and(|(group, task)| *group == "Current" && task.id.is_some());
         if let Some(index) = self.pending_index() {
             controls.extend([
                 B::new("Edit e", K::Char('e'), ready),
@@ -1088,6 +1318,11 @@ impl Panel {
                 ),
                 B::new("Delete x", K::Char('x'), ready).danger(),
             ]);
+        }
+        if running {
+            let mut button = B::new("Mark complete manually…", K::Null, ready);
+            button.key = manual_click();
+            controls.push(button);
         }
         controls.push(B::new("All pending A", K::Char('A'), !self.busy));
         controls.push(B::new("Help ?", K::Char('?'), true));
@@ -1660,6 +1895,7 @@ impl Panel {
                     }
                 }
             }
+            Page::Manual(_) => self.draw_manual(t, frame, body, focused),
             Page::AllPending => {
                 let lines = self.all_pending_lines(t, body.width.saturating_sub(1));
                 let height = usize::from(body.height);
@@ -1686,7 +1922,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nMark complete manually… (button, running task): confirm it done with a reason; it then awaits release\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
@@ -1712,6 +1948,104 @@ impl Panel {
 }
 
 impl Panel {
+    /// The confirmation page: what is confirmed and what it does not do, the checks as drover
+    /// reported them, then the one-line reason.
+    fn draw_manual(
+        &mut self,
+        t: &Theme,
+        frame: &mut ratatui::Frame,
+        body: ratatui::layout::Rect,
+        focused: bool,
+    ) {
+        use ratatui::{
+            layout::Rect,
+            style::{Modifier, Style},
+            text::{Line, Span},
+            widgets::{Block, Paragraph},
+        };
+        let Page::Manual(manual) = &self.page else {
+            return;
+        };
+        if body.height < 6 {
+            frame.render_widget(Paragraph::new("Enlarge the window to confirm"), body);
+            return;
+        }
+        let width = body.width.saturating_sub(1);
+        let muted = Style::default().fg(t.muted);
+        let name = std::path::Path::new(&manual.key.project)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("Project  ", muted),
+                Span::styled(name, Style::default().fg(t.bright)),
+                Span::styled(
+                    format!("  {}", manual.key.project),
+                    Style::default().fg(t.dim),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Task     ", muted),
+                Span::styled(
+                    manual.key.id.clone(),
+                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(format!(" · {}", manual.title)),
+            ]),
+            Line::raw(""),
+        ];
+        lines.extend(
+            wrap_text(
+                "Confirm that this run is complete although its checks may not be met. It then waits for your release (Check & release) like a finished task. This does not run the check command, send go or next, change loop or pause, touch Git branches or commits, or stop agents.",
+                width,
+            )
+            .into_iter()
+            .map(|l| l.style(Style::default().fg(t.text))),
+        );
+        if let Some(problem) = manual_problem(manual) {
+            lines.push(Line::raw(""));
+            lines.extend(wrap_text(&problem, width).into_iter().map(|l| {
+                l.style(Style::default().fg(if manual.target.is_none() {
+                    t.agent_starting
+                } else {
+                    t.agent_blocked
+                }))
+            }));
+        }
+        if let Some(Ok(detail)) = &manual.target
+            && detail.task.id == manual.key.id
+        {
+            lines.extend(crate::detail::check_lines(t, detail, usize::from(width)));
+        }
+        let info = Rect::new(body.x, body.y, body.width, body.height - 3);
+        let height = usize::from(info.height);
+        self.scroll = self.scroll.min(lines.len().saturating_sub(height));
+        frame.render_widget(
+            Paragraph::new(lines).scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
+            Rect::new(info.x, info.y, width, info.height),
+        );
+        let Page::Manual(manual) = &self.page else {
+            return;
+        };
+        let field_area = Rect::new(body.x, body.bottom() - 3, body.width, 3);
+        let field = Block::bordered()
+            .title("Reason (required) · Enter Mark complete · Esc Cancel")
+            .border_style(Style::default().fg(t.focus));
+        let inner = field.inner(field_area);
+        frame.render_widget(field, field_area);
+        let reason_width = unicode_width::UnicodeWidthStr::width(manual.reason.as_str()) as u16;
+        frame.render_widget(
+            Paragraph::new(manual.reason.as_str()).scroll((
+                0,
+                reason_width.saturating_sub(inner.width.saturating_sub(1)),
+            )),
+            inner,
+        );
+        if focused && !self.busy && !inner.is_empty() {
+            frame.set_cursor_position((inner.x + reason_width.min(inner.width - 1), inner.y));
+        }
+    }
     /// Pending tasks grouped by registered project, including loading and read-failure states.
     fn all_pending_lines(&self, t: &Theme, width: u16) -> Vec<ratatui::text::Line<'static>> {
         use ratatui::{
