@@ -31,7 +31,9 @@ T25 重开后恢复工作布局已实现，主控与独立审查通过，合并�
 
 T26 用户手动下放后回复「按照你的建议来」，主控已定稿 `docs/任务/T26-任务与交付结果跳转.md`、DESIGN 第 46 节：只改 saddle，Tasks 增加 Links，明确引用加一层任务书，项目内文本／Git 在弹窗内只读查看，agent 校验原实例。路由重／交叉审查要／碰要害，交给 Codex gpt-6-astra / xhigh。队列当前正文保留派发时的旧审查稿；它已是 current，公开 edit 只支持 pending，因此不改上游历史，实施以最新任务书、设计和用户本轮确认为准。
 
-已创建实现者 `saddle/dev-t26-task-links-1`（instance `96c48b700af7`，role=implementer），分支 `t26-task-links`，worktree `../saddle-worktrees/t26-task-links`，基线 `a3bb249`。等待完成提醒后主控审查并按路由安排独立审查，不自动推进下一任务。
+实现者 `saddle/dev-t26-task-links-1`（instance `96c48b700af7`，role=implementer），分支 `t26-task-links`，worktree `../saddle-worktrees/t26-task-links`，基线 `a3bb249`，已提交 `2cd9a97`，idle、工作区干净。主控首轮审查未发现阻塞项，标准测试 229 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T26-主控审查.md`。尚未合并发布。
+
+独立审查者 `saddle/dev-t26-review-1`（instance `7e6f0a94ce23`，Codex gpt-6-astra / xhigh，role=reviewer），detached worktree `../saddle-worktrees/review-t26-task-links` 固定 `2cd9a97`。按主仓库 `docs/任务/T26-独立审查.md` 只读审查并追加意见。等待审查提醒后逐条裁决，必要时返工复核，通过后合并、发布和收尾；不自动推进下一任务。
 
 - T29 的 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
 - 共用 target 跨 checkout 曾复用旧二进制；后续检查需核实构建对应当前源码。
