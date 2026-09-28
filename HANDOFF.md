@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-用户已验证 T23，确认“基本满足我的要求”，T23 不再待放行。用户已手动派发 TASK T22，公开队列 current=T22（doing）、awaiting=null。Attention 按 DESIGN 第 42 节与 `docs/任务/T22-统一待处理入口.md` 实施；主控正创建 `t22-attention` 独立 worktree 并派出实现者。
+用户已验证 T23，确认“基本满足我的要求”，T23 不再待放行。用户已手动派发 TASK T22，公开队列 current=T22（doing）、awaiting=null。Attention 按 DESIGN 第 42 节与 `docs/任务/T22-统一待处理入口.md` 实施。实现者 `saddle/dev-t22-attention-1`（instance `21cf1c48ece8`，Claude Code opus[1m] / high，role=implementer），分支 `t22-attention`，worktree `../saddle-worktrees/t22-attention`，基线 `ea18e10`。
 
 T23 已实现、主控复核通过、本地合并并构建发布。实现 `8540b73`，鼠标手势隔离返工 `b5a1634`，合并 `fa44936`，收尾空提交 `3365c54`。本次交接随收尾文档提交推送 origin/main；后续以实时 Git 状态为准。
 
@@ -33,4 +33,4 @@ T23 已实现、主控复核通过、本地合并并构建发布。实现 `8540b
 
 ## 下一步
 
-派出 T22 实现者后等待完成提醒，按任务单做主控审查、合并和收尾。T22 以外待办继续等逐项讨论，不自动推进队列。
+等待 T22 实现者完成提醒，读取其状态与回复，按任务单做主控审查、合并和收尾。T22 以外待办继续等逐项讨论，不自动推进队列。
