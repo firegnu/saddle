@@ -33,7 +33,9 @@ T26 用户手动下放后回复「按照你的建议来」，主控已定稿 `do
 
 实现者 `saddle/dev-t26-task-links-1`（instance `96c48b700af7`，role=implementer），分支 `t26-task-links`，worktree `../saddle-worktrees/t26-task-links`，基线 `a3bb249`，已提交 `2cd9a97`，idle、工作区干净。主控首轮审查未发现阻塞项，标准测试 229 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T26-主控审查.md`。尚未合并发布。
 
-独立审查者 `saddle/dev-t26-review-1`（instance `7e6f0a94ce23`，Codex gpt-6-astra / xhigh，role=reviewer），detached worktree `../saddle-worktrees/review-t26-task-links` 固定 `2cd9a97`。按主仓库 `docs/任务/T26-独立审查.md` 只读审查并追加意见。等待审查提醒后逐条裁决，必要时返工复核，通过后合并、发布和收尾；不自动推进下一任务。
+独立审查者 `saddle/dev-t26-review-1`（instance `7e6f0a94ce23`，Codex gpt-6-astra / xhigh，role=reviewer），detached worktree `../saddle-worktrees/review-t26-task-links` 固定 `2cd9a97`。首轮结论改完再合并：必须改 1、建议改 0、可以不改 3；定向 11 项通过，另一个仓库外探针复现了阻塞问题。主控认可：shell 在 Links 替换确认期间自行退出后，确认被拒绝却未清除 checking_agent，导致所有 Links 无法继续打开。
+
+已在 `docs/任务/T26-主控审查.md` 写明本轮唯一返工项，交回原实现者；审查者保持 idle。收到返工完成后核对定向修复，先把 review worktree 更新到新 SHA，再请同一审查者复核。当前尚未合并发布，不自动推进下一任务；独立复核轮次尚为 0。
 
 - T29 的 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
 - 共用 target 跨 checkout 曾复用旧二进制；后续检查需核实构建对应当前源码。
