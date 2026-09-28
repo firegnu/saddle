@@ -992,6 +992,9 @@ impl App {
                     match mouse.kind {
                         MouseEventKind::Down(MouseButton::Left) => {
                             if let Some(name) = search.click(point) {
+                                // The popup closes on the press; the rest of the gesture
+                                // must not reach the terminal that opening focuses.
+                                self.native_mouse = true;
                                 self.search_outcome(crate::search::Outcome::Open(name));
                             }
                         }

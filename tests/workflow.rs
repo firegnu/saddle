@@ -3187,3 +3187,30 @@ fn t23_zoom_fills_the_terminal_area_and_restore_keeps_layout_and_focus() {
         "native controls send no mouse input"
     );
 }
+
+#[test]
+fn t23_search_click_on_an_open_agent_consumes_the_whole_mouse_gesture() {
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"\x1d/p/a");
+    h.see("Input ▸ Search agents");
+    h.until(|h| {
+        let popup = h.popup("Search agents");
+        popup.contains("p/a  demo") && !popup.contains("p/b") && !popup.contains("p/taken")
+    });
+    // Press on the row body over the Viewer; the popup closes and p/a takes focus before the
+    // release, which must not reach its terminal.
+    let (col, row) = h.locate("p/a  demo", 0).unwrap();
+    let (x, y) = (col + 21, row + 1);
+    h.send(format!("\x1b[<0;{x};{y}M").as_bytes());
+    h.see("Input ▸ p/a");
+    h.send(format!("\x1b[<0;{x};{y}m").as_bytes());
+    h.send(b"Q");
+    h.event("input p/a 51");
+    h.quit();
+    let events = h.log("events");
+    let inputs: Vec<_> = events.lines().filter(|l| l.starts_with("input ")).collect();
+    assert_eq!(inputs, ["input p/a 51"], "search click leaked mouse bytes");
+    assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
+}
