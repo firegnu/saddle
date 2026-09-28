@@ -281,9 +281,14 @@ pub fn draw_workspace(
             match view.queue.view {
                 crate::queue::View::Text => "Tasks",
                 crate::queue::View::Details => "Tasks · Run details",
+                crate::queue::View::Links => "Tasks · Links",
             }
             .to_string(),
-            " ↑↓ Select  t Text  ↵ Run details  PgUp/PgDn Scroll  a Add  c Projects  ? Help  Esc Close",
+            if view.queue.view == crate::queue::View::Links {
+                " ↑↓ Select / Scroll  ↵ Open  Tab View  PgUp/PgDn Scroll  c Projects  Esc Back / Close"
+            } else {
+                " ↑↓ Select  t Text  ↵ Run details  Tab View  PgUp/PgDn Scroll  a Add  c Projects  ? Help  Esc Close"
+            },
         ),
         Focus::Viewer => (
             view.showing

@@ -35,11 +35,15 @@ use std::{
 
 #[path = "app_control.rs"]
 mod control_impl;
+#[path = "app_links.rs"]
+mod links_impl;
 use control_impl::{Closing, Record, Replacement};
 
 #[derive(Clone)]
 enum Action {
     Attach(String, Ticket, Option<u64>),
+    TaskAgent(crate::links::AgentRequest),
+    TaskAgentReady(crate::links::AgentRequest, Ticket),
     Reply(String),
     Stop(String),
     Start(Vec<String>, Ticket, Option<u64>),
@@ -81,6 +85,9 @@ impl Actions {
                 _ => {
                     let (verb, name, timeout) = match &action {
                         Action::Attach(name, _, _) => ("status", name, 15),
+                        Action::TaskAgent(request) | Action::TaskAgentReady(request, _) => {
+                            ("status", &request.name, 15)
+                        }
                         Action::Reply(name) => ("reply", name, 15),
                         Action::Stop(name) => ("stop", name, 120),
                         Action::Start(..) => unreachable!(),
@@ -179,6 +186,7 @@ struct App {
     pointer: crate::buttons::Pointer,
     /// The input target to return to when Tasks closes.
     tasks_return: Focus,
+    link_attach: Option<links_impl::LinkAttach>,
 }
 impl App {
     fn new(config: Config) -> Result<Self> {
@@ -300,6 +308,7 @@ impl App {
             hits: Hits::default(),
             pointer: Default::default(),
             tasks_return: Focus::Agents,
+            link_attach: None,
         })
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -419,6 +428,10 @@ impl App {
         let results: Vec<_> = self.actions.receiver.try_iter().collect();
         for result in results {
             match result.action {
+                Action::TaskAgent(request) => self.task_agent_result(request, result.result),
+                Action::TaskAgentReady(request, ticket) => {
+                    self.task_agent_ready(request, ticket, result.result)
+                }
                 Action::Attach(name, ticket, focus_intent) if self.viewer.valid(ticket) => {
                     let expected = self
                         .viewer
@@ -622,6 +635,7 @@ impl App {
                 self.queue.absorb_detail(key, result);
             }
         }
+        self.task_links_tick()?;
         if !matches!(self.queue.page, queue::Page::AllPending) {
             self.pending_load = None;
         }
@@ -924,7 +938,15 @@ impl App {
                                 .saturating_add(3)
                                 .min(c.snapshot.as_array().unwrap().len() as u16 * 3);
                         }
-                        _ => self.closing = None,
+                        _ => {
+                            if self.closing.as_ref().is_some_and(|c| {
+                                matches!(c.replacement, Some(Replacement::TaskLink(_)))
+                            }) {
+                                self.queue.links.checking_agent = None;
+                                self.queue.links.message = "Cancelled".into();
+                            }
+                            self.closing = None;
+                        }
                     }
                     return Ok(self.quit);
                 }
@@ -1031,7 +1053,8 @@ impl App {
                         // Closing keeps the page, selection and scroll for the next opening.
                         if (key.code == KeyCode::Char('q') && !typing)
                             || (key.code == KeyCode::Esc
-                                && matches!(self.queue.page, queue::Page::List))
+                                && matches!(self.queue.page, queue::Page::List)
+                                && !self.queue.reading_link())
                         {
                             self.focus = self.tasks_return;
                         } else if let Some(request) = self.queue.key(key) {
@@ -1137,6 +1160,13 @@ impl App {
                         // The Tasks entry: open, remembering where input was.
                         self.tasks_return = self.focus;
                         self.focus = Focus::Queue;
+                        return Ok(false);
+                    }
+                    if focus == Focus::Queue
+                        && key.code == KeyCode::Enter
+                        && matches!(self.queue.page, queue::Page::List)
+                    {
+                        self.queue.view = queue::View::Details;
                         return Ok(false);
                     }
                     if focus == Focus::Viewer {
@@ -1256,6 +1286,9 @@ impl App {
                     } else {
                         1
                     };
+                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                        self.native_mouse = false;
+                    }
                     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                         if let Some(request) = self.queue.click(mouse.column, mouse.row) {
                             self.queue_request(request);
@@ -1267,6 +1300,9 @@ impl App {
                                 .find(|(row, _)| *row == mouse.row)
                         {
                             self.queue.select(*index);
+                        }
+                        if self.queue.links.checking_agent.is_some() {
+                            self.native_mouse = true;
                         }
                     } else if scroll && self.queue.overlay_open() {
                         self.queue.key(KeyEvent::new(

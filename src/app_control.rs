@@ -18,6 +18,7 @@ pub(super) struct Closing {
 #[derive(Clone)]
 pub(super) enum Replacement {
     Attach(String),
+    TaskLink(crate::links::AgentRequest),
     Start(Vec<String>),
 }
 impl App {
@@ -557,6 +558,9 @@ impl App {
                 pane.viewer.metadata.instance = None;
                 match replacement {
                     Replacement::Attach(name) => self.attach_at(id, name),
+                    Replacement::TaskLink(request) => {
+                        self.actions.start(Action::TaskAgent(request))
+                    }
                     Replacement::Start(args) => {
                         let ticket =
                             self.begin_start(id, Place::Current, args, Some(self.input_revision))?;

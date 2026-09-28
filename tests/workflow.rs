@@ -3743,3 +3743,167 @@ fn t25_save_failure_is_visible_and_app_remains_usable() {
         serde_json::from_str(&h.log("state/saddle/layout.json")).unwrap();
     assert_eq!(saved["tabs"].as_array().unwrap().len(), 2);
 }
+
+#[test]
+fn task_links_open_explicit_file_and_return_without_terminal_input() {
+    let mut h =
+        Harness::start_prepared(
+            include_str!("fixtures/drover.py"),
+            false,
+            "",
+            16384,
+            |root| {
+                std::fs::write(root.join("delivery.md"), "SYNTHETIC DELIVERY\nsecond line")
+                    .unwrap();
+                std::fs::write(root.join("queue-state.json"), serde_json::json!({
+                "mode": {}, "paused": false, "history": [],
+                "pending": [{"id":"T1", "title":"Link task", "body":"Artifact: delivery.md"}]
+            }).to_string()).unwrap();
+            },
+        );
+    h.see("Synthetic title");
+    h.click("Tasks · ");
+    h.see("Link task");
+    h.click("Links");
+    h.see("Files");
+    h.see("Task text");
+    h.send(b"\r");
+    h.see("SYNTHETIC DELIVERY");
+    h.send(b"\x1b");
+    h.see("Files");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Close Esc"));
+    assert!(!h.log("events").contains("input "));
+    assert!(!h.log("queue-events").contains("go"));
+    h.quit();
+}
+
+#[test]
+fn task_links_validate_original_instance_before_attach_and_before_existing_navigation() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            std::fs::write(
+                root.join("metadata.json"),
+                r#"{"p/a":{"instance":"012345abcdef"}}"#,
+            )
+            .unwrap();
+            std::fs::write(root.join("queue-state.json"), serde_json::json!({
+            "mode": {}, "paused": false, "history": [],
+            "pending": [{"id":"T1", "title":"Agent link task", "body":"Agent: p/a | instance=012345abcdef"}]
+        }).to_string()).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.click("Tasks · ");
+    h.click("Links");
+    h.see("› p/a");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.see("Input ▸ p/a");
+    h.click("Tasks · ");
+    h.see("› p/a");
+    h.send(b"\r");
+    h.see("Input ▸ p/a");
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|line| *line == "attach p/a")
+            .count(),
+        1
+    );
+    std::fs::write(
+        h.dir.path().join("metadata.json"),
+        r#"{"p/a":{"instance":"fedcba543210"}}"#,
+    )
+    .unwrap();
+    h.click("Tasks · ");
+    h.see("› p/a");
+    h.send(b"\r");
+    h.see("identity changed");
+    assert!(h.contents().contains("Close Esc"));
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|line| *line == "attach p/a")
+            .count(),
+        1
+    );
+    assert!(!h.log("events").contains("input p/a"));
+    h.quit();
+}
+
+#[test]
+fn task_links_switching_task_during_status_never_opens_the_old_agent() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            std::fs::write(
+                root.join("metadata.json"),
+                r#"{"p/a":{"instance":"012345abcdef"}}"#,
+            )
+            .unwrap();
+            std::fs::write(root.join("queue-state.json"), serde_json::json!({
+            "mode": {}, "paused": false, "history": [],
+            "pending": [{"id":"T1", "title":"Link source", "body":"Agent: p/a | instance=012345abcdef"},
+                        {"id":"T2", "title":"Other task", "body":"Agent: p/taken | instance=012345abcdef"}]
+        }).to_string()).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.click("Tasks · ");
+    h.click("Links");
+    h.see("› p/a");
+    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
+    h.send(b"\r");
+    h.see("Checking agent");
+    h.click("Other task");
+    h.see("› p/taken");
+    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
+    h.send(b"\r");
+    h.see("identity changed");
+    assert!(h.contents().contains("Close Esc"));
+    assert!(!h.log("events").contains("attach "));
+    assert!(!h.log("events").contains("start "));
+    h.quit();
+}
+
+#[test]
+fn task_links_attach_failure_stays_in_tasks_and_unknown_identity_is_disabled() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            std::fs::write(
+                root.join("metadata.json"),
+                r#"{"p/a":{"instance":"012345abcdef"}}"#,
+            )
+            .unwrap();
+            std::fs::write(root.join("fail-attach"), "").unwrap();
+            std::fs::write(root.join("queue-state.json"), serde_json::json!({
+            "mode": {}, "paused": false, "history": [],
+            "pending": [{"id":"T1", "title":"Broken connection", "body":"Agent: p/a | instance=012345abcdef\nAgent: p/b"}]
+        }).to_string()).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.click("Tasks · ");
+    h.click("Links");
+    h.see("› p/a");
+    h.send(b"\r");
+    h.see("Agent unavailable");
+    h.send(b"\x1b[B\r");
+    h.see("› p/b");
+    h.see("Identity unknown");
+    assert!(h.contents().contains("Close Esc"));
+    assert!(!h.log("events").contains("attach p/b"));
+    h.quit();
+}

@@ -97,6 +97,24 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 布局文件默认是 `~/.local/state/saddle/layout.json`；绝对路径的 `XDG_STATE_HOME` 改为 `$XDG_STATE_HOME/saddle/layout.json`，与 `config.toml` 分开。首次启动或文件不存在时打开默认布局，首次保存自动建目录。文件损坏或版本不支持时提示并回退默认布局，保留原文件，本次运行禁止覆盖；如需重新保存，可先移走原文件再重启。保存失败只提示，不阻止使用；后续布局变化和正常退出时会再次尝试保存。
 
+## 任务关联跳转
+
+在 Tasks 右侧的 **Task text**、**Run details** 旁选择 **Links**；**Tab / Shift-Tab** 在三个页签间切换。Files、Commits、Agents 按明确引用分组并显示来源，点击条目或用上下方向键选择后 Enter 打开。文件和提交在 Tasks 内只读查看，方向键、滚轮、PgUp/PgDn 滚动；**Back / Esc** 回到原 Links 位置，再 Esc 关闭 Tasks。
+
+仅收集任务正文及其明确 `Task file` 的一层内容，例如：
+
+```text
+任务文件: docs/task.md
+审查文件: docs/review.md
+产物: output/report.txt
+提交: abcdef123
+代理: project/worker | instance=012345abcdef
+```
+
+英文同义字段为 `Task file`、`Review file`、`Artifact`、`Commit`、`Agent`。允许列表前缀、中英文冒号、目标外的反引号，以及 Markdown 行内文件链接 `[说明](路径)`。字段路径以项目根为基准；Markdown 相对路径在正文中以项目根为基准，在任务书中以任务书目录为基准。忽略围栏代码块，不递归扫描链接文件。
+
+文件预览限项目内不超过 1 MiB 的普通 UTF-8 文件；外部 URL、越界符号链接、上游内部数据、二进制和读取失败均提示原因，Markdown 原样阅读。**Recorded range** 使用公开起止 SHA（进行中取 observed HEAD），不表示区间中的提交都属于该任务；Git 输出有大小和超时限制，不运行外部 diff、textconv 或 pager。agent 必须记录原 12 位十六进制实例 ID；缺失身份禁用接入，退出、换实例或其他终端占用均拒绝。已打开的相同实例只定位，不重复接入。跳转不会启动 agent 或执行文档命令。
+
 ## 普通终端与 ctl 命令
 
 Terminal 启动 `$SHELL -i`，缺失时回退 `/bin/sh`。目录取来源窗格的已知项目／启动目录，空窗格回退当前 Tasks 项目；不跟踪 shell 后续 cd。自行退出后保留屏幕与退出状态，不重启。关闭、替换运行中的 shell 或退出 saddle 时先确认，混合 tab 整体确认后统一关闭。只回收自有 PTY 的 shell 和前台进程组，不承诺回收主动 daemonize 的进程。

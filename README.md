@@ -91,6 +91,24 @@ Layout state lives in `~/.local/state/saddle/layout.json`, or `$XDG_STATE_HOME/s
 
 If another terminal is attached to an agent, detach there before attaching through saddle. Stopping an agent is a separate, confirmed action.
 
+## Task links
+
+Choose **Links** beside **Task text** and **Run details** in Tasks. **Tab / Shift-Tab** cycles these views. Files, commits and agents show their explicit source; click an entry or use Up/Down and Enter. File and commit previews stay inside Tasks; arrows, wheel and PgUp/PgDn scroll, and **Back / Esc** returns to the same Links selection. Esc again closes Tasks.
+
+Only explicit references in the task body and one level of its `Task file` are collected. For example:
+
+```text
+Task file: docs/task.md
+Review file: docs/review.md
+Artifact: output/report.txt
+Commit: abcdef123
+Agent: project/worker | instance=012345abcdef
+```
+
+Chinese aliases are `任务文件`, `审查文件`, `产物`, `提交`, `代理`. Fields accept list prefixes, either colon and backticks around the target. Inline Markdown `[label](path)` file links are also recognized. Field paths are relative to the selected project root; Markdown paths are relative to the task file's directory (or the project root in task text). Fenced examples are ignored; linked documents are not scanned recursively.
+
+Previews accept project-local regular UTF-8 files up to 1 MiB; external URLs, escaping symlinks, upstream internal data, binary or inaccessible files show a reason. Markdown is read as text. **Recorded range** uses public start/end Git endpoints (observed HEAD while running), and does not establish task ownership of its commits. Git previews are bounded and never run external diff, textconv or pagers. Agent links require the original 12-digit hexadecimal instance; missing identity is disabled, and exited, replaced or occupied agents are not opened. An already open matching instance is located without another attach. No link starts an agent or executes document commands.
+
 ## Terminal workspace control
 
 **Terminal** starts `$SHELL -i` (fallback `/bin/sh`). The directory is the source pane's known project/start directory, or the Tasks project for an empty pane; it does not follow later `cd`. Shell exit keeps its screen and exit status. Closing a running shell, replacing it, closing a mixed tab, or quitting saddle asks which shells to end; Cancel preserves every session. Agent displays only detach. Shell cleanup targets the owned PTY shell and its foreground process group, not deliberately daemonized processes.

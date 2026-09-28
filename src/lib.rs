@@ -14,6 +14,8 @@ pub mod input;
 mod launch;
 pub mod layout;
 pub mod layout_state;
+mod link_git;
+pub mod links;
 pub mod placement;
 pub mod pty;
 pub mod queue;
