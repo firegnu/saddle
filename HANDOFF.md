@@ -8,7 +8,7 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 
 - 从 + Tab／Split 打开的 New agent，在 Advanced 中以静态灰字说明打开位置与来源（`Opens in … · set by …`），无点击命中，Tab 焦点跳过该行。
 - 从 Agents → New 进入仍保留位置选择器；创建命令、绑定规则和终端行为不变。
-- T23 已获用户现场验证“基本满足我的要求”；T22 已放行，Attention 入口可用。T27 尚待用户现场验收与放行。
+- T23 已获用户现场验证“基本满足我的要求”；T22 已放行，Attention 入口可用。T27 用户已确认“看到了，感觉还不错”，公开队列已无待放行。
 
 ## 验证与发布
 
@@ -18,8 +18,8 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 
 ## 队列与开发环境
 
-- `drover done T27` 核对通过，返回 8 表示等待用户放行；current=null、awaiting=T27（done），loop=false、gate=true、paused=false。未调用 go/next。
-- Pending 顺序：T29 偶发测试失败 → T28 ctl 上限 → T24 终端历史搜索复制 → T25 布局恢复 → T26 任务产物跳转。逐项讨论后再实施，不自动派发下一件。
+- T27 已完成并放行；最新公开队列 current=null、awaiting=null。按用户要求将 T29 移至队尾，未调用 go/next。
+- Pending 顺序：T28 ctl 上限 → T24 终端历史搜索复制 → T25 布局恢复 → T26 任务产物跳转 → T29 偶发测试失败。逐项讨论后再实施，不自动派发下一件。
 - 自有 `t27-bound-location` worktree／分支已清理，确认 idle、attached=0、工作区干净且分支合并后，删除 worktree 并一并关闭 `saddle/dev-t27-bound-location-1`（instance `d5e214c9e1e2`）。当前仅 main worktree；用户 agent 未动。迟到提醒查到 not_found 即忽略。
 
 ## 仍需注意
@@ -31,4 +31,4 @@ T27 绑定打开位置说明已实现、主控审查通过、本地合并并构�
 
 ## 下一步
 
-等待用户现场验证 T27 并放行。下一项 T29 先讨论排查范围；其余待办继续等逐项讨论，不自动推进队列。
+下一项 T28 先讨论 ctl 上限的评估范围；T29 按用户要求后移至队尾，其余待办继续等逐项讨论，不自动推进队列。
