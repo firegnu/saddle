@@ -178,6 +178,11 @@ struct App {
     survey: drover::Surveyor,
     board: crate::attention::Board,
     attention: Option<crate::attention::Popup>,
+    /// Drover's notification preference, read periodically and set from Settings.
+    channel: drover::ChannelWorker,
+    notifier: crate::notify::Notifier,
+    /// The task prompt as last drawn: its area and close mark.
+    toast: Option<(Rect, Rect)>,
     native_mouse: bool,
     new_agent: Option<crate::launch::Form>,
     /// Agents New draft parked while a location-bound form is in use.
@@ -194,6 +199,8 @@ struct App {
     settings: Option<crate::settings::Settings>,
     /// The input target to return to when Settings closes.
     settings_return: Focus,
+    /// Identifies the open Settings, so a Drover answer meant for an earlier one is not used.
+    settings_token: u64,
 }
 impl App {
     fn new(config: Config, config_path: std::path::PathBuf) -> Result<Self> {
@@ -240,6 +247,16 @@ impl App {
                 .to_string_lossy()
                 .into_owned(),
             expand_home("~/.drover/projects"),
+            Duration::from_millis(config.refresh_ms.saturating_mul(5)),
+        );
+        // Drover's notification preference is checked as often as the projects are read.
+        let channel = drover::ChannelWorker::start(
+            drover::Client {
+                program: expand_home(&config.queue.drover)
+                    .to_string_lossy()
+                    .into_owned(),
+                cwd: ".".into(),
+            },
             Duration::from_millis(config.refresh_ms.saturating_mul(5)),
         );
         let (layout_store, saved) =
@@ -307,6 +324,9 @@ impl App {
             survey,
             board: Default::default(),
             attention: None,
+            channel,
+            notifier: Default::default(),
+            toast: None,
             native_mouse: false,
             new_agent: None,
             agent_draft: None,
@@ -319,6 +339,7 @@ impl App {
             config_path,
             settings: None,
             settings_return: Focus::Agents,
+            settings_token: 0,
         })
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -380,6 +401,9 @@ impl App {
                     }),
                 );
                 self.draw_closing(frame);
+                self.toast = self.notifier.visible(Instant::now()).and_then(|toast| {
+                    crate::notify::draw(&self.config.colors, frame, panes.viewer, toast)
+                });
                 if !self.layout_store.notice.is_empty() {
                     frame.render_widget(
                         ratatui::widgets::Paragraph::new(self.layout_store.notice.as_str())
@@ -430,7 +454,18 @@ impl App {
                 }
             }
         }
+        let updates: Vec<_> = self.channel.updates.try_iter().collect();
+        for update in updates {
+            self.channel_update(update);
+        }
         for update in self.survey.updates.try_iter() {
+            match &update {
+                drover::Survey::Projects(Ok(projects)) => self.notifier.registry(projects),
+                drover::Survey::Snapshot(project, Ok(snapshot)) => {
+                    self.notifier.snapshot(project, snapshot, Instant::now())
+                }
+                _ => {}
+            }
             self.board.absorb(update);
         }
         for batch in self.git.updates.try_iter() {
@@ -1135,6 +1170,17 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
+                // The task prompt takes every mouse action over it; none reaches a terminal.
+                if let Some((area, close)) = self.toast
+                    && area.contains(point)
+                    && !self.pointer.captured()
+                    && self.notifier.visible(Instant::now()).is_some()
+                {
+                    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+                        self.toast_click(close.contains(point));
+                    }
+                    return Ok(false);
+                }
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
                     && let Some(placement) = &mut self.placement
                 {
@@ -1483,8 +1529,41 @@ impl App {
             self.config_path.clone(),
             truecolor(),
         ));
+        self.settings_token += 1;
+        self.channel.read(drover::Asker::Open(self.settings_token));
         self.settings_return = back;
         self.focus = Focus::Agents;
+    }
+    /// Every reading calibrates the prompts; the open Settings gets only the answers it asked
+    /// for. A save answered after its Settings closed is still reported.
+    fn channel_update(&mut self, update: drover::ChannelUpdate) {
+        use drover::Asker;
+        match (&update.result, update.asker) {
+            (Ok(preference), _) => self.notifier.preference(Some(*preference)),
+            (Err(_), Asker::Poll | Asker::Open(_)) => self.notifier.preference(None),
+            (Err(_), Asker::Save(_)) => {}
+        }
+        let result = update.result.map(|p| p.system_enabled);
+        let open = self.settings.as_mut().filter(
+            |_| matches!(update.asker, Asker::Open(t) | Asker::Save(t) if t == self.settings_token),
+        );
+        match (update.asker, open) {
+            (Asker::Open(_), Some(settings)) => settings.channel_status(result),
+            (Asker::Save(_), Some(settings)) => {
+                let outcome = settings.channel_saved(result);
+                self.settings_outcome(outcome);
+            }
+            (Asker::Save(_), None) => {
+                self.panel.message = match result {
+                    Ok(system) => format!(
+                        "Task notifications: {}; Drover applies it at its next notification check.",
+                        if system { "System" } else { "In saddle" }
+                    ),
+                    Err(error) => format!("Task notifications not saved: {error}"),
+                }
+            }
+            _ => {}
+        }
     }
     /// Closing returns input to where it was. A save applies colors and the sidebar width now;
     /// the other settings wait for the next start.
@@ -1493,6 +1572,16 @@ impl App {
         match outcome {
             Outcome::Stay => return,
             Outcome::Cancel => {}
+            Outcome::SetChannel(saved, system) => {
+                if let Some(saved) = saved {
+                    self.config.colors = saved.colors.for_terminal(truecolor());
+                    self.config.left_width = saved.left_width;
+                }
+                self.channel
+                    .set(drover::Asker::Save(self.settings_token), system);
+                return;
+            }
+            Outcome::Done(message) => self.panel.message = message,
             Outcome::Saved(saved, restart) => {
                 self.config.colors = saved.colors.for_terminal(truecolor());
                 self.config.left_width = saved.left_width;
@@ -1508,6 +1597,51 @@ impl App {
         }
         self.settings = None;
         self.focus = self.settings_return;
+    }
+    /// The close mark only closes the prompt. Elsewhere it opens its task in Tasks, or
+    /// Attention for several; while another popup has input, only the close mark works.
+    fn toast_click(&mut self, close: bool) {
+        let busy = self.settings.is_some()
+            || self.attention.is_some()
+            || self.search.is_some()
+            || self.closing.is_some()
+            || self.placement.is_some()
+            || self.panel.confirm.is_some()
+            || self.new_agent.as_ref().is_some_and(|f| f.visible);
+        if !close && busy {
+            return;
+        }
+        let Some(toast) = self.notifier.dismiss() else {
+            return;
+        };
+        if close {
+            // The release must not reach the terminal under the closed prompt.
+            self.native_mouse = !busy && self.focus != Focus::Queue;
+        } else if let [
+            (
+                crate::attention::Target::Task {
+                    project,
+                    id,
+                    title,
+                    body,
+                },
+                _,
+            ),
+        ] = &toast.targets[..]
+        {
+            self.open_tasks(
+                project.clone(),
+                Some(drover::Task {
+                    id: id.clone(),
+                    title: title.clone(),
+                    body: body.clone(),
+                    ..Default::default()
+                }),
+            );
+        } else {
+            self.attention = Some(Default::default());
+            self.survey.refresh();
+        }
     }
     /// Opening only shows the target: an agent's terminal, or a task selected in its project's
     /// Tasks. Nothing is answered, released or advanced.

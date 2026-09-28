@@ -29,6 +29,11 @@ pub struct Task {
     pub body: String,
     pub status: Option<String>,
     pub reason: Option<String>,
+    /// The start event's time, commit and main: with the id, a run's identity. Kept as JSON so a
+    /// malformed time makes only that identity unusable, not the whole snapshot.
+    pub t0: Option<serde_json::Value>,
+    pub start: Option<String>,
+    pub main: Option<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -545,6 +550,151 @@ impl Drop for Surveyor {
         self.cancel
             .store(true, std::sync::atomic::Ordering::Relaxed);
         self.refresh();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// The user's Drover system-notification preference (`drover notifications`, schema_version 1).
+/// Saving it means only that it is saved; Drover applies it at its next notification check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Preference {
+    pub system_enabled: bool,
+    pub revision: u64,
+}
+impl Client {
+    /// Reads the preference (`None`), or turns system notifications on or off. The command does
+    /// not depend on the project, so it runs without one.
+    pub fn notifications(&self, set: Option<bool>, cancel: &AtomicBool) -> Result<Preference> {
+        let action = match set {
+            None => "status",
+            Some(true) => "on",
+            Some(false) => "off",
+        };
+        let output = crate::command::run(
+            &self.program,
+            &["notifications", action, "--json"],
+            None,
+            Duration::from_secs(15),
+            cancel,
+        )?;
+        let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 200);
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+            bail!(
+                "this drover does not support task notifications ({}): {}{}",
+                output.status,
+                text(&output.stdout),
+                text(&output.stderr)
+            );
+        };
+        if value["schema_version"] != 1 {
+            bail!(
+                "drover notifications: unsupported schema_version {}",
+                value["schema_version"]
+            );
+        }
+        if value["ok"] == false {
+            let code = value["error"]["code"].as_str().unwrap_or("unknown_error");
+            let meaning = match code {
+                "invalid_arguments" => "drover rejected the request",
+                "preferences_invalid" => "Drover's notification preference is invalid",
+                "preferences_unreadable" => "Drover's notification preference cannot be read",
+                "preferences_write_failed" => "Drover could not save the notification preference",
+                _ => "drover notifications failed",
+            };
+            bail!(
+                "{meaning} ({code}): {}",
+                value["error"]["message"].as_str().unwrap_or_default()
+            );
+        }
+        match (
+            output.status.success() && value["ok"] == true && value["scope"] == "user",
+            value["system_enabled"].as_bool(),
+            value["revision"].as_u64(),
+        ) {
+            (true, Some(system_enabled), Some(revision)) => Ok(Preference {
+                system_enabled,
+                revision,
+            }),
+            _ => bail!(
+                "drover notifications ({}): unexpected answer {}",
+                output.status,
+                crate::ui::clip(&value.to_string(), 200)
+            ),
+        }
+    }
+}
+/// Who asked for a preference reading: the periodic check, or the Settings popup with this
+/// token opening or saving.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Asker {
+    Poll,
+    Open(u64),
+    Save(u64),
+}
+pub struct ChannelUpdate {
+    pub asker: Asker,
+    pub result: Result<Preference, String>,
+}
+/// Runs `drover notifications` one call at a time: a periodic status read, and the requests of
+/// Settings. Serial calls keep answers in order, so the latest answer is the latest preference.
+pub struct ChannelWorker {
+    pub updates: std::sync::mpsc::Receiver<ChannelUpdate>,
+    requests: Option<std::sync::mpsc::Sender<(Asker, Option<bool>)>>,
+    cancel: std::sync::Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+impl ChannelWorker {
+    pub fn start(client: Client, every: Duration) -> Self {
+        use std::sync::{Arc, atomic::Ordering, mpsc};
+        let (send, updates) = mpsc::channel();
+        let (requests, receive) = mpsc::channel();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let quitting = cancel.clone();
+        let thread = std::thread::spawn(move || {
+            let mut next = (Asker::Poll, None);
+            while !quitting.load(Ordering::Relaxed) {
+                let (asker, set) = next;
+                let result = client
+                    .notifications(set, &quitting)
+                    .map_err(|e| format!("{e:#}"));
+                if send.send(ChannelUpdate { asker, result }).is_err() {
+                    break;
+                }
+                next = match receive.recv_timeout(every) {
+                    Ok(request) => request,
+                    Err(mpsc::RecvTimeoutError::Timeout) => (Asker::Poll, None),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+            }
+        });
+        Self {
+            updates,
+            requests: Some(requests),
+            cancel,
+            thread: Some(thread),
+        }
+    }
+    /// Reads the preference now, or right after the call in progress.
+    pub fn read(&self, asker: Asker) {
+        self.request(asker, None);
+    }
+    /// Turns Drover's system notifications on or off.
+    pub fn set(&self, asker: Asker, system_enabled: bool) {
+        self.request(asker, Some(system_enabled));
+    }
+    fn request(&self, asker: Asker, set: Option<bool>) {
+        if let Some(requests) = &self.requests {
+            let _ = requests.send((asker, set));
+        }
+    }
+}
+impl Drop for ChannelWorker {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.requests.take();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
