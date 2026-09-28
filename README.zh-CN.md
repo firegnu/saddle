@@ -33,6 +33,7 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](http
 - **每个 agent 的 Git 摘要：** 目录上面一行，例如 `⎇ dev-t12 ↑2 main     +18 -4 ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支（与 agent 名称相同时只显示 `⎇`）；`↑n 基准`，即比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；增删放不进分支那一行时整组移到下一行右对齐；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
 - **Tasks：** 点 Agents 顶部的 **Tasks** 入口（或按 **Tab**）打开的大弹窗。弹窗关闭时入口仍以状态色显示当前项目的简短状态：`Awaiting release`、`Running`、`Paused`、待办数量或 `Idle`（尚未读到时为 `Loading…`，读取失败为 `Read failed`），不用打开就知道是否需要处理。顶部是项目和队列操作；左侧列出当前任务、待放行、待办和历史记录，右侧并排显示选中任务的原文或运行详情。原生控件支持新增任务、编辑、调整次序和删除待办、汇总查看所有登记项目的待办、切换项目、放行、暂停和循环设置。
 - **Attention：** Agents 标题下的 `Attention · N` 汇总 agent 和 `~/.drover/projects` 中每个项目需要你处理的事项；点击或在 Agents 按 **a** 打开。**Needs attention** 列出等待输入或出错的 agent、待放行任务和队列历史中的失败任务；**New replies** 列出本次运行中看到的 agent 未读回复。同一 agent 只占一行，需处理状态优先。条目只在公开状态真正变化（已回答、已放行）后消失，新回复在查看该 agent 后清除。**Mark seen / m** 仅在本次运行中隐藏一条历史失败，不修改队列历史，重启后会再次出现。读取失败的来源（corral、项目登记表或某个项目）显示为失败条目，不当作没有事项；尚未读到时显示 `…` / `loading…`。项目约每 5 个刷新周期重读一次，打开 Attention 时立即重读。打开条目只显示 agent 终端，或打开该项目的 Tasks 并按任务 id 选中；不会回答、放行或推进任务。
+- **Settings：** Attention 同一行右侧的 `Settings` 入口（或在 Agents 按 **,**）编辑 saddle 启动时使用的配置文件，路径显示在顶部。**General** 含侧栏宽度、刷新间隔和初始 Tasks 项目（留空为 Automatic）；**Colors** 按用途分组列出全部 `[colors]` 值，带色块和小范围预览；**Advanced** 含 corral 和 drover 命令。修改先留在草稿中，**Save / Ctrl-S** 才保存；**Cancel / Esc** 不改文件；**Default / Ctrl-D** 把当前项恢复默认值，仍需 Save。保存只写改动的键，保留注释和其余内容，文件或目录不存在时自动创建。无效值会报错并保留草稿。若 Settings 读取后文件在磁盘上被改动，则不保存：**Keep my edits** 重读文件并保留草稿，**Discard my edits** 采用文件现状。保存后的颜色和侧栏宽度立即生效（agent 输出保留自己的颜色）；标注 `Restart required` 的设置下次启动生效。
 - **内置启动：** 原生表单填写目录、名称、命令与首条消息，预览确认后调用公开 corral start。
 - **Viewer 标签页和分屏：** 每个 tab 保存一组可四向分割的窗格，各自运行实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
 - **鼠标与键盘：** 紧凑的可点击按钮、鼠标滚轮、触控板和快捷键。滚动列表不改变选择，正常刷新保留滚动位置。
@@ -184,7 +185,7 @@ agent_selected = "#2b2621"
 
 颜色支持 `default`（或 `reset`，终端默认色）、`#RRGGBB` 和小写 ANSI 色名：`black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`gray`、`dark_gray`、`light_red`、`light_green`、`light_yellow`、`light_blue`、`light_magenta`、`light_cyan`、`white`。其中 `gray` 是普通 ANSI 白，`dark_gray` 是亮黑，`white` 是亮白；ANSI 色随终端调色板变化。
 
-颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。Agents 栏使用自己的 `agents_*` 配色（另加 `agent_selected` 和 agent 类型色）；共用的 `agent_*` 状态强调色用于 Tasks（含 Queue 操作反馈），以及 Agents 的 stalled/starting 状态和 effort 图标。终端未把 `COLORTERM` 设为 `truecolor` 或 `24bit` 时，Agents 专用的 RGB 颜色按最近的 256 色发送；ANSI 颜色名和其他区域不变。未知字段和无效颜色沿用配置错误报告。修改后下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
+颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。Agents 栏使用自己的 `agents_*` 配色（另加 `agent_selected` 和 agent 类型色）；共用的 `agent_*` 状态强调色用于 Tasks（含 Queue 操作反馈），以及 Agents 的 stalled/starting 状态和 effort 图标。终端未把 `COLORTERM` 设为 `truecolor` 或 `24bit` 时，Agents 专用的 RGB 颜色按最近的 256 色发送；ANSI 颜色名和其他区域不变。未知字段和无效颜色沿用配置错误报告。在 Settings 中保存的颜色立即生效；在 saddle 外修改的配置下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
 
 ## 操作
 
@@ -195,6 +196,7 @@ agent_selected = "#2b2621"
 | Agents | n / New | 创建新 agent |
 | Agents | / / Search | 按项目名或 agent 名称过滤；Enter 或点击进入对应终端（已打开时跳到现有位置），Esc 取消 |
 | Agents | a / Attention · N | 打开 Attention；↑↓ 选择，Enter 或点击打开对应 agent 或任务，m 把历史失败标为已看，Esc 取消 |
+| Agents | , / Settings | 打开 Settings；Tab/↑↓ 选择设置项，F1–F3 或点击切换页签，Ctrl-U 清空，Ctrl-D 恢复默认值，Ctrl-S 保存，Esc 取消 |
 | Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
 | Viewer 边框 | Zoom / Restore | 多窗格时让当前窗格临时占满右侧终端区域（保留 Agents 和 tab 条）；Restore 回到原分屏和比例，焦点仍在该窗格。其他窗格继续运行；切到其他窗格、关闭该窗格或新建分屏都会结束放大 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |

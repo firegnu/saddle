@@ -53,6 +53,7 @@ pub struct Workspace<'a> {
     pub program: &'a str,
     pub modal: bool,
     pub attention: Attention<'a>,
+    pub settings: Option<&'a mut crate::settings::Settings>,
 }
 /// The Attention entry's items and, while open, its popup.
 pub struct Attention<'a> {
@@ -66,30 +67,33 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, placement, mut search, mut form, program, modal, attention) = match workspace {
-        Some(w) => (
-            Some(w.terminals),
-            w.placement,
-            w.search,
-            w.form,
-            w.program,
-            w.modal,
-            w.attention,
-        ),
-        None => (
-            None,
-            None,
-            None,
-            None,
-            "corral",
-            false,
-            Attention {
-                items: &[],
-                loading: false,
-                popup: None,
-            },
-        ),
-    };
+    let (terminals, placement, mut search, mut form, program, modal, attention, mut settings) =
+        match workspace {
+            Some(w) => (
+                Some(w.terminals),
+                w.placement,
+                w.search,
+                w.form,
+                w.program,
+                w.modal,
+                w.attention,
+                w.settings,
+            ),
+            None => (
+                None,
+                None,
+                None,
+                None,
+                "corral",
+                false,
+                Attention {
+                    items: &[],
+                    loading: false,
+                    popup: None,
+                },
+                None,
+            ),
+        };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
@@ -100,7 +104,50 @@ pub fn draw_workspace(
         ..header
     }
     .intersection(inner(view.panes.agents));
-    let area = crate::attention::entry(t, frame, row, attention.items, attention.loading);
+    let wraps = settings_wraps(header);
+    let settings_row = if wraps {
+        Rect {
+            y: row.y + 1,
+            ..row
+        }
+        .intersection(inner(view.panes.agents))
+    } else {
+        row
+    };
+    let attention_row = Rect {
+        width: if wraps {
+            row.width
+        } else {
+            row.width.saturating_sub(SETTINGS.width() as u16 + 2)
+        },
+        ..row
+    };
+    let area = crate::attention::entry(t, frame, attention_row, attention.items, attention.loading);
+    if !settings_row.is_empty() && settings_row.width >= SETTINGS.width() as u16 {
+        let width = SETTINGS.width() as u16;
+        let area = Rect {
+            x: settings_row.right() - width,
+            width,
+            height: 1,
+            ..settings_row
+        };
+        frame.render_widget(
+            Paragraph::new(SETTINGS).style(if settings.is_some() {
+                Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(t.agents_dim)
+            }),
+            area,
+        );
+        hits.buttons.push(crate::buttons::Hit {
+            area,
+            danger: false,
+            key: crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char(','),
+                crossterm::event::KeyModifiers::NONE,
+            ),
+        });
+    }
     if !area.is_empty() {
         hits.buttons.push(crate::buttons::Hit {
             area,
@@ -232,6 +279,16 @@ pub fn draw_workspace(
         view.queue.fields.clear();
         view.queue.project_rows.clear();
     }
+    if let Some(settings) = settings.as_mut() {
+        // Only the popup stays clickable; its field rows are kept by the settings itself.
+        hits.buttons = settings.draw(t, frame);
+        hits.terminal.clear();
+        hits.agents.clear();
+        hits.queue_rows.clear();
+        view.queue.buttons.clear();
+        view.queue.fields.clear();
+        view.queue.project_rows.clear();
+    }
     let controls: Vec<_> = hits
         .buttons
         .iter()
@@ -275,7 +332,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  Tab Tasks  q Quit",
+            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  Tab Tasks  q Quit",
         ),
         Focus::Queue => (
             match view.queue.view {
@@ -363,6 +420,14 @@ pub fn draw_workspace(
         target = "Attention".into();
         help = " ↑↓ Select  Enter Open  m Mark seen  Esc Cancel";
     }
+    if let Some(settings) = &settings {
+        target = "Settings".into();
+        help = if settings.conflict() {
+            " k Keep my edits  d Discard my edits  Esc Back"
+        } else {
+            " Tab/↑↓ Field  F1-F3 Page  Ctrl-D Default  Ctrl-U Clear  Ctrl-S Save  Esc Cancel"
+        };
+    }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();
         help = " y Stop  Any other key cancels";
@@ -380,6 +445,7 @@ pub fn draw_workspace(
                     || placement.is_some()
                     || search.is_some()
                     || attention_popup.is_some()
+                    || settings.is_some()
                 {
                     help
                 } else if queue_modal && !view.queue.message.is_empty() {
@@ -527,6 +593,13 @@ fn agents_header(area: Rect) -> Rect {
         inside.height.min(1),
     )
 }
+const SETTINGS: &str = "Settings";
+/// Settings shares the Attention row when both fit, even with a long Attention count;
+/// otherwise it takes the next row.
+fn settings_wraps(header: Rect) -> bool {
+    let attention = "Attention · 99 loading…".width();
+    usize::from(header.width) < attention + 2 + SETTINGS.width()
+}
 /// One bottom-bar control: key and label, whether it acts, and whether it is destructive.
 /// `lit` shows a state in normal text without making the control clickable.
 struct Control {
@@ -612,9 +685,11 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
         ),
         Rect::new(content.x, content.y, content.width, 1),
     );
-    // The second row carries the Attention entry, drawn with the workspace.
-    if content.height >= 3 {
-        rule(frame, content.y + 2);
+    // The second row carries the Attention and Settings entries, drawn with the workspace; a
+    // narrow column gives Settings a third.
+    let entries = 1 + u16::from(settings_wraps(content));
+    if content.height >= entries + 2 {
+        rule(frame, content.y + entries + 1);
     }
     use crossterm::event::KeyCode as K;
     let selected = panel.selected.is_some();
@@ -684,11 +759,11 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     let bar = bar_rows(&controls, content.width);
     let bar_height = bar.len() as u16;
     let mut hits = Hits::default();
-    // Header, Attention, rule, at least one list row, rule and the bar; with less room the
+    // Header, entries, rule, at least one list row, rule and the bar; with less room the
     // list keeps the space.
-    let body_top = content.y + 3.min(content.height);
+    let body_top = content.y + (entries + 2).min(content.height);
     let mut body_bottom = content.bottom();
-    if content.height > 4 + bar_height {
+    if content.height > entries + 3 + bar_height {
         body_bottom = content.bottom() - bar_height - 1;
         rule(frame, body_bottom);
         for (row, placed) in bar.iter().enumerate() {

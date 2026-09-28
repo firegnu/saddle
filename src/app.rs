@@ -135,10 +135,10 @@ impl Drop for TerminalGuard {
     }
 }
 
-pub fn run(mut config: Config) -> Result<()> {
-    let truecolor = crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref());
-    config.colors = config.colors.for_terminal(truecolor);
-    let mut app = App::new(config)?;
+/// Runs saddle with `config`, loaded from `path`, which Settings edits.
+pub fn run(mut config: Config, path: std::path::PathBuf) -> Result<()> {
+    config.colors = config.colors.for_terminal(truecolor());
+    let mut app = App::new(config, path)?;
     let _guard = TerminalGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
@@ -149,6 +149,9 @@ pub fn run(mut config: Config) -> Result<()> {
         eprintln!("{}", app.layout_store.notice);
     }
     result
+}
+fn truecolor() -> bool {
+    crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref())
 }
 struct App {
     control: crate::control::Server,
@@ -187,9 +190,13 @@ struct App {
     /// The input target to return to when Tasks closes.
     tasks_return: Focus,
     link_attach: Option<links_impl::LinkAttach>,
+    config_path: std::path::PathBuf,
+    settings: Option<crate::settings::Settings>,
+    /// The input target to return to when Settings closes.
+    settings_return: Focus,
 }
 impl App {
-    fn new(config: Config) -> Result<Self> {
+    fn new(config: Config, config_path: std::path::PathBuf) -> Result<Self> {
         let client = Client {
             program: expand_home(&config.corral).to_string_lossy().into_owned(),
         };
@@ -309,6 +316,9 @@ impl App {
             pointer: Default::default(),
             tasks_return: Focus::Agents,
             link_attach: None,
+            config_path,
+            settings: None,
+            settings_return: Focus::Agents,
         })
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -366,6 +376,7 @@ impl App {
                             loading,
                             popup: self.attention.as_mut(),
                         },
+                        settings: self.settings.as_mut(),
                     }),
                 );
                 self.draw_closing(frame);
@@ -469,6 +480,7 @@ impl App {
                                 && self.panel.confirm.is_none()
                                 && self.placement.is_none()
                                 && self.closing.is_none()
+                                && self.settings.is_none()
                                 && !self.new_agent.as_ref().is_some_and(|f| f.visible)
                                 && self.viewer.active_pane().id == ticket.pane
                             {
@@ -950,6 +962,11 @@ impl App {
                     }
                     return Ok(self.quit);
                 }
+                if let Some(settings) = &mut self.settings {
+                    let outcome = settings.key(key);
+                    self.settings_outcome(outcome);
+                    return Ok(false);
+                }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
                     let submit = form.key(key, &self.queue.projects);
                     let bound = form.anchor;
@@ -1081,6 +1098,10 @@ impl App {
                 if self.closing.is_some() {
                     return Ok(false);
                 }
+                if let Some(settings) = &mut self.settings {
+                    settings.paste(&text);
+                    return Ok(false);
+                }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
                     form.paste(&text);
                     return Ok(false);
@@ -1169,6 +1190,15 @@ impl App {
                         self.queue.view = queue::View::Details;
                         return Ok(false);
                     }
+                    if focus == Focus::Agents
+                        && key.code == KeyCode::Char(',')
+                        && self.settings.is_none()
+                        && self.closing.is_none()
+                    {
+                        // The Settings entry: open, remembering where input was.
+                        self.open_settings(self.focus);
+                        return Ok(false);
+                    }
                     if focus == Focus::Viewer {
                         if let Some((_, action)) = self
                             .hits
@@ -1201,6 +1231,17 @@ impl App {
                         }
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => search
                             .scroll(mouse.kind == MouseEventKind::ScrollDown, &self.panel.agents),
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+                // Settings takes all mouse input the same way.
+                if let Some(settings) = &mut self.settings {
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => settings.click(point),
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                            settings.scroll(mouse.kind == MouseEventKind::ScrollDown)
+                        }
                         _ => {}
                     }
                     return Ok(false);
@@ -1437,6 +1478,37 @@ impl App {
             }
         }
     }
+    fn open_settings(&mut self, back: Focus) {
+        self.settings = Some(crate::settings::Settings::open(
+            self.config_path.clone(),
+            truecolor(),
+        ));
+        self.settings_return = back;
+        self.focus = Focus::Agents;
+    }
+    /// Closing returns input to where it was. A save applies colors and the sidebar width now;
+    /// the other settings wait for the next start.
+    fn settings_outcome(&mut self, outcome: crate::settings::Outcome) {
+        use crate::settings::Outcome;
+        match outcome {
+            Outcome::Stay => return,
+            Outcome::Cancel => {}
+            Outcome::Saved(saved, restart) => {
+                self.config.colors = saved.colors.for_terminal(truecolor());
+                self.config.left_width = saved.left_width;
+                self.panel.message = if restart.is_empty() {
+                    "Settings saved.".into()
+                } else {
+                    format!(
+                        "Settings saved; restart saddle to apply: {}.",
+                        restart.join(", ")
+                    )
+                };
+            }
+        }
+        self.settings = None;
+        self.focus = self.settings_return;
+    }
     /// Opening only shows the target: an agent's terminal, or a task selected in its project's
     /// Tasks. Nothing is answered, released or advanced.
     fn attention_outcome(&mut self, outcome: crate::attention::Outcome) {
@@ -1510,6 +1582,7 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
             KeyCode::Char('/') => self.search = Some(Default::default()),
+            KeyCode::Char(',') => self.open_settings(Focus::Agents),
             KeyCode::Char('a') => {
                 self.attention = Some(Default::default());
                 self.survey.refresh();

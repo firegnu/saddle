@@ -1826,6 +1826,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                             loading: false,
                             popup: None,
                         },
+                        settings: None,
                     }),
                 );
             })
@@ -2210,7 +2211,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
     // Row for row as in the design (spinner frames as drawn at this instant).
     let expected = [
         " Agents · 4                  Tasks · Loading… Tab ",
-        " Attention · 0                                    ",
+        " Attention · 0                           Settings ",
         " ──────────────────────────────────────────────── ",
         " corral/ ──────────────────────────────────── (1) ",
         " ┃ ○ main                ✳ claude idle      ⦿ 11s ",
@@ -2537,4 +2538,43 @@ fn attached_reads_in_text_color_but_offers_no_second_attach_click() {
     let (x, y) = find(&buffer, "↵ Attach").unwrap();
     assert_eq!(buffer[(x, y)].fg, t::AGENTS_ACCENT);
     assert_eq!(enter(&hits), 1);
+}
+
+#[test]
+fn settings_entry_sits_right_of_attention_and_wraps_below_it_when_narrow() {
+    use crossterm::event::KeyCode;
+    let (mut a, mut q) = fixture();
+    let (buffer, hits) = render(160, 30, &mut a, &mut q, Focus::Agents);
+    let lines = agents_lines(&buffer);
+    assert!(
+        lines[2].trim_matches('┃').trim_end().ends_with("Settings")
+            && lines[2].contains("Attention · 0"),
+        "{lines:#?}"
+    );
+    assert!(lines[3].contains('─'), "{lines:#?}");
+    let entry = hits
+        .buttons
+        .iter()
+        .find(|h| h.key.code == KeyCode::Char(','))
+        .expect("Settings entry is clickable");
+    assert_eq!((entry.area.y, entry.area.width), (2, 8));
+    assert_eq!(entry.area.right(), 52 - 2);
+
+    // A narrow column puts Settings on its own row; the list moves down one row.
+    let (buffer, hits) = render(80, 30, &mut a, &mut q, Focus::Agents);
+    let lines = agents_lines(&buffer);
+    assert!(!lines[2].contains("Settings"), "{lines:#?}");
+    assert!(lines[2].contains("Attention"), "{lines:#?}");
+    assert!(
+        lines[3].trim_matches('┃').trim_end().ends_with("Settings"),
+        "{lines:#?}"
+    );
+    assert!(lines[4].contains('─'), "{lines:#?}");
+    let entry = hits
+        .buttons
+        .iter()
+        .find(|h| h.key.code == KeyCode::Char(','))
+        .unwrap();
+    assert_eq!(entry.area.y, 3);
+    assert!(hits.agents.iter().all(|(row, _)| *row >= 5));
 }
