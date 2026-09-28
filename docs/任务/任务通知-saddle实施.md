@@ -39,3 +39,34 @@ AGENTS.md、docs/DESIGN.md 第 47／48 节、`docs/任务/任务通知-接口与
 验证预算：先以直接相关自动检查复现目标行为，再最小实现，运行定向检查及 `cargo test --all-targets`、`cargo clippy --all-targets -- -D warnings` 各一次，`git diff --check`；不自行增加录屏／覆盖矩阵／故障注入。标准检查使用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，测试使用假 Drover／corral、临时 HOME／XDG／runtime 和合成任务。联调用指定 Drover worktree 的固定提交，禁止连接真实 socket 或操作真实队列。
 
 只在本任务分支提交，完成记录写变更、验证、取舍、未解决事项，回复最终 SHA。联调通过前不合并、不推送、不安装发布、不清 worktree；等待 saddle/main 审查并组织集成。命令前台跑完，最终回复最后一行 DONE。
+
+## 完成记录
+
+实现者：saddle/dev-task-notifications-1（Claude Code），分支 `task-notifications`。
+
+### 改动
+
+- `src/drover.rs`：`Task` 增加 `t0`（保留 JSON 值）、`start`、`main`；新增 `Preference` 与 `Client::notifications`，按公开契约解析 `drover notifications status|on|off --json`：成功须退出 0、`ok:true`、`scope:"user"`、布尔 `system_enabled`、非负整数 `revision`。四个已知错误码译成英文说明并附原 message；未知码照样按失败处理；非 JSON 输出报「this drover does not support task notifications」；类型、schema 不符或退出码与 ok 矛盾一律不当成功。新增串行 `ChannelWorker`（周期 status，以及 Settings 打开时读、Save 时 on/off）。
+- `src/notify.rs`（新）：六元组身份（t0 转 binary64 大端十六进制、±0 归 +0，字段缺失／为空／非数字时跳过提示）；`Notifier` 负责基线、去重、合并与 5 秒计时；右下角提示绘制。
+- `src/settings.rs`：General 增加 Task notifications（System／In saddle）及其说明行；草稿、Default、两段保存（先 config 后 Drover）、部分成功提示、等待期间锁定。
+- `src/app.rs`：接入 worker 与 notifier；Survey 快照同时交给 Attention 和 notifier；提示的鼠标拦截与点击（单项打开 Tasks 定位，多项打开 Attention，× 关闭）。`src/attention.rs` 仅把 `Target::task`、`project_name` 改为 crate 可见。
+- `Cargo.toml`：serde_json 开启 `float_roundtrip`（不新增包）。
+- 文档：README 中英文补 Task notifications 说明；DESIGN 第 48 节追加实施取舍。
+
+### 验证
+
+- RED：`tests/notify.rs`、`tests/settings.rs` 新测试先因缺少对应功能无法编译（Task 无 t0/start/main、Settings 无渠道接口），实现后通过。`tests/drover.rs` 新增契约解析与 list 身份字段两条。
+- `tests/workflow.rs` 新增 PTY 端到端测试（假 drover/corral、临时 HOME/状态/运行目录）：基线不补弹，新待放行右下角弹出；弹出期间按键仍进 agent、焦点不变；滚轮／移动／× 不传给终端；刷新不重复；点击打开 Tasks 定位；两项合并后点击打开 Attention；Settings 切 System 只调用 `notifications on`，之后不再弹。已有四处「队列调用全为 list」断言放宽为允许只读的 `notifications status --json`。
+- 真实联调（`#[ignore]` 测试 `real_drover_notification_channel_prompts_dedups_switches_and_opens_tasks`，`SADDLE_DROVER_NOTIFY_BIN` 指向 Drover worktree `bin/drover`，HEAD `2b20205`、工作区干净）：隔离 HOME，包装脚本另把 XDG_*、TMPDIR 指到沙箱，`DROVER_CORRAL_BIN` 指向会记录调用的拒绝脚本（未被调用）；两个合成 git 项目。流程：status 为 true/0 → Settings 切 In saddle → false/1 → 合成 T1 待放行后弹一次 → 点击打开 Tasks → 两轮刷新不重复 → 切 System → true/2 → 另一项目待放行不弹、Attention · 2。通过。未运行 Drover loop、未调用 OS 发送器、未连真实 socket 或队列，未使用 PATH 中的 drover。
+- `cargo clippy --all-targets -- -D warnings` 通过；`cargo fmt`、`git diff --check` 干净。
+- `cargo test --all-targets`：除 workflow 外全部通过；workflow 每次有 1–2 个与本功能无关的 PTY 测试超时，且每次挂的不同（t20_r1_*、terminal_picker_*、native_mouse_*、closing_a_start_target_* 等，单独重跑通过，所用假 drover 不支持通知命令、不会弹提示）。在基线 `3cb5cb3` 的临时 worktree 对比，同样出现（9 次中 2 次失败），按用户指示记为基线即不稳定，不再加跑。本分支 10 次中 6 次有此类超时，样本少、未交替对照，是否因每个实例多一个周期 status 子进程而略增负载未定论。
+
+### 取舍
+
+见 DESIGN 第 48 节「实施取舍」。要点：去重只在内存（启动即立基线，持久记录不会多挡任何重复）；状态未知或 System 时不提示也不立基线；等待 Drover 保存时 Settings 锁定；其他弹窗占用输入时提示只响应 ×。
+
+### 未做／需主控决定
+
+- 未做持久去重文件；如主控认为需要，请说明它应额外挡住的场景。
+- workflow 超时的不稳定是否需要另开任务处理（基线已存在）。
+- 联合发布时需让旧常驻 Drover 引擎加载新版，本任务未安装、未启停任何服务。

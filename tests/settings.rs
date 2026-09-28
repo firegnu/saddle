@@ -295,3 +295,125 @@ fn a_dangling_config_link_is_kept_and_saving_reports_failure() {
     assert!(!missing.exists());
     assert_eq!(settings.value("left_width"), Some("61"));
 }
+
+/// The General page's Task notifications row, three fields down.
+fn to_notifications(settings: &mut Settings) {
+    for _ in 0..3 {
+        press(settings, KeyCode::Down);
+    }
+}
+fn screen(settings: &mut Settings) -> String {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut terminal = Terminal::new(TestBackend::new(90, 24)).unwrap();
+    terminal
+        .draw(|frame| {
+            settings.draw(&saddle::theme::Theme::default(), frame);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    (0..24)
+        .map(|y| {
+            (0..90)
+                .map(|x| buffer[(x, y)].symbol().to_owned())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn task_notifications_is_a_draft_choice_saved_only_through_drover() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, SAMPLE).unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    to_notifications(&mut settings);
+    // Until Drover answers there is nothing to choose from.
+    assert!(screen(&mut settings).contains("Reading Drover"));
+    press(&mut settings, KeyCode::Char(' '));
+    assert_eq!(settings.value("notifications"), Some(""));
+    settings.channel_status(Ok(true));
+    assert_eq!(settings.value("notifications"), Some("System"));
+    let shown = screen(&mut settings);
+    assert!(shown.contains("Task notifications"), "{shown}");
+    assert!(
+        shown.contains("System") && shown.contains("In saddle"),
+        "{shown}"
+    );
+    assert!(shown.contains("across projects"), "{shown}");
+    press(&mut settings, KeyCode::Char(' '));
+    assert_eq!(settings.value("notifications"), Some("In saddle"));
+    // Cancel sends nothing and writes nothing.
+    assert!(matches!(
+        press(&mut settings, KeyCode::Esc),
+        Outcome::Cancel
+    ));
+    let mut settings = Settings::open(path.clone(), true);
+    settings.channel_status(Ok(true));
+    to_notifications(&mut settings);
+    press(&mut settings, KeyCode::Right);
+    let Outcome::SetChannel(None, false) = ctrl(&mut settings, 's') else {
+        panic!("expected a drover off request: {}", settings.message());
+    };
+    // The config file is not the place for this setting.
+    assert_eq!(read(&path), SAMPLE);
+    // While Drover saves, Settings waits and cannot be cancelled into a false state.
+    assert!(matches!(press(&mut settings, KeyCode::Esc), Outcome::Stay));
+    let Outcome::Done(message) = settings.channel_saved(Ok(false)) else {
+        panic!("not closed: {}", settings.message());
+    };
+    assert!(message.contains("In saddle"), "{message}");
+    assert!(message.contains("next notification check"), "{message}");
+}
+
+#[test]
+fn a_failed_drover_save_keeps_its_draft_and_reports_what_was_saved() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, SAMPLE).unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    settings.channel_status(Ok(false));
+    replace(&mut settings, "60");
+    to_notifications(&mut settings);
+    assert_eq!(settings.value("notifications"), Some("In saddle"));
+    press(&mut settings, KeyCode::Left);
+    // The config part is written first, then Drover is asked.
+    let Outcome::SetChannel(Some(config), true) = ctrl(&mut settings, 's') else {
+        panic!("expected config and drover on: {}", settings.message());
+    };
+    assert_eq!(config.left_width, 60);
+    let written = read(&path);
+    assert!(written.contains("left_width = 60"), "{written}");
+    assert!(matches!(
+        settings.channel_saved(Err("preferences_write_failed: disk full".into())),
+        Outcome::Stay
+    ));
+    let message = settings.message().to_owned();
+    assert!(message.contains("Config saved"), "{message}");
+    assert!(
+        message.contains("Task notifications not saved") && message.contains("disk full"),
+        "{message}"
+    );
+    assert_eq!(settings.value("notifications"), Some("System"));
+    // Saving again retries only Drover; the config is already saved.
+    let Outcome::SetChannel(None, true) = ctrl(&mut settings, 's') else {
+        panic!("expected a drover retry: {}", settings.message());
+    };
+    assert_eq!(read(&path), written);
+}
+
+#[test]
+fn an_unreadable_or_unsupported_preference_is_shown_and_not_editable() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut settings = Settings::open(path.clone(), true);
+    settings.channel_status(Err("this drover does not support task notifications".into()));
+    to_notifications(&mut settings);
+    press(&mut settings, KeyCode::Char(' '));
+    ctrl(&mut settings, 'd');
+    assert_eq!(settings.value("notifications"), Some(""));
+    let shown = screen(&mut settings);
+    assert!(shown.contains("Unavailable"), "{shown}");
+    assert!(shown.contains("does not support"), "{shown}");
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Cancel));
+}

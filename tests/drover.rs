@@ -502,3 +502,116 @@ cat response
     drop(worker);
     assert!(started.elapsed() < Duration::from_secs(2));
 }
+
+#[test]
+fn notification_preference_uses_the_public_json_contract_and_reports_failures() {
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    // Answers from the file named after the action; logs every call and its cwd.
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+root=$(dirname "$0")
+printf '%s %s %s\n' "$1" "$2" "$3" >> "$root/calls"
+[ "$1" = notifications ] && [ "$3" = --json ] || exit 99
+cat "$root/answer"
+exit $(cat "$root/code")
+"#,
+    );
+    let client = Client {
+        program,
+        cwd: temp.path().join("not-a-project"),
+    };
+    let answer = |text: &str, code: i32| {
+        std::fs::write(temp.path().join("answer"), text).unwrap();
+        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
+    };
+    let cancel = AtomicBool::new(false);
+    answer(
+        r#"{"schema_version":1,"ok":true,"scope":"user","system_enabled":false,"revision":3,"application":"next_notification_check"}"#,
+        0,
+    );
+    let preference = client.notifications(None, &cancel).unwrap();
+    assert!(!preference.system_enabled);
+    assert_eq!(preference.revision, 3);
+    client.notifications(Some(true), &cancel).unwrap();
+    client.notifications(Some(false), &cancel).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("calls")).unwrap(),
+        "notifications status --json\nnotifications on --json\nnotifications off --json\n"
+    );
+    let error = |client: &Client| {
+        format!(
+            "{:#}",
+            client.notifications(Some(false), &cancel).unwrap_err()
+        )
+    };
+    // Documented codes are named; the message is kept for people.
+    answer(
+        r#"{"schema_version":1,"ok":false,"error":{"code":"preferences_invalid","message":"bad file"}}"#,
+        2,
+    );
+    let text = error(&client);
+    assert!(
+        text.contains("preferences_invalid") && text.contains("bad file"),
+        "{text}"
+    );
+    // Unknown codes still fail, never as success.
+    answer(
+        r#"{"schema_version":1,"ok":false,"error":{"code":"brand_new","message":"later"}}"#,
+        2,
+    );
+    let text = error(&client);
+    assert!(
+        text.contains("brand_new") && text.contains("later"),
+        "{text}"
+    );
+    // An older drover without the command answers in text.
+    answer("usage: drover add|list|next ...", 2);
+    let text = error(&client);
+    assert!(
+        text.contains("does not support task notifications"),
+        "{text}"
+    );
+    // A success object with a failing exit, or wrong field types, is not trusted.
+    answer(
+        r#"{"schema_version":1,"ok":true,"scope":"user","system_enabled":false,"revision":3,"application":"next_notification_check"}"#,
+        2,
+    );
+    assert!(client.notifications(None, &cancel).is_err());
+    answer(
+        r#"{"schema_version":1,"ok":true,"scope":"user","system_enabled":"no","revision":3,"application":"next_notification_check"}"#,
+        0,
+    );
+    assert!(client.notifications(None, &cancel).is_err());
+    answer(
+        r#"{"schema_version":2,"ok":true,"scope":"user","system_enabled":false,"revision":3}"#,
+        0,
+    );
+    assert!(client.notifications(None, &cancel).is_err());
+}
+
+#[test]
+fn list_json_keeps_the_awaiting_start_identity_fields() {
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+printf '%s\n' '{"mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":{"id":"T5","title":"Done","body":"","key":"Done","start":"aaaa","main":"bbbb","t0":100.0,"status":"done","location":"awaiting","end":"cccc","t1":160},"pending":[],"history":[{"id":"T4","title":"Old","body":"","t0":true,"status":"done"}]}'
+"#,
+    );
+    let snapshot = Client {
+        program,
+        cwd: temp.path().into(),
+    }
+    .snapshot()
+    .unwrap();
+    let awaiting = snapshot.awaiting.unwrap();
+    assert_eq!(awaiting.start.as_deref(), Some("aaaa"));
+    assert_eq!(awaiting.main.as_deref(), Some("bbbb"));
+    assert_eq!(awaiting.t0, Some(serde_json::json!(100.0)));
+    // A malformed start time elsewhere does not break the snapshot.
+    assert_eq!(snapshot.history[0].t0, Some(serde_json::json!(true)));
+}

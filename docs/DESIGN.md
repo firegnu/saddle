@@ -898,3 +898,12 @@ Task notifications    [ System | In saddle ]
 ```
 
 跨项目接口、生效／去重边界和集成顺序见 `docs/任务/任务通知-接口与集成约定.md`。Drover 主控负责该仓库实现与审查；saddle/main 负责消费方和集成，两边联调通过前不分别合并发布。实施任务分别见 `任务通知-Drover实施委托.md`、`任务通知-saddle实施.md`。
+
+### 实施取舍（saddle，2026-09-28，待主控审查）
+
+- 偏好读写集中在一个串行 worker：每五个 `refresh_ms` 周期读一次 status，Settings 打开时立即读，Save 时 on/off。调用按顺序执行、结果按序到达，最新结果即最新偏好；Settings 只接收自己那次打开／保存的结果（按打开序号识别），关闭后才返回的保存结果写入状态栏。
+- Task notifications 放在 General 第四项，`[ System | In saddle ]`，下方一行说明作用范围或读取状态（Reading…／Unavailable: 原因）。未读到时不可选择；空格／←→／Enter／点击切换，Ctrl-D 恢复 Drover 默认 System。
+- 同次 Save 先写 config，再请求 Drover；config 失败则都不发送。Drover 失败时 config 已生效并如实提示「Config saved. Task notifications not saved: …」，保留渠道草稿，再次 Save 只重试 Drover。等待 Drover 期间 Settings 不接受输入（包括 Esc），避免关闭后状态不明。
+- 身份按 Drover 契约六元组；`list --json` 的 awaiting 任务读取 `t0/start/main`，t0 以 JSON 值保留，只有数字才可成身份，serde_json 开启 `float_roundtrip` 以保证十进制到 binary64 的转换精确。
+- 去重只存在内存：每次启动、偏好 revision 变化都先以各项目首次成功快照立基线，状态未知或 System 时既不提示也不立基线。持久记录在此规则下不会多挡住任何重复，故首版不落盘；已见集合同次运行只增不减。
+- 提示画在 Viewer 右下角，保持约 5 秒，显示期间新到的合并并重新计时。提示区域的全部鼠标动作都由提示消费；其他弹窗占用输入时只响应 ×。

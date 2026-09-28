@@ -7,6 +7,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// The periodic read-only check of Drover's notification preference, as fake drovers log it.
+const NOTIFICATION_STATUS: &str = r#"["notifications", "status", "--json"]"#;
+
 struct Harness {
     dir: tempfile::TempDir,
     child: Box<dyn Child + Send + Sync>,
@@ -1000,7 +1003,7 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
     assert!(
         h.log("queue-events")
             .lines()
-            .all(|line| line == "[\"list\", \"--json\"]")
+            .all(|line| line == "[\"list\", \"--json\"]" || line == NOTIFICATION_STATUS)
     );
 }
 
@@ -1180,7 +1183,9 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
     h.quit();
     let events = h.log("queue-events");
     assert!(
-        events.lines().all(|line| line == "[\"list\", \"--json\"]"),
+        events
+            .lines()
+            .all(|line| line == "[\"list\", \"--json\"]" || line == NOTIFICATION_STATUS),
         "{events}"
     );
     assert!(!h.log("events").contains("attach "));
@@ -1260,7 +1265,8 @@ else:
     let queue = h.log("queue-events");
     assert!(
         queue.lines().all(|l| l == r#"["list", "--json"]"#
-            || l == r#"["show", "T4", "--json", "--with-agent-status"]"#),
+            || l == r#"["show", "T4", "--json", "--with-agent-status"]"#
+            || l == NOTIFICATION_STATUS),
         "{queue}"
     );
     h.send(b"\x1b");
@@ -3335,7 +3341,9 @@ fn t22_attention_gathers_agents_and_every_project_and_opens_targets() {
     h.quit();
     let queue = h.log("queue-events");
     assert!(
-        queue.lines().all(|l| l == r#"["list", "--json"]"#),
+        queue
+            .lines()
+            .all(|l| l == r#"["list", "--json"]"# || l == NOTIFICATION_STATUS),
         "{queue}"
     );
     let events = h.log("events");
@@ -3982,4 +3990,308 @@ sys.exit(7)
     );
     assert!(!h.log("events").contains("stop "));
     h.quit();
+}
+
+/// Two registered projects; each awaits the task in its `awaiting.json`, if any. The user's
+/// notification preference lives in `notify.json` beside the script, as Drover's public CLI
+/// reports and changes it.
+const NOTIFY_QUEUE: &str = r#"#!/usr/bin/env python3
+import json, sys
+from pathlib import Path
+root = Path(__file__).parent
+args = sys.argv[1:]
+with (root / 'queue-events').open('a') as f:
+    f.write(json.dumps([Path.cwd().name] + args) + '\n')
+prefs = root / 'notify.json'
+if len(args) == 3 and args[0] == 'notifications' and args[1] in ('status', 'on', 'off') and args[2] == '--json':
+    p = json.loads(prefs.read_text())
+    if args[1] != 'status' and p['system_enabled'] != (args[1] == 'on'):
+        p = dict(system_enabled=args[1] == 'on', revision=p['revision'] + 1)
+        prefs.write_text(json.dumps(p))
+    print(json.dumps(dict(schema_version=1, ok=True, scope='user', application='next_notification_check', **p)))
+    sys.exit(0)
+if args == ['list', '--json']:
+    task = Path.cwd() / 'awaiting.json'
+    awaiting = json.loads(task.read_text()) if task.exists() else None
+    print(json.dumps(dict(mode=dict(loop=False, gate=True), paused=False, current=None,
+                          awaiting=awaiting, pending=[], history=[])))
+    sys.exit(0)
+print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
+sys.exit(99)
+"#;
+
+impl Harness {
+    /// Makes `project` await a new run of `id`, started at `t0`.
+    fn awaiting(&self, project: &str, id: &str, t0: f64) {
+        std::fs::write(
+            self.dir.path().join(project).join("awaiting.json"),
+            serde_json::json!({
+                "id": id, "title": format!("Ship {id}"), "body": "", "key": "", "status": "done",
+                "location": "awaiting", "start": format!("s-{id}-{t0}"), "main": "m", "t0": t0,
+                "end": "e", "t1": t0 + 1.0,
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+    /// Waits for two more cross-project rounds, so every answer so far has been used.
+    fn rounds(&mut self) {
+        let reads = |h: &Self| {
+            h.log("queue-events")
+                .matches(r#"["project-two", "list", "--json"]"#)
+                .count()
+        };
+        let start = reads(self);
+        self.until(|h| reads(h) >= start + 2);
+    }
+    /// The screen position of `text` on the row showing `row_text`.
+    fn on_row(&self, row_text: &str, text: &str) -> (u16, u16) {
+        let (_, row) = self.locate(row_text, 0).unwrap();
+        let screen = self.screen.screen();
+        let col = (0..screen.size().1)
+            .find(|&c| screen.cell(row, c).unwrap().contents() == text)
+            .unwrap();
+        (col, row)
+    }
+}
+
+#[test]
+fn in_saddle_prompts_new_awaiting_tasks_without_taking_input_and_system_stays_quiet() {
+    let mut h = Harness::start_prepared(NOTIFY_QUEUE, true, "", 16384, |dir| {
+        std::fs::write(
+            dir.join("notify.json"),
+            r#"{"system_enabled": false, "revision": 1}"#,
+        )
+        .unwrap();
+    });
+    // project-one already awaits T3 at start: that is the baseline, never prompted.
+    h.awaiting("project-one", "T3", 100.0);
+    h.see("Synthetic title");
+    h.send(b"skk");
+    h.see("┃ ○ a ");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.see("Input ▸ p/a");
+    h.rounds();
+    h.see("Attention · 1");
+    assert!(
+        !h.contents().contains("ready for review"),
+        "{}",
+        h.contents()
+    );
+
+    // A new awaiting run prompts at the bottom right; typing still reaches the agent.
+    h.awaiting("project-two", "T5", 200.0);
+    h.see("project-two · T5 ready for review");
+    let (col, row) = h.locate("project-two · T5 ready for review", 0).unwrap();
+    assert!(row > 30 && col > 70, "at {col},{row}:\n{}", h.contents());
+    h.send(b"Q");
+    h.event("input p/a 51");
+    assert!(h.contents().contains("Input ▸ p/a"));
+    // Mouse actions on the prompt stay with it; the close mark only closes it.
+    let (x, y) = (col + 3, row + 1);
+    h.send(format!("\x1b[<64;{x};{y}M\x1b[<35;{x};{y}M").as_bytes());
+    let (cx, cy) = h.on_row("project-two · T5 ready for review", "×");
+    h.send(
+        format!(
+            "\x1b[<0;{};{}M\x1b[<0;{};{}m",
+            cx + 1,
+            cy + 1,
+            cx + 1,
+            cy + 1
+        )
+        .as_bytes(),
+    );
+    h.until(|h| !h.contents().contains("ready for review"));
+    h.send(b"W");
+    h.event("input p/a 57");
+    assert!(
+        !h.log("events").contains("1b5b3c"),
+        "mouse reached the agent: {}",
+        h.log("events")
+    );
+    // Refreshes do not prompt the same run again; releasing is not done by closing.
+    h.rounds();
+    assert!(!h.contents().contains("ready for review"));
+    h.see("Attention · 2");
+
+    // Clicking a prompt opens its task in its project's Tasks.
+    h.awaiting("project-one", "T6", 300.0);
+    h.see("project-one · T6 ready for review");
+    h.click("project-one · T6 ready for review");
+    h.see("Input ▸ Tasks");
+    h.see("Ship T6");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+
+    // Several at once are one prompt that opens Attention.
+    h.awaiting("project-one", "T7", 400.0);
+    h.awaiting("project-two", "T8", 500.0);
+    h.see("2 tasks ready for review");
+    h.click("2 tasks ready for review");
+    h.see("Input ▸ Attention");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+
+    // Settings shows Drover's choice and saves a new one only through Drover.
+    h.send(b",");
+    h.see("Drover tasks across projects");
+    h.send(b"\x1b[B\x1b[B\x1b[B ");
+    h.see("•Task notifications");
+    h.send(b"\x13");
+    h.see("Task notifications: System");
+    assert!(
+        h.log("queue-events")
+            .contains(r#""notifications", "on", "--json"]"#),
+        "{}",
+        h.log("queue-events")
+    );
+    // System: Drover notifies; saddle does not prompt.
+    h.rounds();
+    h.awaiting("project-two", "T9", 600.0);
+    h.rounds();
+    h.rounds();
+    assert!(
+        !h.contents().contains("ready for review"),
+        "{}",
+        h.contents()
+    );
+    h.quit();
+    let queue = h.log("queue-events");
+    assert!(
+        queue.lines().all(|l| l.contains(r#""list", "--json"]"#)
+            || l.contains(r#""notifications", "status", "--json"]"#)
+            || l.contains(r#""notifications", "on", "--json"]"#)),
+        "{queue}"
+    );
+    assert!(!h.log("events").contains("stop "), "{}", h.log("events"));
+}
+
+#[test]
+#[ignore = "requires the delivered drover CLI in SADDLE_DROVER_NOTIFY_BIN; isolated HOME/XDG and synthetic projects only"]
+fn real_drover_notification_channel_prompts_dedups_switches_and_opens_tasks() {
+    let drover = std::env::var("SADDLE_DROVER_NOTIFY_BIN").expect("set SADDLE_DROVER_NOTIFY_BIN");
+    // Logs like NOTIFY_QUEUE, then runs the real CLI with every XDG and runtime path inside
+    // the sandbox and a corral that refuses everything.
+    let wrapper = format!(
+        r#"#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+root = Path(__file__).parent
+with (root / 'queue-events').open('a') as f:
+    f.write(json.dumps([Path.cwd().name] + sys.argv[1:]) + '\n')
+env = dict(os.environ)
+for name in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
+    env[name] = str(root / 'xdg' / name)
+    os.makedirs(env[name], exist_ok=True)
+env['DROVER_CORRAL_BIN'] = str(root / 'no-corral')
+os.execve({drover:?}, [{drover:?}] + sys.argv[1:], env)
+"#
+    );
+    let mut h = Harness::start_prepared(&wrapper, true, "", 16384, |dir| {
+        common::script(
+            dir,
+            "no-corral",
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/no-corral-called\"\nexit 99\n",
+        );
+        for project in ["project-one", "project-two"] {
+            let repo = dir.join(project);
+            let data = dir.join(format!("{project}-data"));
+            std::fs::create_dir_all(&data).unwrap();
+            std::fs::write(data.join("tasks.state"), "").unwrap();
+            assert!(
+                std::process::Command::new("git")
+                    .args(["init", "-q", "-b", "main"])
+                    .current_dir(&repo)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            std::fs::write(
+                repo.join(".drover.conf"),
+                format!(
+                    "HANDOFF_DIR={}\nTASK_GATE=1\nMAIN_AGENT=fake/main\n",
+                    data.display()
+                ),
+            )
+            .unwrap();
+        }
+    });
+    let status = |h: &Harness| {
+        let output = std::process::Command::new(h.dir.path().join("queue"))
+            .args(["notifications", "status", "--json"])
+            .env("HOME", h.dir.path().join("home"))
+            .current_dir(h.dir.path())
+            .output()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        (value["system_enabled"].clone(), value["revision"].clone())
+    };
+    // A synthetic run of T1 that is done and awaits release.
+    let finish = |h: &Harness, project: &str, t: f64| {
+        let events = [
+            serde_json::json!({"ev": "start", "id": "T1", "title": format!("Ship {project}"), "body": "b",
+                "sha": "a".repeat(40), "main": "b".repeat(40), "t": t}),
+            serde_json::json!({"ev": "done", "id": "T1", "sha": "c".repeat(40), "t": t + 60.0, "gate": true}),
+        ];
+        let text: String = events.iter().map(|e| format!("{e}\n")).collect();
+        std::fs::write(
+            h.dir.path().join(format!("{project}-data/tasks.state")),
+            text,
+        )
+        .unwrap();
+    };
+    h.see("Synthetic title");
+    h.send(b"skk");
+    h.see("┃ ○ a ");
+    assert_eq!(status(&h), (true.into(), 0.into()));
+    // Settings reads System (Drover's default) and switches to In saddle through Drover.
+    h.send(b",");
+    h.see("Drover tasks across projects");
+    h.send(b"\x1b[B\x1b[B\x1b[B \x13");
+    h.see("Task notifications: In saddle");
+    assert_eq!(status(&h), (false.into(), 1.into()));
+    h.rounds();
+    h.rounds();
+    // A new awaiting run prompts once and opens its task.
+    finish(&h, "project-one", 1790000000.25);
+    h.see("project-one · T1 ready for review");
+    h.click("project-one · T1 ready for review");
+    h.see("Input ▸ Tasks");
+    h.see("Ship project-one");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.rounds();
+    h.rounds();
+    assert!(
+        !h.contents().contains("ready for review"),
+        "{}",
+        h.contents()
+    );
+    // Back to System: Drover notifies, saddle stays quiet; Attention keeps both tasks.
+    h.send(b",");
+    h.see("Drover tasks across projects");
+    h.send(b"\x1b[B\x1b[B\x1b[B \x13");
+    h.see("Task notifications: System");
+    assert_eq!(status(&h), (true.into(), 2.into()));
+    h.rounds();
+    finish(&h, "project-two", 1790000100.5);
+    h.see("Attention · 2");
+    h.rounds();
+    h.rounds();
+    assert!(
+        !h.contents().contains("ready for review"),
+        "{}",
+        h.contents()
+    );
+    h.quit();
+    let queue = h.log("queue-events");
+    assert!(
+        queue.lines().all(|l| l.contains(r#""list", "--json"]"#)
+            || l.contains(r#""notifications", "status", "--json"]"#)
+            || l.contains(r#""notifications", "on", "--json"]"#)
+            || l.contains(r#""notifications", "off", "--json"]"#)),
+        "{queue}"
+    );
+    assert!(!h.dir.path().join("no-corral-called").exists());
 }

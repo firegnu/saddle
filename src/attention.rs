@@ -37,7 +37,7 @@ pub enum Target {
     Source(String),
 }
 impl Target {
-    fn task(project: &str, task: &Task) -> Self {
+    pub(crate) fn task(project: &str, task: &Task) -> Self {
         Self::Task {
             project: project.into(),
             id: task.id.clone(),
@@ -240,7 +240,7 @@ fn sep(text: &str) -> String {
         format!(" · {text}")
     }
 }
-fn project_name(path: &str) -> &str {
+pub(crate) fn project_name(path: &str) -> &str {
     let path = path.trim_end_matches('/');
     path.rsplit('/').next().unwrap_or(path)
 }
