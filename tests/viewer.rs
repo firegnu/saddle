@@ -45,3 +45,40 @@ while True: time.sleep(1)
     assert_eq!(viewer.showing.as_deref(), Some("p/a"));
     assert_eq!(std::fs::read_to_string(events).unwrap(), "p/a\np/a\n");
 }
+
+#[test]
+fn t25_closed_during_identity_check_never_publishes_a_session() {
+    use saddle::viewer::AgentMetadata;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(temp.path(), "corral", include_str!("fixtures/corral.py"));
+    std::fs::write(temp.path().join("agents.json"), r#"{"p/a":"idle"}"#).unwrap();
+    std::fs::write(temp.path().join("hold-status"), "").unwrap();
+    let mut viewer = Viewer::new(program);
+    viewer
+        .select_agent(
+            "p/a".into(),
+            AgentMetadata {
+                cwd: Some(temp.path().display().to_string()),
+                instance: Some("abcdef123".into()),
+            },
+        )
+        .unwrap();
+    let size = Size { rows: 10, cols: 40 };
+    viewer.tick(size).unwrap();
+    let events = || std::fs::read_to_string(temp.path().join("events")).unwrap_or_default();
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while !events().contains("status p/a") {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(10));
+    }
+    viewer.close().unwrap();
+    std::fs::remove_file(temp.path().join("hold-status")).unwrap();
+    while !viewer.closed() {
+        assert!(Instant::now() < deadline, "{}", events());
+        viewer.tick(size).unwrap();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(viewer.session.is_none());
+    assert!(viewer.showing.is_none());
+    assert!(!events().contains("stop "));
+}

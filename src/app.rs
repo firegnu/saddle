@@ -135,7 +135,13 @@ pub fn run(mut config: Config) -> Result<()> {
     let _guard = TerminalGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
-    app.run(&mut terminal)
+    let result = app.run(&mut terminal);
+    drop(terminal);
+    drop(_guard);
+    if !app.layout_store.notice.is_empty() {
+        eprintln!("{}", app.layout_store.notice);
+    }
+    result
 }
 struct App {
     control: crate::control::Server,
@@ -149,6 +155,7 @@ struct App {
     git: git::Poller,
     actions: Actions,
     viewer: Terminals,
+    layout_store: crate::layout_state::Store,
     queue: queue::Panel,
     queue_worker: drover::Worker,
     pending_load: Option<drover::PendingLoad>,
@@ -220,15 +227,48 @@ impl App {
             expand_home("~/.drover/projects"),
             Duration::from_millis(config.refresh_ms.saturating_mul(5)),
         );
+        let (layout_store, saved) =
+            crate::layout_state::Store::open(crate::layout_state::default_path());
+        let mut viewer = match saved {
+            Some(layout) => Terminals::restore(client.program.clone(), layout)?,
+            None => Terminals::new(client.program.clone()),
+        };
+        let mut actions = Actions::new(client.clone());
+        let reconnect: Vec<_> = viewer
+            .tabs
+            .iter()
+            .flat_map(|t| &t.panes)
+            .filter_map(|p| match &p.viewer.remembered {
+                crate::layout_state::Content::Agent {
+                    name,
+                    cwd,
+                    instance: Some(instance),
+                } => Some((p.id, name.clone(), cwd.clone(), instance.clone())),
+                _ => None,
+            })
+            .collect();
+        let mut connecting = std::collections::HashSet::new();
+        for (id, name, cwd, instance) in reconnect {
+            if !connecting.insert(name.clone()) {
+                continue;
+            }
+            let ticket = viewer.reserve_at(id, Place::Current, Some(name.clone()));
+            viewer.get_mut(id).unwrap().pending_agent = crate::viewer::AgentMetadata {
+                cwd,
+                instance: Some(instance),
+            };
+            actions.start(Action::Attach(name, ticket, None));
+        }
         Ok(Self {
+            layout_store,
             control: crate::control::Server::start()?,
             records: Vec::new(),
             closing: None,
             quit: false,
             poller: Poller::start(client.clone(), Duration::from_millis(config.refresh_ms)),
             git: git::Poller::start("git".into(), Duration::from_secs(5)),
-            actions: Actions::new(client.clone()),
-            viewer: Terminals::new(client.program),
+            actions,
+            viewer,
             config,
             panel: Panel {
                 follow: true,
@@ -267,6 +307,7 @@ impl App {
             let size = terminal.size()?;
             let panes = Panes::new(Rect::new(0, 0, size.width, size.height), &self.config);
             self.tick(panes)?;
+            self.layout_store.save(&self.viewer, false);
             if self.quit {
                 break;
             }
@@ -319,11 +360,19 @@ impl App {
                     }),
                 );
                 self.draw_closing(frame);
+                if !self.layout_store.notice.is_empty() {
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new(self.layout_store.notice.as_str())
+                            .style(self.config.colors.base()),
+                        panes.status,
+                    );
+                }
             })?;
             if event::poll(Duration::from_millis(30))? && self.event(event::read()?, panes)? {
                 break;
             }
         }
+        self.layout_store.save(&self.viewer, true);
         Ok(())
     }
     fn tick(&mut self, panes: Panes) -> Result<()> {
@@ -333,8 +382,13 @@ impl App {
                 Ok(agents) => {
                     self.board.agents_loaded = true;
                     self.board.corral_error = None;
-                    self.viewer
-                        .disappeared(&agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>())?;
+                    self.viewer.disappeared(
+                        &agents
+                            .iter()
+                            .filter(|a| a.state.as_deref() != Some("exited"))
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>(),
+                    )?;
                     self.panel.absorb(
                         agents,
                         self.viewer.active_pane().viewer.showing.as_deref(),
@@ -371,6 +425,10 @@ impl App {
                         .get(ticket.pane)
                         .and_then(|p| p.pending_agent.instance.clone());
                     let checked = result.result.and_then(|status| {
+                        anyhow::ensure!(
+                            status["state"].as_str() != Some("exited"),
+                            "{name} has exited"
+                        );
                         anyhow::ensure!(
                             status["attached"].as_u64().unwrap_or(0) == 0,
                             "{name} is attached elsewhere; Ctrl-] there first"
@@ -737,6 +795,51 @@ impl App {
                     selected: 0,
                     pressed: None,
                 });
+            }
+            Control::CreateAgent(id) => {
+                self.viewer.focus(id);
+                let pane = self.viewer.get(id).unwrap();
+                if !pane.placeholder() {
+                    return Ok(());
+                }
+                if let Some(name) = pane.viewer.remembered.name() {
+                    let mut form = crate::launch::Form::for_previous(
+                        name,
+                        pane.viewer
+                            .remembered
+                            .cwd()
+                            .unwrap_or(&self.queue.project)
+                            .into(),
+                    );
+                    form.anchor = Some(pane.ticket());
+                    if self.new_agent.as_ref().is_some_and(|f| f.anchor.is_none()) {
+                        self.agent_draft = self.new_agent.take();
+                    }
+                    self.new_agent = Some(form);
+                }
+            }
+            Control::ChooseAgent(id) => {
+                if self.viewer.get(id).is_some_and(|p| p.placeholder()) {
+                    self.viewer.focus(id);
+                    self.placement = Some(Placement {
+                        pane: id,
+                        place: Some(Place::Current),
+                        selected: 0,
+                        pressed: None,
+                    });
+                }
+            }
+            Control::OpenTerminal(id) => {
+                if self.viewer.get(id).is_some_and(|p| p.placeholder())
+                    && let Err(error) = self.open_content(
+                        id,
+                        Place::Current,
+                        crate::control::Content::Shell { cwd: None },
+                        true,
+                    )
+                {
+                    self.panel.message = format!("{error:#}");
+                }
             }
             Control::Side(place) => {
                 if let Some(placement) = &mut self.placement {

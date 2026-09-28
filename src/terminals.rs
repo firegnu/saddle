@@ -54,6 +54,12 @@ pub struct Pane {
     pub pending_agent: AgentMetadata,
 }
 impl Pane {
+    pub fn placeholder(&self) -> bool {
+        !matches!(self.viewer.remembered, crate::layout_state::Content::Empty)
+            && !self.replacing()
+            && !self.viewer.shell_live()
+            && self.viewer.closed()
+    }
     pub fn input_session(&self) -> Option<&Session> {
         // A pending target may share a pane with a different, still-live session.
         if self.reserved || (self.viewer.showing.is_none() && self.viewer.shell.is_none()) {
@@ -83,20 +89,49 @@ impl Pane {
                 .cwd
                 .as_deref()
                 .or(self.viewer.target_metadata().cwd.as_deref())
+                .or(self.viewer.remembered.cwd())
         }
     }
 }
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-enum Node {
+pub(crate) enum Node {
     Leaf(u64),
     Split {
         vertical: bool,
+        ratio: u16,
         first: Box<Node>,
         second: Box<Node>,
     },
 }
 impl Node {
+    pub(crate) fn leaves(&self, out: &mut Vec<u64>) -> Result<()> {
+        match self {
+            Self::Leaf(id) => out.push(*id),
+            Self::Split {
+                ratio,
+                first,
+                second,
+                ..
+            } => {
+                anyhow::ensure!((1..100).contains(ratio), "invalid split ratio");
+                first.leaves(out)?;
+                second.leaves(out)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn replace(&mut self, target: u64, id: u64) {
+        match self {
+            Self::Leaf(old) if *old == target => *old = id,
+            Self::Split { first, second, .. } => {
+                first.replace(target, id);
+                second.replace(target, id);
+            }
+            _ => {}
+        }
+    }
     fn split(&mut self, target: u64, id: u64, place: Place) {
         match self {
             Self::Leaf(old) if *old == target => {
@@ -107,6 +142,7 @@ impl Node {
                 };
                 *self = Self::Split {
                     vertical: matches!(place, Place::Up | Place::Down),
+                    ratio: 50,
                     first: Box::new(Self::Leaf(a)),
                     second: Box::new(Self::Leaf(b)),
                 };
@@ -123,11 +159,13 @@ impl Node {
             Self::Leaf(old) => (old != id).then_some(Self::Leaf(old)),
             Self::Split {
                 vertical,
+                ratio,
                 first,
                 second,
             } => match (first.remove(id), second.remove(id)) {
                 (Some(first), Some(second)) => Some(Self::Split {
                     vertical,
+                    ratio,
                     first: Box::new(first),
                     second: Box::new(second),
                 }),
@@ -140,6 +178,7 @@ impl Node {
             Self::Leaf(id) => out.push((*id, area)),
             Self::Split {
                 vertical,
+                ratio,
                 first,
                 second,
             } => {
@@ -153,7 +192,8 @@ impl Node {
                         second.rects(area, active, out);
                     }
                 } else {
-                    let half = extent / 2;
+                    let half =
+                        ((u32::from(extent) * u32::from(*ratio) / 100) as u16).clamp(1, extent - 1);
                     let (a, b) = if *vertical {
                         (
                             Rect {
@@ -217,6 +257,72 @@ pub struct Terminals {
     retiring: Vec<Viewer>,
 }
 impl Terminals {
+    pub fn restore(corral: String, layout: crate::layout_state::Layout) -> Result<Self> {
+        layout.validate()?;
+        let mut this = Self::new(corral);
+        this.tabs.clear();
+        this.active = layout.active;
+        let next_id = layout
+            .tabs
+            .iter()
+            .flat_map(|t| std::iter::once(t.id).chain(t.panes.iter().map(|p| p.id)))
+            .max()
+            .unwrap();
+        for saved in layout.tabs {
+            let mut panes = Vec::new();
+            for saved_pane in saved.panes {
+                let mut pane = this.pane();
+                pane.id = saved_pane.id;
+                pane.viewer.remembered = saved_pane.content;
+                pane.viewer.note = match &pane.viewer.remembered {
+                    crate::layout_state::Content::Agent { .. } => {
+                        "Saved agent position. Create a new agent or choose an existing agent."
+                            .into()
+                    }
+                    crate::layout_state::Content::Shell { .. } => {
+                        "Open a new terminal here. Previous commands are not replayed.".into()
+                    }
+                    crate::layout_state::Content::Empty => pane.viewer.note.clone(),
+                };
+                panes.push(pane);
+            }
+            this.tabs.push(Tab {
+                id: saved.id,
+                active: saved.active,
+                panes,
+                tree: saved.tree,
+                zoomed: None,
+            });
+        }
+        this.next_id = next_id;
+        Ok(this)
+    }
+
+    pub fn snapshot(&self) -> crate::layout_state::Layout {
+        use crate::layout_state::{Layout, SavedPane, SavedTab};
+        Layout {
+            version: 1,
+            active: self.active,
+            tabs: self
+                .tabs
+                .iter()
+                .map(|tab| SavedTab {
+                    id: tab.id,
+                    active: tab.active,
+                    tree: tab.tree.clone(),
+                    panes: tab
+                        .panes
+                        .iter()
+                        .map(|pane| SavedPane {
+                            id: pane.id,
+                            content: pane.viewer.remembered.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+
     pub fn new(corral: String) -> Self {
         let mut this = Self {
             tabs: Vec::new(),
@@ -346,15 +452,28 @@ impl Terminals {
     }
     /// Shows `name` in a new tab or beside pane `anchor`. An agent already open elsewhere
     /// keeps its pane, so its session, output and pending request move with it; otherwise the
-    /// returned ticket reserves a new pane. `place` is `Tab` or a split direction.
+    /// returned ticket reserves a new pane. `Current` replaces a restored placeholder.
     pub fn place(&mut self, anchor: u64, place: Place, name: &str) -> Result<Option<Ticket>> {
         anyhow::ensure!(self.get(anchor).is_some(), "target pane disappeared");
-        anyhow::ensure!(place != Place::Current, "placement requires a tab or split");
         if let Some(id) = self.claim(name)? {
             // A pane cannot split itself; it stays where it is.
             if id != anchor || place == Place::Tab {
                 let pane = self.take(id).unwrap();
-                self.insert(anchor, place, pane);
+                if place == Place::Current {
+                    let tab = self
+                        .tabs
+                        .iter_mut()
+                        .find(|t| t.tree.contains(anchor))
+                        .unwrap();
+                    let slot = tab.panes.iter_mut().find(|p| p.id == anchor).unwrap();
+                    let mut old = std::mem::replace(slot, pane);
+                    old.viewer.close()?;
+                    self.retiring.push(old.viewer);
+                    tab.tree.replace(anchor, id);
+                    tab.activate(id);
+                } else {
+                    self.insert(anchor, place, pane);
+                }
             }
             self.focus(id);
             return Ok(None);
@@ -436,6 +555,11 @@ impl Terminals {
     pub fn expect(&mut self, ticket: Ticket, name: String) {
         if self.valid(ticket) {
             let pane = self.get_mut(ticket.pane).unwrap();
+            pane.viewer.remembered = crate::layout_state::Content::Agent {
+                name: name.clone(),
+                cwd: pane.pending_agent.cwd.clone(),
+                instance: pane.pending_agent.instance.clone(),
+            };
             pane.requested = Some(name);
             pane.starting = false;
         }
@@ -560,6 +684,9 @@ pub enum Control {
     Tab(u64),
     CloseTab(u64),
     ClosePane(u64),
+    CreateAgent(u64),
+    ChooseAgent(u64),
+    OpenTerminal(u64),
     /// Zoom a split pane over its tab's terminal area, or restore it.
     Zoom(u64),
     /// Look back through a pane's output; Copy and Live act on that history view.
@@ -643,11 +770,19 @@ pub fn draw(
                     .requested
                     .as_deref()
                     .or(pane.viewer.target())
-                    .unwrap_or(if pane.viewer.shell.is_some() {
-                        "Terminal"
-                    } else {
-                        "Empty"
-                    });
+                    .or(pane.viewer.remembered.name())
+                    .unwrap_or(
+                        if pane.viewer.shell.is_some()
+                            || matches!(
+                                pane.viewer.remembered,
+                                crate::layout_state::Content::Shell { .. }
+                            )
+                        {
+                            "Terminal"
+                        } else {
+                            "Empty"
+                        },
+                    );
                 crate::ui::clip(name, available.saturating_sub(4).min(20))
             })
             .collect();
@@ -732,7 +867,13 @@ pub fn draw(
                 shell.cwd
             )
         } else {
-            crate::ui::pane_title(pane.viewer.showing.as_deref(), agents)
+            crate::ui::pane_title(
+                pane.viewer
+                    .showing
+                    .as_deref()
+                    .or(pane.viewer.remembered.name()),
+                agents,
+            )
         };
         frame.render_widget(t.block(title.clone(), focused && active), rect);
         let inside = crate::ui::inner(rect);
@@ -764,11 +905,48 @@ pub fn draw(
                                 }
                             )
                         })
-                        .unwrap_or_else(|| pane.viewer.note.clone()),
+                        .unwrap_or_else(|| {
+                            if pane.placeholder() {
+                                format!(
+                                    "{}\n{}\n{}",
+                                    pane.viewer.remembered.name().unwrap_or("Saved terminal"),
+                                    pane.viewer.remembered.cwd().unwrap_or("Directory unknown"),
+                                    pane.viewer.note
+                                )
+                            } else {
+                                pane.viewer.note.clone()
+                            }
+                        }),
                 )
                 .wrap(Default::default()),
                 inside,
             );
+        }
+        if pane.placeholder() {
+            let choices = match pane.viewer.remembered {
+                crate::layout_state::Content::Agent { .. } => vec![
+                    ("Create new agent", Control::CreateAgent(id)),
+                    ("Choose existing agent", Control::ChooseAgent(id)),
+                ],
+                crate::layout_state::Content::Shell { .. } => {
+                    vec![("Open terminal", Control::OpenTerminal(id))]
+                }
+                crate::layout_state::Content::Empty => vec![],
+            };
+            // Reserve the last body rows for actions, even in a short split.
+            let first = inside
+                .bottom()
+                .saturating_sub(choices.len() as u16)
+                .max(inside.y);
+            for ((label, control), y) in choices.into_iter().zip(first..inside.bottom()) {
+                button(
+                    frame,
+                    Rect::new(inside.x, y, inside.width.min(label.len() as u16), 1),
+                    label,
+                    control,
+                    true,
+                );
+            }
         }
         let title_width = (unicode_width::UnicodeWidthStr::width(title.as_str()) as u16)
             .min(rect.width.saturating_sub(2));

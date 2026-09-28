@@ -78,9 +78,9 @@ impl App {
         let tabs: Vec<_> = self.viewer.tabs.iter().map(|tab| {
             let panes: Vec<_> = tab.panes.iter().map(|p| {
                 let shell = p.viewer.shell.as_ref();
-                let kind = if shell.is_some() { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() { "agent" } else { "empty" };
+                let kind = if shell.is_some() || matches!(p.viewer.remembered, crate::layout_state::Content::Shell { .. }) { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() || p.viewer.remembered.name().is_some() { "agent" } else { "empty" };
                 json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,
-                    "agent":p.requested().or(p.viewer.target()),"corral_instance":p.viewer.metadata.instance,
+                    "agent":p.requested().or(p.viewer.target()).or(p.viewer.remembered.name()),"corral_instance":p.viewer.metadata.instance,
                     "cwd":p.source_cwd().unwrap_or(&self.queue.project),"cwd_source":if p.source_cwd().is_some() {"pane"} else {"tasks_project"},
                     "state":if p.starting {"starting"} else if p.requested().is_some() {"accepted"} else {p.viewer.state()},
                     "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"exit_code":p.viewer.exit_code,"note":p.viewer.note})
@@ -445,6 +445,7 @@ impl App {
             }
         };
         if focus {
+            self.viewer.focus(ticket.pane);
             self.focus = Focus::Viewer;
         } else {
             self.viewer.restore_focus(&saved);

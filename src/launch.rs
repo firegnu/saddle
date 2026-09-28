@@ -41,6 +41,7 @@ pub struct Form {
     regular: bool,
     inactive_name: edit::Input,
     prefix: edit::Input,
+    restoring: bool,
     agent: usize,
     choosing_project: bool,
     project_index: usize,
@@ -65,12 +66,22 @@ impl Form {
             regular: false,
             inactive_name: edit::Input::new("main".into()),
             prefix: edit::Input::new("agents".into()),
+            restoring: false,
             agent: 0,
             choosing_project: false,
             project_index: 0,
             project_hits: Vec::new(),
             scroll_start: 0,
         }
+    }
+    pub fn for_previous(name: &str, cwd: String) -> Self {
+        let mut form = Self::new(cwd);
+        let (prefix, name) = name.split_once('/').unwrap_or(("", name));
+        form.prefix = edit::Input::new(prefix.into());
+        form.fields[1] = edit::Input::new(name.into());
+        form.regular = true;
+        form.restoring = true;
+        form
     }
     fn choose_role(&mut self, regular: bool) {
         if self.regular != regular {
@@ -101,6 +112,9 @@ impl Form {
         let value = self.text(field);
         if value.contains('\0') {
             return Some("NUL bytes are not allowed".into());
+        }
+        if field == PREFIX && self.restoring && value.is_empty() {
+            return None;
         }
         match field {
             0 if value.trim().is_empty() => Some("Directory is required".into()),
@@ -152,7 +166,11 @@ impl Form {
         let words = shell_words::split(command).context("Command has an unclosed quote")?;
         let mut args = vec![
             "start".into(),
-            format!("{}/{name}", self.prefix.text),
+            if self.prefix.text.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{name}", self.prefix.text)
+            },
             "--cwd".into(),
             expand_home(cwd).to_string_lossy().into_owned(),
             "--label".into(),
@@ -1489,5 +1507,25 @@ mod tests {
         assert_eq!(edit.area.height, 3);
         assert_eq!(buffer[(edit.area.x, edit.area.y)].symbol(), "╭");
         assert!(form.project_hits[0].0.y >= edit.area.bottom());
+    }
+    #[test]
+    fn restored_name_and_directory_use_fresh_command_defaults() {
+        for name in ["p/gone", "solo", "p/deep/name"] {
+            let form = Form::for_previous(name, "/tmp/synthetic-project".into());
+            assert_eq!(
+                form.args().unwrap(),
+                [
+                    "start",
+                    name,
+                    "--cwd",
+                    "/tmp/synthetic-project",
+                    "--label",
+                    "role=regular",
+                    "--",
+                    "codex",
+                    "--yolo"
+                ]
+            );
+        }
     }
 }
