@@ -10,6 +10,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use unicode_width::UnicodeWidthChar;
 
 static OPENED: AtomicU64 = AtomicU64::new(0);
+/// A number no earlier opening of a detail or confirmation page has used.
+pub(crate) fn opening() -> u64 {
+    OPENED.fetch_add(1, Ordering::Relaxed)
+}
 
 /// The Tasks area's detail page for one task, fixed when it opens.
 pub struct TaskDetail {
@@ -29,7 +33,7 @@ pub struct TaskDetail {
 impl TaskDetail {
     pub(crate) fn new(group: &'static str, task: Task) -> Self {
         Self {
-            seq: OPENED.fetch_add(1, Ordering::Relaxed),
+            seq: opening(),
             group,
             task,
             data: None,
@@ -133,9 +137,17 @@ impl TaskDetail {
             )),
         }
         let attention = &data.attention;
+        let manual = task
+            .completion_record
+            .as_ref()
+            .is_some_and(|r| r.method == "manual");
         match attention.state.as_str() {
             "awaiting_release" => out.line(vec![Span::styled(
-                "Awaiting release",
+                if manual {
+                    "Awaiting release · marked complete manually, not by checks"
+                } else {
+                    "Awaiting release"
+                },
                 bold(t.agent_blocked),
             )]),
             "suggested" => out.line(vec![Span::styled(
@@ -159,8 +171,17 @@ impl TaskDetail {
             )]);
         }
 
-        out.checks(data);
-        out.last_check(data);
+        out.manual_record(data);
+        out.checks(
+            &data.completion,
+            &task.location,
+            if data.completion.scope == "current_repository" {
+                "Completion checks · recomputed now"
+            } else {
+                "Completion checks"
+            },
+        );
+        out.last_check(&data.last_check, "Last check");
         out.progress(data);
         out.route(data);
         out.records(data);
@@ -173,20 +194,85 @@ struct Out<'a> {
     width: usize,
     rows: Vec<Line<'static>>,
 }
+/// The checks and last check-command record `drover show` reported, as the confirmation
+/// page shows them before a manual completion.
+pub(crate) fn check_lines(t: &Theme, data: &Detail, width: usize) -> Vec<Line<'static>> {
+    let mut out = Out {
+        t,
+        width,
+        rows: Vec::new(),
+    };
+    out.checks(
+        &data.completion,
+        &data.task.location,
+        "Completion checks · as reported now, not run",
+    );
+    out.last_check(&data.last_check, "Last check · saved sample, not run now");
+    out.rows
+}
 impl Out<'_> {
-    /// Completion checks recomputed now, or why history has none.
-    fn checks(&mut self, data: &Detail) {
+    /// A manual completion's saved record: the user's reason and time, and the checks then.
+    fn manual_record(&mut self, data: &Detail) {
         let t = self.t;
-        let task = &data.task;
-        let completion = &data.completion;
-        self.heading(if completion.scope == "current_repository" {
-            "Completion checks · recomputed now"
-        } else {
-            "Completion checks"
-        });
+        let Some(record) = &data.task.completion_record else {
+            return;
+        };
+        self.heading("Manual completion");
+        self.field(
+            "Method",
+            &[(
+                if record.method == "manual" {
+                    "manual · confirmed by the user, not automatic checks".into()
+                } else {
+                    record.method.clone()
+                },
+                t.agent_blocked,
+            )],
+        );
+        self.field(
+            "Confirmed",
+            &[(
+                record
+                    .confirmed_at
+                    .map(clock)
+                    .unwrap_or_else(|| "not recorded".into()),
+                t.text,
+            )],
+        );
+        self.field("Reason", &[(record.reason.clone(), t.text)]);
+        if let Some(workspace) = &record.workspace {
+            self.field(
+                "Workspace",
+                &[(
+                    format!(
+                        "{}{}",
+                        workspace.state,
+                        if workspace.tracked_dirty {
+                            " · tracked changes"
+                        } else {
+                            ""
+                        }
+                    ),
+                    t.text,
+                )],
+            );
+        }
+        match &record.completion {
+            Some(completion) => self.checks(completion, "saved", "Checks saved at confirmation"),
+            None => self.note("  Checks at confirmation: not readable"),
+        }
+        match &record.last_check {
+            Some(check) => self.last_check(check, "Last check saved at confirmation"),
+            None => self.note("  Last check at confirmation: not readable"),
+        }
+    }
+    /// Completion check rows under `heading`, or why there are none.
+    fn checks(&mut self, completion: &crate::drover::Completion, location: &str, heading: &str) {
+        let t = self.t;
+        self.heading(heading);
         match &completion.rows {
             Some(rows) => {
-                if task.location == "awaiting" {
+                if location == "awaiting" {
                     self.note("The recorded done stands; recomputed checks do not change it.");
                 }
                 for row in rows {
@@ -234,10 +320,9 @@ impl Out<'_> {
         }
     }
     /// The last check-command record, with what it does not prove.
-    fn last_check(&mut self, data: &Detail) {
+    fn last_check(&mut self, check: &crate::drover::LastCheck, heading: &str) {
         let t = self.t;
-        let check = &data.last_check;
-        self.heading("Last check");
+        self.heading(heading);
         let (label, color) = match check.status.as_str() {
             "valid" => ("Valid", t.agent_idle),
             "stale" => ("Stale", t.agent_blocked),
@@ -657,7 +742,7 @@ fn bold(color: Color) -> Style {
     Style::default().fg(color).add_modifier(Modifier::BOLD)
 }
 /// Contract codes as English words, clarified where the bare code would mislead.
-fn phrase(code: &str) -> String {
+pub(crate) fn phrase(code: &str) -> String {
     match code {
         "git_query_failed" => "Git query failed".into(),
         "observed_head_unavailable" => "current HEAD unavailable".into(),
@@ -685,7 +770,7 @@ fn duration(seconds: f64) -> String {
     }
 }
 /// Local date and time of a Unix timestamp.
-fn clock(unix: f64) -> String {
+pub(crate) fn clock(unix: f64) -> String {
     local(unix)
         .map(|tm| {
             format!(

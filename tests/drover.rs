@@ -615,3 +615,169 @@ printf '%s\n' '{"mode":{"loop":false,"gate":true},"paused":false,"current":null,
     // A malformed start time elsewhere does not break the snapshot.
     assert_eq!(snapshot.history[0].t0, Some(serde_json::json!(true)));
 }
+
+#[test]
+fn show_json_carries_the_manual_target_and_saved_record_without_requiring_them() {
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(temp.path(), "drover", "#!/bin/sh\ncat response\n");
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let cancel = AtomicBool::new(false);
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
+    std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
+    let old = client.show("T4", &cancel).unwrap();
+    assert_eq!(old.manual_completion, None, "an older drover has no target");
+    assert_eq!(old.task.completion_record, None, "no record is back-filled");
+
+    value["manual_completion"] =
+        serde_json::json!({"target_token": "opaque/+=token", "unavailable_reason": null});
+    value["task"]["location"] = "awaiting".into();
+    value["task"]["completion_record"] = serde_json::json!({
+        "method": "manual", "reason": "调研成果已验收", "confirmed_at": 1790000000.0,
+        "completion": {"scope": "current_repository", "rows": [
+            {"id": "branches_merged", "state": "unmet", "reason": "branch_not_merged", "why": "t33 未合入"}
+        ], "unavailable_reason": null},
+        "last_check": {},
+        "workspace": {"state": "dirty", "tracked_dirty": true}
+    });
+    std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
+    let detail = client.show("T4", &cancel).unwrap();
+    let target = detail.manual_completion.unwrap();
+    assert_eq!(target.target_token.as_deref(), Some("opaque/+=token"));
+    let record = detail.task.completion_record.unwrap();
+    assert_eq!(
+        (record.method.as_str(), record.reason.as_str()),
+        ("manual", "调研成果已验收")
+    );
+    assert_eq!(record.completion.unwrap().rows.unwrap()[0].state, "unmet");
+    assert_eq!(record.last_check, None, "an unreadable sample is left out");
+    assert!(record.workspace.unwrap().tracked_dirty);
+}
+
+#[test]
+fn manual_completion_sends_the_token_verbatim_and_reports_public_codes() {
+    use saddle::drover::{ManualError, Operation};
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+for arg in "$@"; do printf '[%s]' "$arg" >> calls; done
+echo >> calls
+cat response
+exit $(cat code)
+"#,
+    );
+    let project = temp.path().display().to_string();
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let respond = |body: &str, code: i32| {
+        std::fs::write(temp.path().join("response"), body).unwrap();
+        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
+    };
+    let cancel = AtomicBool::new(false);
+    let operation = Operation::CompleteManually {
+        project,
+        id: "T4".into(),
+        token: "tok $(touch bad) '\"".into(),
+        reason: "  接受 main 未前进  ".into(),
+    };
+    respond(
+        r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"awaiting_release","completion_record":{"method":"manual","reason":"接受 main 未前进","confirmed_at":1790000000.0,"completion":{"scope":"current_repository","rows":[{"id":"main_advanced","state":"unmet","reason":"main_not_advanced","why":"main 未前进"}],"unavailable_reason":null},"last_check":{},"workspace":{"state":"clean","tracked_dirty":false}}}"#,
+        0,
+    );
+    let text = client.execute(&operation, &cancel).unwrap();
+    assert!(
+        text.contains("T4")
+            && text.contains("Awaiting release")
+            && text.contains("接受 main 未前进"),
+        "{text}"
+    );
+    assert!(!temp.path().join("bad").exists());
+    let calls = std::fs::read_to_string(temp.path().join("calls")).unwrap();
+    assert_eq!(
+        calls,
+        "[complete-manually][T4][--target-token][tok $(touch bad) '\"][--reason][接受 main 未前进][--json]\n"
+    );
+
+    for (body, code, expected) in [
+        (
+            r#"{"schema_version":1,"ok":false,"error":{"code":"target_changed","why":"运行已变化"}}"#,
+            3,
+            "target_changed",
+        ),
+        (
+            r#"{"schema_version":1,"ok":false,"error":{"code":"state_busy","why":"忙"}}"#,
+            4,
+            "state_busy",
+        ),
+        (
+            r#"{"schema_version":1,"ok":false,"error":{"code":"invalid_arguments","why":"空原因"}}"#,
+            2,
+            "invalid_arguments",
+        ),
+    ] {
+        respond(body, code);
+        let error = client.execute(&operation, &cancel).unwrap_err();
+        let manual = error.downcast_ref::<ManualError>().expect("a public code");
+        assert_eq!(manual.code, expected);
+    }
+    // An older drover without the command, and answers that do not confirm this target.
+    for (body, code, expected) in [
+        (
+            "usage: drover [add|go|next|...]\nunknown command: complete-manually",
+            2,
+            "does not support",
+        ),
+        (r#"{"schema_version":2,"ok":true}"#, 0, "schema_version"),
+        (
+            r#"{"schema_version":1,"ok":true,"task_id":"T5","state":"awaiting_release"}"#,
+            0,
+            "T5",
+        ),
+        (
+            r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"done"}"#,
+            0,
+            "done",
+        ),
+        (
+            r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"awaiting_release"}"#,
+            1,
+            "exit",
+        ),
+    ] {
+        respond(body, code);
+        let error = client.execute(&operation, &cancel).unwrap_err();
+        assert!(error.downcast_ref::<ManualError>().is_none());
+        assert!(format!("{error:#}").contains(expected), "{error:#}");
+    }
+    // The same project spelled through a symlink (macOS temp dirs sit under /var) is the same.
+    let canonical = Operation::CompleteManually {
+        project: temp.path().canonicalize().unwrap().display().to_string(),
+        id: "T4".into(),
+        token: "tok".into(),
+        reason: "ok".into(),
+    };
+    respond(
+        r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"awaiting_release"}"#,
+        0,
+    );
+    client.execute(&canonical, &cancel).unwrap();
+    // A target from another project is never sent to this one.
+    std::fs::remove_file(temp.path().join("calls")).unwrap();
+    let elsewhere = Operation::CompleteManually {
+        project: "/tmp/another-project".into(),
+        id: "T4".into(),
+        token: "tok".into(),
+        reason: "ok".into(),
+    };
+    assert!(client.execute(&elsewhere, &cancel).is_err());
+    assert!(!temp.path().join("calls").exists(), "nothing ran");
+}

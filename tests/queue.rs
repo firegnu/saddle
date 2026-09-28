@@ -595,3 +595,212 @@ fn content_keys_scroll_the_text_without_moving_the_list() {
         "the chosen view stays across tasks"
     );
 }
+
+fn running(panel: &mut Panel) {
+    panel.project = "/tmp/project-a".into();
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {"loop": true, "gate": false}, "paused": false, "awaiting": null,
+            "current": {"id":"T4", "title":"Research", "t0": 100.0},
+            "pending": [{"id":"T5", "title":"Next"}],
+            "history": []
+        }))
+        .unwrap(),
+    );
+}
+fn target(token: Option<&str>) -> saddle::drover::Detail {
+    let mut detail = show("T4", "current", "doing");
+    detail.manual_completion = Some(saddle::drover::ManualTarget {
+        target_token: token.map(Into::into),
+        unavailable_reason: token.is_none().then(|| "snapshot_unavailable".into()),
+    });
+    detail
+}
+fn manual(panel: &Panel) -> &saddle::queue::Manual {
+    match &panel.page {
+        Page::Manual(manual) => manual,
+        _ => panic!("the manual completion page is open"),
+    }
+}
+fn type_text(panel: &mut Panel, text: &str) {
+    for c in text.chars() {
+        assert!(panel.key(key(K::Char(c))).is_none(), "typing never sends");
+    }
+}
+
+#[test]
+fn manual_completion_binds_the_opened_run_and_sends_its_token_verbatim() {
+    let mut panel = Panel::default();
+    running(&mut panel);
+    // Only the running task offers it, and only by its button.
+    panel.select(1);
+    assert!(panel.key(saddle::queue::manual_click()).is_none());
+    assert!(matches!(panel.page, Page::List));
+    panel.select(0);
+    assert!(panel.key(saddle::queue::manual_click()).is_none());
+    let first = panel.manual_key().expect("the page queries its target");
+    assert_eq!(
+        (first.project.as_str(), first.id.as_str()),
+        ("/tmp/project-a", "T4")
+    );
+    assert_eq!(manual(&panel).title, "Research");
+
+    // Nothing is sent before a target arrives, or without a reason.
+    type_text(&mut panel, "accepted research");
+    assert!(panel.key(key(K::Enter)).is_none());
+    // A result for another opening is ignored.
+    let other = saddle::queue::DetailKey {
+        seq: first.seq + 1000,
+        ..first.clone()
+    };
+    panel.absorb_manual(&other, Ok(target(Some("wrong"))));
+    assert!(manual(&panel).target.is_none());
+    panel.absorb_manual(&first, Ok(target(Some("tok/+= 1"))));
+    assert_eq!(panel.manual_key(), None, "one reading per opening");
+    // A later queue refresh moving on to T5 does not retarget the open page.
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "pending": [], "history": [],
+            "current": {"id":"T5", "title":"Next"}, "awaiting": null
+        }))
+        .unwrap(),
+    );
+    let Some(Request::Run(operation)) = panel.key(key(K::Enter)) else {
+        panic!("Mark complete sends one public write");
+    };
+    assert_eq!(
+        operation,
+        Operation::CompleteManually {
+            project: "/tmp/project-a".into(),
+            id: "T4".into(),
+            token: "tok/+= 1".into(),
+            reason: "accepted research".into(),
+        }
+    );
+    assert!(panel.busy);
+    assert!(
+        panel.key(key(K::Enter)).is_none(),
+        "no second submission while busy"
+    );
+    assert!(panel.key(key(K::Esc)).is_none());
+    assert!(matches!(panel.page, Page::Manual(_)), "busy pages stay");
+    panel.complete(&operation, Ok("T4 marked complete manually".into()));
+    assert!(matches!(panel.page, Page::Feedback(_)));
+    assert_eq!(panel.view, View::Details, "the saved record shows next");
+}
+
+#[test]
+fn cancelled_or_rejected_manual_completion_writes_nothing_and_keeps_the_reason() {
+    let mut panel = Panel::default();
+    running(&mut panel);
+    panel.key(saddle::queue::manual_click());
+    let first = panel.manual_key().unwrap();
+    panel.absorb_manual(&first, Ok(target(Some("tok-1"))));
+    // Blank reasons are refused locally.
+    type_text(&mut panel, "   ");
+    assert!(panel.key(key(K::Enter)).is_none());
+    assert!(!panel.busy && panel.message.contains("Reason"));
+    panel.key(KeyEvent::new(K::Char('u'), M::CONTROL));
+    type_text(&mut panel, "keep branch");
+    // Cancel sends nothing and keeps the draft for this task.
+    assert!(panel.key(key(K::Esc)).is_none());
+    assert!(matches!(panel.page, Page::List));
+    panel.key(saddle::queue::manual_click());
+    assert_eq!(manual(&panel).reason, "keep branch");
+    let second = panel.manual_key().unwrap();
+    assert_ne!(second, first, "reopening reads the target afresh");
+    panel.absorb_manual(&first, Ok(target(Some("tok-old"))));
+    assert!(
+        manual(&panel).target.is_none(),
+        "an older reading is dropped"
+    );
+    panel.absorb_manual(&second, Ok(target(Some("tok-2"))));
+
+    // The target expired: the page stays, and only a refresh and a new confirmation proceed.
+    let Some(Request::Run(operation)) = panel.key(key(K::Enter)) else {
+        panic!("confirmation sends");
+    };
+    panel.complete(
+        &operation,
+        Err(saddle::drover::ManualError {
+            code: "target_changed".into(),
+            why: "运行已变化".into(),
+        }
+        .into()),
+    );
+    assert!(!panel.busy && matches!(panel.page, Page::Manual(_)));
+    assert!(
+        panel.message.contains("target_changed"),
+        "{}",
+        panel.message
+    );
+    assert_eq!(manual(&panel).reason, "keep branch");
+    assert!(
+        panel.key(key(K::Enter)).is_none(),
+        "an expired token is never resent"
+    );
+    assert!(panel.key(KeyEvent::new(K::Char('r'), M::CONTROL)).is_none());
+    let third = panel.manual_key().expect("refresh reads a new target");
+    assert_ne!(third, second);
+    assert!(
+        panel.key(key(K::Enter)).is_none(),
+        "nothing until the new target arrives"
+    );
+    panel.absorb_manual(&third, Ok(target(Some("tok-3"))));
+    let Some(Request::Run(Operation::CompleteManually { token, .. })) = panel.key(key(K::Enter))
+    else {
+        panic!("the user confirms again");
+    };
+    assert_eq!(token, "tok-3");
+    // Busy drover: reported, and retried only by the user.
+    panel.complete(
+        &operation,
+        Err(saddle::drover::ManualError {
+            code: "state_busy".into(),
+            why: "忙".into(),
+        }
+        .into()),
+    );
+    assert!(panel.message.contains("state_busy") && matches!(panel.page, Page::Manual(_)));
+}
+
+#[test]
+fn manual_completion_refuses_targets_it_cannot_bind() {
+    let mut panel = Panel::default();
+    running(&mut panel);
+    type_text(&mut panel, "");
+    for (detail, words) in [
+        (Ok(target(None)), "snapshot unavailable"),
+        (Ok(show("T4", "current", "doing")), "does not support"),
+        (
+            Ok({
+                let mut d = target(Some("tok"));
+                d.task.location = "awaiting".into();
+                d
+            }),
+            "no longer running",
+        ),
+        (
+            Ok({
+                let mut d = target(Some("tok"));
+                d.task.id = "T5".into();
+                d
+            }),
+            "T5",
+        ),
+        (Err(anyhow::anyhow!("show failed")), "show failed"),
+    ] {
+        panel.page = Page::List;
+        panel.key(saddle::queue::manual_click());
+        let key_now = panel.manual_key().unwrap();
+        panel.absorb_manual(&key_now, detail);
+        type_text(&mut panel, "x");
+        assert!(panel.key(key(K::Enter)).is_none(), "{words}");
+        assert!(
+            saddle::queue::manual_problem(manual(&panel)).is_some_and(|p| p.contains(words)),
+            "{words}: {:?}",
+            saddle::queue::manual_problem(manual(&panel))
+        );
+        panel.key(key(K::Esc));
+    }
+}

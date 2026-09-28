@@ -2578,3 +2578,58 @@ fn settings_entry_sits_right_of_attention_and_wraps_below_it_when_narrow() {
     assert_eq!(entry.area.y, 3);
     assert!(hits.agents.iter().all(|(row, _)| *row >= 5));
 }
+
+#[test]
+fn manual_completion_is_a_running_task_button_and_its_page_shows_checks_and_reason() {
+    let mut q = queue::Panel::default();
+    q.project = "/tmp/project-a".into();
+    q.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "awaiting": null,
+            "current": {"id":"T4", "title":"Research"},
+            "pending": [{"id":"T5", "title":"Next"}], "history": []
+        }))
+        .unwrap(),
+    );
+    let screen = text(&render_queue(&mut q, 150, 40));
+    assert!(screen.contains("Mark complete manually…"), "{screen}");
+    q.select(1);
+    assert!(!text(&render_queue(&mut q, 150, 40)).contains("Mark complete manually"));
+    q.select(0);
+    let buffer = render_queue(&mut q, 150, 40);
+    // Clicking the button opens the page; the click needs no shortcut key.
+    let (x, y) = (0..buffer.area.height)
+        .find_map(|y| {
+            let row: String = (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol().to_owned())
+                .collect();
+            row.find("Mark complete manually")
+                .map(|at| (row[..at].chars().count() as u16, y))
+        })
+        .expect("the button is drawn");
+    assert!(q.click(x, y).is_none());
+    let key = q.manual_key().expect("the page reads its target");
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
+    value["manual_completion"] =
+        serde_json::json!({"target_token": "tok", "unavailable_reason": null});
+    q.absorb_manual(&key, Ok(serde_json::from_value(value).unwrap()));
+    q.paste("keep the research branch");
+    let screen = text(&render_queue(&mut q, 150, 40));
+    for words in [
+        "Mark complete manually",
+        "project-a",
+        "T4 · Research",
+        "as reported now, not run",
+        "Completion marker",
+        "saved sample, not run now",
+        "keep the research branch",
+        "Mark complete ↵",
+        "Cancel Esc",
+        "send go or next",
+    ] {
+        assert!(screen.contains(words), "{words}\n{screen}");
+    }
+    // Small windows still draw without panicking.
+    render_queue(&mut q, 40, 12);
+}

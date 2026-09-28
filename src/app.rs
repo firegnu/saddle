@@ -170,6 +170,8 @@ struct App {
     queue_worker: drover::Worker,
     pending_load: Option<drover::PendingLoad>,
     detail: Option<(queue::DetailKey, drover::DetailWorker)>,
+    /// The one reading of the run a manual completion page confirms.
+    manual_target: Option<(queue::DetailKey, drover::DetailWorker)>,
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
@@ -316,6 +318,7 @@ impl App {
             queue_worker,
             pending_load: None,
             detail: None,
+            manual_target: None,
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
@@ -680,6 +683,33 @@ impl App {
         if let Some((key, worker)) = &self.detail {
             for result in worker.updates.try_iter() {
                 self.queue.absorb_detail(key, result);
+            }
+        }
+        // Read once per opening or Refresh, never renewed behind the user's back; closing
+        // Tasks drops a reading in progress, and reopening starts it again.
+        let wanted = self
+            .queue
+            .manual_key()
+            .filter(|_| self.focus == Focus::Queue);
+        if self.manual_target.as_ref().map(|(key, _)| key) != wanted.as_ref() {
+            self.manual_target = None;
+            self.manual_target = wanted.map(|key| {
+                let worker = drover::DetailWorker::start(
+                    drover::Client {
+                        program: expand_home(&self.config.queue.drover)
+                            .to_string_lossy()
+                            .into_owned(),
+                        cwd: key.project.clone().into(),
+                    },
+                    key.id.clone(),
+                    Duration::MAX,
+                );
+                (key, worker)
+            });
+        }
+        if let Some((key, worker)) = &self.manual_target {
+            for result in worker.updates.try_iter() {
+                self.queue.absorb_manual(key, result);
             }
         }
         self.task_links_tick()?;
@@ -1101,6 +1131,7 @@ impl App {
                             queue::Page::Add { .. }
                                 | queue::Page::Edit { .. }
                                 | queue::Page::Project(_)
+                                | queue::Page::Manual(_)
                         );
                         // Closing keeps the page, selection and scroll for the next opening.
                         if (key.code == KeyCode::Char('q') && !typing)
@@ -1693,6 +1724,7 @@ impl App {
                 | queue::Page::Edit { .. }
                 | queue::Page::Delete { .. }
                 | queue::Page::Project(_)
+                | queue::Page::Manual(_)
         ) || (self.queue.busy && self.queue.project != project);
         if unfinished {
             self.panel.message =

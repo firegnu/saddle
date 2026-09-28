@@ -386,6 +386,10 @@ pub fn draw_workspace(
                 target = "Confirm delete".into();
                 help = " y Delete  Esc Cancel  PgUp/PgDn Scroll";
             }
+            crate::queue::Page::Manual(_) => {
+                target = "Mark complete manually · Reason".into();
+                help = " Enter Mark complete  Ctrl-R Refresh  Ctrl-U Clear  Esc Cancel";
+            }
             crate::queue::Page::AllPending => {
                 target = "All pending".into();
                 help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  q Close";

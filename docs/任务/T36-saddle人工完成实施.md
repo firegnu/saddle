@@ -34,3 +34,24 @@
 ## 做完
 
 在本文件追加简短完成记录：改动、实际检查结果、取舍与未解决项，提交本分支并回固定 SHA。只提交本任务；不合并／推送／发布、不清 worktree，不操作真实队列／配置／服务，不向其他用户 agent 送话或停止它们。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（saddle/dev-t36-manual-complete-1，2026-09-28）
+
+改动：
+- `src/drover.rs`：show 解析可选 `manual_completion`、`task.completion_record`（保存的检查／last_check／workspace 解析不了时单项略去，不猜）；新增 `Operation::CompleteManually` 和 `ManualError`。执行前核对操作项目与 worker 项目（按真实路径比较），只接受退出 0 + schema_version=1 + ok=true + 同 task_id + state=awaiting_release；失败按公开 code 报告，非 JSON 报“不支持”，不回退 go/next。
+- `src/queue.rs`：Current 且有编号时底部出现 `Mark complete manually…`（只能点击，无快捷键）；确认子页 `Page::Manual` 显示项目、T 编号／标题、说明、show 报告的检查与 Last check（标明未运行／留存样本）、一行 Reason，`Mark complete ↵`／`Refresh ^r`／`Cancel Esc`。每次打开或 Refresh 用新序号读一次 show，旧序号结果丢弃；令牌原样回传。target_changed 后标为过期，须 Refresh 并再次确认；取消不写，原因按任务号留草稿；进行中不能取消或切换项目。成功后显示结果页并把视图切到 Run details。
+- `src/app.rs`：确认页一次性 show 读取（Tasks 关闭即丢弃，重开重读）；确认页算输入框（q 不关闭），外部跳转视作未完成页。`src/ui.rs` 状态行提示。`src/detail.rs`：Run details 新增 `Manual completion` 段读 `task.completion_record`，与 recomputed checks 分开；人工完成的待放行提示注明非检查通过。
+- DESIGN §49 追加“T36 saddle 实现取舍”。
+
+检查（共享 CARGO_TARGET_DIR、假 drover 脚本和合成 JSON，未用真实 agent／socket／项目）：
+- 新增：`tests/drover.rs` 2 项（show 字段可选与记录解析；令牌逐字、参数、公开 code、旧版本／不符答复、跨项目不发送）、`tests/queue.rs` 3 项（绑定打开的运行、旧读取丢弃、取消／拒绝不写、过期须刷新再确认、不可绑定目标）、`tests/ui.rs` 1 项（按钮只对运行中任务、点击打开、页面内容、小窗口不崩）。
+- `cargo test --all-targets` 一次：`tests/viewer.rs` 的 `choosing_current_agent_again_during_detach_cancels_the_obsolete_switch` 失败（3 秒时限的 PTY 计时用例，本改动未碰 viewer），cargo 因此没跑 `workflow`。针对处理：单独跑该用例一次通过；补跑 `--test workflow` 一次为 75 passed／1 failed／3 ignored，失败是已知 T29 的 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`（终端关闭确认，与 Tasks 无关），未修。其余各 target 全部通过。不能称整套全绿。
+- `cargo clippy --all-targets -- -D warnings` 一次通过；`cargo fmt` 已格式化；`git diff --check` 通过。
+- Clippy 之后修了一处：启动时面板项目是真实路径而 worker cwd 是配置路径，符号链接下会一律拒发。先加用例复现（RED：“The project changed”），改为按真实路径比较后，`--test drover`、`--test queue`、`--test ui manual` 通过；按预算没有重跑整套和 clippy。
+
+取舍与未解决：
+- 入口只能用鼠标（任务要求不加单键快捷键），没有另设键盘路径。
+- 除 target_changed 外（如 state_busy）留在原页，由用户自己决定是否再按；从不自动重试或换令牌。
+- 确认页不按列表 t0 另核对 show 的 started_at：令牌本身绑定运行，页面显示的检查与令牌来自同一次 show。
+- 列表 `list --json` 的 completion_record 未接入（只在 Run details 读 show），Task text 视图不显示人工记录。
+- 与真实 Drover CLI 的隔离联调按任务书留给 saddle/main。
