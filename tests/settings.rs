@@ -250,3 +250,48 @@ fn saving_through_a_symlink_keeps_the_link_and_the_file_mode() {
     let mode = std::fs::metadata(&real).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
 }
+
+#[test]
+fn a_failed_reload_after_keep_my_edits_still_keeps_them_on_retry() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "left_width = 52\nrefresh_ms = 1000\n").unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    replace(&mut settings, "60");
+    std::fs::write(&path, "left_width = [\n").unwrap();
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Stay));
+    assert!(settings.conflict());
+    // Keep my edits, but the file cannot be read as a config yet.
+    press(&mut settings, KeyCode::Char('k'));
+    assert_eq!(settings.value("left_width"), Some("60"));
+    let repaired = "left_width = 52\nrefresh_ms = 3000\n";
+    std::fs::write(&path, repaired).unwrap();
+    ctrl(&mut settings, 'r');
+    assert_eq!(settings.value("left_width"), Some("60"));
+    assert_eq!(settings.value("refresh_ms"), Some("3000"));
+    assert_eq!(read(&path), repaired);
+    let Outcome::Saved(config, _) = ctrl(&mut settings, 's') else {
+        panic!("not saved: {}", settings.message());
+    };
+    assert_eq!((config.left_width, config.refresh_ms), (60, 3000));
+}
+
+#[test]
+fn a_dangling_config_link_is_kept_and_saving_reports_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("dotfiles/saddle.toml");
+    let link = dir.path().join("config.toml");
+    std::os::unix::fs::symlink(&missing, &link).unwrap();
+    let mut settings = Settings::open(link.clone(), true);
+    replace(&mut settings, "61");
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Stay));
+    assert!(
+        settings.message().starts_with("Not saved"),
+        "{}",
+        settings.message()
+    );
+    assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_link(&link).unwrap(), missing);
+    assert!(!missing.exists());
+    assert_eq!(settings.value("left_width"), Some("61"));
+}

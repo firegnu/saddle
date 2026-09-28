@@ -144,3 +144,12 @@ Initial project       [ Automatic   ]
 - 未在 DESIGN.md 追加内容（任务书只允许改代码、测试、使用说明和本记录）；上述取舍如需进 DESIGN 第 47 节，请主控决定。
 - 冲突检测只在 Save 时进行，打开期间不提示外部修改；若需要打开期间也提示，需要另行确认。
 - 快捷键 F1–F3、Ctrl-D 为实现者选择，未经用户确认。
+
+## 第 1 轮定向返工（R1／R2）
+
+按主控「独立意见裁决与第 1 轮定向返工」只修两项，S1 未纳入，其他功能不变。基线 `857f154`。
+
+- R1 重载失败后丢草稿：`Settings` 记下失败那次重载是否保留草稿（`keeping`），错误提示下的 Reload／Ctrl-R 按该选择重试，不再固定走丢弃。失败时不推进基线，已编辑项仍按原基线判定。首次打开出错和 Discard 的语义不变，都是 `keeping = false`。错误提示在确有保留草稿时加一句，说明 Reload 后草稿仍叠加在文件上、Cancel 才丢弃。
+- R2 覆盖悬空符号链接：`write` 中 `canonicalize` 失败时，若配置路径本身是符号链接，就报保存失败（"symbolic link whose target cannot be resolved; the link is kept"）。Save 返回 Stay，保留链接和草稿，不再落回链接路径替换目录项。普通首次创建（路径不存在且不是链接）和有效链接保存照旧。
+- RED／GREEN：`tests/settings.rs` 新增 `a_failed_reload_after_keep_my_edits_still_keeps_them_on_retry`（按审查探针合成：Keep → 文件无效 → 修复 → Ctrl-R，修复前得到 52 而不是 60），以及 `a_dangling_config_link_is_kept_and_saving_reports_failure`（修复前 Save 返回 Saved）。两条都先因目标缺陷失败，修复后通过。
+- 限定回归：`cargo test --test settings`（12 条）、`cargo test --test app settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once -- --exact` 通过。`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 干净。未跑全套，未改主仓库，未动审查探针。

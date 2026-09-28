@@ -177,6 +177,8 @@ pub struct Settings {
     conflict: bool,
     /// The file cannot be read or is invalid: nothing to edit until it is reloaded.
     broken: Option<String>,
+    /// Whether the failed reload was keeping the draft; retrying keeps that choice.
+    keeping: bool,
     /// Field rows as last drawn with their input areas, for clicks.
     rows: Vec<(Rect, Rect, usize)>,
 }
@@ -203,6 +205,7 @@ impl Settings {
             error: false,
             conflict: false,
             broken: None,
+            keeping: false,
             rows: Vec::new(),
         };
         settings.reload(false);
@@ -248,6 +251,7 @@ impl Settings {
             Ok(loaded) => loaded,
             Err(error) => {
                 self.broken = Some(format!("{error:#}"));
+                self.keeping = keep;
                 self.conflict = false;
                 return;
             }
@@ -317,7 +321,7 @@ impl Settings {
         }
         if self.broken.is_some() {
             if ctrl && key.code == KeyCode::Char('r') {
-                self.reload(false);
+                self.reload(self.keeping);
             }
             return Outcome::Stay;
         }
@@ -535,9 +539,14 @@ impl Settings {
             body.height -= 1;
         }
         if let Some(error) = &self.broken {
+            let kept = if self.keeping && !self.edited().is_empty() {
+                "\nYour unsaved edits are kept and stay on top of the file after Reload; Cancel drops them."
+            } else {
+                ""
+            };
             frame.render_widget(
                 Paragraph::new(format!(
-                    "\nThe config file cannot be used:\n{error}\n\nFix it outside saddle, then Reload."
+                    "\nThe config file cannot be used:\n{error}\n\nFix it outside saddle, then Reload.{kept}"
                 ))
                 .wrap(Wrap { trim: false })
                 .style(Style::default().fg(t.text)),
@@ -908,9 +917,18 @@ fn apply(document: &mut toml_edit::DocumentMut, field: &Field, text: &str) -> an
     Ok(())
 }
 
-/// Replaces the file (through a symlink, keeping its permissions), creating missing folders.
+/// Replaces the file (through a symlink, keeping its permissions), creating missing folders. A
+/// link whose target cannot be resolved is left alone rather than replaced by a file.
 fn write(path: &Path, text: &str) -> std::io::Result<()> {
-    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let target = match fs::canonicalize(path) {
+        Ok(target) => target,
+        Err(_) if path.is_symlink() => {
+            return Err(std::io::Error::other(
+                "it is a symbolic link whose target cannot be resolved; the link is kept",
+            ));
+        }
+        Err(_) => path.to_path_buf(),
+    };
     let dir = match target.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
         _ => Path::new("."),
