@@ -25,6 +25,8 @@ T24 历史查看、搜索与复制已实现、返工复核通过、本地合并�
 - Pending 顺序：T26 任务产物跳转 → T29 偶发测试失败 → T28 ctl 上限。逐项讨论后再实施，不自动派发下一件。
 - T24 worktree／分支／实现者及主控临时探针已清理；用户 agent 未动，迟到提醒查到 not_found 即忽略。
 - T25 实现者 `saddle/dev-t25-layout-restore-1`（instance `2410a2971081`，Codex gpt-6-astra / xhigh，role=implementer），分支 `t25-layout-restore`，worktree `../saddle-worktrees/t25-layout-restore`，基线 `8ee564d`。上一轮中断时尚未创建 agent，本次无重复派发。
+- T25 实现已提交 `5972ae0`，实现者 idle、工作区干净；主控首轮审查未发现阻塞项，标准测试 218 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T25-主控审查.md`。尚未合并发布。
+- 独立审查者 `saddle/dev-t25-review-1`（instance `78197c46589e`，Codex gpt-6-astra / xhigh，role=reviewer），detached worktree `../saddle-worktrees/review-t25-layout-restore` 固定 `5972ae0`，按主仓库 `docs/任务/T25-独立审查.md` 只读审查并在该文件追加意见。
 
 ## 仍需注意
 
@@ -35,4 +37,4 @@ T24 历史查看、搜索与复制已实现、返工复核通过、本地合并�
 
 ## 下一步
 
-等待 T25 实现者完成提醒，主控审查后按路由安排独立审查，再合并、发布和收尾。其余待办继续逐项讨论，不自动推进队列；T24 实际系统剪贴板写入仍未获得明确现场验证反馈。
+等待 T25 独立审查提醒，读取状态、回复和审查文件；逐条判断意见，有阻塞交回原实现者，否则合并、发布和收尾。其余待办继续逐项讨论，不自动推进队列；T24 实际系统剪贴板写入仍未获得明确现场验证反馈。
