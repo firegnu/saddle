@@ -1,5 +1,11 @@
 # 交接
 
+## 当前下一步：用户放行 T33，再触发 T35（2026-09-28）
+
+用户授权将 T33 调研文档归档并清理研究分支，以解除放行检查阻塞。合并 `ef3d67a`，收尾 `2b5ccc4`；保留调研者完成记录、主控审查和 CCNotify 清理记录。研究 worktree／分支已删除，原研究 agent 早已关闭；现只剩主仓库 worktree。
+
+公开 `drover show T33 --json` 已确认收尾记号、main 前进、分支合入三项均满足，未配置额外验收命令。T33 仍是 current/doing，本主控未调用 done/go/next，放行交给用户。T35「补充任务通知的三步使用示例（快速验证）」已排待办第一位，仅一处 README 文档小改，用户手动触发后执行、完成后等待用户放行；不自动启动其他任务。loop=false、gate=true。
+
 ## 当前状态：任务通知联合落地完成（2026-09-28，以本节为准）
 
 saddle 已落地：固定实现 `409e34c`，合并 `fadce6f`，收尾空提交 `94f50be`。主控接受正常使用验收，与 Drover 固定 `2b20205` 的隔离主流程一次通过；Clippy 通过。标准测试 255 passed／1 failed／3 ignored，旧 T20 窗格用例超时，单项核对一次通过，不宣称整套全绿或无负载回归，T29 仍未解决。用户确认撤回持久去重阻塞，接受 saddle 会话去重／启动基线，边界见 DESIGN §48 和 `docs/任务/任务通知-主控审查.md`。
@@ -8,8 +14,8 @@ saddle 已落地：固定实现 `409e34c`，合并 `fadce6f`，收尾空提交 `
 - 实现者 `saddle/dev-task-notifications-1`（b012b3c82a77）关闭前 idle、attached=0、worktree 干净、分支已合并；worktree 和分支成功移除后已关闭。临时 baseline worktree 也已移除。
 - Drover 联合落地已完成并回复 DONE：main/origin `46d769915901fb9f80c2f73cd26f0477c1a94353`，合并 `2c52bc6`，收尾 `6c52bda`，本主控已核对。对方确认全部登记项目 loop off 后重载旧引擎，PID 44037→82350，新进程已加载新版；未改真实偏好或推进队列。其实现 agent／worktree／分支已清理，drover/main 保留。正式 CLI `~/.local/bin/drover`、契约 `../drover/docs/通知JSON接口.md`。
 - 两项目实施闭合，等待用户使用反馈，不自动派新任务。用户当前 saddle 未重启；重新打开后可在 Settings → General → Task notifications 选择 In saddle 并 Save。实时公开偏好仍 System（true／revision 0），未代用户切换。
-- T33 是已完成调研、待用户决定保留的研究分支／worktree，agent 已按用户指示关闭；不把本次功能落地记作 T33 队列完成。不动真实 done／go／next。新增 T34 沙箱与定时任务仅入队，不自动设计实施。
-- 主仓库两份未提交的 T33 研究／咨询记录继续保留；下文为历史背景，不代表当前实施状态。
+- T33 研究文档已获用户授权归档，研究分支／worktree 已清理，队列放行仍由用户操作。T34 沙箱与定时任务仅入队，不自动设计实施。
+- T33 研究任务与报告现已入库；主仓库原未提交的 T33-Drover 通知最小改动说明继续保留。下文为历史背景，不代表当前实施状态。
 
 ## T33 当前进展（2026-09-28，以本节为准）
 
