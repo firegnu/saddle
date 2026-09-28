@@ -810,7 +810,7 @@ pub fn draw(
                 Some((" Live Esc ", Control::Live(id))),
             ],
         };
-        let sets: Vec<Vec<_>> = [
+        let base = [
             vec![
                 Some(split),
                 zoom,
@@ -821,14 +821,21 @@ pub fn draw(
             vec![Some(split), zoom, Some(cross)],
             vec![zoom, Some(cross)],
             vec![Some(cross)],
-        ]
-        .into_iter()
-        .flat_map(|set| {
-            // Narrow panes drop the history controls before the ones they had before.
-            [entry.iter().cloned().chain(set.clone()).collect(), set]
-        })
-        .map(|set: Vec<_>| set.into_iter().flatten().collect())
-        .collect();
+        ];
+        // Narrow panes shorten the other controls first and keep the history ones, with room
+        // for the history state; only the smallest panes fall back to the controls alone.
+        let reserve = if history.is_some() { 10 } else { 0 };
+        let sets: Vec<(Vec<_>, u16)> = base
+            .iter()
+            .map(|set| {
+                (
+                    entry.iter().chain(set).cloned().collect::<Vec<_>>(),
+                    reserve,
+                )
+            })
+            .chain(base.iter().map(|set| (set.clone(), 0)))
+            .map(|(set, reserve)| (set.into_iter().flatten().collect(), reserve))
+            .collect();
         let width = |set: &Vec<(&str, Control)>| {
             set.iter()
                 .map(|(label, _)| unicode_width::UnicodeWidthStr::width(*label) as u16)
@@ -838,7 +845,9 @@ pub fn draw(
         };
         if active
             && rect.height >= 2
-            && let Some(set) = sets.iter().find(|set| width(set) <= rect.width)
+            && let Some((set, _)) = sets
+                .iter()
+                .find(|(set, reserve)| width(set) + reserve <= rect.width)
         {
             let mut end = rect.right() - 1;
             if let Some(history) = history {
