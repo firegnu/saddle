@@ -9,7 +9,7 @@ T22 Attention 已实现、主控审查通过、本地合并并构建发布。实
 - Agents 标题下增加 `Attention · N`，点击或在 Agents 按 `a` 打开；弹层分 Needs attention 和 New replies。
 - 跨项目汇总等待输入、错误、待放行、历史失败和本次运行内未读回复；打开行进入对应 agent 或项目任务，已打开的 agent 复用原窗格。
 - 查看不处理等待／待放行；历史失败可显式 Mark seen，本次运行内隐藏，不改 drover 历史。读取失败显示失败来源。
-- T23 已获用户现场验证“基本满足我的要求”；T22 用户已看到入口，公开队列已无待放行。T27 方案已确认，设计见第 43 节，任务书 `docs/任务/T27-绑定打开位置说明.md` 已准备；尚未创建 worktree／agent 或开始实现。
+- T23 已获用户现场验证“基本满足我的要求”；T22 用户已看到入口，公开队列已无待放行。用户已手动派发 TASK T27，按设计第 43 节与 `docs/任务/T27-绑定打开位置说明.md` 启动实施。
 
 ## 验证与发布
 
@@ -19,8 +19,8 @@ T22 Attention 已实现、主控审查通过、本地合并并构建发布。实
 
 ## 队列与开发环境
 
-- 最新公开队列 current=null、awaiting=null，loop=false、gate=true、paused=false，T22 已不再待放行。本轮仅同步 T27 待办说明，未调用 go/next。
-- Pending 顺序：T27 绑定位置说明 → T29 偶发测试失败 → T28 ctl 上限 → T24 终端历史搜索复制 → T25 布局恢复 → T26 任务产物跳转。逐项讨论后再实施，不自动派发下一件。
+- 最新公开队列 current=T27（doing）、awaiting=null，loop=false、gate=true、paused=false。未调用 go/next。
+- Pending 顺序：T29 偶发测试失败 → T28 ctl 上限 → T24 终端历史搜索复制 → T25 布局恢复 → T26 任务产物跳转。逐项讨论后再实施，不自动派发下一件。
 - 自有 `t22-attention` worktree／分支已清理；确认 idle、attached=0、工作区干净且分支已合并后，删除 worktree 并一并关闭 `saddle/dev-t22-attention-1`（instance `21cf1c48ece8`）。当前仅 main worktree；用户 agent 未动。迟到提醒查到 not_found 即忽略。
 
 ## 仍需注意
@@ -32,4 +32,4 @@ T22 Attention 已实现、主控审查通过、本地合并并构建发布。实
 
 ## 下一步
 
-等待用户手动派发 TASK T27，再按已备任务单创建独立 worktree 并派实现者；其余待办继续等逐项讨论，不自动推进队列。
+派出 T27 实现者后等待完成提醒，读取状态与回复，做主控审查、合并和收尾；其余待办继续等逐项讨论，不自动推进队列。
