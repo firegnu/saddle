@@ -33,7 +33,7 @@ T30 已完成共同设计并正式开始实施。任务书 `docs/任务/T30-Sett
 - 实现者 `saddle/dev-t30-settings-1`（instance `acef3e8b5939`），Claude Code 常规 `opus[1m]` / `high`，role=implementer。
 - 分支 `t30-settings`，worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t30-settings`，实现提交 `857f154`，回复 DONE、工作区干净。corral 仍报告 working，公开输出尾部已回输入提示符；用户指出已完成，主控在固定提交的独立目录审查，不清理原 worktree／agent，不修改上游状态。具体原因未诊断。
 - route.py 三项 verdict 均为 null；主控判断常规／交叉审查要／碰要害：用户配置持久化和外部修改冲突需要独立审查。实现结束先主控审查，再安排独立 Codex 审查，通过后合并发布收尾。
-- 主控固定 `857f154` 审查通过：242 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T30-主控审查.md`。已建 detached `../saddle-worktrees/review-t30-settings`，按 `T30-独立审查.md` 安排 Codex 独立审查，待结论后裁决；未合并发布。实现者迟到提醒先核对状态／SHA，不重复派发或审查。
+- 主控固定 `857f154` 审查通过：242 passed／0 failed／2 ignored，Clippy、fmt、diff 通过，详见 `docs/任务/T30-主控审查.md`。已建 detached `../saddle-worktrees/review-t30-settings`，固定 `857f154`；独立审查者 `saddle/dev-t30-review-1`（instance `3bbf22741dd6`，Codex `gpt-6-astra` / `xhigh`，role=reviewer）按 `T30-独立审查.md` 工作，待结论后裁决；未合并发布。实现者迟到提醒先核对状态／SHA，不重复派发或审查。
 
 - T29 的 picker／close confirmation 偶发 workflow 问题未定位；一次通过不代表修复。
 - 共用 target 跨 checkout 曾复用旧二进制；后续检查需核实构建对应当前源码。
