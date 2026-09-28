@@ -55,3 +55,9 @@
 - 确认页不按列表 t0 另核对 show 的 started_at：令牌本身绑定运行，页面显示的检查与令牌来自同一次 show。
 - 列表 `list --json` 的 completion_record 未接入（只在 Run details 读 show），Task text 视图不显示人工记录。
 - 与真实 Drover CLI 的隔离联调按任务书留给 saddle/main。
+
+## 主控审查与用户收尾决定（2026-09-28）
+
+主控核对固定 `3d21879` 的 DONE、idle、干净工作区及 diff；标准测试一次 262 passed／0 failed／3 ignored，clippy 一次通过，diff 检查通过。接受上述实现取舍，未发现明确必须改项。用户明确「不用再安排审查了……收尾吧」，取消未启动的独立审查，结束追加验证，隔离联调未执行、不记为通过；详情见 `T36-主控审查.md`。
+
+已合并 `2beb321`；release 构建成功，既有 `~/.local/bin/saddle` 软链指向新版，无需重装。实现 worktree／分支已安全删除，其 idle、attached=0 的自开 agent 随工作目录一并关闭；收尾记号 `b463f8d`。真实队列未操作，`drover/main` 保留，由其主控协调上游落地。用户正在运行的 saddle 未替其重启。

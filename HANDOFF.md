@@ -1,47 +1,25 @@
 # 交接
 
-更新：2026-09-28。当前分支 `main`；T35 收尾为 `a4cfa1a`，上一交接提交为 `ea267c2`。以下状态已用公开 CLI 和 Git 核对；开始新工作前仍需刷新实时状态。
+更新：2026-09-28。当前 main；T36 已按用户最新决定直接收尾，Drover 侧部署交接待回报。
 
-## 会话摘要
+## 当前状态
 
-完成 Drover 系统通知与 saddle 内提示的渠道设置、联合审查、隔离联调和两边发布。用户已选择 In saddle，并亲自看到 T35 完成提示、完成手动放行；通知主流程验证闭合。随后开展 T36 评估，用户已确认“人工确认完成→等待放行”方案；用户随后明确 T36 已正式下发，现已送达 Drover 主控开展第一阶段，现已接收最终固定交付并派发 saddle 消费方，最新信息见下一步。
-
-## 已完成
-
-- saddle 任务通知实现 `409e34c`，合并 `fadce6f`，收尾 `94f50be`；主控审查、联合发布记录在 `docs/任务/任务通知-主控审查.md`。release 已更新，默认 `~/.local/bin/saddle` 仍链接共享构建目录，发布二进制 SHA-256 为 `f19b4d78848a7c1a119e2d4de044a99bbab130babc337d725b4ef9971bc1287a`。
-- Drover main/origin 固定交付落地 `46d769915901fb9f80c2f73cd26f0477c1a94353`，合并 `2c52bc6`、收尾 `6c52bda`。其主控确认全部登记项目 loop off 后重载旧引擎，PID 44037→82350，新版已加载；既有命令软链生效，未重装或改 PATH／plist。
-- T33 调研报告归档合并 `ef3d67a`，收尾 `2b5ccc4`，交接 `9f5bc08`。研究者完成记录、主控审查与 CCNotify 后续清理记录均保留；公开历史确认 T33 已由用户放行。
-- T35 只在 README.zh-CN.md 补三步使用示例：实现 `c2cfb11`、合并 `bd056df`、收尾 `a4cfa1a`，已推送。仅人工核对文案及 diff 检查；`drover done T35` 核对通过并停在待放行。用户明确反馈「我看到了消息了，而且也放行了」，公开历史确认已放行。
-- 本次交接前唯一未跟踪文件是本会话起草的 `docs/任务/T33-Drover通知最小改动说明.md`，不是用户另行修改。现补历史说明并随交接归档提交；以正式设计／接口文档为准。
-
-## 当前队列与环境
-
-- 最新公开队列：current=T36（doing）、awaiting=null、loop=false、gate=true。T36 已进入串行实施，没有调用 done/go/next；T33、T35 均已完成并放行。
-- 公开通知偏好：system_enabled=false、revision=1，即 In saddle；是用户自行设置，不要替用户切回。
-- 待办顺序：T31 评估并行派发多个不同任务 → T29 排查偶发 workflow 测试失败 → T28 评估 ctl 单实例 256 次修改上限 → T32 统一接入本地与远程 corral agents → T34 saddle 沙箱与定时任务。
-- saddle 仅剩主仓库 worktree，相关实现／研究分支及自开 agent 均已清理。公开 corral 列表只剩 saddle/main、drover/main、corral/main、globalmesh/main、owlet/main 这些用户主控。
-- **不得主动关闭 drover/main**：用户明确说它不是 saddle 委派开的。不要干扰其他用户主控。
-
-## 未解决事项与验证边界
-
-- T29 仍未解决：任务通知主控标准测试一次为 255 passed／1 failed／3 ignored，旧 T20 窗格替换用例超时，单项核对一次通过；Clippy、通知相关检查及真实 Drover 隔离主流程通过。不能称整套全绿，也不能从旧基线失败推断新增轮询无负载回归。
-- 用户已确认收紧范围：撤回 saddle 持久去重阻塞，接受会话去重／启动基线；限制和理由见 DESIGN §48。不得恢复旧的返工要求或继续统计式重跑。Drover 发送端持久去重不变。
-- Hammerspoon 限流／上下文／用量系统提醒保留。CCNotify 已按单独授权移除，数据和配置备份保留在 `~/.local/state/ccnotify-removal/20260928-171636/`；细节见 T33 任务记录，不再操作。
-- T36 已正式开工。委托文件 `docs/任务/T36-Drover人工完成实施委托.md`，提交 `11c106b`；corral 已向原 drover/main（a781ee31bc67）送达 confirmed。Drover 已固定契约 `a292b2a`，实现者 drover/dev-manual-complete-1（465fd011c92e），Codex gpt-6-astra/xhigh，worktree `../drover-worktrees/m36-manual-complete`。路由三项未定后判重／碰要害／独立审查要。实现 b50d360 已完成，Drover 主控初审通过并提交记录 ef0a723；独立审查者 drover/dev-manual-review-1（99562bc7194c，Codex gpt-6-astra/xhigh）正在 detached `../drover-worktrees/review-m36-manual-complete` 审查 ef0a723。此为阶段历史，最终交付和消费方派发见下一步；上一任务 worktree 已全部收尾。
-
-## 接手先读
-
-- `AGENTS.md`
-- `docs/DESIGN.md` 第 48 节：现行通知设计及已接受取舍。
-- `docs/任务/任务通知-主控审查.md`：固定提交、验证局限、两边发布闭合。
-- `docs/任务/任务通知-接口与集成约定.md`：共享接口边界。
-- Drover 正式公开契约：`../drover/docs/通知JSON接口.md`；正式命令 `~/.local/bin/drover`。原 m35 worktree 已删除，不再引用它执行命令。
-- `docs/任务/T33-系统通知收敛调研.md` 与 `T33-系统通知调研报告.md`：历史调研与归档记录，不将旧状态当作当前状态。
+- T36 saddle 固定实现 `3d21879`，合并 `2beb321`，收尾 `b463f8d`。主控标准检查各一次：262 passed／0 failed／3 ignored，clippy 通过；没有追加测试。
+- 用户明确「不用再安排审查了……收尾吧」，取消 saddle 独立审查并结束追加验证。隔离联调没有执行，不能记作通过。取舍、验证和裁决见 `docs/任务/T36-主控审查.md`。
+- release 构建已成功，默认 `~/.local/bin/saddle` 仍链接共享 release 文件。用户需自行重启 saddle 使用新版；未替用户重启。
+- saddle 实现 worktree／分支已删除，idle、attached=0 的 `saddle/dev-t36-manual-complete-1` 随工作目录一并关闭；没有创建审查 agent。saddle 仅剩主仓库 worktree。
+- Drover 已审固定交付 `0e4d031`，主控和独立审查通过。已向现有 `drover/main` confirmed 送达联合落地指示，见 `docs/任务/T36-Drover人工完成实施委托.md` 最后一节。请其合并推送、确认 CLI 生效、处理旧写进程切换及清理其自开 dev/review；目前在执行，不能提前称两边全部发布完成。
+- **不关闭 drover/main**，它是用户主控。不得干扰其他用户 agent。
 
 ## 下一步
 
-T36 Drover 最终固定交付已接收：`0e4d031d3a570ef00e66b4df2f1e97b191f6607f`，主控和独立审查通过，必须改／建议改均 0；最后文档提交与审查点 ef0a723 的 bin／tests 完全一致。公开契约在 `../drover-worktrees/m36-manual-complete/docs/人工完成JSON接口.md`，执行路径为同 worktree `bin/drover`。两边联调前保留 Drover dev/review worktree 和 agent，不合并发布。
+接收 Drover 落地回报，核对 main/origin 固定 SHA、公开 CLI 路径、旧进程加载和清理结果，将实际情况归档。只做部署交接，不重跑套件、另派审查或恢复取消的联调。
 
-已派 saddle 消费方 `saddle/dev-t36-manual-complete-1`（instance `6c6a55cdb0df`，Claude Code opus[1m]/high，role=implementer），分支 `t36-manual-complete`，worktree `../saddle-worktrees/t36-manual-complete`，基线／任务提交 `50d1fb9`，任务 `docs/任务/T36-saddle人工完成实施.md`。路由三项拿不准后定常规／碰要害／独立审查要，原因是异步确认错绑会完成错误任务。
+真实队列未操作：最后公开状态为 T36 doing、loop=false、gate=true。不要调用 done/go/next 或人工完成替用户推进，后续任务由用户处理。待办仍是 T31、T29、T28、T32、T34。
 
-收到完成提醒后先核对状态、回复和固定 SHA；实际完成再主控审查，并派独立 Codex 审查身份／结果归属和确认边界。开发标准检查各一次，不再做基线统计。然后由 saddle/main 组织一次真实公开 CLI 的隔离主流程；消费方本轮不提前跑真实联调。通过后协调两边落地，注意旧版已启动写进程不受新互斥锁协调的切换限制。不得操作真实 T36 或关闭 drover/main，不把契约／派发进展当完工。
+## 保留事项
+
+- 现有通知已联合发布，用户亲自验证过 T35 完成提示并放行；通知偏好 In saddle（用户设置），不代改。
+- T29 偶发测试问题未修复；本次全绿不代表已解决。此前通知功能会话去重的已接受限制保持不变，见 DESIGN §48。
+- Hammerspoon 提醒保留；CCNotify 已授权移除，备份 `~/.local/state/ccnotify-removal/20260928-171636/`，不再操作。
+- T36 设计在 DESIGN §49。人工完成为新增入口，成功后等待放行，旧自动检查和普通 go 语义保留。记录只在 Run details 显示，入口无新键盘快捷键。
