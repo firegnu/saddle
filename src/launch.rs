@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 #[path = "launch_edit.rs"]
-mod edit;
+pub(crate) mod edit;
 
 const PROJECT: usize = 5;
 const CODEX: usize = 6;

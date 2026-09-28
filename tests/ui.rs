@@ -1817,6 +1817,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                     Some(ui::Workspace {
                         terminals: &terminals,
                         placement: None,
+                        search: None,
                         form: None,
                         program: "unused-fake-corral",
                         modal: false,
@@ -2239,7 +2240,11 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
             .any(|l| l.contains('…') && !l.contains("…/") && !l.contains("Loading…"))
     );
     let bar = &body[body.len() - 1];
-    assert_eq!(bar.trim_end(), " [Attached]  n New  s Sort  x Stop  z Fold");
+    // T23 adds Search; the existing bar layout falls back to one-column gaps to stay on one row.
+    assert_eq!(
+        bar.trim_end(),
+        " [Attached] / Search n New s Sort x Stop z Fold"
+    );
     assert_eq!(&body[body.len() - 2], expected[1]);
     // Every row of an entry belongs to it; headings, blanks and rules take no clicks.
     assert_eq!(hits.agents.len(), 5 + 4 + 6 + 4);

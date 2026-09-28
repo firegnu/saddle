@@ -164,12 +164,14 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Agents | ↑↓ / j k | Select an agent |
 | Agents | Enter / click a row | Attach in the active pane, or jump to the agent's existing pane |
 | Agents | n / New | Open the new-agent form |
+| Agents | / / Search | Filter agents by project or name; Enter or a click opens the agent (jumping to its pane if already open), Esc cancels |
 | New-agent form | Tab / Shift-Tab, Ctrl-U | Switch field, clear field |
 | New-agent form | Ctrl-P / Project, Ctrl-E / Edit path | Choose a registered project or edit its path |
 | New-agent form | Left/Right in Open in | Choose current pane (default), new tab, or a split direction; content-picker placement stays bound |
 | New-agent form | F4 / Advanced, Ctrl-S / Create agent, Esc | Toggle advanced settings, create, or return while keeping the draft |
 | Viewer chrome | Split ▾, then a side / + | Choose a split side or a new tab, then Terminal, New agent, or an agent to open or move there |
 | Viewer chrome | tab / pane title / × | Select a tab/pane, close a tab |
+| Viewer chrome | Zoom / Restore | With several panes, temporarily fill the terminal area with the focused pane (Agents and tabs stay); Restore returns the same split with that pane focused. Other panes keep running; focusing another pane, closing the zoomed pane, or a new split ends the zoom |
 | Viewer chrome | Close pane / Close tab | Confirm running shells, then close the pane or tab; agent displays only detach |
 | Agents | Mouse wheel / trackpad | Scroll the list without changing selection |
 | Agents | Tab / Shift-Tab | Open Tasks / focus Viewer |

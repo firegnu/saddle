@@ -471,3 +471,146 @@ fn pending_source_cwd_survives_the_handoff_without_committing_current_metadata()
     assert!(pane.viewer.metadata.instance.is_none());
     assert_eq!(pane.source_cwd(), Some("/synthetic/agent-project"));
 }
+
+#[test]
+fn zoom_is_display_only_and_ends_when_its_pane_loses_focus_or_closes() {
+    use saddle::terminals::{self, Control};
+    let area = Rect::new(0, 0, 60, 23);
+    let full = Rect::new(0, 3, 60, 20);
+    let buttons = |terminals: &Terminals| -> Vec<String> {
+        let mut screen = Terminal::new(TestBackend::new(60, 23)).unwrap();
+        let mut hits = Vec::new();
+        screen
+            .draw(|frame| {
+                hits = terminals::draw(&Theme::default(), frame, area, terminals, true, &[])
+            })
+            .unwrap();
+        let buffer = screen.backend().buffer().clone();
+        hits.iter()
+            .filter(|(_, c)| matches!(c, Control::Zoom(_)))
+            .map(|(h, _)| {
+                (h.area.x..h.area.right())
+                    .map(|x| buffer[(x, h.area.y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    };
+    let mut terminals = Terminals::new("unused-fake-corral".into());
+    let first = terminals.active_pane().id;
+    assert!(buttons(&terminals).is_empty(), "a single pane has no zoom");
+    terminals.toggle_zoom(first);
+    assert_eq!(terminals.rects(area), vec![(first, full)]);
+    let right = terminals.reserve(Place::Right, None);
+    let below = terminals.reserve(Place::Down, None);
+    let split = terminals.rects(area);
+    assert_eq!(split.len(), 3);
+    assert_eq!(buttons(&terminals), [" Zoom "]);
+
+    terminals.toggle_zoom(right.pane);
+    assert_eq!(terminals.active_pane().id, right.pane);
+    assert_eq!(terminals.rects(area), vec![(right.pane, full)]);
+    assert_eq!(buttons(&terminals), [" Restore "]);
+    assert!(terminals.valid(below) && terminals.get(first).is_some());
+    terminals.toggle_zoom(right.pane);
+    assert_eq!(
+        terminals.rects(area),
+        split,
+        "restore keeps layout and ratio"
+    );
+    assert_eq!(terminals.active_pane().id, right.pane);
+
+    // Focusing another pane shows the split again, so input never goes to a hidden pane.
+    terminals.toggle_zoom(right.pane);
+    terminals.focus(first);
+    assert_eq!(terminals.rects(area), split);
+    terminals.focus(right.pane);
+    assert_eq!(
+        terminals.rects(area),
+        split,
+        "the old zoom does not come back"
+    );
+    // A new split beside a zoomed pane is shown with the others.
+    terminals.toggle_zoom(right.pane);
+    let extra = terminals.reserve(Place::Left, None);
+    assert_eq!(terminals.rects(area).len(), 4);
+    assert_eq!(terminals.active_pane().id, extra.pane);
+    // Closing the zoomed pane leaves the remaining split; a lone pane cannot stay zoomed.
+    terminals.toggle_zoom(extra.pane);
+    terminals.close_pane(extra.pane).unwrap();
+    assert_eq!(terminals.rects(area), split);
+    terminals.toggle_zoom(below.pane);
+    terminals.close_pane(right.pane).unwrap();
+    terminals.close_pane(first).unwrap();
+    assert_eq!(terminals.rects(area), vec![(below.pane, full)]);
+    let again = terminals.reserve(Place::Right, None);
+    assert_eq!(terminals.rects(area).len(), 2, "{again:?}");
+    // Other tabs keep their own layout while one is zoomed.
+    terminals.toggle_zoom(again.pane);
+    let tab = terminals.active;
+    terminals.new_tab();
+    terminals.reserve(Place::Down, None);
+    assert_eq!(terminals.rects(area).len(), 2);
+    terminals.active = tab;
+    assert_eq!(terminals.rects(area), vec![(again.pane, full)]);
+}
+
+#[test]
+fn search_matches_project_or_name_and_stays_inside_small_screens() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use saddle::{
+        corral::Agent,
+        search::{Outcome, Search},
+    };
+    let agent = |name: &str, cwd: &str| Agent {
+        name: name.into(),
+        cwd: Some(cwd.into()),
+        ..Default::default()
+    };
+    let agents = [
+        agent("saddle/main", "/work/saddle"),
+        agent("corral/Dev", "/work/corral-worktrees/t9/"),
+        agent("drover/main", "/work/drover"),
+    ];
+    let names = |search: &Search| -> Vec<String> {
+        search
+            .matches(&agents)
+            .iter()
+            .map(|a| a.name.clone())
+            .collect()
+    };
+    let press =
+        |search: &mut Search, code| search.key(KeyEvent::new(code, KeyModifiers::NONE), &agents);
+    let mut search = Search::default();
+    assert_eq!(names(&search).len(), 3);
+    search.paste("T9");
+    assert_eq!(
+        names(&search),
+        ["corral/Dev"],
+        "project directory, any case"
+    );
+    press(&mut search, KeyCode::Backspace);
+    press(&mut search, KeyCode::Backspace);
+    search.paste("main");
+    assert_eq!(names(&search), ["drover/main", "saddle/main"]);
+    press(&mut search, KeyCode::Down);
+    press(&mut search, KeyCode::Down);
+    assert!(matches!(press(&mut search, KeyCode::Enter), Outcome::Open(n) if n == "saddle/main"));
+    search.paste("x");
+    assert!(names(&search).is_empty());
+    assert!(matches!(press(&mut search, KeyCode::Enter), Outcome::Stay));
+    assert!(matches!(press(&mut search, KeyCode::Esc), Outcome::Cancel));
+    let mut search = Search::default();
+    for (width, height) in [(120, 40), (40, 10), (20, 6), (5, 3), (1, 1)] {
+        let mut screen = Terminal::new(TestBackend::new(width, height)).unwrap();
+        screen
+            .draw(|frame| {
+                let hits = search.draw(&Theme::default(), frame, &agents, |_| false);
+                for hit in hits {
+                    assert_eq!(hit.area.intersection(frame.area()), hit.area);
+                }
+            })
+            .unwrap();
+        let cursor = screen.backend().cursor_position();
+        assert!(cursor.x < width && cursor.y < height);
+    }
+}

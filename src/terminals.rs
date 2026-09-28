@@ -189,10 +189,24 @@ pub struct Tab {
     pub active: u64,
     pub panes: Vec<Pane>,
     tree: Node,
+    /// A pane temporarily filling the tab. Display only: the tree and sessions are unchanged.
+    zoomed: Option<u64>,
 }
 impl Tab {
     pub fn layout(&self) -> serde_json::Value {
         serde_json::to_value(&self.tree).unwrap()
+    }
+    /// The zoomed pane, while it is still the focused one of several.
+    pub fn zoomed(&self) -> Option<u64> {
+        self.zoomed
+            .filter(|id| *id == self.active && self.panes.len() > 1)
+    }
+    /// Focus moving to another pane ends a zoom, so the input target always stays visible.
+    fn activate(&mut self, id: u64) {
+        if self.zoomed.is_some_and(|z| z != id) {
+            self.zoomed = None;
+        }
+        self.active = id;
     }
 }
 pub struct Terminals {
@@ -235,6 +249,7 @@ impl Terminals {
             active: id,
             tree: Node::Leaf(id),
             panes: vec![pane],
+            zoomed: None,
         });
         self.active = id;
         id
@@ -261,9 +276,26 @@ impl Terminals {
             .iter_mut()
             .find(|t| t.panes.iter().any(|p| p.id == id))
         {
-            tab.active = id;
+            tab.activate(id);
             self.active = tab.id;
         }
+    }
+    /// Zooms pane `id` to fill its tab's terminal area, or restores the split if it is zoomed.
+    /// A tab with a single pane has nothing to zoom.
+    pub fn toggle_zoom(&mut self, id: u64) {
+        let Some(tab) = self
+            .tabs
+            .iter_mut()
+            .find(|t| t.panes.iter().any(|p| p.id == id))
+        else {
+            return;
+        };
+        tab.zoomed = if tab.zoomed() == Some(id) || tab.panes.len() < 2 {
+            None
+        } else {
+            tab.activate(id);
+            Some(id)
+        };
     }
     pub fn find(&self, name: &str) -> Option<u64> {
         self.tabs
@@ -348,7 +380,7 @@ impl Terminals {
                 .remove(id)
                 .unwrap();
             if tab.active == id {
-                tab.active = tab.panes[0].id;
+                tab.activate(tab.panes[0].id);
             }
         }
         Some(pane)
@@ -362,6 +394,7 @@ impl Terminals {
                 active: id,
                 tree: Node::Leaf(id),
                 panes: vec![pane],
+                zoomed: None,
             });
         } else {
             let tab = self
@@ -436,7 +469,7 @@ impl Terminals {
             if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == *id)
                 && tab.panes.iter().any(|p| p.id == *pane)
             {
-                tab.active = *pane;
+                tab.activate(*pane);
             }
         }
         if let Some((tab, pane)) = snapshot.last() {
@@ -482,7 +515,10 @@ impl Terminals {
             area.width,
             area.height.saturating_sub(STRIP),
         );
-        self.tab().tree.rects(area, self.tab().active, &mut result);
+        match self.tab().zoomed() {
+            Some(id) => result.push((id, area)),
+            None => self.tab().tree.rects(area, self.tab().active, &mut result),
+        }
         result
     }
     pub fn disappeared(&mut self, names: &[&str]) -> Result<()> {
@@ -524,6 +560,8 @@ pub enum Control {
     Tab(u64),
     CloseTab(u64),
     ClosePane(u64),
+    /// Zoom a split pane over its tab's terminal area, or restore it.
+    Zoom(u64),
     Pane(u64),
     Previous,
     Next,
@@ -741,16 +779,33 @@ pub fn draw(
         // The widest set that fits the bottom border, laid out from its right corner.
         let split = (" Split ▾ ", Control::Split(id));
         let close = (" Close pane ", Control::ClosePane(id));
-        let sets = [
+        let cross = ("×", Control::ClosePane(id));
+        // Zoom sits beside Split only when the tab has several panes.
+        let zoom = (terminals.tab().panes.len() > 1).then(|| {
+            (
+                if terminals.tab().zoomed() == Some(id) {
+                    " Restore "
+                } else {
+                    " Zoom "
+                },
+                Control::Zoom(id),
+            )
+        });
+        let sets: Vec<Vec<_>> = [
             vec![
-                split,
-                close,
-                (" Close tab  ", Control::CloseTab(terminals.active)),
+                Some(split),
+                zoom,
+                Some(close),
+                Some((" Close tab  ", Control::CloseTab(terminals.active))),
             ],
-            vec![split, close],
-            vec![split, ("×", Control::ClosePane(id))],
-            vec![("×", Control::ClosePane(id))],
-        ];
+            vec![Some(split), zoom, Some(close)],
+            vec![Some(split), zoom, Some(cross)],
+            vec![zoom, Some(cross)],
+            vec![Some(cross)],
+        ]
+        .into_iter()
+        .map(|set| set.into_iter().flatten().collect())
+        .collect();
         let width = |set: &Vec<(&str, Control)>| {
             set.iter()
                 .map(|(label, _)| unicode_width::UnicodeWidthStr::width(*label) as u16)
