@@ -395,8 +395,8 @@ fn mouse_selection_attaches_and_quit_remains_responsive_during_output_flood() {
     let mut h = Harness::start();
     h.see("Tasks · ");
     h.see("Synthetic title");
-    // One-based SGR coordinates: first agent headline is screen row 5.
-    h.send(b"\x1b[<0;5;5M");
+    // One-based SGR coordinates: first agent headline is screen row 6.
+    h.send(b"\x1b[<0;5;6M");
     h.see("p/a READY");
     h.send(b"F");
     h.event("flood p/a");
@@ -1753,7 +1753,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     )
     .unwrap();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;5M"); // Mouse: the first agent row opens p/a in the current pane.
+    h.send(b"\x1b[<0;5;6M"); // Mouse: the first agent row opens p/a in the current pane.
     h.see("p/a READY");
     // Cancelling at either step keeps the single pane and tab.
     h.click("Split ▾");
@@ -1821,7 +1821,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
 fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;5M");
+    h.send(b"\x1b[<0;5;6M");
     h.see("p/a READY");
     h.send(b"A");
     h.see("INPUT RECEIVED");
@@ -1881,7 +1881,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
 fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;5M");
+    h.send(b"\x1b[<0;5;6M");
     h.see("p/a READY");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.click("Split ▾");
@@ -3213,4 +3213,122 @@ fn t23_search_click_on_an_open_agent_consumes_the_whole_mouse_gesture() {
     let inputs: Vec<_> = events.lines().filter(|l| l.starts_with("input ")).collect();
     assert_eq!(inputs, ["input p/a 51"], "search click leaked mouse bytes");
     assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
+}
+
+/// Two registered projects share task number T3: awaiting release in one, failed in the other.
+const T22_QUEUE: &str = r#"#!/usr/bin/env python3
+import json, sys
+from pathlib import Path
+root = Path(__file__).parent
+args = sys.argv[1:]
+with (root / 'queue-events').open('a') as f:
+    f.write(json.dumps(args) + '\n')
+if (Path.cwd() / 'fail-list').exists():
+    print('synthetic project read failure', file=sys.stderr)
+    sys.exit(4)
+mode = dict(loop=False, gate=True)
+state_file = Path.cwd() / 'queue-state.json'
+if state_file.exists():
+    state = json.loads(state_file.read_text())
+elif Path.cwd().name == 'project-one':
+    state = dict(mode=mode, paused=False, current=None,
+        awaiting=dict(id='T3', title='Ready to ship', body='awaiting body text'),
+        pending=[dict(id='T4', title='Next up', body='')],
+        history=[dict(id='T2', title='Old done', body='', status='done')])
+else:
+    state = dict(mode=mode, paused=False, current=None, awaiting=None, pending=[],
+        history=[dict(id='T3', title='Broke build', body='failure body text', status='failed', reason='check failed'),
+                 dict(id='T1', title='Fine one', body='fine body text', status='done')])
+if args == ['list', '--json']:
+    print(json.dumps(state))
+    sys.exit(0)
+print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
+sys.exit(99)
+"#;
+
+#[test]
+fn t22_attention_gathers_agents_and_every_project_and_opens_targets() {
+    let mut h = Harness::start_with_projects(T22_QUEUE, true);
+    // p/taken starts waiting for input; p/b finishes its turn unseen, which is a new reply.
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/b":"idle","p/taken":"blocked"}"#,
+    )
+    .unwrap();
+    h.see("Attention · 4");
+    h.send(b"a");
+    h.see("Input ▸ Attention");
+    h.until(|h| {
+        let popup = h.popup("Attention ━");
+        popup.contains("New reply") && popup.contains("project-two · T3")
+    });
+    let popup = h.popup("Attention ━");
+    let at = |text: &str| {
+        popup
+            .find(text)
+            .unwrap_or_else(|| panic!("{text}:\n{popup}"))
+    };
+    assert!(at("Needs attention") < at("p/taken") && at("p/taken") < at("New replies"));
+    assert!(at("Waiting for input") < at("New replies"));
+    assert!(at("project-one · T3") < at("New replies") && popup.contains("Awaiting release"));
+    assert!(at("project-two · T3") < at("New replies") && popup.contains("Failed"));
+    assert!(at("New replies") < at("p/b"), "{popup}");
+    assert_eq!(popup.matches("p/b").count(), 1, "{popup}");
+    // Opening a task switches Tasks to its project and selects it by identity.
+    h.click_in("Attention ━", "project-two · T3");
+    h.until(|h| !h.contents().contains("Attention ━"));
+    h.see("Input ▸ Tasks");
+    h.see("failure body text");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    // The row click that opened Tasks is over; the next click on an agent row still attaches.
+    h.click("○ a ");
+    h.see("p/a READY");
+    // The entry opens Attention by mouse too.
+    // Mark seen hides only that project's failed T3; the other project's T3 stays.
+    h.click("Attention · 4");
+    h.see("Input ▸ Attention");
+    h.send(b"\x1b[B\x1b[B");
+    h.send(b"m");
+    h.until(|h| !h.popup("Attention ━").contains("project-two · T3"));
+    assert!(h.popup("Attention ━").contains("project-one · T3"));
+    h.see("Attention · 3");
+    // An agent row opens that agent; viewing it clears its new reply.
+    h.click_in("Attention ━", "p/b");
+    h.see("p/b READY");
+    h.see("Attention · 2");
+    // Waiting and awaiting release leave only when their public state changes.
+    std::fs::write(
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/b":"idle","p/taken":"idle"}"#,
+    )
+    .unwrap();
+    h.see("Attention · 1");
+    std::fs::write(
+        h.dir.path().join("project-one/queue-state.json"),
+        r#"{"mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
+    )
+    .unwrap();
+    h.see("Attention · 0");
+    // A failed read is reported, never shown as nothing to do.
+    std::fs::write(h.dir.path().join("project-two/fail-list"), "").unwrap();
+    h.see("Attention · 1");
+    h.send(b"\x1da");
+    h.see("Input ▸ Attention");
+    h.until(|h| {
+        let popup = h.popup("Attention ━");
+        popup.contains("project-two") && popup.contains("Read failed")
+    });
+    h.send(b"\x1b");
+    h.quit();
+    let queue = h.log("queue-events");
+    assert!(
+        queue.lines().all(|l| l == r#"["list", "--json"]"#),
+        "{queue}"
+    );
+    let events = h.log("events");
+    assert!(
+        !events.contains("stop ") && !events.contains("input "),
+        "{events}"
+    );
 }

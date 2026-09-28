@@ -1821,6 +1821,11 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                         form: None,
                         program: "unused-fake-corral",
                         modal: false,
+                        attention: ui::Attention {
+                            items: &[],
+                            loading: false,
+                            popup: None,
+                        },
                     }),
                 );
             })
@@ -2205,6 +2210,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
     // Row for row as in the design (spinner frames as drawn at this instant).
     let expected = [
         " Agents · 4                  Tasks · Loading… Tab ",
+        " Attention · 0                                    ",
         " ──────────────────────────────────────────────── ",
         " corral/ ──────────────────────────────────── (1) ",
         " ┃ ○ main                ✳ claude idle      ⦿ 11s ",
@@ -2245,7 +2251,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
         bar.trim_end(),
         " [Attached] / Search n New s Sort x Stop z Fold"
     );
-    assert_eq!(&body[body.len() - 2], expected[1]);
+    assert_eq!(&body[body.len() - 2], expected[2]);
     // Every row of an entry belongs to it; headings, blanks and rules take no clicks.
     assert_eq!(hits.agents.len(), 5 + 4 + 6 + 4);
     use saddle::theme as t;
@@ -2254,9 +2260,9 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
     assert_label_color(&buffer, "ATT 0", t::AGENTS_DIMMER);
     assert_label_color(&buffer, "↑3", t::AGENTS_YELLOW);
     // Group heading: accent name, faint line, dim count.
-    assert_eq!(buffer[(2, 3)].fg, t::AGENTS_ACCENT);
-    assert_eq!(buffer[(10, 3)].fg, t::AGENTS_FAINT);
-    assert_eq!(buffer[(47, 3)].fg, t::AGENTS_DIM);
+    assert_eq!(buffer[(2, 4)].fg, t::AGENTS_ACCENT);
+    assert_eq!(buffer[(10, 4)].fg, t::AGENTS_FAINT);
+    assert_eq!(buffer[(47, 4)].fg, t::AGENTS_DIM);
     assert_label_color(&buffer, "0s", t::AGENTS_BLUE);
     assert_label_color(&buffer, "…/personal_projs/", t::AGENTS_DIM);
 }

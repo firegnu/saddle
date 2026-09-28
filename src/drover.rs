@@ -478,3 +478,75 @@ impl Drop for DetailWorker {
         }
     }
 }
+
+/// One Attention reading: the registry, then each listed project's snapshot as its read returns.
+pub enum Survey {
+    Projects(Result<Vec<String>, String>),
+    Snapshot(String, Result<Box<Snapshot>, String>),
+}
+/// Rereads the registry and every registered project's public snapshot, a round at a time,
+/// until dropped. Projects are read in parallel so a slow one does not hold back the others;
+/// the next round starts only after the previous one finished.
+pub struct Surveyor {
+    pub updates: std::sync::mpsc::Receiver<Survey>,
+    wake: std::sync::mpsc::Sender<()>,
+    cancel: std::sync::Arc<AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+impl Surveyor {
+    pub fn start(program: String, registry: PathBuf, every: Duration) -> Self {
+        use std::sync::{Arc, atomic::Ordering, mpsc};
+        let (send, updates) = mpsc::channel();
+        let (wake, wait) = mpsc::channel::<()>();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let quitting = cancel.clone();
+        let thread = std::thread::spawn(move || {
+            while !quitting.load(Ordering::Relaxed) {
+                let projects = registered_projects(&registry).map_err(|e| format!("{e:#}"));
+                let list = projects.clone().unwrap_or_default();
+                if send.send(Survey::Projects(projects)).is_err() {
+                    break;
+                }
+                std::thread::scope(|scope| {
+                    for project in &list {
+                        let client = Client {
+                            program: program.clone(),
+                            cwd: project.into(),
+                        };
+                        let (send, quitting) = (send.clone(), &quitting);
+                        scope.spawn(move || {
+                            let result = client.read(quitting).map(Box::new);
+                            let _ = send.send(Survey::Snapshot(
+                                project.clone(),
+                                result.map_err(|e| format!("{e:#}")),
+                            ));
+                        });
+                    }
+                });
+                if wait.recv_timeout(every) == Err(mpsc::RecvTimeoutError::Disconnected) {
+                    break;
+                }
+            }
+        });
+        Self {
+            updates,
+            wake,
+            cancel,
+            thread: Some(thread),
+        }
+    }
+    /// Starts the next round now, or right after the one in progress.
+    pub fn refresh(&self) {
+        let _ = self.wake.send(());
+    }
+}
+impl Drop for Surveyor {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.refresh();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}

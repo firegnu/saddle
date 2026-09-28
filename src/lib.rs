@@ -1,5 +1,6 @@
 pub mod agents;
 pub mod app;
+pub mod attention;
 pub mod buttons;
 mod command;
 pub mod config;

@@ -158,6 +158,9 @@ struct App {
     reply_due: Instant,
     placement: Option<Placement>,
     search: Option<crate::search::Search>,
+    survey: drover::Surveyor,
+    board: crate::attention::Board,
+    attention: Option<crate::attention::Popup>,
     native_mouse: bool,
     new_agent: Option<crate::launch::Form>,
     /// Agents New draft parked while a location-bound form is in use.
@@ -209,6 +212,14 @@ impl App {
             .to_string();
         let queue_worker =
             drover::Worker::start(queue_client, Duration::from_millis(config.refresh_ms));
+        // Across projects, reads come every five refresh periods; opening Attention rereads.
+        let survey = drover::Surveyor::start(
+            expand_home(&config.queue.drover)
+                .to_string_lossy()
+                .into_owned(),
+            expand_home("~/.drover/projects"),
+            Duration::from_millis(config.refresh_ms.saturating_mul(5)),
+        );
         Ok(Self {
             control: crate::control::Server::start()?,
             records: Vec::new(),
@@ -238,6 +249,9 @@ impl App {
             reply_due: Instant::now(),
             placement: None,
             search: None,
+            survey,
+            board: Default::default(),
+            attention: None,
             native_mouse: false,
             new_agent: None,
             agent_draft: None,
@@ -271,6 +285,8 @@ impl App {
                 .filter(|pane| pane.viewer.session.is_some())
                 .filter_map(|pane| pane.viewer.showing.clone())
                 .collect();
+            let items = self.board.items(&self.panel, now());
+            let loading = self.board.loading();
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
                     frame,
@@ -295,6 +311,11 @@ impl App {
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
                         modal: self.closing.is_some(),
+                        attention: ui::Attention {
+                            items: &items,
+                            loading,
+                            popup: self.attention.as_mut(),
+                        },
                     }),
                 );
                 self.draw_closing(frame);
@@ -310,6 +331,8 @@ impl App {
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
+                    self.board.agents_loaded = true;
+                    self.board.corral_error = None;
                     self.viewer
                         .disappeared(&agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>())?;
                     self.panel.absorb(
@@ -327,8 +350,14 @@ impl App {
                     cwds.dedup();
                     self.git.watch(cwds);
                 }
-                Err(error) => self.panel.message = format!("corral: {error:#}"),
+                Err(error) => {
+                    self.board.corral_error = Some(format!("{error:#}"));
+                    self.panel.message = format!("corral: {error:#}");
+                }
             }
+        }
+        for update in self.survey.updates.try_iter() {
+            self.board.absorb(update);
         }
         for batch in self.git.updates.try_iter() {
             self.panel.absorb_git(batch);
@@ -834,6 +863,12 @@ impl App {
                     self.search_outcome(outcome);
                     return Ok(false);
                 }
+                if let Some(popup) = &mut self.attention {
+                    let items = self.board.items(&self.panel, now());
+                    let outcome = popup.key(key, &items);
+                    self.attention_outcome(outcome);
+                    return Ok(false);
+                }
                 if self.focus == Focus::Agents
                     && let Some(name) = self.panel.confirm.take()
                 {
@@ -901,6 +936,9 @@ impl App {
                 }
                 if let Some(search) = &mut self.search {
                     search.paste(&text);
+                    return Ok(false);
+                }
+                if self.attention.is_some() {
                     return Ok(false);
                 }
                 if self.focus == Focus::Queue {
@@ -1000,6 +1038,26 @@ impl App {
                         }
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => search
                             .scroll(mouse.kind == MouseEventKind::ScrollDown, &self.panel.agents),
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+                // Attention takes all mouse input the same way.
+                if let Some(popup) = &mut self.attention {
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            if let Some(target) = popup.click(point) {
+                                // Only an agent focuses a terminal the gesture could reach;
+                                // Tasks takes the rest of it by itself.
+                                self.native_mouse =
+                                    matches!(target, crate::attention::Target::Agent(_));
+                                self.attention_outcome(crate::attention::Outcome::Open(target));
+                            }
+                        }
+                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                            let items = self.board.items(&self.panel, now());
+                            popup.scroll(mouse.kind == MouseEventKind::ScrollDown, &items);
+                        }
                         _ => {}
                     }
                     return Ok(false);
@@ -1191,6 +1249,72 @@ impl App {
             }
         }
     }
+    /// Opening only shows the target: an agent's terminal, or a task selected in its project's
+    /// Tasks. Nothing is answered, released or advanced.
+    fn attention_outcome(&mut self, outcome: crate::attention::Outcome) {
+        use crate::attention::{Outcome, Target};
+        match outcome {
+            Outcome::Stay => {}
+            Outcome::Cancel => {
+                self.attention = None;
+                self.focus = Focus::Agents;
+            }
+            Outcome::Seen(target) => {
+                self.board.seen.insert(target);
+            }
+            Outcome::Open(target) => {
+                self.attention = None;
+                self.focus = Focus::Agents;
+                match target {
+                    Target::Agent(name) => {
+                        self.panel.select(Some(name));
+                        self.attach();
+                    }
+                    Target::Task {
+                        project,
+                        id,
+                        title,
+                        body,
+                    } => self.open_tasks(
+                        project,
+                        Some(drover::Task {
+                            id,
+                            title,
+                            body,
+                            ..Default::default()
+                        }),
+                    ),
+                    Target::Project(project) => self.open_tasks(project, None),
+                    Target::Source(_) => {}
+                }
+            }
+        }
+    }
+    /// Opens Tasks on `project`, selecting `task` once listed. An unfinished Tasks page or write
+    /// is kept rather than replaced.
+    fn open_tasks(&mut self, project: String, task: Option<drover::Task>) {
+        let unfinished = matches!(
+            self.queue.page,
+            queue::Page::Add { .. }
+                | queue::Page::Edit { .. }
+                | queue::Page::Delete { .. }
+                | queue::Page::Project(_)
+        ) || (self.queue.busy && self.queue.project != project);
+        if unfinished {
+            self.panel.message =
+                "Tasks has an unfinished action; finish or cancel it, then open this again.".into();
+            return;
+        }
+        if self.queue.project != project {
+            self.queue_request(drover::Request::Project(project));
+        }
+        match task {
+            Some(task) => self.queue.locate(task),
+            None => self.queue.page = queue::Page::List,
+        }
+        self.tasks_return = Focus::Agents;
+        self.focus = Focus::Queue;
+    }
     fn panel_key(&mut self, key: KeyEvent) {
         self.panel.message.clear();
         match key.code {
@@ -1198,6 +1322,10 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
             KeyCode::Char('/') => self.search = Some(Default::default()),
+            KeyCode::Char('a') => {
+                self.attention = Some(Default::default());
+                self.survey.refresh();
+            }
             KeyCode::Char('n') => {
                 self.reload_projects();
                 if self.new_agent.as_ref().is_some_and(|f| f.anchor.is_some()) {
