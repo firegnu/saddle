@@ -1,5 +1,7 @@
 use crate::drover::{Operation, Request, Snapshot, Task};
 use crate::theme::Theme;
+#[path = "queue_links.rs"]
+mod links_impl;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// What the Tasks popup shows. `List` is the list with the selected task beside it; every
@@ -30,12 +32,13 @@ pub enum Page {
         index: usize,
     },
 }
-/// The two readings of the selected task beside the list.
+/// Read-only views of the selected task beside the list.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum View {
     #[default]
     Text,
     Details,
+    Links,
 }
 #[derive(Default)]
 pub struct Panel {
@@ -58,6 +61,7 @@ pub struct Panel {
     /// another task, so each selection gets its own `drover show` target.
     pub content: Option<Box<crate::detail::TaskDetail>>,
     pub view: View,
+    pub links: crate::links::State,
     pub(crate) text_scroll: usize,
     pub(crate) content_area: ratatui::layout::Rect,
     pub message: String,
@@ -79,8 +83,32 @@ pub struct DetailKey {
 pub type ProjectPending = (String, Option<Result<Vec<Task>, String>>);
 impl Panel {
     pub fn click(&mut self, column: u16, row: u16) -> Option<Request> {
+        if self.view == View::Links
+            && matches!(self.page, Page::List)
+            && let Some((_, index)) = self
+                .links
+                .rows
+                .iter()
+                .find(|(area, _)| area.contains((column, row).into()))
+        {
+            if let Some(reading) = &mut self.links.reading {
+                reading.selected = *index;
+            } else {
+                self.links.selected = *index;
+            }
+            self.links.open();
+            return None;
+        }
         let point = (column, row).into();
         if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
+            if hit.key.code == KeyCode::Null {
+                self.view = View::Links;
+                return None;
+            }
+            if hit.key.code == KeyCode::Enter && self.view == View::Links {
+                self.view = View::Details;
+                return None;
+            }
             return self.key(hit.key);
         }
         if self.busy {
@@ -165,10 +193,10 @@ impl Panel {
             .into_iter()
             .find(|(_, t)| same_task(t, &detail.task))
     }
-    /// The `drover show` target while Run details is the chosen view. Pending and unnumbered
+    /// The `drover show` target while Run details or Links is chosen. Pending and unnumbered
     /// tasks are not covered by show; a pending task becomes a target once it starts.
     pub fn detail_key(&self) -> Option<DetailKey> {
-        if self.view != View::Details {
+        if !matches!(self.view, View::Details | View::Links) {
             return None;
         }
         let detail = self.content.as_ref()?;
@@ -216,6 +244,7 @@ impl Panel {
             .map(|(group, task)| (*group, (*task).clone()));
         let Some((group, task)) = selected else {
             self.content = None;
+            self.links = Default::default();
             return;
         };
         if !self
@@ -225,6 +254,7 @@ impl Panel {
         {
             self.content = Some(Box::new(crate::detail::TaskDetail::new(group, task)));
             self.text_scroll = 0;
+            self.links = Default::default();
         }
     }
     fn edit(&mut self) {
@@ -308,6 +338,10 @@ impl Panel {
         self.sync_content();
     }
     fn scroll_content(&mut self, delta: isize) {
+        if self.view == View::Links {
+            self.links.scroll(delta);
+            return;
+        }
         match (self.view, &mut self.content) {
             (View::Details, Some(detail)) => detail.scroll_by(delta),
             // Clamped when drawn, like the other plain-text pages.
@@ -586,6 +620,48 @@ impl Panel {
         {
             return None;
         }
+        if matches!(self.page, Page::List) {
+            match key.code {
+                KeyCode::Null => {
+                    self.view = View::Links;
+                    return None;
+                }
+                KeyCode::Tab | KeyCode::BackTab => {
+                    self.view = match (self.view, key.code == KeyCode::BackTab) {
+                        (View::Text, false) | (View::Links, true) => View::Details,
+                        (View::Details, false) | (View::Text, true) => View::Links,
+                        _ => View::Text,
+                    };
+                    return None;
+                }
+                _ => {}
+            }
+            if self.view == View::Links {
+                match key.code {
+                    KeyCode::Esc if self.links.reading.is_some() => self.links.back(),
+                    KeyCode::Up | KeyCode::Char('k') => self.links.scroll(-1),
+                    KeyCode::Down | KeyCode::Char('j') => self.links.scroll(1),
+                    KeyCode::PageUp => self.links.scroll(-self.content_page()),
+                    KeyCode::PageDown => self.links.scroll(self.content_page()),
+                    KeyCode::Enter => self.links.open(),
+                    KeyCode::Char('t' | 'c') => {}
+                    _ if self.links.reading.is_some() => return None,
+                    _ => {}
+                }
+                if matches!(
+                    key.code,
+                    KeyCode::Esc
+                        | KeyCode::Up
+                        | KeyCode::Down
+                        | KeyCode::Char('j' | 'k')
+                        | KeyCode::PageUp
+                        | KeyCode::PageDown
+                        | KeyCode::Enter
+                ) {
+                    return None;
+                }
+            }
+        }
         match key.code {
             KeyCode::Esc => {
                 self.message.clear();
@@ -816,6 +892,7 @@ impl Panel {
         self.buttons.clear();
         self.fields.clear();
         self.project_rows.clear();
+        self.links.rows.clear();
         self.list_area = Rect::default();
         self.content_area = Rect::default();
         if area.is_empty() {
@@ -839,7 +916,11 @@ impl Panel {
             return Vec::new();
         }
         let on_list = matches!(self.page, Page::List);
-        let ready = on_list && !self.busy && self.snapshot.is_some() && self.read_error.is_none();
+        let ready = on_list
+            && !self.reading_link()
+            && !self.busy
+            && self.snapshot.is_some()
+            && self.read_error.is_none();
         // Keep the compact toolbars when outlines would crowd out the task content.
         let outlined = inside.width >= 76 && inside.height >= 28;
         let draw_toolbar = if outlined {
@@ -977,7 +1058,11 @@ impl Panel {
             return Vec::new();
         }
         // Task actions below the list and content; Close sits apart on the right.
-        let close = "Close Esc";
+        let close = if self.reading_link() {
+            "Back Esc"
+        } else {
+            "Close Esc"
+        };
         let close_width = close.width() as u16 + 2;
         let (_, hits) = buttons::draw_compact(
             t,
@@ -1115,7 +1200,12 @@ impl Panel {
         };
         let mark = |view| if self.view == view { "●" } else { "○" };
         let text_label = format!("{} Task text t", mark(View::Text));
-        let details_label = format!("{} Run details ↵", mark(View::Details));
+        let details_label = format!(
+            "{} Run details{}",
+            mark(View::Details),
+            if self.view == View::Links { "" } else { " ↵" }
+        );
+        let links_label = format!("{} Links", mark(View::Links));
         let draw_tabs = if outlined {
             buttons::draw_outlined_top
         } else {
@@ -1128,13 +1218,14 @@ impl Panel {
             &[
                 tab(&text_label, K::Char('t'), View::Text),
                 tab(&details_label, K::Enter, View::Details),
+                tab(&links_label, K::Null, View::Links),
             ],
         );
         // The chosen view is bold in focus colour; the other one's label is grey.
-        let selected = if self.view == View::Text {
-            K::Char('t')
-        } else {
-            K::Enter
+        let selected = match self.view {
+            View::Text => K::Char('t'),
+            View::Details => K::Enter,
+            View::Links => K::Null,
         };
         for hit in &hits {
             if hit.key.code == selected {
@@ -1173,12 +1264,18 @@ impl Panel {
             );
             return;
         }
+        if self.view == View::Links {
+            self.draw_links(t, frame, body);
+            return;
+        }
+        self.links.rows.clear();
         let width = body.width.saturating_sub(1);
         let height = usize::from(body.height);
         let queried = self.detail_key().is_some();
         let detail = self.content.as_ref().unwrap();
         let live = self.live(detail);
         let (lines, top) = match self.view {
+            View::Links => unreachable!(),
             View::Details => {
                 let lines = detail.lines(t, live, queried, usize::from(width));
                 let max = lines.len().saturating_sub(height);
