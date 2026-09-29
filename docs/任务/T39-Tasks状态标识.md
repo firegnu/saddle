@@ -36,4 +36,4 @@
 - 改动：`src/queue.rs` 顶部状态行加 `Queue: ` 前缀（如 `Manual · Queue: Running · Loop off`）；Task text 视图标题首行前加所选任务自身状态标签，沿用 `task_status` 的文字与颜色。`tests/ui.rs` 补 Queue 前缀断言，新增 current + pending 下选中 current／pending 时顶部均为 Queue: Running、标题分别带 Running／Pending 及对应颜色的渲染测试。
 - 实际检查：`cargo test --test ui queue_` 通过；`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 干净。
 - 取舍：状态标签作为标题首行的前缀，与标题一起换行；未改状态判定和异步逻辑。
-- 未完成/注意：按预算未跑全套。顺带跑了 `--test workflow`，`t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases` 时过时不过（10 次里本分支 3 次中 2 次失败；暂存改动后基线跑 1 次通过），失败画面在 Viewer 新建 agent 弹窗，与 Tasks 展示无关，疑为已有的时序不稳，未处理。
+- 未完成/注意：按预算未跑全套。顺带跑了 `--test workflow`，`t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases` 时过时不过（多次运行中本分支跑 5 次失败 3 次；暂存改动后基线只跑了 1 次，通过，样本不足以定论），失败画面在 Viewer 新建 agent 弹窗，与 Tasks 展示无关，疑为已有的时序不稳，未处理。
