@@ -338,10 +338,14 @@ pub fn draw_workspace(
             match view.queue.view {
                 crate::queue::View::Text => "Tasks",
                 crate::queue::View::Details => "Tasks · Run details",
+                crate::queue::View::Dispatch => "Tasks · Dispatch",
                 crate::queue::View::Links => "Tasks · Links",
             }
             .to_string(),
-            if view.queue.view == crate::queue::View::Links {
+            if matches!(
+                view.queue.view,
+                crate::queue::View::Links | crate::queue::View::Dispatch
+            ) {
                 " ↑↓ Select / Scroll  ↵ Open  Tab View  PgUp/PgDn Scroll  c Projects  Esc Back / Close"
             } else {
                 " ↑↓ Select  t Text  ↵ Run details  Tab View  PgUp/PgDn Scroll  a Add  c Projects  ? Help  Esc Close"

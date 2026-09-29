@@ -8,6 +8,7 @@ pub mod control;
 pub mod corral;
 pub mod detail;
 pub mod diagnostics;
+pub mod dispatch;
 pub mod drover;
 pub mod git;
 pub mod history;

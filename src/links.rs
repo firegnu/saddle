@@ -322,14 +322,15 @@ pub enum Output {
     Text(String),
     Range(Vec<(String, String)>),
 }
-struct Job {
-    result: std::sync::mpsc::Receiver<Result<Output>>,
+/// A background read whose result is dropped with it; dropping also cancels the work.
+pub(crate) struct Job<T = Result<Output>> {
+    pub(crate) result: std::sync::mpsc::Receiver<T>,
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
-impl Job {
-    fn start(
-        work: impl FnOnce(&std::sync::atomic::AtomicBool) -> Result<Output> + Send + 'static,
+impl<T: Send + 'static> Job<T> {
+    pub(crate) fn start(
+        work: impl FnOnce(&std::sync::atomic::AtomicBool) -> T + Send + 'static,
     ) -> Self {
         let (tx, result) = std::sync::mpsc::channel();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -344,7 +345,7 @@ impl Job {
         }
     }
 }
-impl Drop for Job {
+impl<T> Drop for Job<T> {
     fn drop(&mut self) {
         self.cancel
             .store(true, std::sync::atomic::Ordering::Relaxed);

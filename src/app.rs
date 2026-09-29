@@ -1163,7 +1163,8 @@ impl App {
                         if (key.code == KeyCode::Char('q') && !typing)
                             || (key.code == KeyCode::Esc
                                 && matches!(self.queue.page, queue::Page::List)
-                                && !self.queue.reading_link())
+                                && !self.queue.reading_link()
+                                && !self.queue.reading_dispatch())
                         {
                             self.focus = self.tasks_return;
                         } else if let Some(request) = self.queue.key(key) {

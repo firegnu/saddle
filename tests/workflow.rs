@@ -3786,6 +3786,105 @@ fn task_links_open_explicit_file_and_return_without_terminal_input() {
     h.quit();
 }
 
+fn dispatch_harness(dlog: Option<&str>) -> Harness {
+    let dlog = dlog.map(str::to_owned);
+    Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        move |root| {
+            let program = match dlog {
+                Some(data) => {
+                    let project = root.canonicalize().unwrap().display().to_string();
+                    std::fs::write(root.join("dlog.json"), data.replace("PROJECT", &project))
+                        .unwrap();
+                    common::script(root, "dlog", include_str!("fixtures/dlog.py"))
+                }
+                None => root.join("not-installed").display().to_string(),
+            };
+            let mut config = std::fs::OpenOptions::new()
+                .append(true)
+                .open(root.join("config.toml"))
+                .unwrap();
+            writeln!(config, "dispatch_log = {program:?}").unwrap();
+            std::fs::write(
+                root.join("queue-state.json"),
+                serde_json::json!({
+                    "mode": {}, "paused": false, "history": [],
+                    "pending": [{"id":"T38", "title":"Dispatch task", "body":"SYNTHETIC BODY"}]
+                })
+                .to_string(),
+            )
+            .unwrap();
+        },
+    )
+}
+
+#[test]
+fn dispatch_tab_lists_recorded_steps_opens_full_text_and_returns() {
+    let sha = "c".repeat(64);
+    let dispatch = serde_json::json!({"schema_version": 1, "dispatch_id": "0123456789abcdef0123456789abcdef",
+        "project": "PROJECT", "task": "T38", "kind": "initial", "parent": null,
+        "created_at": "2026-09-29T08:00:00+00:00"});
+    let start = serde_json::json!({"schema_version": 1, "event_id": "e1", "observed_at": "2026-09-29T08:03:00+00:00",
+        "dispatch_id": "0123456789abcdef0123456789abcdef", "kind": "corral.start", "source": "recorder_observation",
+        "association": {"source": "controller_declared", "context_found": true},
+        "data": {"operation_id": "op", "labels": {}, "agent_parameters": {"model": "opus[1m]", "effort": "high"},
+                 "task_file": {"path": "/w/T38.md", "read_at": "2026-09-29T08:03:00+00:00", "content": {"sha256": sha, "bytes": 9}},
+                 "result": {"name": "saddle/dev-t38"}, "exit_code": 0}});
+    let data = serde_json::json!({"ls": [dispatch],
+        "show": {"0123456789abcdef0123456789abcdef": {"dispatch": dispatch, "events": [start]}},
+        "cat": {sha: "SNAPSHOT OF THE TASK FILE"}});
+    let mut h = dispatch_harness(Some(&data.to_string()));
+    h.see("Synthetic title");
+    h.click("Tasks · ");
+    h.see("Dispatch task");
+    h.click("○ Dispatch");
+    h.see("Input ▸ Tasks · Dispatch");
+    h.see("Initial dispatch");
+    h.see("Start saddle/dev-t38 · opus[1m] / high · ok");
+    h.send(b"\r");
+    h.see("SNAPSHOT OF THE TASK FILE");
+    h.see("Back Esc");
+    h.send(b"\x1b");
+    h.see("Close Esc");
+    h.see("› 09-29 08:03 Start");
+    assert!(!h.contents().contains("SNAPSHOT OF THE TASK FILE"));
+    h.click("Task text");
+    h.see("SYNTHETIC BODY");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Close Esc"));
+    let calls = h.log("dlog-calls");
+    assert!(
+        calls.lines().all(|l| l.starts_with("[\"ls\"")
+            || l.starts_with("[\"show\"")
+            || l.starts_with("[\"cat\"")),
+        "{calls}"
+    );
+    assert!(!h.log("events").contains("input "));
+    h.quit();
+}
+
+#[test]
+fn dispatch_without_the_recorder_says_so_and_other_views_keep_working() {
+    let mut h = dispatch_harness(None);
+    h.see("Synthetic title");
+    h.click("Tasks · ");
+    h.see("Dispatch task");
+    h.click("○ Dispatch");
+    h.see("dispatch-log not found");
+    h.click("Links");
+    h.see("Input ▸ Tasks · Links");
+    h.click("Task text");
+    h.see("SYNTHETIC BODY");
+    h.click("Run details");
+    h.see("Input ▸ Tasks · Run details");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Close Esc"));
+    h.quit();
+}
+
 #[test]
 fn task_links_validate_original_instance_before_attach_and_before_existing_navigation() {
     let mut h = Harness::start_prepared(

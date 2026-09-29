@@ -841,3 +841,47 @@ fn task_fields_edit_at_the_cursor() {
     };
     assert_eq!((title.as_str(), body.as_str()), ("YPb", "a1b\n中\n中d"));
 }
+
+#[test]
+fn dispatch_is_the_third_view_and_queries_only_explicit_task_numbers() {
+    let mut panel = Panel::default();
+    panel.project = "/tmp/project-a".into();
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "current": {"id":"T38", "title":"Now"}, "awaiting": null,
+            "pending": [{"title":"Unnumbered"}], "history": []
+        }))
+        .unwrap(),
+    );
+    let mut seen = Vec::new();
+    for _ in 0..4 {
+        panel.key(key(K::Tab));
+        seen.push(panel.view);
+    }
+    assert_eq!(
+        seen,
+        [View::Details, View::Dispatch, View::Links, View::Text]
+    );
+    panel.key(key(K::BackTab));
+    panel.key(key(K::BackTab));
+    assert_eq!(panel.view, View::Dispatch);
+    // Dispatch reads its own records, not `drover show`.
+    assert_eq!(panel.detail_key(), None);
+    let dispatch = panel.dispatch_key("dlog").unwrap();
+    assert_eq!(
+        (dispatch.project.as_str(), dispatch.task.as_str()),
+        ("/tmp/project-a", "T38")
+    );
+    panel.select(1);
+    assert_eq!(
+        panel.dispatch_key("dlog"),
+        None,
+        "no guessing without a task number"
+    );
+    assert!(panel.key(key(K::Enter)).is_none());
+    assert_eq!(
+        panel.view,
+        View::Dispatch,
+        "Enter opens an entry, not Run details"
+    );
+}

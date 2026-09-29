@@ -93,9 +93,13 @@ Layout state lives in `~/.local/state/saddle/layout.json`, or `$XDG_STATE_HOME/s
 
 If another terminal is attached to an agent, detach there before attaching through saddle. Stopping an agent is a separate, confirmed action.
 
+## Task dispatch records
+
+**Dispatch** (after **Run details**) shows how the selected task was handed out, when the controller recorded it with the separate [dispatch-log](https://github.com/firegnu/dispatch-log) recorder: each dispatch, rework and review in recorded order, one row per step with its time, target, model/effort and short result — the JEV route (its input, request, full parsed response and suggestion), the controller's decision and budget, the start with its task file snapshot, sends, the implementer's reply and review notes. Up/Down and Enter (or a click) open a step's full text inside Tasks; **Back / Esc** returns to the same row. Records are read only through the public `dlog ls --project <project> --task <id>`, `dlog show <id>` and `dlog cat <sha256>`, once per task opening (**Refresh r** reads them again); saddle never records, routes or sends through dispatch-log. Records are matched by the project root and explicit task number only; unnumbered tasks have none. Snapshots are copies saved at dispatch time, not the current files (those are in Links). The recorder is optional: when `queue.dispatch_log` is not found, there are no records, a record is missing a part, or a read fails or is in an unknown format, Dispatch says which, and the other views and task actions work as before.
+
 ## Task links
 
-Choose **Links** beside **Task text** and **Run details** in Tasks. **Tab / Shift-Tab** cycles these views. Files, commits and agents show their explicit source; click an entry or use Up/Down and Enter. File and commit previews stay inside Tasks; arrows, wheel and PgUp/PgDn scroll, and **Back / Esc** returns to the same Links selection. Esc again closes Tasks.
+Choose **Links** beside **Task text**, **Run details** and **Dispatch** in Tasks. **Tab / Shift-Tab** cycles these views. Files, commits and agents show their explicit source; click an entry or use Up/Down and Enter. File and commit previews stay inside Tasks; arrows, wheel and PgUp/PgDn scroll, and **Back / Esc** returns to the same Links selection. Esc again closes Tasks.
 
 Only explicit references in the task body and one level of its `Task file` are collected. For example:
 
@@ -153,6 +157,7 @@ refresh_ms = 1000
 [queue]
 drover = "drover"
 # cwd = "~/projects/my-project"
+dispatch_log = "dlog"
 ```
 
 | Setting | Meaning |
@@ -163,6 +168,7 @@ drover = "drover"
 | `refresh_ms` | Background refresh interval in milliseconds |
 | `queue.drover` | drover executable name or path |
 | `queue.cwd` | Optional initial queue project directory |
+| `queue.dispatch_log` | Optional dispatch-log (`dlog`) executable name or path for the Dispatch view |
 | `colors` | Optional flat table for interface and agent-type colors |
 
 Command paths and `queue.cwd` support `~/`. Queue reads the project registry at `~/.drover/projects`: it prefers `queue.cwd`, then the startup directory if registered, then the first registered project. With no registry entries, it tries the startup directory. The project picker also accepts a manual path; switching projects only affects the current session.
