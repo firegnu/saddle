@@ -85,7 +85,7 @@ pub fn check(
     let config = match std::fs::read_to_string(config) {
         Ok(text) => Config::parse(&text)
             .map(|_| true)
-            .map_err(|e| format!("{e:#}")),
+            .map_err(|e| without_values(&line(&format!("{e:#}")))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
     };
@@ -325,6 +325,28 @@ fn line(error: &str) -> String {
         })
         .collect();
     lines.join(" ")
+}
+
+/// A config error without what is quoted in it, the configured values; the place and kind of
+/// the problem stay.
+fn without_values(error: &str) -> String {
+    let mut text = String::new();
+    let mut chars = error.chars();
+    while let Some(c) = chars.next() {
+        if c != '"' && c != '`' {
+            text.push(c);
+            continue;
+        }
+        let mut escaped = false;
+        for inner in chars.by_ref() {
+            if inner == c && !escaped {
+                break;
+            }
+            escaped = c == '"' && inner == '\\' && !escaped;
+        }
+        text.extend([c, '…', c]);
+    }
+    text
 }
 
 /// The home folder shown as `~`, so the summary can be shared.

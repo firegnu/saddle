@@ -260,3 +260,33 @@ fn the_diagnostics_page_draws_in_tiny_and_normal_windows() {
         }
     }
 }
+
+#[test]
+fn a_config_error_keeps_its_place_and_kind_but_not_the_configured_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    let cancel = AtomicBool::new(false);
+    for (text, kind) in [
+        ("left_width = \"SYNTHETIC_PRIVATE_VALUE\"\n", "invalid type"),
+        (
+            "[colors]\nbg = \"SYNTHETIC_PRIVATE_VALUE\"\n",
+            "invalid color",
+        ),
+        ("refresh_ms = 10\nleft_width = 70000\n", "line 2"),
+    ] {
+        std::fs::write(&config, text).unwrap();
+        let checks = check("true", "true", &config, Duration::from_secs(5), &cancel);
+        let error = checks.config.as_ref().unwrap_err();
+        assert!(error.contains("line"), "{error}");
+        assert!(error.contains(kind), "{error}");
+        for value in ["SYNTHETIC_PRIVATE_VALUE", "70000"] {
+            assert!(!error.contains(value), "{error}");
+        }
+        let summary = Report {
+            checks: Some(checks),
+            ..empty_report(config.clone())
+        }
+        .summary();
+        assert!(!summary.contains("SYNTHETIC_PRIVATE_VALUE"), "{summary}");
+    }
+}
