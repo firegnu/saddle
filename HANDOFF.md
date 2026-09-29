@@ -1,21 +1,23 @@
 # 交接
 
-更新：2026-09-29。当前 main，T42 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。
+更新：2026-09-29。当前 main，T43 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。
 
-## 本轮 T42
+## 本轮 T43
 
-- 实现 `3ef9e4e`，合并 `0c46cce`，主控审查 `6c6a101`，收尾 `96321e2`。普通 Tasks 入口优先匹配当前焦点 agent 所属已登记仓库，有任务则切换；无任务或无法读取时保留当前项目。取舍与范围见 DESIGN §57、`docs/任务/T42-焦点仓库Tasks.md`。
-- 主控标准套件一次：282 passed／2 failed／3 ignored，T42 定向用例通过，clippy 与 diff 检查通过。两项失败分别为 `ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close` 的 fixture JSON EOF，以及 `t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell` 缺关闭确认字段；各单独一次复跑通过。全套未全绿，不据此宣布 T29 根因解决。详细日志路径见任务书。
-- 接受“打开后已有输入则不再自动换项目”和“只匹配已登记 Drover 项目”的保守取舍。实现者额外临时扰动 fixture 超出验证预算，已记录且不再追加检查。
-- main release 编译通过（`/tmp/saddle-t42-release.log`，5.45 秒），`~/.local/bin/saddle` 原软链仍指向共享 release；未重启用户界面。
-- 实现者 idle、attached=0，工作树干净并确认已合入后，删除其分支／worktree，并关闭 `saddle/dev-t42-focused-tasks-1`（工作目录已删，一并关闭）。旧 t38-dispatch-study 保留；其他用户 agent 未动。
-- 回复与审查 note 已存同一 dispatch：`25d80505684e4cbf9a6f757097e21e6a`，project=saddle 主仓库，task=T42。本交接随后提交推送，以实际 Git 状态为准。
+- 核心实现 `45564a7`，滚动检查修正 `13a4ce2`，合并 `131b55c`，审查 `44ae599`，收尾 `bc9f79f`。首次成功列表确定默认折叠状态，之后新增／退出 agent 不再改变它；z 仍可手动切换。范围／设计见 `docs/任务/T43-Agents展开状态.md`、DESIGN §58。
+- 主控首轮标准套件 283 passed／3 failed／3 ignored；clippy 通过。其中鼠标表单和待启动窗格 cwd 两项各单独一次复跑通过，不调查 T29。
+- 直接相关的滚动失败已交原实现者修正：旧鼠标 y 命中头部分隔线，原自动折叠掩盖了测试无效。改为实际 agent 行后，主控定向滚动检查 1 passed（10.67 秒），确认到底、回顶、刷新保位、不 attach。产品滚动和布局未改。未重复全套，不将首轮改写为全绿。详细记录及日志见 `docs/任务/T43-主控审查.md`。
+- main release 编译成功（5.43 秒，`/tmp/saddle-t43-release.log`），原 `~/.local/bin/saddle` 软链可用；未重启用户界面。
+- 实现者 idle、attached=0，工作树干净且已合入后，删除 t43-agents-fold 分支／worktree，并关闭其中自开的 `saddle/dev-t43-agents-fold-1`。历史 t38-dispatch-study 保留，其他用户 agent 未动。
+- 路由、派发、两轮回复、返工和审查 note 保存在同一 dispatch `29308f5afca7415dbb5a10cbd9edf606`。本交接随后提交推送，实际状态以 Git 为准。
 
 ## 队列与下一步
 
-只读核对 current=T42、awaiting=null；pending 顺序 T43、T29、T28、T32、T34，loop=false、gate=true、paused=false。用户重启查看 T42，之后自行放行；本轮未执行真实队列写操作。
+只读核对 current=T43、awaiting=null，pending 为 T29、T28、T32、T34；loop=false、gate=true、paused=false。本轮没有真实队列写操作。用户重启 Saddle 查看 T43，之后由用户放行；不自动推进 T29。T29 仍仅记录排查方向。
 
-T43 是用户刚要求新增的待办：主控委派新 agent 后左侧 Agents 意外全部收缩，需要按 z 恢复。已入队，未调查、未实现、未派发；不要自动开始。T29 仍仅记录排查方向。
+## 前次 T42
+
+T42 已完成并推送 `2312d3d`，当前 release 包含它。任务书 `docs/任务/T42-焦点仓库Tasks.md`，设计 §57，Dispatch `25d80505684e4cbf9a6f757097e21e6a`。自动切换仅匹配已登记 Drover 项目；打开后有用户输入就放弃切换。该轮主控标准套件 282 passed／2 failed／3 ignored，两项单独复跑通过，限制保留，不重复验证。
 
 ## 前次 T41
 
