@@ -59,3 +59,13 @@
 待决定：
 - 打开后“任何输入即放弃切换”偏保守：若 drover 很慢而用户马上开始翻列表，会停在原项目。如需“仅手选项目才放弃”，可放宽。
 - 未登记到 `~/.drover/projects` 的仓库不会被切到（即使该目录有 drover 队列）。
+
+## 主控审查（2026-09-29）
+
+结论：通过，接受实现 `3ef9e4e`。已核对公开回复 instance 与提交、六文件 diff；普通入口取焦点 cwd，只读 Git 仓库匹配与 drover list 在可取消后台查询中完成，不改变真实任务。已有显式导航、未完成表单／写操作及过期输入保护保留。
+
+取舍逐项接受：仅匹配已登记 Drover 项目，符合现有项目来源；同仓库优先同 worktree 顶层，否则登记顺序首项。打开后已有输入就放弃自动切换，避免用户开始浏览时突然换项目；这是保守交互选择，不改成持续跟随。未登记仓库不自动发现，作为当前能力边界向用户说明。
+
+验证：实现者报告目标检查真实 RED→GREEN、标准套件通过。主控在实现提交上重跑一次标准套件：282 passed／2 failed／3 ignored；T42 合成 workflow 用例通过，clippy 和 diff 检查通过。失败是 `ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close`（读取 shell fixture JSON 时 EOF）与 `t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell`（关闭确认字段为空）；二者未进入 Tasks 打开路径，各单独复跑一次均通过。未修改失败用例，未调查 T29 根因，不将本次全套描述为全绿。日志 `/tmp/saddle-t42-main-tests.log`、`/tmp/saddle-t42-main-clippy.log`、`/tmp/saddle-t42-main-retry-ctl.log`、`/tmp/saddle-t42-main-retry-cwd.log`。
+
+实现者另做了临时 history fixture 扰动并还原，超过本轮“不加变异检查”预算；不作为额外验收要求，后续不重复。无范围外代码或真实队列操作。本轮按既定预算不交叉审查。
