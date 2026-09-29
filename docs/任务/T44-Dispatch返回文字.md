@@ -53,3 +53,9 @@
 - 核对：`a717a6d` 的改动（`src/queue_dispatch.rs` 全文页 `Back Esc` 用 `draw_compact_top`，单行紧凑文字；Esc/点击返回与所选记录位置不变）符合要求，沿用，未重做。
 - 检查：`git diff --check` 无问题；`cargo test --test workflow dispatch_tab_lists_recorded_steps_opens_full_text_and_returns` 通过（共享 CARGO_TARGET_DIR）。
 - 取舍：按验证预算，未跑全套、clippy，未录屏；未动共享按钮、Links、读取与队列流程。
+
+## 主控审查
+
+通过。实现沿用 `a717a6d`；正式放行后由新实现者核对并完成一项直接显示检查，记录提交 `55a853f`。主控核对 diff 与 `git diff --check`：产品仅恢复共享紧凑文字渲染，仍使用原返回键和命中区接线；相关 workflow 检查外观、正文位置及 Esc 返回所选记录。接受该局部调整，按看得见预算不重复全套或 clippy，不扩到其他页面。
+
+本轮派发、回复和审查记录为 `9ddd04109c714f96ace9e4431f295fdf`。不自动推进或放行队列。
