@@ -48,3 +48,7 @@ Dispatch 记录全文页目前使用单行紧凑 `Back Esc`。使它复用弹窗
 结论：通过。实现提交 `b818247`，仅将 Dispatch 全文页的 `draw_compact_top` 换成 `draw_outlined_top`，沿用共享按钮与返回区域，不改导航或读取；接受局部修正，不扩展到 Links。现有合成 workflow 检查补了轮廓上下边框和正文位置，仍检查 Esc 回到原记录；实现者报告该项与 clippy 通过，diff 检查干净。纯显示预算，主控看 diff，不重复套件。
 
 任务书先读节号原误写 §34，主控已纠正为 §30；完成提交 SHA 由主控补记，未要求额外返工。路由、决定、派发快照、完成回复与本审查通过同一 dispatch_id 保留；早先纠正文档消息因 agent working 被拒绝，记录为未送达，不冒充返工已执行。
+
+## 合并与收尾
+
+合并 `b4fed14`，主控审查 `59cedd5`，收尾 `a86a36b`。在 idle、attached=0、工作树干净且已合入的条件下，清理实现分支／worktree，并关闭其中自开的实现者。旧 t38-dispatch-study 保留。main release 编译成功（`/tmp/saddle-t41-release.log`），原可执行软链生效；未代用户重启 Saddle。公开只读核对 current=T41、T29 在 pending、loop=false、paused=false；未推进真实队列。
