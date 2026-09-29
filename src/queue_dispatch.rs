@@ -43,7 +43,7 @@ impl Panel {
         };
         self.dispatch.rows.clear();
         if let Some(reading) = &mut self.dispatch.reading {
-            let (body, hits) = crate::buttons::draw_outlined_top(
+            let (body, hits) = crate::buttons::draw_compact_top(
                 t,
                 frame,
                 area,

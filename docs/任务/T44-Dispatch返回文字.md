@@ -37,3 +37,19 @@
 ## 做完
 
 在本文件追加修改、检查和取舍记录。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 本轮接手
+
+用户已正式送入 TASK T44，公开队列 current=T44。分支保留先前未审查、未合并的实现提交 `a717a6d`；以下旧记录不是本轮验证结果。请先核对现有改动，符合要求则直接沿用，不重做；按上述预算运行一项直接显示检查，并追加本轮完成记录，有直接问题才修正。
+
+## 前次保留改动记录
+
+- 修改：`src/queue_dispatch.rs` 全文页的 `Back Esc` 由 `draw_outlined_top`（三行圆角轮廓）改为 `draw_compact_top`（单行紧凑文字，与 Links 全文页一致）；按钮仍是 `KeyCode::Esc`，点击／Esc 返回及所选记录位置不变。
+- 检查：`tests/workflow.rs` 的 `dispatch_tab_lists_recorded_steps_opens_full_text_and_returns` 由断言三行轮廓改为断言 Back 上下无 `╭`/`╰`、正文在其下方；该测试通过。`git diff --check` 无问题。
+- 取舍：按验证预算，未造 RED、未跑全套和 clippy、未录屏；未动共享按钮、Links、读取与队列流程。
+
+## 本轮完成记录
+
+- 核对：`a717a6d` 的改动（`src/queue_dispatch.rs` 全文页 `Back Esc` 用 `draw_compact_top`，单行紧凑文字；Esc/点击返回与所选记录位置不变）符合要求，沿用，未重做。
+- 检查：`git diff --check` 无问题；`cargo test --test workflow dispatch_tab_lists_recorded_steps_opens_full_text_and_returns` 通过（共享 CARGO_TARGET_DIR）。
+- 取舍：按验证预算，未跑全套、clippy，未录屏；未动共享按钮、Links、读取与队列流程。
