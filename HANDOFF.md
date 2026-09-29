@@ -1,8 +1,15 @@
 # 交接
 
-更新：2026-09-29。当前 main，T43 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。
+更新：2026-09-29。当前 main，T44 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。
 
-## 本轮 T43
+## 本轮 T44
+
+- 用户正式送入 TASK T44 后，只读确认 current=T44，才恢复工作。此前误派发已停止，旧 Dispatch 按用户要求清除；本轮新记录 `9ddd04109c714f96ace9e4431f295fdf` 如实说明沿用保留实现 `a717a6d`。
+- 类型为样式／文案调整，任务书含新版技能的类型、依据和简短提示。轻档 sonnet/medium、影响面看得见、不交叉审查。接手记录 `55a853f`，合并 `c560c85`，主控审查 `e809755`，收尾 `526776b`。任务书见 `docs/任务/T44-Dispatch返回文字.md`，设计 §56。
+- Dispatch 全文页 `Back Esc` 恢复共享单行紧凑文字。实现者定向 workflow 显示检查通过，主控 diff 检查通过；按预算未跑全套或 clippy。release 编译成功（5.81 秒，`/tmp/saddle-t44-release.log`），原可执行软链可用；未重启用户界面。
+- 工作树干净、已合入、实现者 idle 且 attached=0 后，清理 t44-dispatch-back-text 分支／worktree，关闭其中自开的 `saddle/dev-t44-dispatch-text-approved-1`。保留历史 t38-dispatch-study，其他用户 agent 未动。
+
+## 前次 T43
 
 - 核心实现 `45564a7`，滚动检查修正 `13a4ce2`，合并 `131b55c`，审查 `44ae599`，收尾 `bc9f79f`。首次成功列表确定默认折叠状态，之后新增／退出 agent 不再改变它；z 仍可手动切换。范围／设计见 `docs/任务/T43-Agents展开状态.md`、DESIGN §58。
 - 主控首轮标准套件 283 passed／3 failed／3 ignored；clippy 通过。其中鼠标表单和待启动窗格 cwd 两项各单独一次复跑通过，不调查 T29。
@@ -13,7 +20,7 @@
 
 ## 队列与下一步
 
-只读核对 current=T43、awaiting=null，pending 为 T29、T28、T32、T34；loop=false、gate=true、paused=false。本轮没有真实队列写操作。用户重启 Saddle 查看 T43，之后由用户放行；不自动推进 T29。T29 仍仅记录排查方向。
+正式派发时只读核对 current=T44、awaiting=null，pending 为 T29、T28、T32、T34、T45；loop=false、gate=true。本轮没有队列写操作。用户重启 Saddle 查看 T44，之后由用户放行；不自动推进下一项。T29 仍仅记录排查方向；T45 是“Tasks 支持派发选中的任务”，仅入队，未调查或实施。
 
 ## 前次 T42
 
