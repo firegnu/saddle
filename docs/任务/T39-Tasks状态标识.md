@@ -46,3 +46,8 @@
 直接相关 `cargo test --test ui queue_`、clippy／fmt 检查由实现者报告通过；主控 diff 检查通过，按“看得见”预算不重跑套件。实现者超预算运行 workflow 和同一时序用例多次，并用自建 stash 做基线对照，属于流程偏差；stash 已恢复删除，无遗留文件或其他分支改动，不再追加验证。该测试在 T37 阶段已有基线失败证据，仍留在 T29，不称为本任务修复或全套全绿。
 
 本次只改显示及对应测试，未发现必须改项。主控接着合并、编译 release 和清理；不推进真实队列。
+
+
+## 收尾记录
+
+合并 5f99074；主控 release 构建成功，既有 ~/.local/bin/saddle 软链已指向包含 Queue: 的新产物。未替用户重启 saddle。t39-status-labels 分支和 worktree 已安全删除；实现者 idle、attached=0，工作目录已删，一并关闭。收尾空提交 e624e3d。HANDOFF 已更新，未执行 drover done／go／next，队列留给用户验收放行。
