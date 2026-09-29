@@ -2384,15 +2384,17 @@ fn folding_keeps_only_the_first_row_of_unselected_agents() {
     }
     assert!(hits.agents.len() < expanded);
     assert!(agents_lines(&buffer).join("\n").contains("z Expand"));
-    // More than five agents fold on their own; the selected one stays open.
-    let mut many = spec_sample();
+    // An initial list above five defaults to folded; the selected one stays open.
+    let mut initial_agents = spec_sample().agents;
     for i in 0..2 {
-        many.agents.push(Agent {
+        initial_agents.push(Agent {
             name: format!("saddle/extra-{i}"),
             state: Some("idle".into()),
             ..Default::default()
         });
     }
+    let mut many = agents::Panel::default();
+    many.absorb(initial_agents, None, 100.0);
     let (_, hits) = render_panel(160, &mut many, &[]);
     assert_eq!(hits.agents.len(), 5 + 5);
 }
@@ -2424,6 +2426,7 @@ fn effort_keeps_its_first_row_slot_when_folded_and_narrow() {
             ..Default::default()
         });
     }
+    a.toggle_fold();
     assert!(a.folded());
     for (width, brand, name, cut) in [
         (160, 8, 16, "dev-t20-workspa…"),

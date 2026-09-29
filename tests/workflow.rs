@@ -946,9 +946,32 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
     )
     .unwrap();
     h.see("Agents · 8");
+    h.see("worker-00");
+    h.see("z Fold");
+    assert!(!h.contents().contains("worker-07"));
+    let (_, row) = h.locate("worker-00", 0).unwrap();
     // Column 50 is the scrollbar, outside the text list but inside Agents.
-    h.send("\x1b[<65;51;4M".repeat(60).as_bytes());
-    h.see("worker-07");
+    // Use an agent row: terminal row 4 is the header separator, not the list.
+    let down = format!("\x1b[<65;51;{}M", row + 1).repeat(60);
+    let up = format!("\x1b[<64;51;{}M", row + 1).repeat(60);
+    // At this width the controls occupy one row, separated from the list by a rule.
+    let scrollbar_bottom = h.locate("z Fold", 0).unwrap().1 - 2;
+    // Each expanded fixture has five rows; wait until the last one's final row
+    // reaches the bottom, not merely until its headline first enters the viewport.
+    let at_bottom = |h: &Harness| {
+        h.locate("worker-07", 0)
+            .is_some_and(|(_, y)| y + 4 == scrollbar_bottom)
+            && h.screen
+                .screen()
+                .cell(scrollbar_bottom, 50)
+                .unwrap()
+                .contents()
+                == "█"
+    };
+    h.send(down.as_bytes());
+    h.until(at_bottom);
+    assert!(!h.contents().contains("worker-00"));
+    let last_row = h.locate("worker-07", 0).unwrap();
     let refreshes = h
         .log("events")
         .lines()
@@ -961,11 +984,14 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
             .count()
             > refreshes + 1
     });
-    assert!(h.screen.screen().contents().contains("worker-07"));
-    h.send("\x1b[<64;51;4M".repeat(60).as_bytes());
+    assert_eq!(h.locate("worker-07", 0), Some(last_row));
+    assert!(!h.contents().contains("worker-00"));
+    h.send(up.as_bytes());
     h.see("worker-00");
-    h.send("\x1b[<65;12;4M".repeat(60).as_bytes());
-    h.see("worker-07");
+    h.until(|h| h.locate("worker-00", 0).is_some_and(|(_, y)| y == row));
+    assert!(!h.contents().contains("worker-07"));
+    h.send(format!("\x1b[<65;12;{}M", row + 1).repeat(60).as_bytes());
+    h.until(at_bottom);
     assert!(!h.log("events").contains("attach "));
     h.quit();
 }

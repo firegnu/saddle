@@ -7,7 +7,7 @@ pub struct Panel {
     pub selected: Option<String>,
     /// `s` switches from the default status order to plain name order.
     pub by_name: bool,
-    /// Manual fold choice for this session; `None` folds automatically above five agents.
+    /// Session fold choice; `None` waits for the first successful list.
     pub fold: Option<bool>,
     pub show_reply: bool,
     pub reply_top: usize,
@@ -23,6 +23,7 @@ pub struct Panel {
 }
 impl Panel {
     pub fn absorb(&mut self, agents: Vec<Agent>, showing: Option<&str>, now: f64) {
+        self.fold.get_or_insert(agents.len() > 5);
         for a in &agents {
             self.first_seen.entry(a.name.clone()).or_insert(now);
             if let Some(old) = self.agents.iter().find(|old| old.name == a.name) {
@@ -80,7 +81,7 @@ impl Panel {
 
     /// Folded lists show only the first row of unselected agents.
     pub fn folded(&self) -> bool {
-        self.fold.unwrap_or(self.agents.len() > 5)
+        self.fold.unwrap_or(false)
     }
     pub fn toggle_fold(&mut self) {
         self.fold = Some(!self.folded());
