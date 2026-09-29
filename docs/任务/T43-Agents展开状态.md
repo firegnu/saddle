@@ -61,3 +61,9 @@
   - `cargo test --test workflow fold_toggles_by_key_and_bar_and_background_tab_agents_keep_the_local_mark -- --exact`：1 项通过。
   - `rustfmt --edition 2024 --check tests/workflow.rs`、`git diff --check`：通过。
 - 取舍与待决定事项：正常列表命中下滚动工作正常，仅修正测试坐标和等待／断言，无产品代码或布局修改；本轮未重跑全套或 clippy，未加变异检查，未扩展其他失败。复修范围内无待决定事项，提交后交主控审查。
+
+## 主控审查
+
+通过。实现 `45564a7`，直接滚动检查复修 `13a4ce2`；根因为未手选时持续按数量阈值折叠，接受首次成功列表确定默认、之后保留会话选择的最小修复。原滚动测试坐标落在分隔线，现已按实际 agent 行修正并由主控单独复跑通过；未改产品滚动或布局。
+
+主控首轮标准套件 283 passed／3 failed／3 ignored、clippy 通过；其中两项无关失败各单独复跑通过，直接滚动失败已在复修后定向通过。未重复全套，不冒充全套全绿。完整审查及日志见 `T43-主控审查.md`；未处理 T29、未操作真实队列。
