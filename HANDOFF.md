@@ -1,10 +1,18 @@
 # 交接
 
-更新：2026-09-29。当前 main，T38 发布交接已提交并推送至 `aaf2079`。本次在项目 `AGENTS.md` 加入主控使用 dispatch-log 的说明；`CLAUDE.md` 是指向它的符号链接，无需重复编辑。用户准备重启主控验证。
+更新：2026-09-29。当前 main。用户要求 saddle/main 与 drover/main 直接完成 Running 撤回 Pending，不走任务派发流程；真实误派发 T29 留给用户实验。
 
-本次提交范围仅 `AGENTS.md` 与本交接文档，提交前无其他 saddle 工作区变更；只改文档，检查 diff，不重复代码测试。提交、推送结果以 Git 当前状态为准。
+## 本轮结果与待部署
 
-## 当前结果
+- Saddle 实现 `9a65ba9`，合并 `302a7cc`，收尾 `6725382`；分支／worktree 已清理，没有新开 agent。main 的 release 已重新编译成功（`/tmp/saddle-return-release.log`），既有 `~/.local/bin/saddle` 软链无需修改；用户尚需重启 Saddle 查看入口。
+- 选中 Running → `Return to pending…` → 原因 + `Work has stopped` → 确认。同编号正文回待办首位，队列暂停，Run details 显示撤回历史；按钮不停止 agent。独立令牌、项目与返回校验，失败须刷新重确认，不调用 drop/add/go/next 回退。设计见 DESIGN §55，验证见 `docs/撤回待办验证.md`。
+- 新功能定向检查通过；Saddle 标准套件 282 passed／1 failed／3 ignored，失败为原 picker 用例（tests/workflow.rs:2294），单独一次通过；clippy 通过。不把全套记为全绿，不在此实现 T29 排查。
+- 隔离联调通过：实际 Saddle Panel／Client 调实际 Drover CLI，临时 Git/HOME/XDG、合成任务，无真实 agent／队列操作；验证编号正文顺序、暂停、历史、重放拒绝和不派下一项。
+- Drover 由 `drover/main` 完成并合入 main，最新回复 SHA `fdcd70d35c36a80915e4d285a13562036112c883`，尚未推送。对方报告 11 项专项、相关回归和两项变异检查通过；CLI 软链已加载新代码。未改 corral、dispatch-log 或共享技能。对方仍开着，勿自动关闭。
+- **待用户授权重载常驻服务**：Drover 主控确认旧 PID 37103 仍加载旧逻辑；公开部署方式为 `launchctl kickstart -kp "gui/$(id -u)/dev.drover.loop"`。重启立即检查全部登记项目，可能执行验收／完成／派发，pause 不能挡住当前任务完成检查。对方读到三个项目 loop off，但重启前要复核；本轮未执行重启、未改任何项目开关。详见 Drover `docs/撤回JSON接口.md` 的部署段。
+- 本次后续文档提交并推送仅涉及 Saddle；提交／远端状态以 Git 为准。真实 T29 实验尚未执行。
+
+## 此前 T38 结果
 
 - Tasks 详情为 Task text | Run details | Dispatch | Links。Dispatch 通过独立记录器的 ls/show/cat 只读展示派发、返工、审查和全文；缺少记录器／数据、读取失败或不兼容时如实显示，其他任务功能继续使用。
 - 实现 `bf9cb6a`，契约修正 `da39a9d`。JEV 建议读取对象 verdict（null 是 uncertain），corral 回复数字 at 单独显示来源时间，不与观察时间混同。
@@ -22,11 +30,11 @@
 
 ## 队列与下一步
 
-上次公开只读核对：current=T38、awaiting=null、loop=false、gate=true、paused=false；本次文档修改未重新查询队列。未执行 done/go/next，等待用户放行。旧调研分支未合入，可能继续挡住 Drover 的 branches_merged；如要处理需由用户决定，不为自动完成清理它。
+本轮公开只读核对：current=T29、awaiting=null、loop=false、gate=true、paused=true；未执行 done/go/next/drop/return-to-pending 等真实队列写操作。T29 是用户误发的排查任务，本轮没有开始其排查或派实现者。
 
-下一步由用户重启主控，验证它能读取项目采集说明，并在后续获授权的任务中使用记录器。不要为了测试自行派发或推进真实队列。
+下一步处理上面的常驻服务部署确认；用户重启 Saddle 后自行用 T29 做撤回实验。不要把当前新功能开发成果记成 T29 已完成，也不要为了测试自动撤回或推进它。
 
-T37／T39／T40 的代码和 release 已完成，历史审查在对应任务文件，不重复处理。T29 时序问题未修；本次控制 socket 单例失败保留记录，不扩入 T38。
+旧 t38-dispatch-study 分支／worktree 按用户要求保留，未合入的调研文档仍可能影响后续 branches_merged，不自动处理。T37／T39／T40 已完成，不重复处理。
 
 ## 约束
 
