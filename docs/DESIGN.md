@@ -1029,3 +1029,12 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 用户报告：主控派出新 agent 后左侧 Agents 意外全部收缩，需要按 z 才能恢复。用户已明确确认放行修复。
 
 本节替换 §40 的持续按 agent 数量自动折叠规则：启动时按初始成功列表数量选择默认（>5 折叠，否则展开），之后列表刷新或成员增减保留既有状态，不因派发跨过数量阈值而收缩。z 仍由用户手动切换；选中项展开、其余渲染与滚动规则保留。不新增跨重启持久化、配置或控件。
+
+## 59. T45 派发选中的 Pending（2026-09-29）
+
+用户要求在 Tasks 列表增加派发选中任务的按钮，免去手工调整顺序；Drover 接口完成后，用户已重新明确放行 Saddle 接入。
+
+- 在选中 Pending 的任务操作区增加单行 `Dispatch selected` 按钮，沿用既有样式和结果反馈，不新增快捷键或确认层。Current／Awaiting／History 不提供该操作；忙碌、读取失败、暂停、有 Current 或 Awaiting 时禁用。
+- 仅调用 `drover dispatch-pending --pos N --target-token TOKEN --json`，绑定点击时项目与展示中这一项 `dispatch_pending.pos/target_token`。字段缺失或不可用时禁用入口；不自行构造参数、不串联 move/next、不绕过现有门禁。
+- 按 Drover `docs/指定派发JSON接口.md`（schema_version 1）消费结果，区分发送确认与本地记录结果，手动模式显示 `manual_text`；拒绝、不确定、记录失败和草稿拼接如实提示并刷新，不自动更换目标或重试。沿用项目切换／异步结果归属保护。
+- 保留 Next 等既有项目操作；只改 Saddle 界面、公开 CLI 适配与直接检查，不改上游或全局技能，不用真实队列验证。
