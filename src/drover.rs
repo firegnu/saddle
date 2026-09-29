@@ -835,7 +835,13 @@ impl Client {
             Some(&self.cwd),
             Duration::from_secs(120),
             cancel,
-        )?;
+        )
+        .map_err(|error| {
+            // The run may have ended after drover already delivered; its answer is lost.
+            anyhow::anyhow!(
+                "Saddle cannot confirm the dispatch result ({error:#}); the task may or may not have been sent. Saddle has not retried. The queue refreshes now; check it and the main agent before dispatching again."
+            )
+        })?;
         let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 300);
         let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
             bail!(
@@ -902,13 +908,13 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
     });
     if draft {
         lines.push(
-            "Delivered together with a draft typed at the main agent; check what it received. Do not resend."
+            "Corral merged it with a draft typed at the main agent; check what it received. Do not resend."
                 .into(),
         );
     }
     lines.push(match record {
         "recorded" => "Record: recorded as started (now Current).".to_owned(),
-        "not_attempted" => "Record: not recorded; the task stays Pending.".to_owned(),
+        "not_attempted" => "Record: not recorded; drover saved no start.".to_owned(),
         "unknown" => "Record: unknown; the start may or may not have been saved.".to_owned(),
         other => format!("Record: unrecognized ({other})."),
     });
