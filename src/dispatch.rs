@@ -353,6 +353,15 @@ fn time(stamp: &str) -> String {
         _ => stamp.into(),
     }
 }
+/// route.py's `{verdict, ...}` suggestion: a null verdict means JEV is uncertain; its other
+/// fields (such as the tier's top `level`) are never shown as the verdict.
+fn verdict(value: &Value) -> &str {
+    match value.get("verdict") {
+        Some(Value::String(verdict)) => verdict,
+        Some(Value::Null) => "uncertain",
+        _ => "not recorded",
+    }
+}
 fn recorded(value: &Value) -> &str {
     value.as_str().unwrap_or("not recorded")
 }
@@ -426,9 +435,11 @@ fn describe(event: &Value, intent_only: bool, suggestion: Option<Result<Value, S
         let result = match (intent_only, suggestion) {
             (true, _) => format!("JEV route · {}", outcome()),
             (false, Some(Ok(s))) => format!(
-                "JEV suggestion · {} / {}",
+                "JEV suggestion · {} · tier {} · cross review {} · impact {}",
                 given(&s["model"], "model"),
-                given(&s["tier"], "tier")
+                verdict(&s["tier"]),
+                verdict(&s["cross_review"]),
+                verdict(&s["impact"])
             ),
             (false, Some(Err(_))) => "JEV suggestion unreadable".into(),
             (false, None) => format!("JEV route · no suggestion recorded · {}", outcome()),
@@ -581,11 +592,16 @@ fn corral_result(lines: &mut Vec<String>, data: &Value, intent_only: bool) {
         return;
     }
     let result = |key: &str| data["result"][key].as_str().unwrap_or("not returned");
+    // corral's `at` is a Unix time number; shown as given, apart from the recorder's clock.
+    let at = match &data["result"]["at"] {
+        Value::Number(at) => format!("{at} (Unix time from corral)"),
+        Value::String(at) => format!("{at} (corral's time)"),
+        _ => "not returned".into(),
+    };
     lines.push(format!(
-        "corral answered: name {}, instance {}, at {} (corral's time)",
+        "corral answered: name {}, instance {}, at {at}",
         result("name"),
         result("instance"),
-        result("at")
     ));
     if data["response_status"] == "unparseable" {
         lines.push("corral's answer could not be parsed.".into());

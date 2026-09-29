@@ -34,7 +34,7 @@ fn sample(project: &str) -> Value {
         "snapshot_semantics": "file_before_invocation_not_proof_of_read", "operation_id": "op-start",
         "requested_at": "2026-09-29T08:03:00+00:00", "recording_gaps": []});
     let mut started = start.clone();
-    started["result"] = json!({"ok": true, "name": "saddle/dev-t38", "instance": "abc123abc123", "at": "2026-09-29T08:03:01Z"});
+    started["result"] = json!({"ok": true, "name": "saddle/dev-t38", "instance": "abc123abc123", "at": 1790000000.5});
     started["exit_code"] = json!(0);
     let route = json!({"operation_id": "op-route", "route_path": "/r/route.py", "route_sha256": sha('9'),
         "summary": blob('1'), "mode": "B", "request": blob('2'), "parsed_response": null,
@@ -47,7 +47,7 @@ fn sample(project: &str) -> Value {
         "requested_at": "2026-09-29T09:00:00+00:00", "recording_gaps": []});
     let mut replied = reply.clone();
     replied["result"] =
-        json!({"name": "saddle/dev-t38", "instance": "abc123abc123", "at": "2026-09-29T08:59:00Z"});
+        json!({"name": "saddle/dev-t38", "instance": "abc123abc123", "at": 1790003600.25});
     replied["exit_code"] = json!(0);
     replied["reply"] = blob('5');
     replied["instance_check"] = json!("consistent");
@@ -129,7 +129,15 @@ fn sample(project: &str) -> Value {
         },
         "cat": {
             sha('1'): "SUMMARY SENT TO JEV", sha('2'): "{\"request\": 1}",
-            sha('3'): "{\"FULL\": \"parsed\"}", sha('4'): "{\"ok\": true, \"model\": \"opus\", \"tier\": \"常规\"}",
+            sha('3'): "{\"FULL\": \"parsed\"}", sha('4'): json!({
+                // route.py shape(): an uncertain tier keeps its top candidate only as `level`.
+                "ok": true, "model": "jev-1.13.0",
+                "tier": {"verdict": null, "level": "重", "score": 1.4,
+                         "probabilities": {"轻": 0.1, "常规": 0.4, "重": 0.5}, "confidence": 0.5},
+                "cross_review": {"verdict": "不要", "a": 0.1},
+                "impact": {"verdict": "改行为", "visible": 0.1},
+                "usage": {"input_tokens": 1}
+            }).to_string(),
             sha('5'): "IMPLEMENTER REPLY: tests pass", sha('6'): "REWORK TEXT",
             sha('7'): "CONTROLLER REVIEW TEXT", sha('b'): "PROMPT TEXT",
             sha('c'): "TASK FILE SNAPSHOT BODY",
@@ -219,9 +227,18 @@ fn records_of_the_explicit_task_list_each_step_once_and_open_full_text() {
     // An intent and its result are one step, not two dispatches.
     let rows = summaries(&state);
     assert_eq!(rows.len(), 6, "{rows:?}");
+    for expected in [
+        "JEV",
+        "jev-1.13.0",
+        "tier uncertain",
+        "cross review 不要",
+        "impact 改行为",
+    ] {
+        assert!(rows[0].contains(expected), "{expected}: {rows:?}");
+    }
     assert!(
-        rows[0].contains("JEV") && rows[0].contains("opus") && rows[0].contains("常规"),
-        "{rows:?}"
+        !rows[0].contains('重'),
+        "level is not the verdict: {rows:?}"
     );
     assert!(
         rows[1].contains("Controller decision")
@@ -253,9 +270,11 @@ fn records_of_the_explicit_task_list_each_step_once_and_open_full_text() {
         "Links",
         "not given",
         "abc123abc123",
+        "1790000000.5",
     ] {
         assert!(start.contains(expected), "{expected}: {start}");
     }
+    assert!(!start.contains("at not returned"), "{start}");
     state.back();
     assert!(state.reading.is_none());
     assert_eq!(state.selected, 2, "Esc returns to the same entry");
@@ -283,6 +302,10 @@ fn records_of_the_explicit_task_list_each_step_once_and_open_full_text() {
         "{reply}"
     );
     assert!(reply.contains("implementer's report"), "{reply}");
+    assert!(
+        reply.contains("1790003600.25") && !reply.contains("at not returned"),
+        "{reply}"
+    );
     state.back();
     let rework = open(&mut state, "Rework");
     assert!(
@@ -290,7 +313,7 @@ fn records_of_the_explicit_task_list_each_step_once_and_open_full_text() {
         "{rework}"
     );
     state.back();
-    assert!(open(&mut state, "review").contains("CONTROLLER REVIEW TEXT"));
+    assert!(open(&mut state, "Controller review note").contains("CONTROLLER REVIEW TEXT"));
     // Reading only uses the public read commands.
     assert!(
         f.calls()
