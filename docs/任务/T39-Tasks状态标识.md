@@ -30,3 +30,10 @@
 不操作真实 corral agent 或 drover 队列，不调用写操作；不读它们内部文件。不更改任务状态判定和异步逻辑，不顺手修 T29。不批量杀进程。不安装／发布／重启 saddle。
 只提交本分支，不合并、不推送、不清 worktree。不新增架构或状态系统，遇到超出显示修改的需求停下报告。
 完成后在本文件追加短记录：改动、实际检查、取舍和未完成项。回复固定 SHA，所有命令前台跑完，最后一行 DONE；完成后等待主控，不另设后台唤醒。
+
+## 完成记录（saddle/dev-t39-status-labels）
+
+- 改动：`src/queue.rs` 顶部状态行加 `Queue: ` 前缀（如 `Manual · Queue: Running · Loop off`）；Task text 视图标题首行前加所选任务自身状态标签，沿用 `task_status` 的文字与颜色。`tests/ui.rs` 补 Queue 前缀断言，新增 current + pending 下选中 current／pending 时顶部均为 Queue: Running、标题分别带 Running／Pending 及对应颜色的渲染测试。
+- 实际检查：`cargo test --test ui queue_` 通过；`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 干净。
+- 取舍：状态标签作为标题首行的前缀，与标题一起换行；未改状态判定和异步逻辑。
+- 未完成/注意：按预算未跑全套。顺带跑了 `--test workflow`，`t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases` 时过时不过（10 次里本分支 3 次中 2 次失败；暂存改动后基线跑 1 次通过），失败画面在 Viewer 新建 agent 弹窗，与 Tasks 展示无关，疑为已有的时序不稳，未处理。

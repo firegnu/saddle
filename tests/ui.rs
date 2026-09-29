@@ -901,6 +901,7 @@ fn queue_states_and_operation_results_have_semantic_colors() {
         assert_label_color(&buffer, label, color);
         assert_label_color(&buffer, "Loop off", t::DIM);
         assert!(text(&buffer).contains("Auto")); // Paused does not replace mode.
+        assert!(text(&buffer).contains("Queue: "), "{label}");
     }
     q.snapshot.as_mut().unwrap().mode.r#loop = true;
     assert_label_color(&render_queue(&mut q, 52, 32), "Loop on", t::AGENT_IDLE);
@@ -2632,4 +2633,53 @@ fn manual_completion_is_a_running_task_button_and_its_page_shows_checks_and_reas
     }
     // Small windows still draw without panicking.
     render_queue(&mut q, 40, 12);
+}
+
+#[test]
+fn queue_task_text_shows_selected_task_status_apart_from_queue_status() {
+    use saddle::theme as t;
+    let mut q = queue::Panel::default();
+    q.absorb(Snapshot {
+        current: Some(Task {
+            id: Some("T1".into()),
+            title: "Now".into(),
+            ..Default::default()
+        }),
+        pending: vec![Task {
+            id: Some("T2".into()),
+            title: "Later".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let buffer = render_queue(&mut q, 100, 32);
+    assert!(text(&buffer).contains("Queue: Running"));
+    assert_status_label(&buffer, "Running T1 Now", 7, t::AGENT_WORKING);
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Down,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let buffer = render_queue(&mut q, 100, 32);
+    assert!(text(&buffer).contains("Queue: Running"));
+    assert_status_label(&buffer, "Pending T2 Later", 7, t::AGENT_STARTING);
+}
+
+/// The row that starts with `row` has its first `len` cells in `color`.
+fn assert_status_label(buffer: &Buffer, row: &str, len: u16, color: ratatui::style::Color) {
+    let n = row.chars().count() as u16;
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width.saturating_sub(n) {
+            if row
+                .chars()
+                .enumerate()
+                .all(|(i, c)| buffer[(x + i as u16, y)].symbol() == c.to_string())
+            {
+                for i in 0..len {
+                    assert_eq!(buffer[(x + i, y)].fg, color, "{row}");
+                }
+                return;
+            }
+        }
+    }
+    panic!("missing {row}: {}", text(buffer));
 }

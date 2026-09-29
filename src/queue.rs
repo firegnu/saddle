@@ -1082,6 +1082,7 @@ impl Panel {
                 Style::default().fg(t.muted),
             ),
             Span::raw(" · "),
+            Span::styled("Queue: ", Style::default().fg(t.muted)),
             Span::styled(state, emphasis(color)),
             Span::raw(" · "),
             Span::styled(
@@ -1520,13 +1521,32 @@ impl Panel {
             }
             View::Text => {
                 let task = live.map(|(_, task)| task).unwrap_or(&detail.task);
+                let (group, status) = live
+                    .map(|(group, task)| (group, task.status.as_deref()))
+                    .unwrap_or((detail.group, detail.task.status.as_deref()));
+                let (status, status_color) = task_status(t, group, status);
+                let title_style = Style::default().fg(t.bright).add_modifier(Modifier::BOLD);
                 let mut lines: Vec<Line<'static>> = wrap_text(
-                    &format!("{} {}", task.id.as_deref().unwrap_or("·"), task.title),
+                    &format!(
+                        "{status} {} {}",
+                        task.id.as_deref().unwrap_or("·"),
+                        task.title
+                    ),
                     width,
                 )
                 .into_iter()
-                .map(|line| line.style(Style::default().fg(t.bright).add_modifier(Modifier::BOLD)))
+                .map(|line| line.style(title_style))
                 .collect();
+                // The status label leads the first row in the task's own status color.
+                if let Some(first) = lines.first_mut() {
+                    let text = first.to_string();
+                    if let Some(rest) = text.strip_prefix(status) {
+                        *first = Line::from(vec![
+                            Span::styled(status.to_owned(), title_style.fg(status_color)),
+                            Span::styled(rest.to_owned(), title_style),
+                        ]);
+                    }
+                }
                 lines.push(Line::raw(""));
                 if task.body.is_empty() {
                     lines.push(Line::from(Span::styled(
