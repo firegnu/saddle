@@ -63,6 +63,10 @@ pub fn return_click() -> KeyEvent {
 pub fn dispatch_click() -> KeyEvent {
     KeyEvent::new(KeyCode::Null, KeyModifiers::SHIFT)
 }
+/// The Dispatch selected button has no terminal shortcut either.
+pub fn dispatch_selected_click() -> KeyEvent {
+    KeyEvent::new(KeyCode::Null, KeyModifiers::SUPER)
+}
 /// Why the page cannot confirm its target now, or `None` when it can.
 pub fn manual_problem(manual: &Manual) -> Option<String> {
     let id = &manual.key.id;
@@ -200,7 +204,10 @@ impl Panel {
         }
         let point = (column, row).into();
         if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
-            if hit.key == manual_click() || hit.key == return_click() || hit.key == dispatch_click()
+            if hit.key == manual_click()
+                || hit.key == return_click()
+                || hit.key == dispatch_click()
+                || hit.key == dispatch_selected_click()
             {
                 return self.key(hit.key);
             }
@@ -338,6 +345,35 @@ impl Panel {
             .selected
             .checked_sub(usize::from(s.current.is_some()) + usize::from(s.awaiting.is_some()))?;
         (index < s.pending.len()).then_some(index)
+    }
+    /// The selected Pending task's shown position and token, while the queue could start it:
+    /// fresh data, nothing running, awaiting or paused, and a target drover offered.
+    fn dispatch_target(&self) -> Option<(u64, String)> {
+        let s = self.snapshot.as_ref()?;
+        if self.busy
+            || self.read_error.is_some()
+            || !matches!(self.page, Page::List)
+            || s.paused
+            || s.current.is_some()
+            || s.awaiting.is_some()
+        {
+            return None;
+        }
+        let target = s
+            .pending
+            .get(self.pending_index()?)?
+            .dispatch_pending
+            .as_ref()?;
+        match (
+            &target.pos,
+            &target.target_token,
+            &target.unavailable_reason,
+        ) {
+            (Some(pos), Some(token), None) if *pos > 0 && !token.is_empty() => {
+                Some((*pos, token.clone()))
+            }
+            _ => None,
+        }
     }
     /// Where the list has the shown task now: by id, or by content if unnumbered.
     fn live(&self, detail: &crate::detail::TaskDetail) -> Option<(&'static str, &Task)> {
@@ -712,7 +748,10 @@ impl Panel {
             Ok(text) => {
                 self.message_failed = false;
                 self.message = text.clone();
-                if matches!(operation, Operation::Go | Operation::Next) {
+                if matches!(
+                    operation,
+                    Operation::Go | Operation::Next | Operation::DispatchPending { .. }
+                ) {
                     self.page = Page::Feedback(text);
                     self.scroll = 0;
                 } else if let Operation::ReturnToPending { id, .. } = operation {
@@ -804,6 +843,17 @@ impl Panel {
                 self.open_manual(key == return_click());
             }
             return None;
+        }
+        if key == dispatch_selected_click() {
+            let (pos, token) = self.dispatch_target()?;
+            self.busy = true;
+            self.message_failed = false;
+            self.message = "Dispatching selected task…".into();
+            return Some(Request::Run(Operation::DispatchPending {
+                project: self.project.clone(),
+                pos,
+                token,
+            }));
         }
         if key == dispatch_click() {
             if matches!(self.page, Page::List) {
@@ -1469,6 +1519,13 @@ impl Panel {
                 ),
                 B::new("Delete x", K::Char('x'), ready).danger(),
             ]);
+            let mut button = B::new(
+                "Dispatch selected",
+                K::Null,
+                ready && self.dispatch_target().is_some(),
+            );
+            button.key = dispatch_selected_click();
+            controls.push(button);
         }
         if running {
             let mut button = B::new("Mark complete manually…", K::Null, ready);
@@ -2084,7 +2141,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nReturn to pending… (button, running task): confirm work has stopped and give a reason; retains the task and pauses the queue\nMark complete manually… (button, running task): confirm it done with a reason; it then awaits release\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nDispatch selected (button, pending task): send this task now instead of the first; unavailable while paused, running or awaiting release\nReturn to pending… (button, running task): confirm work has stopped and give a reason; retains the task and pauses the queue\nMark complete manually… (button, running task): confirm it done with a reason; it then awaits release\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),

@@ -35,6 +35,17 @@ pub struct Task {
     pub start: Option<String>,
     pub main: Option<String>,
     pub return_history: Vec<ReturnRecord>,
+    /// A pending task's target for `dispatch-pending`, as this listing showed it; absent from
+    /// an older drover, and left out when malformed.
+    #[serde(deserialize_with = "lenient")]
+    pub dispatch_pending: Option<PendingTarget>,
+}
+/// The shown position and opaque token of one Pending task; handed back unchanged, never built.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct PendingTarget {
+    pub pos: Option<u64>,
+    pub target_token: Option<String>,
+    pub unavailable_reason: Option<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -118,6 +129,12 @@ pub enum Operation {
         token: String,
         reason: String,
     },
+    /// Dispatch the Pending task the list showed at `pos`, bound by its listing token.
+    DispatchPending {
+        project: String,
+        pos: u64,
+        token: String,
+    },
 }
 impl Operation {
     pub fn args(&self) -> Vec<String> {
@@ -171,6 +188,14 @@ impl Operation {
                 reason.trim().into(),
                 "--json".into(),
             ],
+            Self::DispatchPending { pos, token, .. } => vec![
+                "dispatch-pending".into(),
+                "--pos".into(),
+                pos.to_string(),
+                "--target-token".into(),
+                token.clone(),
+                "--json".into(),
+            ],
         }
     }
 }
@@ -181,6 +206,9 @@ impl Client {
         }
         if let Operation::CompleteManually { project, id, .. } = operation {
             return self.complete_manually(project, id, &operation.args(), cancel);
+        }
+        if let Operation::DispatchPending { project, .. } = operation {
+            return self.dispatch_pending(project, &operation.args(), cancel);
         }
         if let Operation::Edit { pending, index, .. }
         | Operation::Move { pending, index, .. }
@@ -786,6 +814,157 @@ impl Client {
                 .unwrap_or_else(|| "not recorded".into())
         ))
     }
+}
+impl Client {
+    /// Runs `dispatch-pending` once in this project. Only a confirmed delivery that was recorded,
+    /// or manual mode's recorded start with its text, is a success; every other answer is
+    /// reported from its structured fields and never retried.
+    fn dispatch_pending(
+        &self,
+        project: &str,
+        args: &[String],
+        cancel: &AtomicBool,
+    ) -> Result<String> {
+        let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
+        if real(&self.cwd) != real(std::path::Path::new(project)) {
+            bail!("The project changed; the selected task was not dispatched.");
+        }
+        let output = crate::command::run(
+            &self.program,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            Some(&self.cwd),
+            Duration::from_secs(120),
+            cancel,
+        )
+        .map_err(|error| {
+            // The run may have ended after drover already delivered; its answer is lost.
+            anyhow::anyhow!(
+                "Saddle cannot confirm the dispatch result ({error:#}); the task may or may not have been sent. Saddle has not retried. The queue refreshes now; check it and the main agent before dispatching again."
+            )
+        })?;
+        let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 300);
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+            bail!(
+                "This drover does not support dispatching a selected task, or its answer was lost ({}). Saddle has not retried; refresh and check the queue and main agent: {}{}",
+                output.status,
+                text(&output.stdout),
+                text(&output.stderr)
+            );
+        };
+        if value["schema_version"] != 1 {
+            bail!(
+                "drover dispatch-pending: unsupported schema_version {}. Saddle has not retried; check the queue and main agent.",
+                value["schema_version"]
+            );
+        }
+        let (clean, report) = dispatch_report(&value, output.status.success());
+        if clean { Ok(report) } else { bail!(report) }
+    }
+}
+/// Words `dispatch-pending`'s answer for the user, delivery and record apart, and whether it is
+/// a success: exit 0, `ok`, and either a confirmed delivery without a draft or manual mode, each
+/// recorded.
+fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, String) {
+    let task = value["task_id"].as_str();
+    let delivery = &value["delivery"];
+    let status = delivery["status"].as_str().unwrap_or("missing");
+    let record = value["record"]["status"].as_str().unwrap_or("missing");
+    let exit = delivery["corral_exit_code"].as_i64();
+    let exit_text = exit.map_or("no exit code".to_owned(), |code| {
+        format!("corral exit {code}")
+    });
+    let draft = delivery["merged_with_draft"] == true;
+    let manual = value["manual_text"]
+        .as_str()
+        .filter(|text| !text.is_empty());
+    let mut lines = vec![match task {
+        Some(id) => format!("{id} · dispatch of the selected task"),
+        None => "Selected task · not dispatched".to_owned(),
+    }];
+    lines.push(match status {
+        "confirmed" => "Delivered to the main agent (confirmed by corral).".to_owned(),
+        "unconfirmed" => {
+            format!("Delivery not confirmed ({exit_text}); check the main agent. Do not resend.")
+        }
+        "rejected" => {
+            let why = match exit {
+                Some(2) => "no such agent",
+                Some(6) => "sandbox refused",
+                Some(7) => "agent not idle",
+                Some(8) => "a person is typing there",
+                _ => "refused",
+            };
+            format!("Delivery rejected by corral ({exit_text}: {why}); nothing was sent.")
+        }
+        "unknown" => format!(
+            "Delivery result unknown ({exit_text}); the text may or may not have been sent."
+        ),
+        "not_sent" => {
+            "Delivery: not sent; no main agent is configured. Paste the text below to it yourself."
+                .to_owned()
+        }
+        "not_attempted" => "Delivery: not attempted; nothing was sent.".to_owned(),
+        other => format!("Delivery status unrecognized ({other}); check the main agent."),
+    });
+    if draft {
+        lines.push(
+            "Corral merged it with a draft typed at the main agent; check what it received. Do not resend."
+                .into(),
+        );
+    }
+    lines.push(match record {
+        "recorded" => "Record: recorded as started (now Current).".to_owned(),
+        "not_attempted" => "Record: not recorded; drover saved no start.".to_owned(),
+        "unknown" => "Record: unknown; the start may or may not have been saved.".to_owned(),
+        other => format!("Record: unrecognized ({other})."),
+    });
+    if let Some(code) = value["error"]["code"].as_str() {
+        let meaning = match code {
+            "target_changed" => "the queue changed since it was shown; Refresh and choose again",
+            "state_busy" => "another queue write was running",
+            "current_exists" => "a task is already running",
+            "paused" => "the queue is paused",
+            "awaiting_release" => "a task awaits release",
+            "send_rejected" => "corral refused the delivery",
+            "delivery_unconfirmed" => "delivery was not confirmed",
+            "delivery_unknown" => "the delivery result is unknown",
+            "target_ambiguous" => "another pending task shares its number or title",
+            "write_failed" => "drover could not save its record",
+            _ => "drover refused the request",
+        };
+        lines.push(format!(
+            "Drover: {meaning} ({code}): {}",
+            value["error"]["why"].as_str().unwrap_or_default()
+        ));
+    }
+    let clean = exited_zero
+        && value["ok"] == true
+        && task.is_some()
+        && record == "recorded"
+        && ((status == "confirmed" && !draft) || (status == "not_sent" && manual.is_some()));
+    if value["ok"] == true && !clean {
+        lines.push(format!(
+            "Unexpected answer ({}); check the queue and main agent.",
+            if exited_zero {
+                "exit 0"
+            } else {
+                "non-zero exit"
+            }
+        ));
+    }
+    if let Some(text) = manual {
+        lines.push(String::new());
+        lines.push("Text for the main agent:".into());
+        lines.push(text.to_owned());
+    }
+    if !clean {
+        lines.push(String::new());
+        lines.push(
+            "Saddle has not retried. The queue refreshes now; check it and the main agent before dispatching again."
+                .into(),
+        );
+    }
+    (clean, lines.join("\n"))
 }
 /// Queries one task's details until dropped; the next query starts only after the previous one
 /// returned. Dropping it cancels a running query and discards its results.

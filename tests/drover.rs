@@ -877,3 +877,316 @@ exit $(cat code)
     );
     assert!(!temp.path().join("calls").exists());
 }
+
+#[test]
+fn list_json_keeps_each_pending_dispatch_target_and_tolerates_missing_or_malformed_ones() {
+    let snapshot: saddle::drover::Snapshot = serde_json::from_value(serde_json::json!({
+        "mode":{}, "paused":false, "current":null, "awaiting":null, "history":[],
+        "pending":[
+            {"id":"T1","title":"A","body":"","dispatch_pending":{"pos":1,"target_token":"d1:aa","unavailable_reason":null,"future":1}},
+            {"id":"T2","title":"B","body":"","dispatch_pending":{"pos":2,"target_token":null,"unavailable_reason":"target_ambiguous"}},
+            {"id":"T3","title":"C","body":""},
+            {"id":"T4","title":"D","body":"","dispatch_pending":{"pos":"x","target_token":7}}
+        ]
+    }))
+    .unwrap();
+    let targets: Vec<_> = snapshot
+        .pending
+        .iter()
+        .map(|t| t.dispatch_pending.clone())
+        .collect();
+    assert_eq!(
+        targets[0],
+        Some(saddle::drover::PendingTarget {
+            pos: Some(1),
+            target_token: Some("d1:aa".into()),
+            unavailable_reason: None,
+        })
+    );
+    assert_eq!(
+        targets[1].as_ref().unwrap().unavailable_reason.as_deref(),
+        Some("target_ambiguous")
+    );
+    assert_eq!(targets[2], None, "an older drover has no field");
+    assert_eq!(
+        targets[3], None,
+        "a malformed field is left out, not guessed"
+    );
+    assert_eq!(snapshot.pending[3].title, "D", "the rest of the task stays");
+}
+
+#[test]
+fn dispatch_selected_sends_the_shown_target_once_and_reports_delivery_and_record_apart() {
+    use saddle::drover::Operation;
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+for arg in "$@"; do printf '[%s]' "$arg" >> calls; done
+echo >> calls
+cat response
+exit $(cat code)
+"#,
+    );
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let op = Operation::DispatchPending {
+        project: temp.path().display().to_string(),
+        pos: 2,
+        token: "d1:$(touch bad) '".into(),
+    };
+    assert_eq!(
+        op.args(),
+        [
+            "dispatch-pending",
+            "--pos",
+            "2",
+            "--target-token",
+            "d1:$(touch bad) '",
+            "--json"
+        ]
+    );
+    let run = |value: &serde_json::Value, code: i32| {
+        std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
+        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
+        client.execute(&op, &AtomicBool::new(false))
+    };
+    let answer = |ok: bool,
+                  task: serde_json::Value,
+                  state: serde_json::Value,
+                  delivery: &str,
+                  exit: serde_json::Value,
+                  record: &str| {
+        serde_json::json!({
+            "schema_version":1, "ok":ok, "task_id":task, "state":state,
+            "delivery":{"status":delivery, "attempted":!exit.is_null(), "corral_exit_code":exit,
+                        "confirmed":delivery == "confirmed", "merged_with_draft":false},
+            "record":{"status":record}, "manual_text":null
+        })
+    };
+    let confirmed = answer(
+        true,
+        "T2".into(),
+        "current".into(),
+        "confirmed",
+        0.into(),
+        "recorded",
+    );
+    let text = run(&confirmed, 0).unwrap();
+    assert!(text.contains("T2") && text.contains("Delivered"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("calls")).unwrap(),
+        "[dispatch-pending][--pos][2][--target-token][d1:$(touch bad) '][--json]\n",
+        "one call with the shown position and token, verbatim"
+    );
+    assert!(!temp.path().join("bad").exists());
+
+    // Manual mode: recorded as started, but nothing was sent; the text is for pasting.
+    let mut manual = answer(
+        true,
+        "T2".into(),
+        "current".into(),
+        "not_sent",
+        serde_json::Value::Null,
+        "recorded",
+    );
+    manual["manual_text"] = "请做 T2：调研\n正文".into();
+    let text = run(&manual, 0).unwrap();
+    assert!(
+        text.contains("not sent")
+            && text.contains("请做 T2：调研\n正文")
+            && !text.contains("Delivered"),
+        "{text}"
+    );
+
+    // Everything else is shown as a failure, never as delivered, from its structured fields.
+    let mut draft = confirmed.clone();
+    draft["delivery"]["merged_with_draft"] = true.into();
+    let mut unconfirmed = answer(
+        false,
+        "T2".into(),
+        "current".into(),
+        "unconfirmed",
+        3.into(),
+        "recorded",
+    );
+    unconfirmed["error"] = serde_json::json!({"code":"delivery_unconfirmed","why":"未确认"});
+    let mut rejected = answer(
+        false,
+        "T2".into(),
+        "pending".into(),
+        "rejected",
+        7.into(),
+        "not_attempted",
+    );
+    rejected["error"] = serde_json::json!({"code":"send_rejected","why":"主控忙"});
+    let mut unknown = answer(
+        false,
+        "T2".into(),
+        "pending".into(),
+        "unknown",
+        serde_json::Value::Null,
+        "not_attempted",
+    );
+    unknown["error"] = serde_json::json!({"code":"delivery_unknown","why":"超时"});
+    let mut changed = answer(
+        false,
+        serde_json::Value::Null,
+        serde_json::Value::Null,
+        "not_attempted",
+        serde_json::Value::Null,
+        "not_attempted",
+    );
+    changed["error"] = serde_json::json!({"code":"target_changed","why":"队列变了"});
+    let mut unwritten = answer(
+        false,
+        "T2".into(),
+        "unknown".into(),
+        "confirmed",
+        0.into(),
+        "unknown",
+    );
+    unwritten["error"] = serde_json::json!({"code":"write_failed","why":"磁盘满"});
+    let contradictory = answer(
+        true,
+        "T2".into(),
+        "current".into(),
+        "unconfirmed",
+        0.into(),
+        "recorded",
+    );
+    let mut schema = confirmed.clone();
+    schema["schema_version"] = 2.into();
+    for (value, code, words) in [
+        (&draft, 0, vec!["draft", "Delivered"]),
+        (
+            &unconfirmed,
+            8,
+            vec!["not confirmed", "delivery_unconfirmed", "recorded"],
+        ),
+        (
+            &rejected,
+            8,
+            vec!["rejected", "7", "send_rejected", "主控忙"],
+        ),
+        (&unknown, 8, vec!["unknown", "delivery_unknown", "超时"]),
+        (&changed, 3, vec!["target_changed", "队列变了", "Refresh"]),
+        (&unwritten, 2, vec!["Delivered", "write_failed", "unknown"]),
+        (&contradictory, 0, vec!["not confirmed"]),
+        (&confirmed, 1, vec!["Delivered"]),
+        (&schema, 0, vec!["schema_version"]),
+    ] {
+        let error = format!("{:#}", run(value, code).unwrap_err());
+        for word in words {
+            assert!(error.contains(word), "{word}: {error}");
+        }
+        assert!(
+            error.contains("not retried") || error.contains("schema_version"),
+            "{error}"
+        );
+        if value != &draft && value != &unwritten && value != &confirmed {
+            assert!(!error.contains("Delivered"), "{error}");
+        }
+    }
+    // An older drover without the command: no JSON, nothing else is sent.
+    std::fs::write(temp.path().join("response"), "未知命令 dispatch-pending").unwrap();
+    std::fs::write(temp.path().join("code"), "2").unwrap();
+    let error = format!(
+        "{:#}",
+        client.execute(&op, &AtomicBool::new(false)).unwrap_err()
+    );
+    assert!(error.contains("does not support"), "{error}");
+
+    std::fs::remove_file(temp.path().join("calls")).unwrap();
+    let elsewhere = Operation::DispatchPending {
+        project: "/another/project".into(),
+        pos: 2,
+        token: "d1:aa".into(),
+    };
+    assert!(client.execute(&elsewhere, &AtomicBool::new(false)).is_err());
+    assert!(
+        !temp.path().join("calls").exists(),
+        "another project's target is never sent"
+    );
+}
+
+#[test]
+fn dispatch_selected_feedback_claims_only_what_the_answer_states() {
+    use saddle::drover::Operation;
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+echo call >> calls
+[ -f slow ] && sleep 5
+cat response
+exit $(cat code)
+"#,
+    );
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let op = Operation::DispatchPending {
+        project: temp.path().display().to_string(),
+        pos: 2,
+        token: "d1:two".into(),
+    };
+    let run = |value: serde_json::Value, code: i32| {
+        std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
+        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
+        format!(
+            "{:#}",
+            client.execute(&op, &AtomicBool::new(false)).unwrap_err()
+        )
+    };
+    // A refused target says nothing about where the task is now.
+    let error = run(
+        serde_json::json!({
+            "schema_version":1, "ok":false, "task_id":null, "state":null,
+            "delivery":{"status":"not_attempted", "attempted":false, "corral_exit_code":null,
+                        "confirmed":null, "merged_with_draft":null},
+            "record":{"status":"not_attempted"}, "manual_text":null,
+            "error":{"code":"target_changed", "why":"队列变了"}
+        }),
+        3,
+    );
+    assert!(!error.contains("Pending"), "{error}");
+    assert!(
+        error.contains("not recorded") && error.contains("Refresh"),
+        "{error}"
+    );
+    // A draft merged into an unconfirmed delivery is not a delivery.
+    let error = run(
+        serde_json::json!({
+            "schema_version":1, "ok":false, "task_id":"T2", "state":"current",
+            "delivery":{"status":"unconfirmed", "attempted":true, "corral_exit_code":3,
+                        "confirmed":false, "merged_with_draft":true},
+            "record":{"status":"recorded"}, "manual_text":null,
+            "error":{"code":"delivery_unconfirmed", "why":"未确认"}
+        }),
+        8,
+    );
+    assert!(
+        error.contains("draft") && error.contains("not confirmed") && !error.contains("Delivered"),
+        "{error}"
+    );
+    // A run that ends without an answer may still have sent the task.
+    std::fs::write(temp.path().join("slow"), "").unwrap();
+    std::fs::remove_file(temp.path().join("calls")).unwrap();
+    let error = format!(
+        "{:#}",
+        client.execute(&op, &AtomicBool::new(true)).unwrap_err()
+    );
+    for words in ["cannot confirm", "not retried", "main agent"] {
+        assert!(error.contains(words), "{words}: {error}");
+    }
+    let calls = std::fs::read_to_string(temp.path().join("calls")).unwrap_or_default();
+    assert!(calls.lines().count() <= 1, "no retry: {calls}");
+}

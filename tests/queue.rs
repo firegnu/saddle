@@ -1010,3 +1010,122 @@ fn return_confirmation_cancel_old_drover_and_changed_target_never_write() {
         "pending cannot be returned again"
     );
 }
+
+fn three_pending(panel: &mut Panel, state: serde_json::Value) {
+    panel.project = "/tmp/project-a".into();
+    let mut value = serde_json::json!({
+        "mode": {"loop": false, "gate": true}, "paused": false, "current": null,
+        "awaiting": null, "history": [{"id":"T0", "title":"Old", "status":"done"}],
+        "pending": [
+            {"id":"T1", "title":"First", "dispatch_pending": {"pos":1, "target_token":"d1:one", "unavailable_reason":null}},
+            {"id":"T2", "title":"Second", "dispatch_pending": {"pos":2, "target_token":"d1:two", "unavailable_reason":null}},
+            {"id":"T3", "title":"Third", "dispatch_pending": {"pos":3, "target_token":"d1:three", "unavailable_reason":null}}
+        ]
+    });
+    for (field, v) in state.as_object().unwrap() {
+        value[field] = v.clone();
+    }
+    panel.absorb(serde_json::from_value(value).unwrap());
+}
+
+#[test]
+fn dispatch_selected_sends_the_selected_pending_target_not_the_first() {
+    let mut panel = Panel::default();
+    three_pending(&mut panel, serde_json::json!({}));
+    panel.select(1);
+    assert_eq!(panel.tasks()[panel.selected].1.title, "Second");
+    let Some(Request::Run(op)) = panel.key(saddle::queue::dispatch_selected_click()) else {
+        panic!("Dispatch selected sends one public write");
+    };
+    assert_eq!(
+        op,
+        Operation::DispatchPending {
+            project: "/tmp/project-a".into(),
+            pos: 2,
+            token: "d1:two".into(),
+        }
+    );
+    assert!(panel.busy);
+    assert!(
+        panel
+            .key(saddle::queue::dispatch_selected_click())
+            .is_none(),
+        "no second dispatch while busy"
+    );
+    assert!(panel.key(key(K::Char('n'))).is_none(), "nor Next");
+    panel.complete(&op, Ok("T2 dispatched".into()));
+    assert!(!panel.busy);
+    assert!(matches!(&panel.page, Page::Feedback(text) if text == "T2 dispatched"));
+
+    panel.key(key(K::Esc));
+    panel.complete(&op, Err(anyhow::anyhow!("Delivery result unknown")));
+    assert!(matches!(&panel.page, Page::Feedback(text) if text.contains("unknown")));
+    panel.key(key(K::Esc));
+    assert!(
+        matches!(
+            panel.key(key(K::Char('n'))),
+            Some(Request::Run(Operation::Next))
+        ),
+        "Next stays"
+    );
+}
+
+#[test]
+fn dispatch_selected_is_refused_without_a_usable_target_or_when_the_queue_cannot_start_it() {
+    let unusable = [
+        serde_json::json!({"paused": true}),
+        serde_json::json!({"current": {"id":"T9", "title":"Running"}}),
+        serde_json::json!({"awaiting": {"id":"T9", "title":"Awaiting", "status":"done"}}),
+        serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second"}]}),
+        serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
+            "dispatch_pending": {"pos":2, "target_token":null, "unavailable_reason":"target_ambiguous"}}]}),
+        serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
+            "dispatch_pending": {"pos":2, "target_token":"d1:two", "unavailable_reason":"state_invalid"}}]}),
+        serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
+            "dispatch_pending": {"pos":0, "target_token":"d1:two", "unavailable_reason":null}}]}),
+        serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
+            "dispatch_pending": {"target_token":"d1:two", "unavailable_reason":null}}]}),
+    ];
+    for state in unusable {
+        let mut panel = Panel::default();
+        three_pending(&mut panel, state.clone());
+        let second = panel
+            .tasks()
+            .iter()
+            .position(|(group, t)| *group == "Pending" && t.title == "Second")
+            .unwrap();
+        panel.select(second);
+        assert!(
+            panel
+                .key(saddle::queue::dispatch_selected_click())
+                .is_none(),
+            "{state}"
+        );
+        assert!(!panel.busy && matches!(panel.page, Page::List), "{state}");
+    }
+    // Only a selected Pending task, on the list, with fresh data.
+    let mut panel = Panel::default();
+    three_pending(&mut panel, serde_json::json!({}));
+    let history = panel.tasks().len() - 1;
+    panel.select(history);
+    assert!(
+        panel
+            .key(saddle::queue::dispatch_selected_click())
+            .is_none()
+    );
+    panel.select(1);
+    panel.read_error = Some("list failed".into());
+    assert!(
+        panel
+            .key(saddle::queue::dispatch_selected_click())
+            .is_none()
+    );
+    panel.read_error = None;
+    panel.key(key(K::Char('?')));
+    assert!(
+        panel
+            .key(saddle::queue::dispatch_selected_click())
+            .is_none()
+    );
+    assert!(!panel.busy);
+}
