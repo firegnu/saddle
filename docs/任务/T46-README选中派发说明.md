@@ -23,3 +23,9 @@
 ## 做完
 
 追加修改、检查和必要取舍的简短完成记录。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 只改 README.md：在 Features 的 Tasks 条目后补一小段 Dispatch selected，说明选中 Pending 任务后点击即可派发、无需调整顺序，以及按钮不可用的情况（暂停、有运行中或待放行任务、忙碌或读取失败、所选不是 Pending）。
+- 对照 `dispatch_target`（src/queue.rs）和 DESIGN 的按钮说明核对了不可用条件；“无快捷键、无确认层”同样出自 DESIGN。
+- `git diff --check` 通过；按要求未跑测试、编译或 clippy，未操作真实队列，未合并未推送。
