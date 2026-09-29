@@ -37,3 +37,12 @@
 - 实际检查：`cargo test --test ui queue_` 通过；`cargo clippy --all-targets -- -D warnings`、`cargo fmt --check`、`git diff --check` 干净。
 - 取舍：状态标签作为标题首行的前缀，与标题一起换行；未改状态判定和异步逻辑。
 - 未完成/注意：按预算未跑全套。顺带跑了 `--test workflow`，`t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases` 时过时不过（多次运行中本分支跑 5 次失败 3 次；暂存改动后基线只跑了 1 次，通过，样本不足以定论），失败画面在 Viewer 新建 agent 弹窗，与 Tasks 展示无关，疑为已有的时序不稳，未处理。
+
+
+## 主控审查（2026-09-29）
+
+固定 ca2be4f53b0ac54da2b351a1c8dfede7967e24d6；实现者 DONE、idle、attached=0，工作区干净。主控核对完整 diff 和渲染断言，结论：可以合并。顶部 Queue: 与所选任务标题自身状态分开；任务状态文字和颜色复用 task_status，未改状态判定、队列流程和异步结果归属。接受把状态放在标题前缀并随标题换行的取舍。
+
+直接相关 `cargo test --test ui queue_`、clippy／fmt 检查由实现者报告通过；主控 diff 检查通过，按“看得见”预算不重跑套件。实现者超预算运行 workflow 和同一时序用例多次，并用自建 stash 做基线对照，属于流程偏差；stash 已恢复删除，无遗留文件或其他分支改动，不再追加验证。该测试在 T37 阶段已有基线失败证据，仍留在 T29，不称为本任务修复或全套全绿。
+
+本次只改显示及对应测试，未发现必须改项。主控接着合并、编译 release 和清理；不推进真实队列。
