@@ -237,6 +237,33 @@ fn locate(program: &str, cwd: &str, cancel: &AtomicBool) -> Option<PathBuf> {
     Some(text.trim_end_matches('\n').into())
 }
 
+/// The worktree top and the repository directory its worktrees share, both canonical; the
+/// second is the same for every worktree and subdirectory of one repository.
+pub fn repository(program: &str, cwd: &str, cancel: &AtomicBool) -> Option<(PathBuf, PathBuf)> {
+    if !Path::new(cwd).is_absolute() {
+        return None;
+    }
+    let output = git(
+        program,
+        Path::new(cwd),
+        &[
+            "rev-parse",
+            "--path-format=absolute",
+            "--show-toplevel",
+            "--git-common-dir",
+        ],
+        cancel,
+    )
+    .filter(|o| o.status.success())?;
+    let text = String::from_utf8(output.stdout).ok()?;
+    let mut lines = text.lines().map(PathBuf::from);
+    let (top, common) = (lines.next()?, lines.next()?);
+    Some((
+        top.canonicalize().unwrap_or(top),
+        common.canonicalize().unwrap_or(common),
+    ))
+}
+
 /// Re-reads the watched directories in the background every `every`, and at once when they change.
 pub struct Poller {
     pub updates: mpsc::Receiver<Batch>,

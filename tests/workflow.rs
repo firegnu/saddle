@@ -2016,6 +2016,97 @@ fn tasks_entry_opens_the_popup_and_closing_returns_to_the_previous_target() {
     h.quit();
 }
 
+#[test]
+fn tasks_open_on_the_focused_agents_repository_unless_it_has_no_tasks() {
+    let script = include_str!("fixtures/drover.py")
+        .replace("state_file = root /", "state_file = Path.cwd() /")
+        .replace(
+            "title='Native queue task'",
+            "title='Queue ' + Path.cwd().name",
+        );
+    let mut h = Harness::start_prepared(&script, true, "", 16384, |dir| {
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .current_dir(cwd)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}: {output:?}");
+        };
+        // p/a works in a subdirectory of another worktree of project-two; p/b in project-three,
+        // whose queue is empty.
+        let (two, three) = (dir.join("project-two"), dir.join("project-three"));
+        std::fs::create_dir(&three).unwrap();
+        for repo in [&two, &three] {
+            git(repo, &["init", "-q", "-b", "main"]);
+            git(repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        }
+        git(&two, &["worktree", "add", "-q", "../wt-two", "-b", "wt"]);
+        std::fs::create_dir(dir.join("wt-two/sub")).unwrap();
+        std::fs::write(
+            three.join("queue-state.json"),
+            r#"{"mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("home/.drover/projects"),
+            format!(
+                "{}\n{}\n{}\n",
+                dir.join("project-one").display(),
+                two.display(),
+                three.display()
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("metadata.json"),
+            serde_json::json!({
+                "p/a": {"cwd": dir.join("wt-two/sub")},
+                "p/b": {"cwd": three},
+            })
+            .to_string(),
+        )
+        .unwrap();
+    });
+    h.see("Synthetic title");
+    h.send(b"skk");
+    h.see("┃ ○ a ");
+    // Agents focus: the selected agent's repository wins over the default project-one.
+    h.send(b"\t");
+    h.see("Input ▸ Tasks");
+    h.see("Queue project-two");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    // Without tasks in p/b's repository the current project stays.
+    h.send(b"j\t");
+    h.see("Input ▸ Tasks");
+    let deadline = Instant::now() + Duration::from_millis(1500);
+    while Instant::now() < deadline {
+        h.pump();
+    }
+    h.see("Queue project-two");
+    // Pick project-one by hand, so the next opening has something to switch from.
+    h.click("project-two ▾ c");
+    h.see("Projects");
+    h.click("project-one");
+    h.see("Queue project-one");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    // Viewer focus: the active pane's agent, opened from the Tasks entry.
+    h.send(b"k\r");
+    h.see("p/a READY");
+    h.see("Input ▸ p/a");
+    h.click("Tasks · ");
+    h.see("Input ▸ Tasks");
+    h.see("Queue project-two");
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}
+
 impl Harness {
     fn ctl(&self, args: &[&str]) -> serde_json::Value {
         self.ctl_as(args, &[])

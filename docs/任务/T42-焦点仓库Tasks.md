@@ -40,3 +40,22 @@
 末尾追加完成记录：修改、验证、取舍和待决定事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
 
 主控记录器 dispatch_id：`25d80505684e4cbf9a6f757097e21e6a`；实现者无需采集。
+
+## 完成记录（实现者，2026-09-29）
+
+修改：
+- `src/git.rs`：新增只读 `repository()`，给出 cwd 的 worktree 顶层与共享仓库目录（规范化路径）。
+- `src/drover.rs`：新增 `RepoTasks` 后台查找——按共享仓库目录匹配登记项目（同顶层优先），再用公开 `drover list --json` 判断 current／awaiting／pending／history 是否有任意任务；可取消，Drop 时停止。
+- `src/app.rs`：Agents 的 Tab 与点击 Tasks 入口打开时，取焦点 agent（Agents 选中项；Viewer 当前活动窗格的 agent，shell 窗格不算）的公开 cwd 启动查找；`tick` 中仅当 Tasks 仍打开、之后无输入、项目未变、仍为列表页且无写操作时切换项目，否则丢弃。Attention／提示框的显式打开不受影响。
+- `tests/workflow.rs`：新增 `tasks_open_on_the_focused_agents_repository_unless_it_has_no_tasks`（合成 git 仓库 + worktree 子目录 + 空队列仓库 + 假 drover／corral）。
+- `docs/DESIGN.md` §57 追加实现取舍。
+
+验证：
+- 新测试先 RED（停在 project-one，未切到 project-two），实现后 GREEN；另临时给空仓库加一条 history 任务确认 fallback 步骤会失败（已还原）。
+- `cargo test --all-targets` 全部通过（workflow 79 passed、3 ignored 为既有）；`cargo clippy --all-targets -- -D warnings` 无警告；`git diff --check` 通过。均用共享 CARGO_TARGET_DIR，未碰真实队列或 agent。
+
+取舍：见 DESIGN §57「T42 实现取舍」。要点：只认登记表中的项目；同仓库多个登记项优先同 worktree 顶层；打开后任何输入即放弃自动切换。
+
+待决定：
+- 打开后“任何输入即放弃切换”偏保守：若 drover 很慢而用户马上开始翻列表，会停在原项目。如需“仅手选项目才放弃”，可放宽。
+- 未登记到 `~/.drover/projects` 的仓库不会被切到（即使该目录有 drover 队列）。
