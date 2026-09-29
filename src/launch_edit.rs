@@ -1,4 +1,4 @@
-//! Editing state local to the New-agent form. Positions are UTF-8 boundaries.
+//! Editing state for the New-agent form and the Tasks editor. Positions are UTF-8 boundaries.
 use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
@@ -8,7 +8,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
-pub(crate) struct Input {
+pub struct Input {
     pub text: String,
     pub cursor: usize,
     area: Rect,

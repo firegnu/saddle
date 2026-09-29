@@ -132,8 +132,8 @@ fn main() -> anyhow::Result<()> {
             "projects" => q.page = queue::Page::Projects,
             "add" => {
                 q.page = queue::Page::Add {
-                    title: "新增任务的中文标题".into(),
-                    body: "第一行正文\n第二行正文".into(),
+                    title: queue::Input::new("新增任务的中文标题".into()),
+                    body: queue::Input::new("第一行正文\n第二行正文".into()),
                     body_focus: true,
                 }
             }

@@ -24,7 +24,7 @@ fn selected_pending_shows_beside_the_list_and_edits_return_to_the_same_view() {
     );
     panel.key(key(K::Char('e')));
     assert!(matches!(&panel.page, Page::Edit { title, body, .. }
-        if title == "Second" && body == "second body"));
+        if title.text == "Second" && body.text == "second body"));
     panel.paste(" discarded");
     panel.key(key(K::Esc));
     assert!(matches!(panel.page, Page::List) && panel.view == View::Text);
@@ -50,7 +50,7 @@ fn selected_pending_shows_beside_the_list_and_edits_return_to_the_same_view() {
         "Save returns to the same task and view"
     );
     panel.key(key(K::Char('e')));
-    assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Second revised"));
+    assert!(matches!(&panel.page, Page::Edit { title, .. } if title.text == "Second revised"));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn edit_follows_the_selected_task_and_preserves_the_form_on_failure() {
         "Busy form stays open"
     );
     panel.complete(&op, Err(anyhow::anyhow!("pending changed")));
-    assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Second changed"));
+    assert!(matches!(&panel.page, Page::Edit { title, .. } if title.text == "Second changed"));
     fresh.current = Some(fresh.pending.remove(0));
     panel.absorb(fresh);
     panel.key(key(K::Esc));
@@ -117,7 +117,7 @@ fn saving_an_unnumbered_edit_keeps_it_selected() {
     panel.absorb(fresh);
     assert_eq!(panel.tasks()[panel.selected].1.title, "Original revised");
     panel.key(key(K::Char('e')));
-    assert!(matches!(&panel.page, Page::Edit { title, .. } if title == "Original revised"));
+    assert!(matches!(&panel.page, Page::Edit { title, .. } if title.text == "Original revised"));
 }
 
 #[test]
@@ -803,4 +803,41 @@ fn manual_completion_refuses_targets_it_cannot_bind() {
         );
         panel.key(key(K::Esc));
     }
+}
+
+#[test]
+fn task_fields_edit_at_the_cursor() {
+    let mut panel = Panel::default();
+    panel.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode": {}, "paused": false, "current": null, "awaiting": null, "history": [],
+            "pending": [{"id":"T2", "title":"ab", "body":"ab\n中d"}]
+        }))
+        .unwrap(),
+    );
+    panel.key(key(K::Char('e')));
+    for code in [
+        K::Left,
+        K::Char('X'),
+        K::Home,
+        K::Char('Y'),
+        K::Delete,
+        K::End,
+    ] {
+        panel.key(key(code));
+    }
+    panel.key(key(K::Left));
+    panel.key(key(K::Backspace));
+    panel.paste("P");
+    panel.key(key(K::Tab));
+    // Body cursor starts at the end: after 中d on the second line.
+    for code in [K::Up, K::Home, K::Right, K::Char('1'), K::Down, K::Enter] {
+        panel.key(key(code));
+    }
+    panel.paste("中");
+    let request = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL));
+    let Some(Request::Run(Operation::Edit { title, body, .. })) = request else {
+        panic!("Ctrl-S saves the edit");
+    };
+    assert_eq!((title.as_str(), body.as_str()), ("YPb", "a1b\n中\n中d"));
 }
