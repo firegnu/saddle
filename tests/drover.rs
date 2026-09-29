@@ -781,3 +781,99 @@ exit $(cat code)
     assert!(client.execute(&elsewhere, &cancel).is_err());
     assert!(!temp.path().join("calls").exists(), "nothing ran");
 }
+
+#[test]
+fn return_to_pending_uses_one_bound_public_write_and_validates_the_result() {
+    use saddle::drover::{Operation, ReturnError};
+    use std::sync::atomic::AtomicBool;
+    let temp = tempfile::tempdir().unwrap();
+    let program = common::script(
+        temp.path(),
+        "drover",
+        r#"#!/bin/sh
+for arg in "$@"; do printf '[%s]' "$arg" >> calls; done
+echo >> calls
+cat response
+exit $(cat code)
+"#,
+    );
+    let client = Client {
+        program,
+        cwd: temp.path().into(),
+    };
+    let op = Operation::ReturnToPending {
+        project: temp.path().display().to_string(),
+        id: "T4".into(),
+        token: "r1:$(touch bad) '".into(),
+        reason: "  误派发  ".into(),
+    };
+    let success = serde_json::json!({
+        "schema_version":1, "ok":true, "task_id":"T4", "state":"pending", "paused":true,
+        "return_record":{"reason":"误派发", "dispatched_at":100, "returned_at":200, "work_stopped":true}
+    });
+    let run = |value: &serde_json::Value, code: i32| {
+        std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
+        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
+        client.execute(&op, &AtomicBool::new(false))
+    };
+    let text = run(&success, 0).unwrap();
+    assert!(
+        text.contains("T4 returned to Pending")
+            && text.contains("Queue paused")
+            && text.contains("误派发")
+    );
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("calls")).unwrap(),
+        "[return-to-pending][T4][--target-token][r1:$(touch bad) '][--reason][误派发][--work-stopped][--json]\n"
+    );
+    assert!(!temp.path().join("bad").exists());
+    for code in [
+        "target_changed",
+        "state_busy",
+        "invalid_arguments",
+        "write_failed",
+    ] {
+        let err = run(
+            &serde_json::json!({"schema_version":1,"ok":false,"error":{"code":code,"why":"拒绝"}}),
+            3,
+        )
+        .unwrap_err();
+        assert_eq!(err.downcast_ref::<ReturnError>().unwrap().code, code);
+    }
+    for (field, value) in [
+        ("task_id", serde_json::json!("T5")),
+        ("state", serde_json::json!("done")),
+        ("paused", serde_json::json!(false)),
+        ("schema_version", serde_json::json!(2)),
+        ("return_record", serde_json::Value::Null),
+    ] {
+        let mut bad = success.clone();
+        bad[field] = value;
+        assert!(run(&bad, 0).is_err(), "{field}");
+    }
+    assert!(run(&success, 1).is_err());
+    let mut unconfirmed = success.clone();
+    unconfirmed["return_record"]["work_stopped"] = false.into();
+    assert!(run(&unconfirmed, 0).is_err());
+    let Operation::ReturnToPending {
+        id, token, reason, ..
+    } = op
+    else {
+        unreachable!()
+    };
+    std::fs::remove_file(temp.path().join("calls")).unwrap();
+    assert!(
+        client
+            .execute(
+                &Operation::ReturnToPending {
+                    project: "/another/project".into(),
+                    id,
+                    token,
+                    reason
+                },
+                &AtomicBool::new(false)
+            )
+            .is_err()
+    );
+    assert!(!temp.path().join("calls").exists());
+}

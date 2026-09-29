@@ -37,8 +37,10 @@ pub enum Page {
     /// Confirming that the running task is complete, without its checks.
     Manual(Box<Manual>),
 }
-/// The confirmation page for one running task, bound to the run its own `drover show` read.
+/// The completion or return confirmation, bound to the run its own `drover show` read.
 pub struct Manual {
+    pub returning: bool,
+    pub work_stopped: bool,
     /// The project and task it opened on; `seq` is new for each reading of the target.
     pub key: DetailKey,
     pub title: String,
@@ -52,6 +54,10 @@ pub struct Manual {
 /// Null, and the list ignores Alt combinations.
 pub fn manual_click() -> KeyEvent {
     KeyEvent::new(KeyCode::Null, KeyModifiers::ALT)
+}
+/// The Return to pending button has no terminal shortcut.
+pub fn return_click() -> KeyEvent {
+    KeyEvent::new(KeyCode::Null, KeyModifiers::CONTROL)
 }
 /// The Dispatch tab's key; like Links, it is reached by clicking or Tab.
 pub fn dispatch_click() -> KeyEvent {
@@ -81,19 +87,25 @@ pub fn manual_problem(manual: &Manual) -> Option<String> {
             detail.task.location
         ));
     }
-    let Some(target) = &detail.manual_completion else {
-        return Some(
+    let target = if manual.returning {
+        &detail.return_to_pending
+    } else {
+        &detail.manual_completion
+    };
+    let Some(target) = target else {
+        return Some(if manual.returning {
+            "This drover does not support return to pending (show has no return_to_pending). Update drover; nothing was sent."
+        } else {
             "This drover does not support manual completion (show has no manual_completion). Update drover; nothing was sent."
-                .into(),
-        );
+        }.into());
     };
     if manual.expired {
         return Some("This run's confirmation expired. Refresh, then confirm again.".into());
     }
     match &target.target_token {
-        Some(_) => None,
-        None => Some(format!(
-            "Manual completion unavailable now: {}. Refresh to try again.",
+        Some(token) if !token.is_empty() => None,
+        _ => Some(format!(
+            "Confirmation unavailable now: {}. Refresh to try again.",
             target
                 .unavailable_reason
                 .as_deref()
@@ -143,8 +155,8 @@ pub struct Panel {
     pub all_pending: Vec<ProjectPending>,
     /// A task to select once the list has it, found by identity rather than position.
     pub(crate) locate: Option<Task>,
-    /// A cancelled manual completion's reason, by task id, for the next opening.
-    pub(crate) manual_draft: Option<(String, String)>,
+    /// A cancelled confirmation reason, by task id and action, for the next opening.
+    pub(crate) manual_draft: Option<(String, bool, String)>,
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -188,14 +200,18 @@ impl Panel {
         }
         let point = (column, row).into();
         if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
-            if hit.key == manual_click() || hit.key == dispatch_click() {
+            if hit.key == manual_click() || hit.key == return_click() || hit.key == dispatch_click()
+            {
                 return self.key(hit.key);
             }
             if hit.key.code == KeyCode::Null {
                 self.view = View::Links;
                 return None;
             }
-            if hit.key.code == KeyCode::Enter && matches!(self.view, View::Links | View::Dispatch) {
+            if hit.key.code == KeyCode::Enter
+                && matches!(self.page, Page::List)
+                && matches!(self.view, View::Links | View::Dispatch)
+            {
                 self.view = View::Details;
                 return None;
             }
@@ -252,20 +268,41 @@ impl Panel {
                 .danger(),
                 B::new("Cancel Esc", K::Esc, !self.busy),
             ],
-            Page::Manual(ref manual) => vec![
-                B::new(
-                    "Mark complete ↵",
-                    K::Enter,
-                    !self.busy && manual_problem(manual).is_none(),
-                )
-                .primary(),
-                B::control(
-                    "Refresh ^r",
-                    K::Char('r'),
-                    !self.busy && manual.target.is_some(),
-                ),
-                B::new("Cancel Esc", K::Esc, !self.busy),
-            ],
+            Page::Manual(ref manual) => {
+                let mut buttons = Vec::new();
+                if manual.returning {
+                    buttons.push(B::control(
+                        if manual.work_stopped {
+                            "[x] Work has stopped ^w"
+                        } else {
+                            "[ ] Work has stopped ^w"
+                        },
+                        K::Char('w'),
+                        !self.busy,
+                    ));
+                }
+                buttons.extend([
+                    B::new(
+                        if manual.returning {
+                            "Return to pending ↵"
+                        } else {
+                            "Mark complete ↵"
+                        },
+                        K::Enter,
+                        !self.busy
+                            && manual_problem(manual).is_none()
+                            && (!manual.returning || manual.work_stopped),
+                    )
+                    .primary(),
+                    B::control(
+                        "Refresh ^r",
+                        K::Char('r'),
+                        !self.busy && manual.target.is_some(),
+                    ),
+                    B::new("Cancel Esc", K::Esc, !self.busy),
+                ]);
+                buttons
+            }
             Page::Project(_) => vec![
                 B::new("Apply ↵", K::Enter, !self.busy),
                 B::new("Cancel Esc", K::Esc, true),
@@ -309,7 +346,7 @@ impl Panel {
             .find(|(_, t)| same_task(t, &detail.task))
     }
     /// The `drover show` target while Run details or Links is chosen. Pending and unnumbered
-    /// tasks are not covered by show; a pending task becomes a target once it starts.
+    /// tasks without return history are not covered by show; unnumbered tasks never are.
     pub fn detail_key(&self) -> Option<DetailKey> {
         if !matches!(self.view, View::Details | View::Links) {
             return None;
@@ -321,7 +358,7 @@ impl Panel {
         })?;
         if self
             .live(detail)
-            .is_some_and(|(group, _)| group == "Pending")
+            .is_some_and(|(group, task)| group == "Pending" && task.return_history.is_empty())
         {
             return None;
         }
@@ -367,11 +404,17 @@ impl Panel {
             && manual.key == *key
             && manual.target.is_none()
         {
+            if let Ok(detail) = &result
+                && manual.returning
+                && detail.task.id == manual.key.id
+            {
+                manual.title.clone_from(&detail.task.title);
+            }
             manual.target = Some(result.map(Box::new).map_err(|e| format!("{e:#}")));
         }
     }
     /// Opens the confirmation page on the selected running task.
-    fn open_manual(&mut self) {
+    fn open_manual(&mut self, returning: bool) {
         if self.busy || self.read_error.is_some() {
             return;
         }
@@ -382,10 +425,12 @@ impl Panel {
             return;
         };
         let reason = match self.manual_draft.take() {
-            Some((draft, reason)) if draft == id => reason,
+            Some((draft, kind, reason)) if draft == id && kind == returning => reason,
             _ => String::new(),
         };
         self.page = Page::Manual(Box::new(Manual {
+            returning,
+            work_stopped: false,
             key: DetailKey {
                 project: self.project.clone(),
                 id,
@@ -410,7 +455,7 @@ impl Panel {
         match key.code {
             KeyCode::Esc => {
                 let reason = std::mem::take(&mut manual.reason);
-                self.manual_draft = Some((manual.key.id.clone(), reason));
+                self.manual_draft = Some((manual.key.id.clone(), manual.returning, reason));
                 self.page = Page::List;
                 self.scroll = 0;
                 self.message.clear();
@@ -420,13 +465,23 @@ impl Panel {
                 manual.key.seq = crate::detail::opening();
                 manual.target = None;
                 manual.expired = false;
+                manual.work_stopped = false;
                 self.message.clear();
+            }
+            KeyCode::Char('w') if control && manual.returning => {
+                manual.work_stopped = !manual.work_stopped;
             }
             KeyCode::Char('u') if control => manual.reason.clear(),
             KeyCode::Enter => {
                 if let Some(problem) = manual_problem(manual) {
                     self.message_failed = true;
                     self.message = problem;
+                    return None;
+                }
+                if manual.returning && !manual.work_stopped {
+                    self.message_failed = true;
+                    self.message =
+                        "Confirm that work has stopped before returning this task".into();
                     return None;
                 }
                 if manual.reason.trim().is_empty() {
@@ -437,9 +492,25 @@ impl Panel {
                 let Some(Ok(detail)) = &manual.target else {
                     return None;
                 };
-                let token = detail.manual_completion.as_ref()?.target_token.clone()?;
+                let token = if manual.returning {
+                    &detail.return_to_pending
+                } else {
+                    &detail.manual_completion
+                }
+                .as_ref()?
+                .target_token
+                .clone()?;
                 self.busy = true;
                 self.message_failed = false;
+                if manual.returning {
+                    self.message = "Returning to pending…".into();
+                    return Some(Request::Run(Operation::ReturnToPending {
+                        project: manual.key.project.clone(),
+                        id: manual.key.id.clone(),
+                        token,
+                        reason: manual.reason.trim().into(),
+                    }));
+                }
                 self.message = "Marking complete manually…".into();
                 return Some(Request::Run(Operation::CompleteManually {
                     project: manual.key.project.clone(),
@@ -479,11 +550,10 @@ impl Panel {
             self.dispatch = Default::default();
             return;
         };
-        if !self
-            .content
-            .as_ref()
-            .is_some_and(|content| same_task(&content.task, &task))
-        {
+        if !self.content.as_ref().is_some_and(|content| {
+            same_task(&content.task, &task)
+                && (content.group == group || task.return_history.is_empty())
+        }) {
             self.content = Some(Box::new(crate::detail::TaskDetail::new(group, task)));
             self.text_scroll = 0;
             self.links = Default::default();
@@ -645,6 +715,16 @@ impl Panel {
                 if matches!(operation, Operation::Go | Operation::Next) {
                     self.page = Page::Feedback(text);
                     self.scroll = 0;
+                } else if let Operation::ReturnToPending { id, .. } = operation {
+                    if let Some(task) = self.snapshot.as_ref().and_then(|s| s.current.as_ref())
+                        && task.id.as_ref() == Some(id)
+                    {
+                        self.selection_after_write = Some((0, task.clone()));
+                    }
+                    self.page = Page::Feedback(text);
+                    self.scroll = 0;
+                    self.view = View::Details;
+                    self.content = None;
                 } else if matches!(operation, Operation::CompleteManually { .. }) {
                     // Run details then show the saved record from `drover show`.
                     self.page = Page::Feedback(text);
@@ -696,9 +776,13 @@ impl Panel {
                 self.message = format!("{error:#}");
                 if let Page::Manual(manual) = &mut self.page {
                     // Never retried here: an expired target needs a new reading and consent.
-                    manual.expired |= error
-                        .downcast_ref::<crate::drover::ManualError>()
-                        .is_some_and(|e| e.code == "target_changed");
+                    manual.expired |= manual.returning
+                        || error
+                            .downcast_ref::<crate::drover::ManualError>()
+                            .is_some_and(|e| e.code == "target_changed");
+                    if manual.expired {
+                        manual.work_stopped = false;
+                    }
                     return;
                 }
                 if !matches!(self.page, Page::Add { .. } | Page::Edit { .. }) {
@@ -715,9 +799,9 @@ impl Panel {
         if matches!(self.page, Page::Manual(_)) {
             return self.manual_key_press(key);
         }
-        if key == manual_click() {
+        if key == manual_click() || key == return_click() {
             if matches!(self.page, Page::List) {
-                self.open_manual();
+                self.open_manual(key == return_click());
             }
             return None;
         }
@@ -1308,7 +1392,13 @@ impl Panel {
             Page::Add { .. } => " Add task ",
             Page::Edit { .. } => " Edit task ",
             Page::Delete { .. } => " Delete task ",
-            Page::Manual(_) => " Mark complete manually ",
+            Page::Manual(ref manual) => {
+                if manual.returning {
+                    " Return to pending "
+                } else {
+                    " Mark complete manually "
+                }
+            }
         };
         let mut line = vec![ratatui::text::Span::styled(
             "─".repeat(usize::from(rule.width)),
@@ -1383,6 +1473,9 @@ impl Panel {
         if running {
             let mut button = B::new("Mark complete manually…", K::Null, ready);
             button.key = manual_click();
+            controls.push(button);
+            let mut button = B::new("Return to pending…", K::Null, ready);
+            button.key = return_click();
             controls.push(button);
         }
         controls.push(B::new("All pending A", K::Char('A'), !self.busy));
@@ -1991,7 +2084,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nMark complete manually… (button, running task): confirm it done with a reason; it then awaits release\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nReturn to pending… (button, running task): confirm work has stopped and give a reason; retains the task and pauses the queue\nMark complete manually… (button, running task): confirm it done with a reason; it then awaits release\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
@@ -2066,7 +2159,9 @@ impl Panel {
         ];
         lines.extend(
             wrap_text(
-                "Confirm that this run is complete although its checks may not be met. It then waits for your release (Check & release) like a finished task. This does not run the check command, send go or next, change loop or pause, touch Git branches or commits, or stop agents.",
+                if manual.returning {
+                    "Confirm that this run's work has stopped, including any implementers. Returning the task does not stop agents. Its ID and text stay the same, it moves to the front of Pending, and the queue becomes paused. This run and your reason are kept; the task is not completed or dropped. No next task is sent."
+                } else { "Confirm that this run is complete although its checks may not be met. It then waits for your release (Check & release) like a finished task. This does not run the check command, send go or next, change loop or pause, touch Git branches or commits, or stop agents." },
                 width,
             )
             .into_iter()
@@ -2084,6 +2179,7 @@ impl Panel {
         }
         if let Some(Ok(detail)) = &manual.target
             && detail.task.id == manual.key.id
+            && !manual.returning
         {
             lines.extend(crate::detail::check_lines(t, detail, usize::from(width)));
         }
@@ -2099,7 +2195,11 @@ impl Panel {
         };
         let field_area = Rect::new(body.x, body.bottom() - 3, body.width, 3);
         let field = Block::bordered()
-            .title("Reason (required) · Enter Mark complete · Esc Cancel")
+            .title(if manual.returning {
+                "Reason (required) · Enter Return to pending · Esc Cancel"
+            } else {
+                "Reason (required) · Enter Mark complete · Esc Cancel"
+            })
             .border_style(Style::default().fg(t.focus));
         let inner = field.inner(field_area);
         frame.render_widget(field, field_area);

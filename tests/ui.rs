@@ -2581,6 +2581,87 @@ fn settings_entry_sits_right_of_attention_and_wraps_below_it_when_narrow() {
 }
 
 #[test]
+fn return_to_pending_is_a_running_task_confirmation() {
+    let mut q = queue::Panel::default();
+    q.project = "/tmp/project-a".into();
+    q.absorb(
+        serde_json::from_value(serde_json::json!({
+            "mode":{}, "paused":false, "awaiting":null, "history":[],
+            "current": {"id":"T4", "title":"Research"},
+            "pending": [{"id":"T5", "title":"Next"}]
+        }))
+        .unwrap(),
+    );
+    let buffer = render_queue(&mut q, 150, 40);
+    let screen = text(&buffer);
+    assert!(screen.contains("Return to pending…"), "{screen}");
+    let (x, y) = (0..buffer.area.height)
+        .find_map(|y| {
+            let row: String = (0..buffer.area.width)
+                .map(|x| buffer[(x, y)].symbol().to_owned())
+                .collect();
+            row.find("Return to pending")
+                .map(|at| (row[..at].chars().count() as u16, y))
+        })
+        .unwrap();
+    assert!(q.click(x, y).is_none(), "opening never writes");
+    let screen = text(&render_queue(&mut q, 150, 40));
+    for words in [
+        "Return to pending",
+        "T4 · Research",
+        "paused",
+        "stopped",
+        "Reason",
+        "Cancel Esc",
+    ] {
+        assert!(screen.contains(words), "{words}\n{screen}");
+    }
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    q.view = queue::View::Dispatch;
+    q.key(queue::return_click());
+    let key = q.manual_key().unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
+    value["return_to_pending"] =
+        serde_json::json!({"target_token":"r1:test", "unavailable_reason":null});
+    q.absorb_manual(&key, Ok(serde_json::from_value(value).unwrap()));
+    q.paste("Wrong dispatch");
+    let find_button = |buffer: &Buffer, label: &str| {
+        (0..buffer.area.height)
+            .find_map(|y| {
+                let row: String = (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol().to_owned())
+                    .collect();
+                row.find(label)
+                    .map(|at| (row[..at].chars().count() as u16, y))
+            })
+            .unwrap()
+    };
+    let buffer = render_queue(&mut q, 150, 40);
+    let (x, y) = find_button(&buffer, "[ ] Work has stopped");
+    assert!(q.click(x, y).is_none());
+    let buffer = render_queue(&mut q, 150, 40);
+    let (x, y) = find_button(&buffer, "Return to pending ↵");
+    let Some(saddle::drover::Request::Run(op)) = q.click(x, y) else {
+        panic!("confirmation click must submit even from Dispatch")
+    };
+    assert!(matches!(
+        op,
+        saddle::drover::Operation::ReturnToPending { .. }
+    ));
+    q.complete(&op, Ok("returned".into()));
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    q.select(1);
+    assert!(!text(&render_queue(&mut q, 150, 40)).contains("Return to pending…"));
+}
+
+#[test]
 fn manual_completion_is_a_running_task_button_and_its_page_shows_checks_and_reason() {
     let mut q = queue::Panel::default();
     q.project = "/tmp/project-a".into();
@@ -2740,4 +2821,36 @@ fn task_editor_click_puts_the_shown_cursor_where_text_goes() {
         (title.as_str(), body.as_str()),
         ("中文X标题", "第一行\nY第二行")
     );
+}
+
+#[test]
+fn returned_pending_run_details_show_the_saved_history() {
+    let mut q = queue::Panel::default();
+    let record = serde_json::json!({"reason":"Wrong dispatch", "dispatched_at":1790000000, "returned_at":1790000100, "work_stopped":true});
+    q.absorb(serde_json::from_value(serde_json::json!({"mode":{}, "paused":true, "current":null, "awaiting":null, "history":[], "pending":[{
+        "id":"T4", "title":"Research", "return_history":[record.clone()]
+    }]})).unwrap());
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let key = q.detail_key().expect("returned Pending supports details");
+    let mut value: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
+    value["task"]["location"] = "pending".into();
+    value["task"]["status"] = "pending".into();
+    value["task"]["return_history"] = serde_json::json!([record]);
+    q.absorb_detail(&key, Ok(serde_json::from_value(value).unwrap()));
+    let screen = text(&render_queue(&mut q, 150, 48));
+    for words in [
+        "Return history",
+        "Wrong dispatch",
+        "Dispatched",
+        "Returned",
+        "Work stopped",
+        "confirmed by user",
+    ] {
+        assert!(screen.contains(words), "{words}\n{screen}");
+    }
+    assert!(!screen.contains("Unknown status: pending"), "{screen}");
 }
