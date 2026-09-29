@@ -28,3 +28,9 @@ worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t47-readme-he
 
 - 在 README.md「Build and run」的安装说明之后补了一句：`Use saddle --help to see the command-line options.`，只改这一处，未改代码。
 - 检查：`git diff --check` 无问题；已读新增句，符合要求。未跑测试、clippy 或编译。
+
+## 主控审查
+
+- 核对实现 29e5ad2：README 的 Build and run 安装示例之后只新增一句英文帮助入口，符合用户原文；无代码变更。
+- 主控阅读新增句并检查 diff，通过；未跑测试、clippy 或编译。
+- 审查通过，合并 main；队列状态和通知留用户观察，不调用完成登记、放行或下一项派发。
