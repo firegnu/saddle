@@ -2,6 +2,7 @@ use crate::drover::{Operation, Request, Snapshot, Task};
 use crate::theme::Theme;
 #[path = "queue_links.rs"]
 mod links_impl;
+pub use crate::launch::edit::Input;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// What the Tasks popup shows. `List` is the list with the selected task beside it; every
@@ -18,13 +19,13 @@ pub enum Page {
     Edit {
         pending: Vec<Task>,
         index: usize,
-        title: String,
-        body: String,
+        title: Input,
+        body: Input,
         body_focus: bool,
     },
     Add {
-        title: String,
-        body: String,
+        title: Input,
+        body: Input,
         body_focus: bool,
     },
     Delete {
@@ -189,10 +190,21 @@ impl Panel {
         {
             return self.projects.get(*index).cloned().map(Request::Project);
         }
-        if let Page::Add { body_focus, .. } | Page::Edit { body_focus, .. } = &mut self.page
-            && let Some((_, body)) = self.fields.iter().find(|(area, _)| area.contains(point))
+        if let Page::Add {
+            title,
+            body,
+            body_focus,
+        }
+        | Page::Edit {
+            title,
+            body,
+            body_focus,
+            ..
+        } = &mut self.page
+            && let Some((_, on_body)) = self.fields.iter().find(|(area, _)| area.contains(point))
         {
-            *body_focus = *body;
+            *body_focus = *on_body;
+            if *on_body { body } else { title }.click(point);
         }
         None
     }
@@ -462,8 +474,8 @@ impl Panel {
         if let Some(index) = self.pending_index() {
             let pending = self.snapshot.as_ref().unwrap().pending.clone();
             let task = &pending[index];
-            let title = task.title.clone();
-            let body = task.body.clone();
+            let title = Input::new(task.title.clone());
+            let body = Input::new(task.body.clone());
             self.page = Page::Edit {
                 pending,
                 index,
@@ -594,10 +606,7 @@ impl Panel {
         } = &mut self.page
         {
             let field = if *body_focus { body } else { title };
-            field.extend(
-                text.chars()
-                    .filter(|c| !c.is_control() || (*body_focus && *c == '\n')),
-            );
+            field.insert(&text.replace('\t', ""), *body_focus);
         }
     }
     pub fn complete(&mut self, operation: &Operation, result: anyhow::Result<String>) {
@@ -789,27 +798,19 @@ impl Panel {
                 KeyCode::Esc => self.finish_edit(),
                 KeyCode::Tab | KeyCode::BackTab => *body_focus = !*body_focus,
                 KeyCode::Enter if !*body_focus => *body_focus = true,
-                KeyCode::Enter => body.push('\n'),
-                KeyCode::Backspace => {
-                    if *body_focus {
-                        body.pop();
-                    } else {
-                        title.pop();
-                    }
-                }
                 KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     if self.read_error.is_some() {
                         return None;
                     }
-                    if title.trim().is_empty() {
+                    if title.text.trim().is_empty() {
                         self.message_failed = true;
                         self.message = "Title is required".into();
                         return None;
                     }
                     self.busy = true;
                     self.message_failed = false;
-                    let title = title.clone();
-                    let body = body.clone();
+                    let title = title.text.clone();
+                    let body = body.text.clone();
                     let operation = if let Page::Edit { pending, index, .. } = &self.page {
                         self.message = "Saving task…".into();
                         Operation::Edit {
@@ -824,18 +825,14 @@ impl Panel {
                     };
                     return Some(Request::Run(operation));
                 }
-                KeyCode::Char(c)
-                    if !key
+                KeyCode::Char(_)
+                    if key
                         .modifiers
-                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    if *body_focus {
-                        body.push(c);
-                    } else {
-                        title.push(c);
-                    }
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {}
+                code => {
+                    let field = if *body_focus { body } else { title };
+                    field.key(code, *body_focus);
                 }
-                _ => {}
             }
             return None;
         }
@@ -940,8 +937,8 @@ impl Panel {
                 if !self.busy && self.read_error.is_none() && self.snapshot.is_some() =>
             {
                 self.page = Page::Add {
-                    title: String::new(),
-                    body: String::new(),
+                    title: Input::new(String::new()),
+                    body: Input::new(String::new()),
                     body_focus: false,
                 };
                 self.message.clear();
@@ -1848,17 +1845,21 @@ impl Panel {
                     frame.render_widget(Paragraph::new("Enter a project registered with drover. Ctrl-U clears.\nFor this session only; set queue.cwd for a default.").wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 3, body.width, body.height - 3));
                 }
             }
-            Page::Add {
-                title,
-                body: text,
-                body_focus,
-            }
-            | Page::Edit {
-                title,
-                body: text,
-                body_focus,
-                ..
-            } => {
+            Page::Add { .. } | Page::Edit { .. } => {
+                let (Page::Add {
+                    title,
+                    body: text,
+                    body_focus,
+                }
+                | Page::Edit {
+                    title,
+                    body: text,
+                    body_focus,
+                    ..
+                }) = &mut self.page
+                else {
+                    return hits;
+                };
                 if body.height < 5 {
                     frame.render_widget(Paragraph::new("Enlarge the window to edit a task"), body);
                     return hits;
@@ -1867,7 +1868,7 @@ impl Panel {
                 let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3);
                 self.fields = vec![(title_area, false), (text_area, true)];
                 let title_block = Block::bordered().title("Title").border_style(
-                    Style::default().fg(if !body_focus { t.focus } else { t.border }),
+                    Style::default().fg(if !*body_focus { t.focus } else { t.border }),
                 );
                 let text_block = Block::bordered()
                     .title("Body · Tab Switch · Ctrl-S Save · Esc Cancel")
@@ -1880,40 +1881,9 @@ impl Panel {
                 let text_inner = text_block.inner(text_area);
                 frame.render_widget(title_block, title_area);
                 frame.render_widget(text_block, text_area);
-                let title_width = unicode_width::UnicodeWidthStr::width(title.as_str()) as u16;
-                frame.render_widget(
-                    Paragraph::new(title.as_str()).scroll((
-                        0,
-                        title_width.saturating_sub(title_inner.width.saturating_sub(1)),
-                    )),
-                    title_inner,
-                );
-                let wrapped = wrap_text(text, text_inner.width);
-                let lines = wrapped.len();
-                let paragraph = Paragraph::new(wrapped);
-                let scroll = lines.saturating_sub(usize::from(text_inner.height));
-                frame.render_widget(
-                    paragraph.scroll((scroll.min(u16::MAX as usize) as u16, 0)),
-                    text_inner,
-                );
-                if focused && !self.busy {
-                    if *body_focus && !text_inner.is_empty() {
-                        let last_width = unicode_width::UnicodeWidthStr::width(
-                            text.rsplit('\n').next().unwrap_or(""),
-                        );
-                        frame.set_cursor_position((
-                            text_inner.x + (last_width % usize::from(text_inner.width)) as u16,
-                            text_inner.y
-                                + (lines.saturating_sub(1 + scroll) as u16)
-                                    .min(text_inner.height - 1),
-                        ));
-                    } else if !title_inner.is_empty() {
-                        frame.set_cursor_position((
-                            title_inner.x + title_width.min(title_inner.width - 1),
-                            title_inner.y,
-                        ));
-                    }
-                }
+                let typing = focused && !self.busy;
+                title.draw(frame, title_inner, typing && !*body_focus, "", t);
+                text.draw(frame, text_inner, typing && *body_focus, "", t);
             }
             Page::Manual(_) => self.draw_manual(t, frame, body, focused),
             Page::AllPending => {

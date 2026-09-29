@@ -189,8 +189,8 @@ fn overlays_remove_background_targets_and_small_frames_do_not_panic() {
             render(w, h, &mut a, &mut q, Focus::Agents);
             a.confirm = None;
             q.page = queue::Page::Add {
-                title: "中文".into(),
-                body: "正文".into(),
+                title: queue::Input::new("中文".into()),
+                body: queue::Input::new("正文".into()),
                 body_focus: true,
             };
             render(w, h, &mut a, &mut q, Focus::Queue);
@@ -838,8 +838,8 @@ fn queue_chrome_is_english_and_preserves_source_text() {
         queue::Page::Projects,
         queue::Page::Project("/tmp/demo".into()),
         queue::Page::Add {
-            title: "原始任务".into(),
-            body: "原始正文".into(),
+            title: queue::Input::new("原始任务".into()),
+            body: queue::Input::new("原始正文".into()),
             body_focus: false,
         },
         queue::Page::Feedback("原始反馈".into()),
@@ -2682,4 +2682,62 @@ fn assert_status_label(buffer: &Buffer, row: &str, len: u16, color: ratatui::sty
         }
     }
     panic!("missing {row}: {}", text(buffer));
+}
+
+#[test]
+fn task_editor_click_puts_the_shown_cursor_where_text_goes() {
+    use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
+    use ratatui::layout::Position;
+    let mut q = queue::Panel::default();
+    q.absorb(Snapshot {
+        pending: vec![Task {
+            id: Some("T1".into()),
+            title: "中文标题".into(),
+            body: "第一行\n第二行".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    q.key(KeyEvent::new(K::Char('e'), M::NONE));
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let mut draw = |q: &mut queue::Panel| {
+        terminal
+            .draw(|f| {
+                q.draw(&saddle::theme::Theme::default(), f, f.area());
+            })
+            .unwrap();
+        (
+            terminal.backend().buffer().clone(),
+            terminal.backend().cursor_position(),
+        )
+    };
+    let (buffer, _) = draw(&mut q);
+    let (x, y) = find(&buffer, "标").expect("title shown");
+    q.click(x, y);
+    assert_eq!(draw(&mut q).1, Position::new(x, y), "cursor at the click");
+    q.key(KeyEvent::new(K::Char('X'), M::NONE));
+    let (x, y) = find(&buffer, "二").expect("body shown");
+    q.click(x + 1, y);
+    assert_eq!(
+        draw(&mut q).1,
+        Position::new(x, y),
+        "cursor snaps to the wide char"
+    );
+    q.key(KeyEvent::new(K::Left, M::NONE));
+    assert_eq!(
+        draw(&mut q).1,
+        Position::new(x - 2, y),
+        "cursor follows Left"
+    );
+    q.paste("Y");
+    let request = q.key(KeyEvent::new(K::Char('s'), M::CONTROL));
+    let Some(saddle::drover::Request::Run(saddle::drover::Operation::Edit { title, body, .. })) =
+        request
+    else {
+        panic!("Ctrl-S saves the edit");
+    };
+    assert_eq!(
+        (title.as_str(), body.as_str()),
+        ("中文X标题", "第一行\nY第二行")
+    );
 }
