@@ -169,6 +169,9 @@ struct App {
     queue: queue::Panel,
     queue_worker: drover::Worker,
     pending_load: Option<drover::PendingLoad>,
+    /// The focused agent's repository lookup for the Tasks opening that started it, with the
+    /// project and input revision at that opening.
+    repo_tasks: Option<(String, u64, drover::RepoTasks)>,
     detail: Option<(queue::DetailKey, drover::DetailWorker)>,
     /// The one reading of the run a manual completion page confirms.
     manual_target: Option<(queue::DetailKey, drover::DetailWorker)>,
@@ -325,6 +328,7 @@ impl App {
             },
             queue_worker,
             pending_load: None,
+            repo_tasks: None,
             detail: None,
             manual_target: None,
             reply: None,
@@ -668,6 +672,26 @@ impl App {
         }
         self.viewer.tick(panes.viewer)?;
         self.control_tick();
+        if self.focus != Focus::Queue {
+            self.repo_tasks = None;
+        }
+        if let Some(found) = self
+            .repo_tasks
+            .as_ref()
+            .and_then(|(_, _, lookup)| lookup.result.try_recv().ok())
+        {
+            let (opened, revision, _) = self.repo_tasks.take().unwrap();
+            // Only while that opening is untouched: no later input, project choice, page or write.
+            if let Some(project) = found
+                && project != self.queue.project
+                && opened == self.queue.project
+                && revision == self.input_revision
+                && matches!(self.queue.page, queue::Page::List)
+                && !self.queue.busy
+            {
+                self.queue_request(drover::Request::Project(project));
+            }
+        }
         for update in self.queue_worker.updates.try_iter() {
             match update {
                 drover::Update::Snapshot(Ok(snapshot)) => {
@@ -1144,6 +1168,7 @@ impl App {
                 let route = self.focus.route(key);
                 if before != Focus::Queue && self.focus == Focus::Queue {
                     self.tasks_return = before;
+                    self.look_up_focused_repo(before);
                 }
                 match route {
                     Route::Quit => {
@@ -1284,6 +1309,7 @@ impl App {
                     if focus == Focus::Queue && self.focus != Focus::Queue {
                         // The Tasks entry: open, remembering where input was.
                         self.tasks_return = self.focus;
+                        self.look_up_focused_repo(self.focus);
                         self.focus = Focus::Queue;
                         return Ok(false);
                     }
@@ -1808,6 +1834,52 @@ impl App {
         }
         self.tasks_return = Focus::Agents;
         self.focus = Focus::Queue;
+    }
+    /// A plain Tasks opening from `from` looks for the focused agent's repository; a found
+    /// project with tasks replaces the current one in `tick`. Nothing starts over an unfinished
+    /// page or write.
+    fn look_up_focused_repo(&mut self, from: Focus) {
+        self.repo_tasks = None;
+        if !matches!(self.queue.page, queue::Page::List) || self.queue.busy {
+            return;
+        }
+        let Some(cwd) = self.focused_agent_cwd(from) else {
+            return;
+        };
+        let lookup = drover::RepoTasks::start(
+            expand_home(&self.config.queue.drover)
+                .to_string_lossy()
+                .into_owned(),
+            cwd,
+            self.queue.projects.clone(),
+        );
+        self.repo_tasks = Some((self.queue.project.clone(), self.input_revision, lookup));
+    }
+    /// The public cwd of the agent input was on: the one selected in Agents, or the one in the
+    /// active pane in Viewer, never the sidebar's selection there.
+    fn focused_agent_cwd(&self, focus: Focus) -> Option<String> {
+        let (name, cwd) = match focus {
+            Focus::Agents => (self.panel.selected.clone()?, None),
+            Focus::Viewer => {
+                let viewer = &self.viewer.active_pane().viewer;
+                if viewer.shell.is_some() {
+                    return None;
+                }
+                (
+                    viewer.target()?.to_owned(),
+                    viewer.target_metadata().cwd.clone(),
+                )
+            }
+            Focus::Queue => return None,
+        };
+        cwd.or_else(|| {
+            self.panel
+                .agents
+                .iter()
+                .find(|a| a.name == name)?
+                .cwd
+                .clone()
+        })
     }
     fn panel_key(&mut self, key: KeyEvent) {
         self.panel.message.clear();

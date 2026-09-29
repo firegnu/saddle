@@ -1014,3 +1014,10 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 - 普通 Tasks 入口打开时，从打开前的焦点取得 agent：Agents 的选中项或 Viewer 当前活动 agent 窗格。通过公开 cwd 与只读 Git 信息确认所属 repo，子目录和 worktree 按仓库归属处理，不按名字猜。
 - 对应仓库有 current、awaiting、pending 或 history 中任意任务时优先显示它；没有任务、无 agent、无法确认仓库或读取失败时沿用当前项目选择逻辑。查询不阻塞界面，不增加配置或持续跟随焦点。
 - 本条覆盖 §32 普通重开时一律保留项目的约定，其余保留：同项目的选择与位置、未保存表单和进行中操作不因自动切换丢失；Attention 显式目标、用户手选优先，过期读取不覆盖新选择。不改变任务状态、权限或队列流程。
+
+### T42 实现取舍（2026-09-29）
+
+- 只在普通入口（Agents 的 Tab、点击 `Tasks · …` 入口）打开时查一次；Attention、提示框等显式目标走原 `open_tasks`，不查。打开时 Tasks 停在未完成页（表单、确认、项目页等非列表页）或有写操作在跑，就不查。
+- 所属仓库：`git rev-parse --path-format=absolute --show-toplevel --git-common-dir` 取 agent cwd 的 worktree 顶层与共享仓库目录，与 `~/.drover/projects` 登记项目逐个比较共享目录；同一仓库多个登记项时优先 worktree 顶层相同者，否则取登记顺序第一个。只认登记表里的项目，不对未登记目录调用 drover。Git 调用沿用 Agents Git 摘要的只读参数与 5 秒超时。
+- 有无任务用该项目一次公开 `drover list --json`（原 15 秒超时）判断。查找在后台线程，界面照常响应。
+- 查询结果只在这次打开“原封未动”时生效：Tasks 仍打开、打开后没有任何按键／点击／滚轮输入（沿用 `input_revision`）、项目未变、仍在列表页且无写操作。任一条件不满足即丢弃，关闭 Tasks 时直接取消查询。所以打开后立刻操作的用户保持原项目，不会中途被切走。
