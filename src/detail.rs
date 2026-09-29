@@ -102,6 +102,7 @@ impl TaskDetail {
         let group = match task.location.as_str() {
             "current" => "Current",
             "awaiting" => "Awaiting",
+            "pending" => "Pending",
             _ => "History",
         };
         let (status, color) = crate::queue::task_status(t, group, Some(&task.status));
@@ -171,6 +172,7 @@ impl TaskDetail {
             )]);
         }
 
+        out.return_history(data);
         out.manual_record(data);
         out.checks(
             &data.completion,
@@ -211,6 +213,43 @@ pub(crate) fn check_lines(t: &Theme, data: &Detail, width: usize) -> Vec<Line<'s
     out.rows
 }
 impl Out<'_> {
+    fn return_history(&mut self, data: &Detail) {
+        if data.task.return_history.is_empty() {
+            return;
+        }
+        self.heading("Return history");
+        for (index, record) in data.task.return_history.iter().enumerate() {
+            self.note(&format!("Returned run {}", index + 1));
+            for (label, at) in [
+                ("Dispatched", &record.dispatched_at),
+                ("Returned", &record.returned_at),
+            ] {
+                self.field(
+                    label,
+                    &[(
+                        at.as_ref()
+                            .and_then(|n| n.as_f64())
+                            .map(clock)
+                            .unwrap_or_else(|| "not recorded".into()),
+                        self.t.text,
+                    )],
+                );
+            }
+            self.field("Reason", &[(record.reason.clone(), self.t.text)]);
+            self.field(
+                "Work stopped",
+                &[(
+                    if record.work_stopped {
+                        "confirmed by user; agents were not stopped by this action"
+                    } else {
+                        "not confirmed"
+                    }
+                    .into(),
+                    self.t.muted,
+                )],
+            );
+        }
+    }
     /// A manual completion's saved record: the user's reason and time, and the checks then.
     fn manual_record(&mut self, data: &Detail) {
         let t = self.t;

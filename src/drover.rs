@@ -34,6 +34,7 @@ pub struct Task {
     pub t0: Option<serde_json::Value>,
     pub start: Option<String>,
     pub main: Option<String>,
+    pub return_history: Vec<ReturnRecord>,
 }
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -103,8 +104,14 @@ pub enum Operation {
         pending: Vec<Task>,
         index: usize,
     },
-    /// The user's confirmation that one run is complete, bound by the token `drover show` gave
-    /// for it in `project`.
+    /// Return a specific run after the user confirms its work has stopped.
+    ReturnToPending {
+        project: String,
+        id: String,
+        token: String,
+        reason: String,
+    },
+    /// The user's confirmation that one run is complete, bound by `drover show`'s token.
     CompleteManually {
         project: String,
         id: String,
@@ -141,6 +148,18 @@ impl Operation {
                 (index + 1).to_string(),
                 "Deleted in saddle".into(),
             ],
+            Self::ReturnToPending {
+                id, token, reason, ..
+            } => vec![
+                "return-to-pending".into(),
+                id.clone(),
+                "--target-token".into(),
+                token.clone(),
+                "--reason".into(),
+                reason.trim().into(),
+                "--work-stopped".into(),
+                "--json".into(),
+            ],
             Self::CompleteManually {
                 id, token, reason, ..
             } => vec![
@@ -157,6 +176,9 @@ impl Operation {
 }
 impl Client {
     pub fn execute(&self, operation: &Operation, cancel: &AtomicBool) -> Result<String> {
+        if let Operation::ReturnToPending { project, id, .. } = operation {
+            return self.return_to_pending(project, id, &operation.args(), cancel);
+        }
         if let Operation::CompleteManually { project, id, .. } = operation {
             return self.complete_manually(project, id, &operation.args(), cancel);
         }
@@ -330,6 +352,8 @@ pub struct Detail {
     /// Absent from a drover without manual completion.
     #[serde(default)]
     pub manual_completion: Option<ManualTarget>,
+    #[serde(default)]
+    pub return_to_pending: Option<ManualTarget>,
 }
 /// The run `drover show` read, as an opaque token to hand back unchanged.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -350,6 +374,16 @@ pub struct DetailTask {
     /// A manual completion's saved record; absent for every other task, never back-filled.
     #[serde(default)]
     pub completion_record: Option<CompletionRecord>,
+    #[serde(default)]
+    pub return_history: Vec<ReturnRecord>,
+}
+/// One returned run, saved by Drover; never reconstructed from current task state.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct ReturnRecord {
+    pub reason: String,
+    pub dispatched_at: Option<serde_json::Number>,
+    pub returned_at: Option<serde_json::Number>,
+    pub work_stopped: bool,
 }
 /// What the user confirmed and what the checks said then; not a check that passed.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -616,6 +650,82 @@ impl Client {
             "Checks were not run and are not counted as passed. The task waits for your release (Check & release); saddle did not send go or next, change loop or pause, touch Git, or stop agents.".into(),
         );
         Ok(lines.join("\n"))
+    }
+}
+#[derive(Debug)]
+pub struct ReturnError {
+    pub code: String,
+    pub why: String,
+}
+impl std::fmt::Display for ReturnError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Return to pending failed ({}): {}", self.code, self.why)
+    }
+}
+impl std::error::Error for ReturnError {}
+impl Client {
+    fn return_to_pending(
+        &self,
+        project: &str,
+        id: &str,
+        args: &[String],
+        cancel: &AtomicBool,
+    ) -> Result<String> {
+        let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
+        if real(&self.cwd) != real(std::path::Path::new(project)) {
+            bail!("The project changed; return to pending not sent.");
+        }
+        let output = crate::command::run(
+            &self.program,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            Some(&self.cwd),
+            Duration::from_secs(120),
+            cancel,
+        )?;
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .context("Return to pending returned no valid JSON; check the queue before retrying. Nothing else was sent")?;
+        if value["schema_version"] != 1 {
+            bail!(
+                "drover return-to-pending: unsupported schema_version {}",
+                value["schema_version"]
+            );
+        }
+        if value["ok"] == false {
+            return Err(ReturnError {
+                code: value["error"]["code"]
+                    .as_str()
+                    .unwrap_or("unknown_error")
+                    .into(),
+                why: value["error"]["why"].as_str().unwrap_or_default().into(),
+            }
+            .into());
+        }
+        if value["ok"] != true
+            || value["task_id"] != id
+            || value["state"] != "pending"
+            || value["paused"] != true
+            || !output.status.success()
+        {
+            bail!(
+                "drover return-to-pending: unexpected answer for {id}; check the queue before retrying: {}",
+                crate::ui::clip(&value.to_string(), 300)
+            );
+        }
+        let record: ReturnRecord = serde_json::from_value(value["return_record"].clone())
+            .context("Return result has no valid record; check the queue before retrying")?;
+        if !record.work_stopped {
+            bail!("Return result does not confirm work stopped; check the queue before retrying");
+        }
+        Ok(format!(
+            "{id} returned to Pending · Queue paused\nReason: {}\nReturned: {}\n\nThe task keeps its ID and text at the front of Pending. This run's history is retained. No task was sent and no agent was stopped. Resume the queue when ready.",
+            record.reason,
+            record
+                .returned_at
+                .as_ref()
+                .and_then(|n| n.as_f64())
+                .map(crate::detail::clock)
+                .unwrap_or_else(|| "not recorded".into())
+        ))
     }
 }
 /// Queries one task's details until dropped; the next query starts only after the previous one

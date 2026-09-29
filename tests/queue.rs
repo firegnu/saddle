@@ -885,3 +885,128 @@ fn dispatch_is_the_third_view_and_queries_only_explicit_task_numbers() {
         "Enter opens an entry, not Run details"
     );
 }
+
+fn return_target(token: Option<&str>) -> saddle::drover::Detail {
+    let mut detail = target(Some("not-the-return-token"));
+    detail.return_to_pending = Some(saddle::drover::ManualTarget {
+        target_token: token.map(Into::into),
+        unavailable_reason: token.is_none().then(|| "target_unavailable".into()),
+    });
+    detail
+}
+
+#[test]
+fn returning_requires_own_token_reason_and_explicit_stopped_confirmation() {
+    let mut panel = Panel::default();
+    running(&mut panel);
+    panel.view = View::Dispatch;
+    panel.key(saddle::queue::return_click());
+    let first = panel.manual_key().unwrap();
+    type_text(&mut panel, "误派发");
+    assert!(panel.key(key(K::Enter)).is_none(), "no token yet");
+    panel.absorb_manual(&first, Ok(return_target(Some("return/+= token"))));
+    assert!(
+        panel.key(key(K::Enter)).is_none(),
+        "work not confirmed stopped"
+    );
+    panel.key(KeyEvent::new(K::Char('w'), M::CONTROL));
+    panel.key(KeyEvent::new(K::Char('u'), M::CONTROL));
+    assert!(panel.key(key(K::Enter)).is_none(), "reason required");
+    type_text(&mut panel, "误派发");
+    let Some(Request::Run(op)) = panel.key(key(K::Enter)) else {
+        panic!("return requested")
+    };
+    assert_eq!(
+        op,
+        Operation::ReturnToPending {
+            project: panel.project.clone(),
+            id: "T4".into(),
+            token: "return/+= token".into(),
+            reason: "误派发".into(),
+        }
+    );
+    assert!(panel.key(key(K::Enter)).is_none(), "only once");
+    panel.complete(
+        &op,
+        Err(saddle::drover::ReturnError {
+            code: "target_changed".into(),
+            why: "another run".into(),
+        }
+        .into()),
+    );
+    assert!(manual(&panel).expired);
+    assert!(!manual(&panel).work_stopped);
+    assert!(panel.key(key(K::Enter)).is_none());
+    panel.key(KeyEvent::new(K::Char('r'), M::CONTROL));
+    let second = panel.manual_key().unwrap();
+    assert_ne!(first, second);
+    panel.absorb_manual(&first, Ok(return_target(Some("old"))));
+    assert!(manual(&panel).target.is_none());
+    panel.absorb_manual(&second, Ok(return_target(Some("new"))));
+    assert!(
+        panel.key(key(K::Enter)).is_none(),
+        "refresh requires consent again"
+    );
+    panel.key(KeyEvent::new(K::Char('w'), M::CONTROL));
+    let Some(Request::Run(op)) = panel.key(key(K::Enter)) else {
+        panic!("new confirmation")
+    };
+    panel.complete(&op, Ok("T4 returned to Pending · Queue paused".into()));
+    assert!(matches!(panel.page, Page::Feedback(_)));
+    let snapshot = serde_json::from_value(serde_json::json!({
+        "mode":{}, "paused": true, "current":null, "awaiting":null, "history":[], "pending": [{"id":"T4", "title":"Research", "return_history": [{
+            "reason":"误派发", "dispatched_at":100, "returned_at":200, "work_stopped":true
+        }]}, {"id":"T5", "title":"Next"}]
+    })).unwrap();
+    panel.absorb(snapshot);
+    panel.key(key(K::Esc));
+    assert_eq!(panel.tasks()[panel.selected].0, "Pending");
+    assert_eq!(
+        panel.detail_key().unwrap().id,
+        "T4",
+        "returned pending can read history"
+    );
+    assert!(panel.snapshot.as_ref().unwrap().paused);
+}
+
+#[test]
+fn return_confirmation_cancel_old_drover_and_changed_target_never_write() {
+    let mut panel = Panel::default();
+    running(&mut panel);
+    for detail in [
+        target(Some("only-manual-completion")),
+        return_target(None),
+        {
+            let mut d = return_target(Some("tok"));
+            d.task.id = "T5".into();
+            d
+        },
+        {
+            let mut d = return_target(Some("tok"));
+            d.task.location = "awaiting".into();
+            d
+        },
+    ] {
+        panel.key(saddle::queue::return_click());
+        let request = panel.manual_key().unwrap();
+        panel.absorb_manual(&request, Ok(detail));
+        panel.paste("误派发");
+        panel.key(KeyEvent::new(K::Char('w'), M::CONTROL));
+        assert!(panel.key(key(K::Enter)).is_none());
+        assert!(!panel.busy);
+        assert!(panel.key(key(K::Esc)).is_none());
+        assert!(matches!(panel.page, Page::List));
+    }
+    panel.key(saddle::queue::manual_click());
+    assert!(
+        manual(&panel).reason.is_empty(),
+        "return reason is not a completion reason"
+    );
+    panel.key(key(K::Esc));
+    panel.select(1);
+    panel.key(saddle::queue::return_click());
+    assert!(
+        matches!(panel.page, Page::List),
+        "pending cannot be returned again"
+    );
+}

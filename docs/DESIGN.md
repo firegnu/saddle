@@ -990,3 +990,15 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 - saddle 只读展示，不调用记录器的采集／派发写入口，不加后台采集服务、自动评分、修复或重试。记录器路径不写死本机源码目录，接入沿用现有外部命令方式。corral、drover、共享技能与任务流程保持不变；接口缺口先报告。
 - 本轮获准派发由主控使用记录器积累 T38 的真实样本；实现者先用合成记录验证显示，不操作真实队列或其他 agent。后续按项目流程审查、收尾和编译，不自动推进真实队列。
 - 实现取舍（2026-09-29）：命令位置沿用外部命令配置，新增 `queue.dispatch_log`（默认 `dlog`，支持 `~/`，每次读取按当前配置），不写死源码路径；本轮未加进 Settings 表单。只在 Dispatch 页签显示时，按“项目根 + 显式任务号 + 本次打开”读取一次，放后台线程（复用 Links 的可取消读取），每条命令 5 秒超时、单次输出上限 4 MiB；换任务、换项目或重开即丢弃旧结果，Refresh r 重读。返回的派发若项目或任务不符则不显示并提示条数。同一 operation_id 的 intent 与结果合为一步；只有 intent 的显示“结果未知”。命令找不到、无记录、单项未记录、读取失败、格式不兼容分别显示；某次派发读取失败不影响其余派发。
+
+## 55. Running 撤回 Pending（2026-09-29，两主控直接协作）
+
+用户明确要求不走任务派发流程，由 saddle 主控与 drover 主控直接完成；完成后用户用误派发的 T29 做真实实验。实现和验证期间不修改真实队列、不执行 T29 排查。
+
+- Tasks 选中有编号的 Running 任务时新增 `Return to pending…` 次要按钮，无单键快捷键。复用人工完成的确认页及一次性读取机制；显示项目、任务编号／标题，必填原因，明确勾选 `Work has stopped` 后才能确认。主控／实现者停止工作由用户协调，按钮不停止 agent。
+- Drover 提供绑定具体运行的公开 `return-to-pending` 写接口及 `show.return_to_pending` 令牌；Saddle 只传回本次读取的令牌，不生成身份、不直接读写队列文件、不回退调用 drop/add/go/next。旧版本缺接口、目标过期、读取失败时如实提示；过期后须刷新并重新确认。
+- 成功后保留任务编号与派发时的标题正文，回到 Pending 首位，队列暂停；保留本次开始／撤回时间和原因，不记 Done 或 Dropped，不派下一项。再次派发仍是同一任务的新运行。原 Dispatch 记录不变。
+- 撤回记录通过公开 list/show 展示在 Run details；既有无记录任务不补造历史。Pending 只有具有撤回历史时需要 show，避免对旧版 Drover 普通 Pending 改变读取行为。
+- 只改 Saddle 与 Drover 各自职责内代码及直接检查，不改 corral、dispatch-log、共享技能，不自动执行真实 T29 实验。
+
+接口按 Drover `docs/撤回JSON接口.md`（schema_version 1）落定：`return-to-pending Tn --target-token TOKEN --reason REASON --work-stopped --json`，目标取 `show.return_to_pending.target_token`。只接受退出 0、同 task_id、state=pending、paused=true 且有效 return_record；任何错误均不重试，刷新目标并重新确认工作停止后才可再次提交。`task.return_history` 按轮展示 dispatched_at／returned_at／reason／work_stopped；停止仅标为用户确认，不冒充 agent 状态事实。撤回及重新派发的分组变化重新读取详情，丢弃前一轮的异步结果。

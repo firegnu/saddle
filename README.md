@@ -224,6 +224,7 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Tasks | r / g / n | Refresh / check and release / send next task |
 | Tasks | p / l | Pause or resume / toggle loop |
 | Tasks | a / ? | Add a task / open help |
+| Tasks, running task selected | Return to pending… (click) | Confirm work has stopped, give a reason, and return the same task to the front of Pending with the queue paused; retains run history and does not stop agents |
 | Tasks, pending task selected | e / u / d / x | Edit / move up / move down / delete (confirm with y) |
 | Tasks | A | Show pending tasks from all registered projects |
 | All pending | Mouse wheel / PgUp / PgDn, r, Esc | Scroll / reload / back |
