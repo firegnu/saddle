@@ -1,48 +1,25 @@
 # 交接
 
-更新：2026-09-28 日终。当前分支 `main`；本次交接前 HEAD 为 `0611c5c`，工作区干净。用户明确今天结束，提交推送后停止工作。
+更新：2026-09-29，T37 已审查、合并并清理。当前 main；合并 9ebd457，收尾空提交 3ebd736，随后提交本交接与审查落盘记录。
 
-## 会话摘要
+## 当前结果
 
-T36 人工确认完成入口已在 saddle 与 Drover 两边合并、推送、发布并清理。用户随后亲自操作人工完成并反馈「放行成功了」；公开队列已确认 T36 完成且放行，本任务闭环。
+- T37：Settings → Diagnostics F4 提供只读诊断，手动刷新／复制摘要；具体设计与取舍见 docs/DESIGN.md §51。
+- 实现 36bc598、摘要修复 a24da03。主控发现配置解析错误携带原值，一次返工后复核通过。审查见 docs/任务/T37-主控审查.md；任务记录见 docs/任务/T37-只读诊断入口.md。
+- 主控标准测试各一次：cargo test --all-targets 为 265 passed／2 failed／3 ignored；clippy 通过。后续只复核相关 diagnostics／settings 共 21 项通过；原两个失败用例 t25_exited_original_status_is_not_reattached 和 terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal 各单跑一次通过。不能改写为整套全绿，T29 既有时序问题未修。
+- t37-diagnostics worktree／分支已安全清理；实现者 idle、attached=0 后随工作目录一并关闭。只剩 main worktree。其他用户主控 corral/main、drover/main、globalmesh/main、saddle/main 保留。
+- 本次未发布 release、未更新已安装二进制、未重启运行中的 saddle；真实剪贴板写入没有现场验证。
 
-随后讨论并明确保持流程核心稳定的方向，新增 T37／T38 仅入队，用户说「明天再做」。没有启动调研、实现、委派或定时执行。
+## 队列与下一步
 
-## 完成的工作
+本次收尾只读核对：current=T37、awaiting=null、loop=false、gate=true；pending 顺序为 T38 → T29 → T28 → T32 → T34。没有执行 done／go／next，不自动推进。T37 等用户验收及后续队列操作；如果用户要在已安装版本使用，另行构建发布，不把已合并视为已部署。
 
-- saddle 实现 `3d21879`，合并 `2beb321`，收尾 `b463f8d`；发布与两边交接记录已推送至 `33957d2`。release 已更新，既有 `~/.local/bin/saddle` 软链保持不变。
-- Drover 最终交付落地 `be3bdbd7e0786ee72012dfade2bda5dde385a23d`，合并 `2b6e657`，收尾 `d3605ef`。正式 CLI `../drover/bin/drover` 已生效，原引擎重载为 PID 37103；其主控确认无遗留部署项。
-- 两边实现／审查工作区、分支及对应自开 agent 已清理；`drover/main` 与其他用户主控保留。旧 m36 worktree 路径已失效。
-- saddle 主控标准检查各一次：262 passed／0 failed／3 ignored，clippy 通过。用户决定取消 saddle 独立审查，未执行隔离联调，未追加测试。
-- 本次只读公开 CLI 核对 T36：history 中 `status=done`，有放行时间，`completion_record.method=manual`、原因为 `i approved`。验证了人工完成后由用户放行；本次实际任务检查条件已满足，不声称验证了未合并分支的覆盖场景。
-
-## 待完成的工作
-
-T36 暂无已知待完成工作；无需补派审查、补联调或重复发布。T29 偶发测试问题仍未解决，本次测试通过不代表已修复。
-
-日终公开队列：current=null、awaiting=null、loop=false、gate=true、paused=false。pending 顺序为 **T37 → T38 → T29 → T28 → T32 → T34**；T31 已不在 pending。顺序按实时公开列表记录，本次交接没有重新排序或推进队列。
-
-- T37：saddle 只读诊断入口。查看命令路径、公开接口读取及配置／布局保存状态，考虑复制诊断摘要；具体入口、内容与范围待讨论。
-- T38：saddle 近期操作结果记录。回看 saddle 发起操作的项目、时间和结果；具体操作范围、条数及是否持久化待讨论，不另建任务状态系统或自动重试。
-
-本次交接开始时没有用户未提交改动；本次仅更新 HANDOFF 与 DESIGN 中的已确认原则及 T36 最终阶段说明，随后提交推送。没有新增测试或发布操作。
+T38 仍仅记录“近期操作结果”，入口、范围、条数与是否持久化待讨论，不据此开始实现。其余待办按用户指示处理。
 
 ## 关键约束
 
-- 不主动关闭 `drover/main` 或干扰其他用户主控。
-- 后续需求遵循 DESIGN §50 的核心稳定原则；核心可因真实职责需求做最小扩展，先向用户说明，不默认绝对禁止，也不随功能顺手改动。
-- 遵循用户收紧范围的决定，不追加验收或统计式重跑；后续实际问题另行处理。T36 设计与取舍见 DESIGN §49 和主控审查记录。
-- 既有通知 In saddle 偏好保持；会话去重限制见 DESIGN §48。Hammerspoon 提醒保留，CCNotify 已授权移除及备份，不再操作。
-
-## 重要文件
-
-- `AGENTS.md`
-- `docs/DESIGN.md` 第 48、49、50 节
-- `docs/任务/T36-主控审查.md`
-- `docs/任务/T36-saddle人工完成实施.md`
-- `docs/任务/T36-Drover人工完成实施委托.md`
-- `../drover/docs/人工完成JSON接口.md`（正式公开契约）
-
-## 下一步
-
-今天结束。明天用户回来后，优先按其指示讨论 T37／T38，再确定实施范围；“明天再做”不等于已授权后台或定时启动。不要自行派发、启动队列或关闭用户 agent。重复到达的 T36 完成提醒按已闭环处理，不再合并、发布、清理。
+- 保持核心稳定，新需求优先使用公开接口，只改 saddle；接口缺口先说明，不顺手扩展 corral／Drover 或全局技能。
+- 不干扰其他用户 agent，不自动关闭主控；不启动循环或替用户放行下一项。
+- 验证按任务预算，不追加统计重跑、覆盖矩阵或真实 agent 操作。历史 T29 用例失败不能因本次单跑通过而记为修复。
+- T36 已在两边完成合并、发布、清理和用户人工完成／放行，无需重复处理。历史详情见 docs/任务/T36-主控审查.md。
+- 既有通知 In saddle 偏好保持；Hammerspoon 提醒保留，CCNotify 已授权移除及备份，不再操作。
