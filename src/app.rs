@@ -203,9 +203,17 @@ struct App {
     settings_return: Focus,
     /// Identifies the open Settings, so a Drover answer meant for an earlier one is not used.
     settings_token: u64,
+    /// For Diagnostics: the latest agent and task reads, where the config came from, and the
+    /// check running for the open page.
+    agents_read: crate::diagnostics::Last,
+    tasks_read: crate::diagnostics::Last,
+    config_from_file: bool,
+    checker: Option<crate::diagnostics::Checker>,
 }
 impl App {
     fn new(config: Config, config_path: std::path::PathBuf) -> Result<Self> {
+        // The config loaded without error, so an existing file is where it came from.
+        let config_from_file = config_path.exists();
         let client = Client {
             program: expand_home(&config.corral).to_string_lossy().into_owned(),
         };
@@ -343,6 +351,10 @@ impl App {
             settings: None,
             settings_return: Focus::Agents,
             settings_token: 0,
+            agents_read: None,
+            tasks_read: None,
+            config_from_file,
+            checker: None,
         })
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -427,6 +439,7 @@ impl App {
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
+                    self.agents_read = Some((SystemTime::now(), Ok(())));
                     self.board.agents_loaded = true;
                     self.board.corral_error = None;
                     self.viewer.disappeared(
@@ -452,6 +465,7 @@ impl App {
                     self.git.watch(cwds);
                 }
                 Err(error) => {
+                    self.agents_read = Some((SystemTime::now(), Err(format!("{error:#}"))));
                     self.board.corral_error = Some(format!("{error:#}"));
                     self.panel.message = format!("corral: {error:#}");
                 }
@@ -460,6 +474,14 @@ impl App {
         let updates: Vec<_> = self.channel.updates.try_iter().collect();
         for update in updates {
             self.channel_update(update);
+        }
+        if let Some(checks) = self
+            .checker
+            .as_ref()
+            .and_then(|c| c.updates.try_recv().ok())
+            && let Some(settings) = &mut self.settings
+        {
+            settings.checked(checks);
         }
         for update in self.survey.updates.try_iter() {
             match &update {
@@ -648,8 +670,12 @@ impl App {
         self.control_tick();
         for update in self.queue_worker.updates.try_iter() {
             match update {
-                drover::Update::Snapshot(Ok(snapshot)) => self.queue.absorb(*snapshot),
+                drover::Update::Snapshot(Ok(snapshot)) => {
+                    self.tasks_read = Some((SystemTime::now(), Ok(())));
+                    self.queue.absorb(*snapshot)
+                }
                 drover::Update::Snapshot(Err(error)) => {
+                    self.tasks_read = Some((SystemTime::now(), Err(format!("{error:#}"))));
                     self.queue.read_error = Some(format!("{error:#}"));
                 }
                 drover::Update::Feedback(operation, result) => {
@@ -1613,6 +1639,26 @@ impl App {
                 return;
             }
             Outcome::Done(message) => self.panel.message = message,
+            Outcome::Diagnose => {
+                let report = self.diagnostics();
+                // Replacing the checker cancels the previous check and drops its answer.
+                self.checker = Some(crate::diagnostics::Checker::start(
+                    report.corral.clone(),
+                    report.drover.clone(),
+                    report.config_path.clone(),
+                ));
+                if let Some(settings) = &mut self.settings {
+                    settings.diagnose(report);
+                }
+                return;
+            }
+            Outcome::Copy(summary) => {
+                let result = copy_to_clipboard(&summary).map_err(|error| format!("{error:#}"));
+                if let Some(settings) = &mut self.settings {
+                    settings.copied(result);
+                }
+                return;
+            }
             Outcome::Saved(saved, restart) => {
                 self.config.colors = saved.colors.for_terminal(truecolor());
                 self.config.left_width = saved.left_width;
@@ -1627,7 +1673,28 @@ impl App {
             }
         }
         self.settings = None;
+        self.checker = None;
         self.focus = self.settings_return;
+    }
+    /// What saddle knows now; the command and config checks run in the background.
+    fn diagnostics(&self) -> crate::diagnostics::Report {
+        crate::diagnostics::Report {
+            corral: self.actions.client.program.clone(),
+            drover: expand_home(&self.config.queue.drover)
+                .to_string_lossy()
+                .into_owned(),
+            agents: self.agents_read.clone(),
+            project: self.queue.project.clone(),
+            tasks: self.tasks_read.clone(),
+            config_path: self.config_path.clone(),
+            config_from_file: self.config_from_file,
+            layout_path: self.layout_store.path().map(Into::into),
+            restore: self.layout_store.restore.clone(),
+            save: self.layout_store.saved.clone(),
+            save_off: self.layout_store.protected(),
+            checked: SystemTime::now(),
+            checks: None,
+        }
     }
     /// The close mark only closes the prompt. Elsewhere it opens its task in Tasks, or
     /// Attention for several; while another popup has input, only the close mark works.
@@ -1840,6 +1907,7 @@ impl App {
                 },
                 Duration::from_millis(self.config.refresh_ms),
             );
+            self.tasks_read = None;
             self.queue = queue::Panel {
                 project: cwd.display().to_string(),
                 projects: std::mem::take(&mut self.queue.projects),

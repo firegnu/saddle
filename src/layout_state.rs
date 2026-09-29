@@ -2,7 +2,7 @@
 use crate::terminals::{Node, Terminals};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
-use std::{fs, io::Write, path::PathBuf};
+use std::{fs, io::Write, path::PathBuf, time::SystemTime};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -114,6 +114,10 @@ pub struct Store {
     protected: bool,
     last_attempt: Option<Vec<u8>>,
     pub notice: String,
+    /// The startup restore, for Diagnostics: whether a saved layout was found, or the error.
+    pub restore: Option<(SystemTime, Result<bool, String>)>,
+    /// The latest save attempt, for Diagnostics.
+    pub saved: crate::diagnostics::Last,
 }
 impl Store {
     pub fn open(path: Result<PathBuf>) -> (Self, Option<Layout>) {
@@ -122,6 +126,8 @@ impl Store {
             protected: false,
             last_attempt: None,
             notice: String::new(),
+            restore: None,
+            saved: None,
         };
         let loaded = (|| -> Result<Option<Layout>> {
             store.path = Some(path?);
@@ -135,13 +141,24 @@ impl Store {
             Ok(Some(layout))
         })();
         match loaded {
-            Ok(layout) => (store, layout),
+            Ok(layout) => {
+                store.restore = Some((SystemTime::now(), Ok(layout.is_some())));
+                (store, layout)
+            }
             Err(error) => {
                 store.protected = true;
                 store.notice = format!("Cannot restore layout; original file preserved: {error:#}");
+                store.restore = Some((SystemTime::now(), Err(format!("{error:#}"))));
                 (store, None)
             }
         }
+    }
+    pub fn path(&self) -> Option<&std::path::Path> {
+        self.path.as_deref()
+    }
+    /// Saving is off: a layout file that could not be restored is kept as it is.
+    pub fn protected(&self) -> bool {
+        self.protected
     }
     pub fn save(&mut self, terminals: &Terminals, force: bool) {
         if self.protected {
@@ -163,8 +180,10 @@ impl Store {
             Ok(())
         })();
         self.notice = result
+            .as_ref()
             .err()
             .map(|e| format!("Layout save failed: {e:#}"))
             .unwrap_or_default();
+        self.saved = Some((SystemTime::now(), result.map_err(|e| format!("{e:#}"))));
     }
 }

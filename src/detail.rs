@@ -789,7 +789,7 @@ fn time_of_day(unix: f64) -> String {
         .map(|tm| format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec))
         .unwrap_or_else(|| format!("{unix:.0}"))
 }
-fn local(unix: f64) -> Option<libc::tm> {
+pub(crate) fn local(unix: f64) -> Option<libc::tm> {
     let seconds = unix.floor() as libc::time_t;
     // SAFETY: localtime_r only writes the provided `tm`, which is plain data.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };

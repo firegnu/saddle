@@ -1,5 +1,6 @@
 //! Settings: view, edit and save the existing config file from inside saddle. Edits stay a
 //! draft until Save; Save writes only the edited keys, keeping the rest of the file as it is.
+//! Its Diagnostics page only reads.
 use crate::{
     buttons::{self, Button},
     config::Config,
@@ -33,11 +34,13 @@ pub enum Page {
     General,
     Colors,
     Advanced,
+    Diagnostics,
 }
-const PAGES: [(Page, &str, u8); 3] = [
+const PAGES: [(Page, &str, u8); 4] = [
     (Page::General, "General F1", 1),
     (Page::Colors, "Colors F2", 2),
     (Page::Advanced, "Advanced F3", 3),
+    (Page::Diagnostics, "Diagnostics F4", 4),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -176,6 +179,10 @@ pub enum Outcome {
     SetChannel(Option<Box<Config>>, bool),
     /// Everything saved: close with this message.
     Done(String),
+    /// Diagnostics opened or Refresh pressed: check again and answer with `diagnose`.
+    Diagnose,
+    /// Copy this diagnostics summary; answer with `copied`.
+    Copy(String),
 }
 
 /// Drover's notification preference as Settings knows it.
@@ -214,6 +221,10 @@ pub struct Settings {
     written: Option<Vec<&'static str>>,
     /// The Task notifications choices as last drawn, for clicks.
     choices: Vec<(Rect, &'static str)>,
+    /// What Diagnostics shows; None until the first check is asked for.
+    report: Option<crate::diagnostics::Report>,
+    /// The first Diagnostics line shown.
+    report_top: u16,
 }
 
 impl Settings {
@@ -248,6 +259,8 @@ impl Settings {
             saving: false,
             written: None,
             choices: Vec::new(),
+            report: None,
+            report_top: 0,
         };
         settings.reload(false);
         settings
@@ -259,6 +272,23 @@ impl Settings {
     pub fn value(&self, key: &str) -> Option<&str> {
         let i = self.fields.iter().position(|f| f.key == key)?;
         Some(&self.inputs[i].text)
+    }
+    /// A new Diagnostics report; its background checks follow in `checked`.
+    pub fn diagnose(&mut self, report: crate::diagnostics::Report) {
+        self.report = Some(report);
+        self.message.clear();
+        self.error = false;
+    }
+    pub fn checked(&mut self, checks: crate::diagnostics::Checks) {
+        if let Some(report) = &mut self.report {
+            report.checks = Some(checks);
+        }
+    }
+    pub fn copied(&mut self, result: Result<(), String>) {
+        (self.message, self.error) = match result {
+            Ok(()) => ("Copied the diagnostics summary.".into(), false),
+            Err(error) => (format!("Copy failed: {error}"), true),
+        };
     }
     pub fn message(&self) -> &str {
         &self.message
@@ -417,6 +447,10 @@ impl Settings {
         if key.code == KeyCode::Esc {
             return Outcome::Cancel;
         }
+        // Diagnostics stays reachable while the config file cannot be used.
+        if self.page == Page::Diagnostics || key.code == KeyCode::F(4) {
+            return self.diagnostics_key(key);
+        }
         if self.broken.is_some() {
             if ctrl && key.code == KeyCode::Char('r') {
                 self.reload(self.keeping);
@@ -472,8 +506,35 @@ impl Settings {
         }
         Outcome::Stay
     }
+    /// Diagnostics: Refresh, Copy summary, Close and scrolling; F1–F3 go back to the settings.
+    fn diagnostics_key(&mut self, key: KeyEvent) -> Outcome {
+        if key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+        {
+            return Outcome::Stay;
+        }
+        match key.code {
+            KeyCode::F(4) | KeyCode::Char('r') => {
+                self.page = Page::Diagnostics;
+                self.report_top = 0;
+                return Outcome::Diagnose;
+            }
+            KeyCode::F(n @ 1..=3) => self.show(PAGES[usize::from(n - 1)].0),
+            KeyCode::Char('c') => {
+                if let Some(report) = &self.report {
+                    return Outcome::Copy(report.summary());
+                }
+            }
+            KeyCode::Up => self.report_top = self.report_top.saturating_sub(1),
+            KeyCode::Down => self.report_top = self.report_top.saturating_add(1),
+            _ => {}
+        }
+        Outcome::Stay
+    }
     pub fn paste(&mut self, text: &str) {
-        if !self.conflict
+        if self.page != Page::Diagnostics
+            && !self.conflict
             && self.broken.is_none()
             && !self.saving
             && self.fields[self.selected].kind != Kind::Channel
@@ -482,7 +543,7 @@ impl Settings {
         }
     }
     pub fn click(&mut self, point: Position) {
-        if self.conflict || self.broken.is_some() || self.saving {
+        if self.conflict || self.broken.is_some() || self.saving || self.page == Page::Diagnostics {
             return;
         }
         if let Some(&(_, choice)) = self.choices.iter().find(|(area, _)| area.contains(point)) {
@@ -499,7 +560,13 @@ impl Settings {
         }
     }
     pub fn scroll(&mut self, down: bool) {
-        if !self.conflict && self.broken.is_none() && !self.saving {
+        if self.page == Page::Diagnostics {
+            self.report_top = if down {
+                self.report_top.saturating_add(1)
+            } else {
+                self.report_top.saturating_sub(1)
+            };
+        } else if !self.conflict && self.broken.is_none() && !self.saving {
             self.step(if down { 1 } else { -1 });
         }
     }
@@ -624,7 +691,10 @@ impl Settings {
     /// Draws the popup centred on the screen; returns its tabs and buttons.
     pub fn draw(&mut self, t: &Theme, frame: &mut Frame) -> Vec<buttons::Hit> {
         // Colors needs a tall list; the other pages and notices stay compact.
-        let height = if self.conflict || self.broken.is_some() {
+        let diagnostics = self.page == Page::Diagnostics;
+        let height = if diagnostics {
+            40
+        } else if self.conflict || self.broken.is_some() {
             18
         } else if self.page == Page::Colors {
             34
@@ -643,7 +713,13 @@ impl Settings {
             ..inside
         };
         self.rows.clear();
-        let bar = if self.conflict {
+        let bar = if diagnostics {
+            vec![
+                Button::new("Refresh r", KeyCode::Char('r'), true).primary(),
+                Button::new("Copy summary c", KeyCode::Char('c'), self.report.is_some()),
+                Button::new("Close Esc", KeyCode::Esc, true),
+            ]
+        } else if self.conflict {
             vec![
                 Button::new("Back Esc", KeyCode::Esc, true),
                 Button::new("Keep my edits k", KeyCode::Char('k'), true).primary(),
@@ -651,6 +727,7 @@ impl Settings {
             ]
         } else if self.broken.is_some() {
             vec![
+                Button::new("Diagnostics F4", KeyCode::F(4), true),
                 Button::new("Cancel Esc", KeyCode::Esc, true),
                 Button::control("Reload Ctrl-R", KeyCode::Char('r'), true),
             ]
@@ -704,7 +781,7 @@ impl Settings {
             );
             body.height -= 1;
         }
-        if let Some(error) = &self.broken {
+        if let Some(error) = self.broken.as_ref().filter(|_| !diagnostics) {
             let kept = if self.keeping && !self.edited().is_empty() {
                 "\nYour unsaved edits are kept and stay on top of the file after Reload; Cancel drops them."
             } else {
@@ -720,7 +797,7 @@ impl Settings {
             );
             return hits;
         }
-        if self.conflict {
+        if self.conflict && !diagnostics {
             let edited: Vec<_> = self
                 .edited()
                 .into_iter()
@@ -771,6 +848,10 @@ impl Settings {
         hits.extend(tab_hits);
         body = rest;
         shrink_top(&mut body, 1);
+        if diagnostics {
+            self.draw_report(t, frame, body);
+            return hits;
+        }
         let preview = self.theme();
         // The Colors page keeps a small preview under its list when there is room.
         if self.page == Page::Colors && body.height >= 12 {
@@ -867,6 +948,57 @@ impl Settings {
                 &mut state,
             );
         }
+    }
+
+    /// The Diagnostics groups; long values wrap under their value column.
+    fn draw_report(&mut self, t: &Theme, frame: &mut Frame, area: Rect) {
+        use crate::diagnostics::{Row, Tone};
+        let Some(report) = &self.report else {
+            frame.render_widget(
+                Paragraph::new("Checking…").style(Style::default().fg(t.muted)),
+                area,
+            );
+            return;
+        };
+        let room = area.width.saturating_sub(LABEL as u16 + 1).max(1);
+        let mut lines = Vec::new();
+        for row in report.rows() {
+            match row {
+                Row::Heading(heading) => {
+                    if !lines.is_empty() {
+                        lines.push(Line::default());
+                    }
+                    lines.push(Line::styled(
+                        heading,
+                        Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
+                    ));
+                }
+                Row::Item(label, value, tone) => {
+                    let style = Style::default().fg(match tone {
+                        Tone::Good => t.text,
+                        Tone::Bad => t.danger,
+                        Tone::Unknown => t.muted,
+                    });
+                    let label = format!("  {} ", crate::ui::pad(label, LABEL - 2));
+                    for (n, part) in crate::queue::wrap_text(&value, room)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let lead = if n == 0 {
+                            label.clone()
+                        } else {
+                            " ".repeat(label.width())
+                        };
+                        let mut spans = vec![Span::styled(lead, Style::default().fg(t.muted))];
+                        spans.extend(part.spans.into_iter().map(|span| span.style(style)));
+                        lines.push(Line::from(spans));
+                    }
+                }
+            }
+        }
+        let last = (lines.len() as u16).saturating_sub(area.height);
+        self.report_top = self.report_top.min(last);
+        frame.render_widget(Paragraph::new(lines).scroll((self.report_top, 0)), area);
     }
 
     /// What Task notifications controls, or why it cannot be chosen.
