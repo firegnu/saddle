@@ -23,3 +23,8 @@ worktree `/Users/firegnu/Developer/personal_projs/saddle-worktrees/t47-readme-he
 ## 做完
 
 追加修改与检查的简短完成记录。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+- 在 README.md「Build and run」的安装说明之后补了一句：`Use saddle --help to see the command-line options.`，只改这一处，未改代码。
+- 检查：`git diff --check` 无问题；已读新增句，符合要求。未跑测试、clippy 或编译。
