@@ -36,3 +36,9 @@ Dispatch 记录全文页目前使用单行紧凑 `Back Esc`。使它复用弹窗
 末尾追加完成记录：修改、检查、取舍与提交 SHA。命令都在前台跑完，回复最后一行写 DONE。
 
 主控记录器 dispatch_id：`b460a96365bc4b14a347f2d307ef968a`；此字段供主控关联，实现者不负责采集。
+
+## 完成记录
+
+- 修改：`src/queue_dispatch.rs` 全文页返回按钮由 `draw_compact_top` 改为共享 `draw_outlined_top`（三行圆角轮廓），正文用其返回的剩余区域，点击／Esc 返回不变。
+- 检查：`tests/workflow.rs` 的 `dispatch_tab_lists_recorded_steps_opens_full_text_and_returns` 增加断言：按钮上下为 `╭`／`╰`，正文在按钮下方；该测试通过，`git diff --check` 干净，clippy 通过。
+- 取舍：未动 Links、共享按钮组件；未跑全套。
