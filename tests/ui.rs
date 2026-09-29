@@ -2857,3 +2857,57 @@ fn returned_pending_run_details_show_the_saved_history() {
     }
     assert!(!screen.contains("Unknown status: pending"), "{screen}");
 }
+
+#[test]
+fn dispatch_selected_is_a_pending_task_button_that_sends_the_shown_target() {
+    let mut q = queue::Panel::default();
+    q.project = "/tmp/project-a".into();
+    let snapshot = |second: serde_json::Value| {
+        serde_json::from_value(serde_json::json!({
+            "mode":{}, "paused":false, "current":null, "awaiting":null,
+            "history":[{"id":"T0", "title":"Old", "status":"done"}],
+            "pending":[
+                {"id":"T1", "title":"First", "dispatch_pending":{"pos":1, "target_token":"d1:one", "unavailable_reason":null}},
+                {"id":"T2", "title":"Second", "dispatch_pending": second}
+            ]
+        }))
+        .unwrap()
+    };
+    q.absorb(snapshot(
+        serde_json::json!({"pos":2, "target_token":"d1:two", "unavailable_reason":null}),
+    ));
+    q.select(1);
+    let buffer = render_queue(&mut q, 150, 40);
+    let screen = text(&buffer);
+    assert!(
+        screen.contains("Dispatch selected") && screen.contains("Next n"),
+        "{screen}"
+    );
+    let (x, y) = find(&buffer, "Dispatch selected").unwrap();
+    let Some(saddle::drover::Request::Run(op)) = q.click(x, y) else {
+        panic!("the button sends the selected task")
+    };
+    assert_eq!(
+        op,
+        saddle::drover::Operation::DispatchPending {
+            project: "/tmp/project-a".into(),
+            pos: 2,
+            token: "d1:two".into(),
+        }
+    );
+    q.complete(&op, Ok("done".into()));
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    // Shown but inert when the target is unavailable.
+    q.absorb(snapshot(
+        serde_json::json!({"pos":2, "target_token":null, "unavailable_reason":"target_ambiguous"}),
+    ));
+    let buffer = render_queue(&mut q, 150, 40);
+    let (x, y) = find(&buffer, "Dispatch selected").expect("still drawn");
+    assert!(q.click(x, y).is_none());
+    // History offers no dispatch.
+    q.select(2);
+    assert!(!text(&render_queue(&mut q, 150, 40)).contains("Dispatch selected"));
+}
