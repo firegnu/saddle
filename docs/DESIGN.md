@@ -1002,3 +1002,7 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 - 只改 Saddle 与 Drover 各自职责内代码及直接检查，不改 corral、dispatch-log、共享技能，不自动执行真实 T29 实验。
 
 接口按 Drover `docs/撤回JSON接口.md`（schema_version 1）落定：`return-to-pending Tn --target-token TOKEN --reason REASON --work-stopped --json`，目标取 `show.return_to_pending.target_token`。只接受退出 0、同 task_id、state=pending、paused=true 且有效 return_record；任何错误均不重试，刷新目标并重新确认工作停止后才可再次提交。`task.return_history` 按轮展示 dispatched_at／returned_at／reason／work_stopped；停止仅标为用户确认，不冒充 agent 状态事实。撤回及重新派发的分组变化重新读取详情，丢弃前一轮的异步结果。
+
+## 56. T41 Dispatch 全文页返回按钮（2026-09-29）
+
+用户报告 Tasks 的 Dispatch 记录全文详情页返回按钮样式不对。该处仍使用单行紧凑 `Back Esc`；主控按弹窗既有轮廓按钮约定，改为共享三行圆角按钮并由共享布局为正文让出空间。保留原返回行为与记录位置，只修这一页，不扩到 Links 或全局按钮体系。
