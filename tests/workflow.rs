@@ -3964,17 +3964,17 @@ fn dispatch_tab_lists_recorded_steps_opens_full_text_and_returns() {
     h.send(b"\r");
     h.see("SNAPSHOT OF THE TASK FILE");
     h.see("Back Esc");
-    // Same three-row rounded outline as dialog buttons, with the text below it.
+    // Single-row compact text button, with the text below it.
     let contents = h.contents();
     let lines: Vec<&str> = contents.lines().collect();
     let back = lines.iter().position(|l| l.contains("Back Esc")).unwrap();
-    assert!(lines[back - 1].contains('╭'), "{contents}");
-    assert!(lines[back + 1].contains('╰'), "{contents}");
+    assert!(!lines[back - 1].contains('╭'), "{contents}");
+    assert!(!lines[back + 1].contains('╰'), "{contents}");
     let body = lines
         .iter()
         .position(|l| l.contains("SNAPSHOT OF THE TASK FILE"))
         .unwrap();
-    assert!(body > back + 1, "{contents}");
+    assert!(body > back, "{contents}");
     h.send(b"\x1b");
     h.see("Close Esc");
     h.see("› 09-29 08:03 Start");
