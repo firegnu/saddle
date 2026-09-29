@@ -11,7 +11,7 @@
 ## 先读
 
 - AGENTS.md
-- docs/DESIGN.md §34（弹窗轮廓按钮）、§54（Dispatch）、§56（本次修正）
+- docs/DESIGN.md §30（弹窗轮廓按钮）、§54（Dispatch）、§56（本次修正）
 - src/queue_dispatch.rs、src/buttons.rs，与该处直接相关的渲染检查
 
 ## 在哪里干活
@@ -42,3 +42,9 @@ Dispatch 记录全文页目前使用单行紧凑 `Back Esc`。使它复用弹窗
 - 修改：`src/queue_dispatch.rs` 全文页返回按钮由 `draw_compact_top` 改为共享 `draw_outlined_top`（三行圆角轮廓），正文用其返回的剩余区域，点击／Esc 返回不变。
 - 检查：`tests/workflow.rs` 的 `dispatch_tab_lists_recorded_steps_opens_full_text_and_returns` 增加断言：按钮上下为 `╭`／`╰`，正文在按钮下方；该测试通过，`git diff --check` 干净，clippy 通过。
 - 取舍：未动 Links、共享按钮组件；未跑全套。
+
+## 主控审查
+
+结论：通过。实现提交 `b818247`，仅将 Dispatch 全文页的 `draw_compact_top` 换成 `draw_outlined_top`，沿用共享按钮与返回区域，不改导航或读取；接受局部修正，不扩展到 Links。现有合成 workflow 检查补了轮廓上下边框和正文位置，仍检查 Esc 回到原记录；实现者报告该项与 clippy 通过，diff 检查干净。纯显示预算，主控看 diff，不重复套件。
+
+任务书先读节号原误写 §34，主控已纠正为 §30；完成提交 SHA 由主控补记，未要求额外返工。路由、决定、派发快照、完成回复与本审查通过同一 dispatch_id 保留；早先纠正文档消息因 agent working 被拒绝，记录为未送达，不冒充返工已执行。
