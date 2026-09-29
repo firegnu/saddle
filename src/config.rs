@@ -18,6 +18,8 @@ pub struct Config {
 pub struct Queue {
     pub drover: String,
     pub cwd: Option<String>,
+    /// The dispatch-log command whose public reads fill the optional Dispatch view.
+    pub dispatch_log: String,
 }
 
 impl Default for Queue {
@@ -25,6 +27,7 @@ impl Default for Queue {
         Self {
             drover: "drover".into(),
             cwd: None,
+            dispatch_log: "dlog".into(),
         }
     }
 }
@@ -53,6 +56,10 @@ impl Config {
         ensure!(
             !config.queue.drover.trim().is_empty(),
             "queue.drover cannot be empty"
+        );
+        ensure!(
+            !config.queue.dispatch_log.trim().is_empty(),
+            "queue.dispatch_log cannot be empty"
         );
         Ok(config)
     }

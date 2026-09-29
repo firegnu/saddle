@@ -9,6 +9,7 @@ refresh_ms = 1000             # Background refresh interval, in milliseconds.
 [queue]
 drover = "drover"             # Executable name or path; ~/ is supported.
 # cwd = "~/projects/example"  # Optional initial project; omitted by default.
+dispatch_log = "dlog"         # Optional dispatch-log command for Tasks · Dispatch.
 
 [colors]
 # "default" (or "reset") uses the terminal's color; RGB uses "#RRGGBB".

@@ -135,6 +135,8 @@ impl App {
     pub(super) fn task_links_tick(&mut self) -> Result<()> {
         if self.focus == Focus::Queue {
             self.queue.tick_links();
+            self.queue
+                .tick_dispatch(&expand_home(&self.config.queue.dispatch_log).to_string_lossy());
         }
         if let Some(LinkAttach {
             request,
