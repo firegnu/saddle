@@ -151,19 +151,46 @@ fn default_order_puts_agents_needing_people_first_and_s_switches_to_names() {
 }
 
 #[test]
-fn fold_defaults_on_above_five_agents_until_toggled() {
+fn fold_keeps_initial_choice_across_agent_count_changes_until_toggled() {
     let many = |n: usize| (0..n).map(|i| agent(&format!("p/{i}"), "idle")).collect();
     let mut panel = Panel::default();
     panel.absorb(many(5), None, 100.0);
     assert!(!panel.folded());
     panel.absorb(many(6), None, 101.0);
-    assert!(panel.folded());
-    panel.toggle_fold();
     assert!(!panel.folded());
-    // A manual choice outlasts later changes in the agent count.
     panel.absorb(many(8), None, 102.0);
     assert!(!panel.folded());
+    // A manual choice also outlasts later changes in the agent count.
     panel.toggle_fold();
     panel.absorb(many(2), None, 103.0);
     assert!(panel.folded());
+    panel.toggle_fold();
+    panel.absorb(many(6), None, 104.0);
+    assert!(!panel.folded());
+}
+
+#[test]
+fn initially_large_list_stays_folded_after_agents_exit() {
+    let mut panel = Panel::default();
+    panel.absorb(
+        (0..6).map(|i| agent(&format!("p/{i}"), "idle")).collect(),
+        None,
+        100.0,
+    );
+    assert!(panel.folded());
+    panel.absorb(vec![agent("p/0", "idle")], None, 101.0);
+    assert!(panel.folded());
+}
+
+#[test]
+fn initially_empty_list_stays_expanded_when_agents_arrive() {
+    let mut panel = Panel::default();
+    panel.absorb(vec![], None, 100.0);
+    assert!(!panel.folded());
+    panel.absorb(
+        (0..6).map(|i| agent(&format!("p/{i}"), "idle")).collect(),
+        None,
+        101.0,
+    );
+    assert!(!panel.folded());
 }

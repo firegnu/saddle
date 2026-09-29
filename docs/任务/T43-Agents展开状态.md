@@ -33,3 +33,17 @@
 本文件末尾追加完成记录：根因、修改、检查、取舍与待决定事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
 
 主控 dispatch_id：`29308f5afca7415dbb5a10cbd9edf606`；实现者无需采集。
+
+## 完成记录（2026-09-29）
+
+- 根因已复现：旧 `folded()` 在 `fold=None` 时持续按当前列表数量计算。将既有检查改为先载入 5 个、再载入 6 个合成 agent，要求继续展开；修改实现前，检查在第二次载入后的 `assert!(!panel.folded())` 失败（退出码 101），不是编译或夹具错误。
+- 最小修改：首次 `absorb` 用初始列表数量填入尚未设置的 `fold`，之后保留该值；`folded()` 不再读取当前数量。应用仅对成功列表调用 `absorb`，失败不会初始化默认状态，成功的空列表会选择展开。已有手动选择不被覆盖，z 入口和选中项展开规则未改。
+- 检查调整：保留 5→6→8 的展开状态、手动折叠／展开后刷新；补充初始 6 个随后退出、初始空列表随后新增的回归。UI 的默认折叠夹具改为首次载入大列表，effort 绘制检查显式切换折叠。
+- 所有 Cargo 命令均使用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，前台运行并等待退出，仅使用合成数据／假 CLI。
+  - RED→GREEN：`cargo test --test agents fold_keeps_initial_choice_across_agent_count_changes_until_toggled`，实现前失败，实现后 1 项通过。
+  - 直接回归：`cargo test --test agents --test ui`，7 + 45 项全部通过。
+  - 标准测试（一次）：`cargo test --all-targets`，退出码 101；前面的测试目标全部通过，workflow 为 78 通过、1 失败、3 忽略。唯一失败为 `wheel_over_agents_scrollbar_reaches_last_agent_without_attaching`，在 `tests/workflow.rs:951` 等待 `worker-07` 出现时失败。按任务书限制，未继续调查或修复 T29，也未重跑全量测试。
+  - 标准静态检查（一次）：`cargo clippy --all-targets -- -D warnings` 通过。
+  - `git diff --check` 通过。
+- 取舍：复用原有 `Option<bool>` 表示尚未收到成功列表，无新增状态字段、配置或持久化；遵循 DESIGN §58，无设计变更。
+- 待决定事项：T43 范围内无；全量测试中的上述失败留给主控记录与后续处理。本分支提交，不合并、不推送。
