@@ -1,6 +1,13 @@
 # 交接
 
-更新：2026-09-29。当前 main，T46 文档任务已审查、合并、清理；本交接随最终提交一并推送。不自动推进队列，release 仍为已编译的 T45 版本。
+更新：2026-09-29。当前 main，T47 文档任务已审查、合并、清理；本交接随最终提交一并推送。不自动推进队列，release 仍为已编译的 T45 版本。
+
+## 本轮 T47
+
+- 用户点击 Next 顺序派发后，公开 current=T47，才启动实现。README 的 Build and run 新增一句 `Use saddle --help to see the command-line options.`（实际命令使用行内代码），无代码变更。任务及审查见 `docs/任务/T47-README命令行帮助.md`。
+- 类型样式／文案调整，轻档 sonnet/medium、看得见、不交叉审查。实现 29e5ad2，合并 24a9c54，审查 0ad6f4d，收尾 95c12e4。文档 diff 和新增句核对通过，未跑测试、clippy 或编译。
+- t47-readme-help 分支和 worktree 已清理，工作目录删除后一并关闭自开的 `saddle/dev-t47-readme-help-1`；历史 t38-dispatch-study 保留。
+- Dispatch `21125206edfc46428debf199d91915ae`，最终增量 note 在实际推送后保存。收尾记号后只读核对仍 current=T47/doing、awaiting=null、loop=false、gate=true。用户正在对比顺序派发的状态和通知，主控不调用 done/go/next，不改开关，等待用户观察。
 
 ## 本轮 T46
 
@@ -36,7 +43,7 @@
 
 ## 队列与下一步
 
-T46 派发前只读核对 current=T46、awaiting=null、paused=false、loop=false、gate=true。主控此前应用户要求仅新增 T46 到 Pending 末尾第 5 项；由用户通过选中派发启动，主控未调用派发队列命令。T46 文档实现已完成，完成检查和放行仍由用户执行；不自动推进下一项。T29 仍仅记录排查方向，未开展调查或修复。
+用户已自行放行 T46，再点击 Next 派发 T47；主控仅在公开 current=T47 后实施。T47 文档已收尾，当前队列现场留用户观察，未登记完成或放行。此前通知调查已暂停，尚未解释用户历史上看到的 Awaiting 与提示变化；不能把当前 loop off 快照当作历史原因。T29 仍仅记录排查方向，不开展调查或修复。
 
 ## 前次 T42
 
