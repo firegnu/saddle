@@ -1,19 +1,25 @@
 # 交接
 
-更新：2026-09-29。当前 main，T41 Dispatch 详情返回按钮已审查、合并、清理并重新编译 release；待用户重启 Saddle 查看。
+更新：2026-09-29。当前 main，T42 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。
 
-## 本轮 T41
+## 本轮 T42
 
-- 用户原话：「tasks面板中，选中某一个task，右边的dispach面板中再选中一个进入这个详情的时候的返回按钮样式不对」。
-- 实现 b818247，合并 b4fed14，审查 59cedd5，收尾 a86a36b。只把 Dispatch 全文页返回按钮由单行紧凑改为共享三行圆角轮廓；返回行为、Links、读取接口均不改。
-- Claude Sonnet / medium 实现者报告定向合成 workflow 检查与 clippy 通过；检查覆盖上下边框、正文位置并沿用 Esc 返回原记录。主控按纯显示预算审 diff，未重复全套。main release 编译成功，日志 `/tmp/saddle-t41-release.log`。
-- 实现分支／worktree 已安全删除，`saddle/dev-t41-dispatch-back-1` 因工作目录已删一并关闭；未动其他 agent。旧 t38-dispatch-study 按约定保留。
-- 路由、决定、派发快照、完成回复与审查均保存到 dispatch-log，ID `b460a96365bc4b14a347f2d307ef968a`，project 为 saddle 主仓库、task 为 T41。审查／范围见 `docs/任务/T41-Dispatch返回按钮样式.md`，设计见 DESIGN §56。
-- 本交接与收尾记录随后提交并推送；接手以 Git 当前状态为准。
+- 实现 `3ef9e4e`，合并 `0c46cce`，主控审查 `6c6a101`，收尾 `96321e2`。普通 Tasks 入口优先匹配当前焦点 agent 所属已登记仓库，有任务则切换；无任务或无法读取时保留当前项目。取舍与范围见 DESIGN §57、`docs/任务/T42-焦点仓库Tasks.md`。
+- 主控标准套件一次：282 passed／2 failed／3 ignored，T42 定向用例通过，clippy 与 diff 检查通过。两项失败分别为 `ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close` 的 fixture JSON EOF，以及 `t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell` 缺关闭确认字段；各单独一次复跑通过。全套未全绿，不据此宣布 T29 根因解决。详细日志路径见任务书。
+- 接受“打开后已有输入则不再自动换项目”和“只匹配已登记 Drover 项目”的保守取舍。实现者额外临时扰动 fixture 超出验证预算，已记录且不再追加检查。
+- main release 编译通过（`/tmp/saddle-t42-release.log`，5.45 秒），`~/.local/bin/saddle` 原软链仍指向共享 release；未重启用户界面。
+- 实现者 idle、attached=0，工作树干净并确认已合入后，删除其分支／worktree，并关闭 `saddle/dev-t42-focused-tasks-1`（工作目录已删，一并关闭）。旧 t38-dispatch-study 保留；其他用户 agent 未动。
+- 回复与审查 note 已存同一 dispatch：`25d80505684e4cbf9a6f757097e21e6a`，project=saddle 主仓库，task=T42。本交接随后提交推送，以实际 Git 状态为准。
 
 ## 队列与下一步
 
-本轮只读核对 current=T41、awaiting=null、T29 在 pending、loop=false、gate=true、paused=false。未执行 done/go/next/drop/return-to-pending 等真实队列写操作。用户重启 Saddle 检查 T41，之后由用户放行；不要自动推进队列。
+只读核对 current=T42、awaiting=null；pending 顺序 T43、T29、T28、T32、T34，loop=false、gate=true、paused=false。用户重启查看 T42，之后自行放行；本轮未执行真实队列写操作。
+
+T43 是用户刚要求新增的待办：主控委派新 agent 后左侧 Agents 意外全部收缩，需要按 z 恢复。已入队，未调查、未实现、未派发；不要自动开始。T29 仍仅记录排查方向。
+
+## 前次 T41
+
+T41 已完成并推送 `376b183`；用户确认返回按钮可用，也找到了 Dispatch 中 Start 行的派发任务书快照。任务文件 `docs/任务/T41-Dispatch返回按钮样式.md`，记录 ID `b460a96365bc4b14a347f2d307ef968a`。无需重复审查。
 
 ## 此前撤回待办功能
 

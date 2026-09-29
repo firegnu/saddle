@@ -69,3 +69,7 @@
 验证：实现者报告目标检查真实 RED→GREEN、标准套件通过。主控在实现提交上重跑一次标准套件：282 passed／2 failed／3 ignored；T42 合成 workflow 用例通过，clippy 和 diff 检查通过。失败是 `ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close`（读取 shell fixture JSON 时 EOF）与 `t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell`（关闭确认字段为空）；二者未进入 Tasks 打开路径，各单独复跑一次均通过。未修改失败用例，未调查 T29 根因，不将本次全套描述为全绿。日志 `/tmp/saddle-t42-main-tests.log`、`/tmp/saddle-t42-main-clippy.log`、`/tmp/saddle-t42-main-retry-ctl.log`、`/tmp/saddle-t42-main-retry-cwd.log`。
 
 实现者另做了临时 history fixture 扰动并还原，超过本轮“不加变异检查”预算；不作为额外验收要求，后续不重复。无范围外代码或真实队列操作。本轮按既定预算不交叉审查。
+
+## 合并与收尾
+
+合并 `0c46cce`，审查 `6c6a101`，收尾 `96321e2`。实现者 idle、attached=0，工作树干净且提交已合入后，清理本次分支／worktree，并关闭其中自开的实现者；旧 t38-dispatch-study 保留。main release 编译成功，原可执行软链可直接使用新产物（日志 `/tmp/saddle-t42-release.log`）。未重启用户 Saddle、未推进队列、未处理 T29。只读核对 current=T42、T43 与 T29 仍 pending、loop=false。
