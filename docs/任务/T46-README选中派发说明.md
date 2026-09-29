@@ -29,3 +29,7 @@
 - 只改 README.md：在 Features 的 Tasks 条目后补一小段 Dispatch selected，说明选中 Pending 任务后点击即可派发、无需调整顺序，以及按钮不可用的情况（暂停、有运行中或待放行任务、忙碌或读取失败、所选不是 Pending）。
 - 对照 `dispatch_target`（src/queue.rs）和 DESIGN 的按钮说明核对了不可用条件；“无快捷键、无确认层”同样出自 DESIGN。
 - `git diff --check` 通过；按要求未跑测试、编译或 clippy，未操作真实队列，未合并未推送。
+
+## 主控审查
+
+审查通过，提交 aa7b912 仅新增 README 的一段使用说明及本文件完成记录。操作、无需重排及主要禁用条件符合现有行为；接受简短说明无快捷键和无确认层。主控核对 diff 与内容，diff 检查通过；未跑测试、clippy 或编译，无代码修改。按项目流程合并清理与推送，真实队列后续放行留给用户。
