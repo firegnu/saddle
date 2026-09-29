@@ -1,6 +1,13 @@
 # 交接
 
-更新：2026-09-29。当前 main，T45 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。本交接随最终提交一并推送。
+更新：2026-09-29。当前 main，T46 文档任务已审查、合并、清理；本交接随最终提交一并推送。不自动推进队列，release 仍为已编译的 T45 版本。
+
+## 本轮 T46
+
+- 用户在 Tasks 选中派发后，公开 current=T46，才启动实现。README 的 Tasks 条目新增一段 Dispatch selected 用法及主要禁用条件，仅文档；任务及审查见 `docs/任务/T46-README选中派发说明.md`。
+- 类型样式／文案调整，JEV 轻／看得见／不交叉审查，Claude sonnet/medium。实现 aa7b912，合并 cf76dfe，审查 10b6a46，收尾 6ab5ec8。文档核对及 diff 检查通过，没有运行测试、clippy 或编译。
+- 分支/worktree t46-readme-selected 已清理，其中自开的 `saddle/dev-t46-readme-selected-1` 一并关闭。历史 t38-dispatch-study 保留，未干扰其他 agent。
+- Dispatch `7c4b208f9a2a4e93a5945f98abb9daae` 保留路由、决定、任务书快照和回复；本轮最终 note 在实际推送成功后写，避免重复累计文档。用户自行检查／放行 T46，不推进下一项、不处理 T29。
 
 ## 本轮 T45
 
@@ -29,7 +36,7 @@
 
 ## 队列与下一步
 
-T45 派发前只读核对 current=T45、awaiting=null，pending 为 T29、T28、T32、T34；loop=false、gate=true。这是派发时快照，不冒充当前状态。本轮没有队列写操作。T45 实现已完成，队列完成检查和放行仍由用户执行；不自动推进下一项。T29 仍仅记录排查方向，未开展调查或修复。
+T46 派发前只读核对 current=T46、awaiting=null、paused=false、loop=false、gate=true。主控此前应用户要求仅新增 T46 到 Pending 末尾第 5 项；由用户通过选中派发启动，主控未调用派发队列命令。T46 文档实现已完成，完成检查和放行仍由用户执行；不自动推进下一项。T29 仍仅记录排查方向，未开展调查或修复。
 
 ## 前次 T42
 
