@@ -71,6 +71,8 @@ cargo install --path . --locked
 saddle
 ```
 
+Use `saddle --help` to see the command-line options.
+
 Use **New** in Agents to start an agent, or attach an existing corral session. Register queue projects with drover separately; saddle does not initialize queue projects.
 
 ### First session
