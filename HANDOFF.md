@@ -1,6 +1,15 @@
 # 交接
 
-更新：2026-09-29。当前 main，T44 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。
+更新：2026-09-29。当前 main，T45 已审查、合并、清理并重新编译 release，待用户重启 Saddle 查看；不自动推进队列。本交接随最终提交一并推送。
+
+## 本轮 T45
+
+- Drover 指定派发接口交付后，用户重新明确放行且派发前只读确认 current=T45，才委派实现。任务书 `docs/任务/T45-派发选中任务.md`，设计 §59，审查 `docs/任务/T45-主控审查.md`，Dispatch `5574d31b97324b619d77afb3070b4026`。
+- Tasks 的 Pending 操作增加 `Dispatch selected`，使用该项公开 pos/token 和项目，不先重排。旧接口缺字段或队列不允许派发时禁用；发送、记录与手动模式分别表达，失败不自动重发。实现 `e93b14d`，三处反馈修正 `4ee0e79`，合并 `ac89efc`，最终任务审查 `049fe49`，收尾 `802681a`。
+- 主控首轮标准测试 290 passed / 1 failed / 3 ignored；失败为 T25 通用 PTY 退出控制序列断言，单独复跑一次通过；clippy 通过。返工后仅 7 项定向检查通过，未重复全套。保留全套非全绿的限制，不宣称已解决偶发测试或 T29。
+- release 编译成功（5.72 秒，`/tmp/saddle-t45-release.log`），`~/.local/bin/saddle` 仍指向共享 release 可执行文件；未重启用户界面。
+- 确认实现者 idle、attached=0、提交不变且工作树干净后合并；已清理 t45-dispatch-selected 分支/worktree，工作目录删除后一并关闭 `saddle/dev-t45-dispatch-selected-1`。保留历史 t38-dispatch-study，未动其他用户 agent。
+- 审查 note 存同一 Dispatch。未改上游、未操作真实队列、未处理 T29。用户重启后查看按钮；只有选中 Pending 且未暂停、无 Current/Awaiting、目标可用时才可点击。真实派发仍由用户操作。
 
 ## 本轮 T44
 
@@ -20,7 +29,7 @@
 
 ## 队列与下一步
 
-正式派发时只读核对 current=T44、awaiting=null，pending 为 T29、T28、T32、T34、T45；loop=false、gate=true。本轮没有队列写操作。用户重启 Saddle 查看 T44，之后由用户放行；不自动推进下一项。T29 仍仅记录排查方向；T45 是“Tasks 支持派发选中的任务”，仅入队，未调查或实施。
+T45 派发前只读核对 current=T45、awaiting=null，pending 为 T29、T28、T32、T34；loop=false、gate=true。这是派发时快照，不冒充当前状态。本轮没有队列写操作。T45 实现已完成，队列完成检查和放行仍由用户执行；不自动推进下一项。T29 仍仅记录排查方向，未开展调查或修复。
 
 ## 前次 T42
 
