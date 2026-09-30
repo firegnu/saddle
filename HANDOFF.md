@@ -1,31 +1,37 @@
 # 会话交接
 
-更新：2026-09-30。T57 两行文档已交付并完成 Git 收尾，但 Drover 完成检查被保留的 T55 分支挡住。当前 main；本交接随本轮推送，最终结果见 Dispatch 74321bbb9cef49278b3aba217cb54d97 的收尾 note。
+更新：2026-09-30。用户已授权并完成 Drover + Saddle 简化流程联合切换。用户自行重启了 Saddle，主控核对新版进程、公开任务状态，并启动通知观察器。真实 T57 未提交或接受，插件设计未开始。
 
-## 当前状态与下一步
+## 当前状态
 
-- 用户为观察 Awaiting release 与内部通知，触发 T57 纯文档测试；不测试、不编译、不重启 Saddle，不改代码/通知配置。
-- docs/通知流程测试.md 已逐字节核对为指定两行，diff 检查通过。实现 7d17032，主控审查 e456132，Git 收尾 ada015c；完整记录见 docs/任务/T57-通知文档测试.md。
-- drover done T57 返回 exit 9：NOT DONE，阻挡项 t55-notification-flow 未合入 main。最新公开状态 current=T57、awaiting=null、loop=false、gate=true。这次没有进入 Awaiting，不能据此判定通知故障；未人为绕过或放行。
-- t57-notify-doc worktree/分支已删除，自开 saddle/dev-t57-notify-doc-1 已随目录删除关闭。无需重复处理延迟提醒。
-- T55 曾被过早委派流程方案，用户说“停掉它，我还没和你讨论完”；已停止 saddle/dev-t55-notification-flow-1，用户自行把 T55 退回 Pending。不要恢复调查、方案或实施。保留 ../saddle-worktrees/t55-notification-flow 与同名分支（3cc417d，仅任务书），不要为让 T57 通过而自行合并/删除它。
-- 保留历史 ../saddle-worktrees/t38-dispatch-study（c15bc4d，未合入调研）；此次被 Drover 排除为遗留分支。
-- 下一步向用户说明完成检查实际阻挡点，等其决定如何处理 T55 分支与测试；不替用户使用人工完成、不放行、不派发下一项。
+- Saddle main 已合并：2a6862c；主控审查 c97270a；空提交收尾 c939fd1。本交接与发布记录随最终文档提交推送，确切 SHA 见 git log 和 Dispatch 05458465051541c4a9c2cc908dc9fe3e 收尾 note。无遗留本轮实现改动。
+- Drover main 已发布 e0d8118（合并 b02f142，收尾16ef806），origin/main 已核对一致。Drover 无关未跟踪 T27 文档保留。
+- 实际 Saddle 入口 ~/.local/bin/saddle → ../saddle-worktrees/.target/release/saddle；release 构建成功，SHA-256 e63d8e5ab76012e1b67e34b9232636a5ee3067972ea2382771f147a1d6d9dd76。用户重启后实例 5d8f7242dcc4636b、PID63344，已核对可执行路径。
+- 服务 dev.drover.loop 已改为 `drover notifications watch`，launchctl running、PID83246；旧推进 PID46666 已退出。保留的 loop 名字不是自动推进功能。
+- 切换后公开 list schema2：T57 Running、awaiting=null，T55 Pending；Pending 正文/顺序及45条历史状态/时间与切换前一致。Drover 主控还核对三个登记项目任务事实一致，真实任务存储未改。
 
-## 已交付与用户反馈
+## 验证与限制
 
-- T51 已完成、推送并由用户确认“看起来好了”后放行；最终提交 0ba79f5，release 已编译。Advanced → Open in 可改选 Current pane，保留来源绑定和替换确认，设计见 §60。主控标准检查 294 passed、1 failed、3 ignored，旧关闭确认用例单独复跑通过，Clippy 通过；不能写全套全绿或 T29 修复。
-- T52 已完成放行，最终提交 1415472；用户用多行输入反馈恢复，未扩大为两个客户端分别验证。主控标准测试 294 passed、0 failed、3 ignored，Clippy 通过。当前 release 含 T51/T52，T57 没有编译。
-- T51/T52 在本会话均曾由公开 list 确认进入 Awaiting 后才放行；这两次未看到通知不能归因于未进入 Awaiting。
-- 昨日 T47 未提示的调查结论确为漏登记完成、没有 Awaiting（详细历史见 07f7dd1 的 HANDOFF）；不能直接套用今天现象。
+- Drover 旧 gate=false 后 go 的兼容返工已复审；新 accepted 严格要求 Awaiting，不伪造旧接受。
+- Saddle 主控标准检查292 passed / 1 failed / 3 ignored，Clippy通过。失败为既有 picker 用例 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，独立 target 的 main基线亦在同一步失败；未修 T29，不能写全绿。
+- 隔离联合主路径通过，主控复跑1 passed：A退回保留未合并分支，B提交后出现测试PTY内部提示/Attention，接受后Done，无自动派发。不是用户桌面现场通知测试；发布期间不为验证通知推进真实T57。
+- 备份目录：/Users/firegnu/Library/Application Support/saddle-release-backups/20260930-135645。含旧数据/配置/服务、旧Saddle二进制、公开切换前后状态和核验。新事件不兼容旧二进制写操作，回退须协调版本与日志。
 
-## T55 调查边界与待办
+## 保留的工作
 
-- 用户报告通知没看到，补充“完成后重开 Saddle”。目前规则是已有 Awaiting 在重启时作基线、不补弹，新提示约 5 秒；这只是行为说明，不代表问题已解决。
-- 公开通知偏好已查为 In saddle（system_enabled=false、revision=1），Saddle 项目已登记。6 项 notify 单测和一个隔离 workflow 正常路径通过；未捕获用户现场遗漏的直接证据。
-- 用户强调不能靠主控 AGENTS.md，必须由流程保证。主控曾混入 T48 自动完成检测方案，但用户尚未讨论完并叫停；T48/T55 的范围和方案均未最终批准，停止推进。
-- T54：完成核对通过却显示 Failed (exit 8)；T56：允许同时派发多个任务；均 Pending。其他待办保持队列顺序，不自动推进。
+- 本轮 Saddle drover-schema2 和 Drover task-flow-simplification 分支/worktree 均已清理；自开 saddle/dev-drover-schema2-1 随工作目录删除已关闭。drover/main 保留，其他用户 agent 未停止。
+- T55 的 t55-notification-flow（3cc417d）与 T38 的 t38-dispatch-study（c15bc4d）保留，不能为解除完成阻挡而合并/删除。
+- T57 两行测试文档早已交付、推送和 Git 收尾；旧检查被 T55 分支挡住。现在新流程已上线，但尚未调用真实 done/go。
+- T51 当前pane、T52 Shift+Enter 已交付并由用户放行。其他 Pending 不自动启动。
 
-## 接手约束
+## 下一步
 
-先读 AGENTS.md 和当轮授权任务；使用公开 Corral/Drover CLI，不读内部文件、不改上游、不干扰其他用户主控。委派按 corral-dispatch 与 dispatch-log/USAGE.md，记录真实结果；所有 Cargo 共用 target，但 T57 明确不跑 Cargo。队列 current、Awaiting 与 Git 交付完成要分别表达，不能把空提交或推送当作完成登记成功。
+等待用户决定是否提交 T57 以观察真实通知。新版流程必须明确 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。此次版本发布不等于T57完成登记，不自动放行或派发下一项。
+
+Drover可选插件、Corral独立组合的设计等用户后续讨论；本轮没有改 Corral或corral-dispatch。开发、审查、worktree方式保持。
+
+## 先读与记录
+
+AGENTS.md、dispatch-log/USAGE.md；docs/DESIGN.md §61；docs/任务/Saddle-Drover联合发布.md及对应主控审查/隔离联调记录；Drover主仓库docs/任务流转JSON接口.md。真实操作仅走公开CLI。
+
+Dispatch：Drover 0ec134ce246c420aabb6654254ddcf97；Saddle 05458465051541c4a9c2cc908dc9fe3e。Drover第一阶段回调若晚到，先核对已处理，不重复安装或启动服务。
