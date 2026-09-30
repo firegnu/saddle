@@ -173,6 +173,13 @@ while True:
     fn log(&self, filename: &str) -> String {
         std::fs::read_to_string(self.dir.path().join(filename)).unwrap_or_default()
     }
+    fn input_hex(&self, name: &str) -> String {
+        let prefix = format!("input {name} ");
+        self.log("events")
+            .lines()
+            .filter_map(|line| line.strip_prefix(&prefix))
+            .collect()
+    }
     #[track_caller]
     fn until(&mut self, mut predicate: impl FnMut(&Self) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(8);
@@ -323,6 +330,89 @@ impl Drop for Harness {
             }
         }
     }
+}
+
+#[test]
+fn shift_enter_survives_outer_terminal_negotiation_and_viewer_pty() {
+    use alacritty_terminal::{Term, event::VoidListener, term::TermMode, vte::ansi::Processor};
+
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+
+    // Model the outer terminal, not a preconstructed KeyEvent. In the Kitty protocol's
+    // legacy C0 table Shift+Enter is CR; disambiguation preserves its Shift modifier.
+    // https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+    let mut outer = Term::new(
+        alacritty_terminal::term::Config {
+            kitty_keyboard: true,
+            ..Default::default()
+        },
+        &saddle::terminal::Size {
+            rows: 40,
+            cols: 140,
+        },
+        VoidListener,
+    );
+    let mut parser = Processor::<alacritty_terminal::vte::ansi::StdSyncHandler>::new();
+    // Give the main and alternate screens distinct pre-existing mode stacks.
+    parser.advance(&mut outer, b"\x1b[>2u\x1b[?1049h\x1b[>4u\x1b[?1049l");
+    parser.advance(&mut outer, &h.raw);
+    let output_offset = h.raw.len();
+    let shift_enter: &[u8] = if outer.mode().contains(TermMode::DISAMBIGUATE_ESC_CODES) {
+        b"\x1b[13;2u"
+    } else {
+        b"\r"
+    };
+    h.send(shift_enter);
+    h.event("input p/a ");
+    assert_eq!(
+        h.input_hex("p/a"),
+        "1b5b31333b3275",
+        "Shift+Enter must reach the prompt distinctly from submit (CR = 0d)"
+    );
+    h.quit();
+    parser.advance(&mut outer, &h.raw[output_offset..]);
+    assert_eq!(
+        *outer.mode() & TermMode::KITTY_KEYBOARD_PROTOCOL,
+        TermMode::REPORT_EVENT_TYPES,
+        "exiting must preserve the main screen's keyboard mode"
+    );
+    parser.advance(&mut outer, b"\x1b[?1049h");
+    assert_eq!(
+        *outer.mode() & TermMode::KITTY_KEYBOARD_PROTOCOL,
+        TermMode::REPORT_ALTERNATE_KEYS,
+        "exiting must pop Saddle's keyboard mode on the alternate screen"
+    );
+}
+
+#[test]
+fn viewer_preserves_modified_enter_bytes_and_legacy_input() {
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+    let mut expected = String::new();
+    for (input, hex) in [
+        (b"\x1b[13;2u".as_slice(), "1b5b31333b3275"), // Shift+Enter
+        (b"\r", "0d"),                                // submit
+        (b"\x1b[13;5u", "1b5b31333b3575"),            // Ctrl+Enter
+        (b"\x1b\r", "1b0d"),                          // Alt+Enter
+        (b"\x1b[13;3u", "1b0d"),                      // enhanced Alt+Enter
+        (b"\n", "0a"),                                // legacy Ctrl-J / newline binding
+        (b"\x1b[99;5u", "03"),                        // enhanced Ctrl-C
+        (b"\t\x1b[Z", "091b5b5a"),                    // Tab / Shift-Tab stay in Viewer
+        (b"\x1b[9;2u", "1b5b5a"),                     // enhanced Shift-Tab
+        (b"\x1b[200~a\nb\x1b[201~", "1b5b3230307e610a621b5b3230317e"),
+    ] {
+        h.send(input);
+        expected.push_str(hex);
+        h.until(|h| h.input_hex("p/a").len() >= expected.len());
+        assert_eq!(h.input_hex("p/a"), expected);
+    }
+    h.send(b"\x1b[93;5u"); // Enhanced Ctrl-] returns focus without reaching the PTY.
+    h.see("Input ▸ Agents");
+    assert_eq!(h.input_hex("p/a"), expected);
+    h.quit();
 }
 
 #[test]
