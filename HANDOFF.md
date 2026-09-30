@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- 统一产品调研：用户明确最终只有一个 Saddle 产品，不能由多个独立包/语言拼装。顺序已改为先将 corral-dispatch 与 dispatch-log 迁入 Rust core plugins，清理外围消费者和安装依赖，最后迁移 infra Corral；替代此前 Corral 优先、dlog 外部可选的建议。报告 `docs/调研/Saddle统一仓库与运行入口-2026-10-01.md` 已更新。今天仅调研/文档，明天再开始；没有代码、合仓、发布、agent/队列/服务操作或委派。下一轮设计内置插件入口与记录兼容，不重问已确定的产品边界。
 - 最新交付：按用户反馈Working增加半秒节拍原地内脚小步，外侧脚稳住，原小手动作保持；Waiting每4秒一次短眨眼、两次轻示意，多数时间静候。四细腿始终保留，外形/颜色/尺寸/位置、Idle节奏、配置开关和业务不变。实现 `cbc4398`，收尾 `79ee94f`，已合并推送、备份更新日常宿主并清理 `clawd-busy` 分支/worktree；用户重启后观察。主控亲自完成，没有委派或操作真实agent。
 - 本轮标准检查 **374 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；隔离release开关/输入/布局1项通过。有效RED→GREEN确认Working脚会动，跨96帧检查身体稳定、四腿细且分离、眼睛和字符颜色；Working上身与Waiting仍至少四分之三时间静止。任务/审查 `docs/任务/Clawd忙碌与等候微动作.md`，Dispatch `04f2f51e9de448619b8ca7d3b991719e`；日志 `/tmp/saddle-clawd-busy-{all,clippy,red,green,release}.log`。三处Diff演示hash不变；真实配置/插件/agent/队列/服务未操作，未重启用户窗口。
 
