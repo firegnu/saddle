@@ -44,3 +44,24 @@
 
 ## 做完
 在本任务书末尾追加完成记录并提交：改动、RED/GREEN/回归结果、取舍、未验证边界。所有命令在前台跑完。回复列出这些与需要主控决定的事，全部完成后最后一行写 DONE。
+
+## 完成记录（2026-09-30，saddle/dev-t51-current-pane）
+
+改动：
+- docs/DESIGN.md：新增 §60 T51，§43 标题注明位置锁定呈现由 §60 替代。
+- src/launch.rs：去掉 `anchor.is_some()` 时隐藏 Open in 选择器、跳过 Tab 焦点、屏蔽 F5／←→ 的四处条件，删除只供静态说明用的 `bound_place`。`+ Tab`／Split／占位窗格入口仍把各自位置写进 `form.place` 作为默认值，`anchor` 原样保留。提交路径（`src/app.rs`）、既有替换确认与失效检查均未改：绑定表单提交时 anchor 仍为发起窗格，Current 时运行中的 shell 仍走 `request_replace` 确认。
+- 测试：launch 单测 `bound_location_is_static_text_and_new_keeps_the_selector` 改为 `bound_location_defaults_the_selector_and_can_choose_the_current_pane`（入口默认值显示在选择器上、Tab 可达、←选到 Current pane、anchor 不变）；tests/workflow.rs 新增 `t51_location_new_can_choose_the_originating_pane_with_existing_confirmation`（shell 窗格点 + Tab → New agent… → Open in 改为 Current pane → 提交 → 既有 End shells 确认 → agent 在同一窗格 id 启动，tab 数与活动窗格不变，无 stop）。
+
+RED／GREEN／回归：
+- RED：两条新检查在实现前均失败，画面显示 `Opens in a new tab · set by + Tab`，没有选择器（单测断言失败；集成测试 `see("Open in: New tab")` 超时）。
+- GREEN：两条均通过。直接相关回归：launch 单测 13 passed；workflow 中 new_agent／placement／t20_rework／t25_placeholders／replacing_a_running_shell／split_and_new_tab／starting_in_a_hidden 共 20 passed。
+- `cargo test --all-targets`：293 passed、2 failed、3 ignored。失败为 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`（2501 行等 SHELL READY 超时）与 `t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases`（3232 行等 Create agent 超时）；单独复跑一次 2 passed。与 HANDOFF 所记 T29 偶发等待超时同类，保留原始失败，不据此宣称修复 T29。
+- `cargo clippy --all-targets -- -D warnings` 通过；`git diff --check` 通过。
+
+取舍：
+- 选择器文案沿用 Agents New 的 `Open in: <位置> (←/→)`，不再显示「set by + Tab」来源说明，未加新文案或控件。
+- Current pane 在绑定入口下指发起窗格（`+ Tab` 时的活动窗格、Split 或占位窗格本身），与原有提交路径的 anchor 解析一致，未新增逻辑。
+
+未验证边界：
+- 未在真实终端和真实 corral 下手测；只用假公开 CLI 与临时 HOME 的自动化测试验证。
+- 发起窗格是已接入 agent（非 shell）时选 Current，会沿用 Agents New 选 Current 的既有替换行为（断开显示、不停止 agent），本轮未另加集成测试。
