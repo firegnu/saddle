@@ -242,9 +242,9 @@ fn settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once() {
     });
     let mut screen = vt100::Parser::new(40, 160, 0);
     pump(&rx, &mut screen, &mut writer, |s| {
-        column(s, 2, "Settings").is_some() && s.contents().contains("Fold")
+        column(s, 3, "Settings").is_some() && s.contents().contains("Fold")
     });
-    let before = column(screen.screen(), 2, "Settings");
+    let before = column(screen.screen(), 3, "Settings");
     writer.write_all(b",").unwrap();
     pump(&rx, &mut screen, &mut writer, |s| {
         s.contents().contains("Config: ~/config.toml") && s.contents().contains("Input ▸ Settings")
@@ -253,10 +253,10 @@ fn settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once() {
     // Ctrl-U clears the sidebar width, then Ctrl-S saves 60.
     writer.write_all(b"\x1560\x13").unwrap();
     pump(&rx, &mut screen, &mut writer, |s| {
-        s.contents().contains("Settings saved") && column(s, 2, "Settings") == Some(50)
+        s.contents().contains("Settings saved") && column(s, 3, "Settings") == Some(50)
     });
     let saved = screen.screen().contents();
-    let after = column(screen.screen(), 2, "Settings");
+    let after = column(screen.screen(), 3, "Settings");
     let file = std::fs::read_to_string(&config).unwrap();
     // Esc cancels without writing.
     writer.write_all(b",").unwrap();

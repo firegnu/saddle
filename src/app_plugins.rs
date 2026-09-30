@@ -82,7 +82,6 @@ impl App {
         if self.plugin_overlay.is_some() || self.plugins.state(id) != "Running" {
             return;
         }
-        self.plugin_entries.cancel();
         self.pointer.cancel();
         let existing = self
             .viewer
@@ -121,10 +120,13 @@ impl App {
         self.native_mouse = false;
     }
     pub(super) fn sync_plugins(&mut self, panes: Panes, focused: bool) {
-        let overlay = self
-            .plugin_overlay
-            .as_ref()
-            .map(|o| (o.id.as_str(), ui::inner(overlay_area(panes.viewer))));
+        let overlay = self.plugin_overlay.as_ref().map(|o| {
+            (
+                o.id.as_str(),
+                ui::inner(overlay_area(panes.viewer)),
+                self.plugin_palette.is_none(),
+            )
+        });
         let picture = self.plugins.sync_with_overlay(
             &mut self.viewer,
             panes.viewer,
@@ -136,15 +138,6 @@ impl App {
         }
     }
     pub(super) fn draw_plugin_overlay(&mut self, frame: &mut ratatui::Frame, panes: Panes) {
-        if self.plugin_entries.focused && !self.plugin_ui_busy() && self.plugin_overlay.is_none() {
-            frame.render_widget(
-                ratatui::widgets::Paragraph::new(
-                    " Plugin entries · ↑↓ Select · Enter Open · Esc Back",
-                )
-                .style(self.config.colors.base()),
-                panes.status,
-            );
-        }
         let Some(o) = &mut self.plugin_overlay else {
             return;
         };
@@ -268,6 +261,103 @@ impl App {
         };
         if let Some(input) = input {
             self.plugins.input(&o.panel, input);
+        }
+    }
+}
+
+impl App {
+    fn plugin_palette_items(&self) -> Vec<crate::plugins::palette::Item> {
+        let mut opened: std::collections::BTreeSet<String> = self
+            .viewer
+            .tabs
+            .iter()
+            .flat_map(|t| &t.panes)
+            .filter_map(|p| p.plugin_id().map(str::to_owned))
+            .collect();
+        if let Some(o) = &self.plugin_overlay {
+            opened.insert(o.id.clone());
+        }
+        self.plugins.palette_items(&opened)
+    }
+    pub(super) fn update_plugin_palette(&mut self) {
+        if self.plugin_palette.is_none() {
+            return;
+        }
+        let items = self.plugin_palette_items();
+        if let Some(palette) = &mut self.plugin_palette {
+            palette.update(items);
+        }
+    }
+    pub(super) fn plugin_launcher_event(&mut self, event: &Event) -> bool {
+        if self.plugin_ui_busy() {
+            self.plugin_entry_press = None;
+            return false;
+        }
+        let Event::Mouse(m) = event else {
+            self.plugin_entry_press = None;
+            return false;
+        };
+        let over = self.hits.plugins.contains((m.column, m.row).into());
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) if over => {
+                self.plugin_entry_press = Some(self.hits.plugins);
+                self.pointer.cancel();
+                return true;
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                if let Some(pressed) = self.plugin_entry_press.take() {
+                    if over && pressed == self.hits.plugins {
+                        self.plugin_palette = Some(Default::default());
+                        self.update_plugin_palette();
+                        self.native_mouse = false;
+                    }
+                    return true;
+                }
+            }
+            MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => {}
+            _ => {
+                self.plugin_entry_press = None;
+            }
+        }
+        false
+    }
+    pub(super) fn plugin_palette_outcome(&mut self, outcome: crate::plugins::palette::Outcome) {
+        use crate::plugins::palette::Outcome;
+        match outcome {
+            Outcome::Stay => {}
+            Outcome::Close => {
+                self.plugin_palette = None;
+            }
+            Outcome::Manage => {
+                let selected = self
+                    .plugin_palette
+                    .as_ref()
+                    .and_then(|p| p.selected_id())
+                    .map(str::to_owned);
+                self.plugin_palette = None;
+                self.close_plugin_overlay(false);
+                self.open_settings(self.focus);
+                let mut page = crate::plugins::ui::Page::default();
+                if let Some(id) = selected {
+                    page.select_plugin(&id, &self.plugins);
+                }
+                self.plugin_page = Some(page);
+            }
+            Outcome::Open(item) => {
+                if !self.plugin_palette_items().contains(&item) || item.action().is_none() {
+                    return;
+                }
+                self.plugin_palette = None;
+                if self
+                    .plugin_overlay
+                    .as_ref()
+                    .is_some_and(|o| o.id == item.id)
+                {
+                    return;
+                }
+                self.close_plugin_overlay(false);
+                self.open_plugin_view(&item.id);
+            }
         }
     }
 }

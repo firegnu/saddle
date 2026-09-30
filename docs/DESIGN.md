@@ -1121,3 +1121,7 @@ Counter 独立项目提供 `package.sh [输出目录]`，通过 Cargo 构建本�
 用户以“开始吧”授权第一步。清单新增可选 view/action/entry：首步视图为 main，placement 为 workspace 或 overlay，action 只打开该视图，entry 引用操作 ID；需要声明 ui.entry.v1，overlay 另需 panel.overlay.v1，旧宿主明确拒绝不认识的必需能力。SDK 握手支持并公开 reserved_keys，已有画面和输入格式保留。
 
 左侧提供直接可见、可滚动的入口行；F6 仅在 Agents 中进入入口选择，↑↓与 Enter 操作、Esc 返回，避免拦截终端输入。覆盖界面不进入 layout，Esc 关闭并恢复有效来源焦点，Ctrl-] 关闭并返回 Agents；不覆盖正在编辑的 Settings/确认框。已有工作区面板优先聚焦，保持单逻辑视图/单进程。Counter 的新版清单默认 overlay；旧插件继续工作区入口。实施记录见 docs/任务/插件直接入口与覆盖界面实现.md。Attention 和业务目标上下文不在本次实现范围。
+
+### 插件统一命令面板（2026-09-30）
+
+用户确认Saddle外壳由宿主管理，插件不贡献常驻按钮。替代此前侧栏直接入口：只保留一个固定Plugins入口，打开宿主的居中搜索面板，一插件一行，显示后台运行/界面已打开/启动/停止/重启/停用/失败/无响应/不可用状态。Enter或动作点击只打开/切换，不能操作时解释原因；管理为次要入口。进程、SDK、清单和绘制协议不变，关闭界面保留进程。详见docs/插件入口与界面接入设计.md及docs/任务/插件命令面板.md。本轮不指定新快捷键、不加按需启动、不迁移Drover。

@@ -510,8 +510,8 @@ fn mouse_selection_attaches_and_quit_remains_responsive_during_output_flood() {
     let mut h = Harness::start();
     h.see("Tasks · ");
     h.see("Synthetic title");
-    // One-based SGR coordinates: first agent headline is screen row 6.
-    h.send(b"\x1b[<0;5;6M");
+    // Locate the agent headline so host navigation rows do not change this gesture.
+    h.press_button("┃ ○ a ");
     h.see("p/a READY");
     h.send(b"F");
     h.event("flood p/a");
@@ -1893,7 +1893,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     )
     .unwrap();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;6M"); // Mouse: the first agent row opens p/a in the current pane.
+    h.press_button("┃ ○ a "); // Mouse: the first agent row opens p/a in the current pane.
     h.see("p/a READY");
     // Cancelling at either step keeps the single pane and tab.
     h.click("Split ▾");
@@ -1961,7 +1961,7 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
 fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;6M");
+    h.press_button("┃ ○ a ");
     h.see("p/a READY");
     h.send(b"A");
     h.see("INPUT RECEIVED");
@@ -2021,7 +2021,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
 fn moving_an_attaching_agent_keeps_its_request_with_the_moved_pane() {
     let mut h = Harness::start();
     h.see("Synthetic title");
-    h.send(b"\x1b[<0;5;6M");
+    h.press_button("┃ ○ a ");
     h.see("p/a READY");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.click("Split ▾");
@@ -5043,7 +5043,16 @@ fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
     h.see("Plugin disabled");
 }
 
+fn open_fixture_palette(h: &mut Harness) {
+    h.click("Plugins");
+    h.see("Search plugins");
+    h.until(|h| h.contents().contains("Background") || h.contents().contains("View open"));
+}
+
 fn plugin_entry_harness(placement: &str) -> Harness {
+    plugin_palette_harness(placement, false)
+}
+fn plugin_palette_harness(placement: &str, second: bool) -> Harness {
     let mut h = Harness::start_prepared(
         include_str!("fixtures/drover.py"),
         false,
@@ -5083,17 +5092,55 @@ view = "main"
             )
             .unwrap();
             std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"test.entry\"\ndirectory = {:?}\nenabled = true\n",plugin)).unwrap();
+            if second {
+                let other = dir.join("other");
+                std::fs::create_dir(&other).unwrap();
+                common::script(
+                    &other,
+                    "counter",
+                    &include_str!("fixtures/plugin_counter.py").replace("test.entry", "test.other"),
+                );
+                let manifest = std::fs::read_to_string(plugin.join("plugin.toml"))
+                    .unwrap()
+                    .replace("test.entry", "test.other")
+                    .replace("Fixture Counter", "Other Counter");
+                std::fs::write(other.join("plugin.toml"), manifest).unwrap();
+                let mut registry = std::fs::read_to_string(dir.join("plugins.toml")).unwrap();
+                registry.push_str(&format!(
+                    "\n[[plugins]]\nid = \"test.other\"\ndirectory = {other:?}\nenabled = true\n"
+                ));
+                std::fs::write(dir.join("plugins.toml"), registry).unwrap();
+            }
         },
     );
     h.see("Synthetic title");
-    h.until(|h| h.screen.screen().contents().contains("Fixture Counter  F6"));
+    h.see("Plugins");
     h
 }
+#[test]
+fn plugin_palette_searches_and_never_exposes_per_plugin_sidebar_buttons() {
+    let mut h = plugin_entry_harness("overlay");
+    h.click("Plugins");
+    h.see("Search plugins");
+    h.see("Background");
+    h.send(b"missing");
+    h.see("No matching plugins");
+    h.send(b"\x15Fixture");
+    h.see("Fixture Counter");
+    h.send(b"\r");
+    h.see("Clicks: 0");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    assert!(!h.contents().contains("Fixture Counter"));
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+}
+
 #[test]
 fn plugin_entry_opens_overlay_without_changing_layout_and_keeps_process() {
     let mut h = plugin_entry_harness("overlay");
     let before = h.ctl(&["inspect"])["tabs"].clone();
-    h.send(b"\x1b[17~\r"); // F6 then Enter: no management page.
+    open_fixture_palette(&mut h);
+    h.send(b"\r");
     h.see("Clicks: 0");
     let inspect = h.ctl(&["inspect"]);
     assert_eq!(inspect["focus"], "plugin_overlay");
@@ -5111,7 +5158,8 @@ fn plugin_entry_opens_overlay_without_changing_layout_and_keeps_process() {
     h.see("Clicks: 1");
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.click("Fixture Counter");
+    open_fixture_palette(&mut h);
+    h.send(b"\r");
     h.see("Clicks: 1");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
@@ -5126,7 +5174,8 @@ fn plugin_overlay_protects_host_actions_and_restores_viewer_focus() {
     h.send(b"\r");
     h.see("READY");
     let before = h.ctl(&["inspect"]);
-    h.click("Fixture Counter");
+    open_fixture_palette(&mut h);
+    h.send(b"\r");
     h.see("Clicks: 0");
     let reply = h.ctl(&[
         "open",
@@ -5155,15 +5204,17 @@ fn plugin_overlay_protects_host_actions_and_restores_viewer_focus() {
     assert_eq!(h.ctl(&["inspect"])["tabs"], before["tabs"]);
 }
 #[test]
-fn plugin_workspace_entry_reuses_panel_and_disable_removes_entry() {
+fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
     let mut h = plugin_entry_harness("workspace");
-    h.click("Fixture Counter");
+    open_fixture_palette(&mut h);
+    h.send(b"\r");
     h.see("Clicks: 0");
     let before = h.ctl(&["inspect"])["tabs"].clone();
     h.send(b"\r");
     h.see("Clicks: 1");
     h.send(b"\x1d");
-    h.click("Fixture Counter");
+    open_fixture_palette(&mut h);
+    h.send(b"\r");
     h.see("Clicks: 1");
     assert_eq!(h.ctl(&["inspect"])["tabs"], before);
     assert_eq!(h.log("plugin/starts").lines().count(), 1);
@@ -5171,8 +5222,16 @@ fn plugin_workspace_entry_reuses_panel_and_disable_removes_entry() {
     h.see("Running");
     h.click("Disable");
     h.see("Disabled");
-    h.send(b"\x1b\x1b");
-    h.until(|h| !h.screen.screen().contents().contains("Fixture Counter"));
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Settings · Plugins"));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.click("Plugins");
+    h.see("Fixture Counter");
+    h.see("Disabled");
+    h.send(b"\r");
+    h.see("Search plugins");
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
 }
 
 #[test]
@@ -5196,7 +5255,7 @@ fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
             std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"demo.counter\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
         },
     );
-    h.until(|h| h.screen.screen().contents().contains("Counter  F6"));
+    h.see("Plugins");
     h.send(b",");
     h.see("Settings");
     h.send(b"\x1b[17~"); // entry shortcut cannot replace the current dialog
@@ -5207,7 +5266,9 @@ fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
     assert!(!h.screen.screen().contents().contains("Clicks:"));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.send(b"\x1b[17~\r");
+    h.click("Plugins");
+    h.see("Background");
+    h.send(b"\r");
     h.see("Clicks: 0");
     let original = h.ctl(&["inspect"])["tabs"].clone();
     h.send(b"\r");
@@ -5222,9 +5283,93 @@ fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
     assert!(h.screen.screen().contents().contains("Clicks: 2"));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.click("Counter");
+    h.click("Plugins");
+    h.see("Background");
+    h.send(b"\r");
     h.see("Clicks: 2");
     assert_eq!(h.ctl(&["inspect"])["tabs"], original);
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
+}
+
+#[test]
+fn plugin_palette_switches_overlays_and_blocks_background_layout_writes() {
+    let mut h = plugin_palette_harness("overlay", true);
+    open_fixture_palette(&mut h);
+    h.send(b"\r");
+    h.see("Clicks: 0");
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    let original = h.ctl(&["inspect"]);
+    open_fixture_palette(&mut h);
+    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
+    let reply = h.ctl(&[
+        "open",
+        "--instance",
+        original["instance"].as_str().unwrap(),
+        "--relative-to",
+        "active",
+        "--shell",
+        "--cwd",
+        h.dir.path().to_str().unwrap(),
+        "--place",
+        "tab",
+        "--request-id",
+        "palette-busy",
+    ]);
+    assert_eq!(reply["error"]["code"], "busy");
+    h.send(b"\x1b");
+    h.until(|h| h.ctl(&["inspect"])["focus"] == "plugin_overlay");
+    h.see("Clicks: 1");
+    open_fixture_palette(&mut h);
+    h.send(b"Other");
+    h.send(b"\r");
+    h.until(|h| h.ctl(&["inspect"])["overlay"]["plugin_id"] == "test.other");
+    h.see("Clicks: 0");
+    open_fixture_palette(&mut h);
+    h.send(b"Fixture");
+    h.send(b"\r");
+    h.until(|h| h.ctl(&["inspect"])["overlay"]["plugin_id"] == "test.entry");
+    h.see("Clicks: 1");
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+    assert_eq!(h.log("other/starts").lines().count(), 1);
+    assert_eq!(h.ctl(&["inspect"])["tabs"], original["tabs"]);
+    open_fixture_palette(&mut h);
+    h.click("Manage plugins");
+    h.see("Settings · Plugins");
+    h.see("ID: test.entry");
+}
+
+#[test]
+fn plugin_palette_empty_and_settings_are_not_replaced() {
+    let mut h = Harness::start();
+    h.click("Plugins");
+    h.see("No plugins registered");
+    h.send(b"\r");
+    h.see("Search plugins");
+    h.click("Manage plugins");
+    h.see("Settings · Plugins");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Settings · Plugins"));
+    h.click("Plugins"); // fixed host entry remains behind Settings; cannot replace it
+    for _ in 0..3 {
+        h.pump();
+    }
+    assert!(h.contents().contains("Input ▸ Settings"));
+    assert!(!h.contents().contains("Search plugins"));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"\r");
+    h.see("READY");
+    let before = h.log("events");
+    h.click("Plugins");
+    h.see("No plugins registered");
+    h.send(b"not-terminal-input");
+    h.send(b"\r");
+    h.send(b"\x1b");
+    h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
+    assert_eq!(
+        h.log("events").matches("input ").count(),
+        before.matches("input ").count()
+    );
 }

@@ -161,7 +161,8 @@ fn truecolor() -> bool {
 struct App {
     plugins: crate::plugins::Manager,
     plugin_page: Option<crate::plugins::ui::Page>,
-    plugin_entries: crate::plugins::entry::Bar,
+    plugin_palette: Option<crate::plugins::palette::Palette>,
+    plugin_entry_press: Option<Rect>,
     plugin_overlay: Option<plugins_impl::Overlay>,
     parked_settings: Option<crate::settings::Settings>,
     plugin_toast: Option<(Rect, Rect)>,
@@ -325,7 +326,8 @@ impl App {
         Ok(Self {
             plugins,
             plugin_page: None,
-            plugin_entries: Default::default(),
+            plugin_palette: None,
+            plugin_entry_press: None,
             plugin_overlay: None,
             parked_settings: None,
             plugin_toast: None,
@@ -441,7 +443,6 @@ impl App {
                             popup: self.attention.as_mut(),
                         },
                         settings: self.settings.as_mut(),
-                        plugin_entries: Some(&mut self.plugin_entries),
                     }),
                 );
                 self.draw_plugin_overlay(frame, panes);
@@ -474,6 +475,15 @@ impl App {
                         panes.status,
                     );
                 }
+                if let Some(palette) = &mut self.plugin_palette {
+                    palette.draw(frame, &self.config.colors);
+                    frame.render_widget(ratatui::widgets::Clear, panes.status);
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new(" Input ▸ Plugins · Esc Close")
+                            .style(self.config.colors.base()),
+                        panes.status,
+                    );
+                }
             })?;
             if event::poll(Duration::from_millis(30))? && self.event(event::read()?, panes)? {
                 break;
@@ -486,6 +496,7 @@ impl App {
         self.viewer_area = panes.viewer;
         let focused = self.focus == Focus::Viewer
             && self.settings.is_none()
+            && self.plugin_palette.is_none()
             && self.plugin_page.is_none()
             && self.closing.is_none()
             && self.search.is_none()
@@ -494,7 +505,7 @@ impl App {
             && self.new_agent.as_ref().is_none_or(|f| !f.visible);
         self.plugins.theme(&self.config.colors);
         self.sync_plugins(panes, focused);
-        self.plugin_entries.update(self.plugins.entries());
+        self.update_plugin_palette();
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
@@ -1129,28 +1140,18 @@ impl App {
             }
             return Ok(false);
         }
+        self.update_plugin_palette();
+        if let Some(palette) = &mut self.plugin_palette {
+            let outcome = palette.event(&event);
+            self.plugin_palette_outcome(outcome);
+            return Ok(false);
+        }
+        if self.plugin_launcher_event(&event) {
+            return Ok(false);
+        }
         if self.plugin_overlay.is_some() {
             self.plugin_overlay_event(&event);
             return Ok(false);
-        }
-        if !self.plugin_ui_busy() {
-            let (handled, entry) = self
-                .plugin_entries
-                .event(&event, self.focus == Focus::Agents);
-            if let Some(entry) = entry
-                && self
-                    .plugins
-                    .entries()
-                    .iter()
-                    .any(|e| e == &entry && e.state == "Running")
-            {
-                self.open_plugin_view(&entry.plugin);
-            }
-            if handled {
-                return Ok(false);
-            }
-        } else {
-            self.plugin_entries.cancel();
         }
         match event {
             Event::Key(key) => {

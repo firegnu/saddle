@@ -308,60 +308,150 @@ view = "main"
     }
 }
 #[test]
-fn entry_bar_scrolls_and_never_activates_a_replaced_or_disabled_entry() {
-    use crossterm::event::{
-        Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
-    };
-    use saddle::plugins::entry::{Bar, Entry};
-    use saddle_plugin_protocol::Placement;
+fn palette_filters_preserves_selection_and_gates_every_runtime_state() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use saddle::plugins::palette::{Item, Outcome, Palette};
     let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
+    let mut item = Item {
+        id: "a".into(),
+        title: "Counter".into(),
+        state: "Running".into(),
+        note: String::new(),
+        has_view: true,
+        opened: false,
+        pid: Some(7),
+    };
+    let mut p = Palette::default();
+    let draw = |p: &mut Palette| {
+        let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+        t.draw(|f| p.draw(f, &Default::default())).unwrap();
+    };
+    p.update(vec![item.clone()]);
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Open(item.clone()));
+    let mut starting = item.clone();
+    starting.state = "Starting".into();
+    p.update(vec![starting]);
+    draw(&mut p);
+    p.update(vec![item.clone()]);
+    assert_eq!(
+        p.event(&key(KeyCode::Enter)),
+        Outcome::Stay,
+        "cannot execute a state not yet displayed"
+    );
+    draw(&mut p);
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Open(item.clone()));
+    for state in [
+        "Starting",
+        "Stopping",
+        "Restarting",
+        "Disabled",
+        "Failed",
+        "Unresponsive",
+        "Unavailable",
+    ] {
+        let mut blocked = item.clone();
+        blocked.state = state.into();
+        assert!(blocked.action().is_none());
+        assert!(!blocked.explanation().is_empty());
+        p.update(vec![blocked]);
+        draw(&mut p);
+        assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Stay);
+    }
+    let mut background = item.clone();
+    background.has_view = false;
+    p.update(vec![background]);
+    draw(&mut p);
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Stay);
+    let mut other = item.clone();
+    other.id = "b".into();
+    other.title = "Tasks".into();
+    other.opened = true;
+    assert_eq!(other.action(), Some("Switch"));
+    p.update(vec![item.clone(), other.clone()]);
+    p.event(&key(KeyCode::Down));
+    draw(&mut p);
+    item.state = "Failed".into();
+    p.update(vec![item, other.clone()]);
+    assert_eq!(p.selected_id(), Some("b"));
+    draw(&mut p);
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Open(other.clone()));
+    p.event(&Event::Paste("no match".into()));
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Stay);
+    p.event(&Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    p.event(&Event::Paste("TASK".into()));
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Open(other.clone()));
+    p.event(&Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    p.event(&Event::Paste(format!("{}x", " ".repeat(4095))));
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Stay);
+    p.event(&key(KeyCode::Backspace));
+    p.event(&key(KeyCode::Char('s')));
+    assert_eq!(p.event(&key(KeyCode::Enter)), Outcome::Open(other));
+}
+
+#[test]
+fn palette_mouse_actions_cancel_when_state_changes_and_tiny_layouts_fit() {
+    use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use saddle::plugins::palette::{Item, Outcome, Palette};
+    let mut p = Palette::default();
+    let mut item = Item {
+        id: "a".into(),
+        title: "计数器".into(),
+        state: "Running".into(),
+        note: String::new(),
+        has_view: true,
+        opened: false,
+        pid: Some(7),
+    };
+    p.update(vec![item.clone()]);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
+    terminal.draw(|f| p.draw(f, &Default::default())).unwrap();
+    let buffer = terminal.backend().buffer();
+    let (x, y) = (0..24)
+        .flat_map(|y| (0..76).map(move |x| (x, y)))
+        .find(|&(x, y)| {
+            (0..4)
+                .map(|d| buffer[(x + d, y)].symbol())
+                .collect::<String>()
+                == "Open"
+        })
+        .unwrap();
     let mouse = |kind| {
         Event::Mouse(MouseEvent {
             kind,
-            column: 0,
-            row: 0,
+            column: x,
+            row: y,
             modifiers: KeyModifiers::NONE,
         })
     };
-    let mut bar = Bar::default();
-    let mut entries: Vec<_> = (0..8)
-        .map(|i| Entry {
-            plugin: format!("p{i}"),
-            action: "open".into(),
-            title: format!("View {i}"),
-            placement: Placement::Overlay,
-            state: "Running".into(),
-        })
-        .collect();
-    bar.update(entries.clone());
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(20, 3)).unwrap();
-    let draw = |bar: &mut Bar, t: &mut ratatui::Terminal<_>| {
-        t.draw(|f| bar.draw(f, f.area(), &Default::default()))
-            .unwrap();
-    };
-    draw(&mut bar, &mut terminal);
-    bar.event(&mouse(MouseEventKind::Down(MouseButton::Left)), true);
-    entries[0].plugin = "replacement".into();
-    bar.update(entries.clone());
-    draw(&mut bar, &mut terminal);
-    assert!(
-        bar.event(&mouse(MouseEventKind::Up(MouseButton::Left)), true)
-            .1
-            .is_none()
-    );
-    bar.event(&key(KeyCode::F(6)), true);
-    for _ in 0..7 {
-        bar.event(&key(KeyCode::Down), true);
-    }
-    draw(&mut bar, &mut terminal);
     assert_eq!(
-        bar.event(&key(KeyCode::Enter), true).1.unwrap().plugin,
-        "p7"
+        p.event(&mouse(MouseEventKind::Down(MouseButton::Left))),
+        Outcome::Stay
     );
-    entries[7].state = "Failed".into();
-    bar.update(entries);
-    assert!(bar.event(&key(KeyCode::Enter), true).1.is_none());
-    assert!(!bar.event(&key(KeyCode::F(6)), false).0);
+    item.state = "Failed".into();
+    p.update(vec![item.clone()]);
+    terminal.draw(|f| p.draw(f, &Default::default())).unwrap();
+    assert_eq!(
+        p.event(&mouse(MouseEventKind::Up(MouseButton::Left))),
+        Outcome::Stay
+    );
+    item.state = "Running".into();
+    p.update(vec![item.clone()]);
+    terminal.draw(|f| p.draw(f, &Default::default())).unwrap();
+    p.event(&mouse(MouseEventKind::Down(MouseButton::Left)));
+    assert_eq!(
+        p.event(&mouse(MouseEventKind::Up(MouseButton::Left))),
+        Outcome::Open(item)
+    );
+    for (w, h) in [(1, 1), (8, 3), (20, 8), (40, 12), (80, 24)] {
+        let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+        t.draw(|f| p.draw(f, &Default::default())).unwrap();
+    }
 }
 
 #[test]
@@ -396,7 +486,12 @@ fn overlay_resize_rejects_the_previously_displayed_frame() {
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     let old = loop {
         let p = manager
-            .sync_with_overlay(&mut terminals, area, false, Some(("test.entry", area)))
+            .sync_with_overlay(
+                &mut terminals,
+                area,
+                false,
+                Some(("test.entry", area, true)),
+            )
             .unwrap();
         if p.interactive {
             break p;
@@ -408,7 +503,7 @@ fn overlay_resize_rejects_the_previously_displayed_frame() {
         &mut terminals,
         area,
         false,
-        Some(("test.entry", Rect::new(0, 0, 40, 12))),
+        Some(("test.entry", Rect::new(0, 0, 40, 12), true)),
     );
     assert!(!manager.input(
         &old,
