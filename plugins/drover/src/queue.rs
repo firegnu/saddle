@@ -1264,18 +1264,10 @@ impl Panel {
         }
         self.sync_content();
         frame.render_widget(Clear, area);
-        let block = t
-            .block(" Tasks ", true)
-            .style(t.base().bg(t.overlay))
-            .title_top(
-                Line::styled(
-                    format!(" {} tasks ", self.tasks().len()),
-                    Style::default().fg(t.muted),
-                )
-                .right_aligned(),
-            );
-        let inside = block.inner(area);
-        frame.render_widget(block, area);
+        // Saddle supplies the outer frame and title. Keep content padding,
+        // while reserving borders for fields, buttons and internal sections.
+        frame.buffer_mut().set_style(area, t.base().bg(t.overlay));
+        let inside = area.inner(ratatui::layout::Margin::new(1, 0));
         if inside.height < 4 || inside.width < 12 {
             return Vec::new();
         }

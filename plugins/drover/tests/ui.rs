@@ -557,14 +557,9 @@ fn all_pending_overlay_names_projects_reports_each_state_and_scrolls_to_the_last
     ] {
         assert!(output.contains(value), "missing {value}:\n{output}");
     }
-    // Only the popup's interior: wrapped rows joined back must equal the source title.
-    let joined: String = output
-        .lines()
-        .filter_map(|l| {
-            let (start, end) = (l.find('┃')?, l.rfind('┃')?);
-            (start < end).then(|| l[start + '┃'.len_utf8()..end].trim().to_string())
-        })
-        .collect();
+    // The plugin renders content without an outer popup frame. Wrapped rows
+    // joined back must still contain the complete source title.
+    let joined: String = output.lines().map(str::trim).collect();
     assert!(
         joined.contains(&long),
         "long titles wrap without clipping: {joined}"
