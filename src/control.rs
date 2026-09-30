@@ -172,11 +172,26 @@ fn read_json(stream: &mut UnixStream) -> Result<Value> {
     let mut bytes = Vec::new();
     let mut chunk = [0_u8; 4096];
     loop {
-        stream.set_read_timeout(Some(
-            deadline
-                .checked_duration_since(Instant::now())
-                .context("read timed out")?,
-        ))?;
+        // On macOS, setting SO_RCVTIMEO after the peer closes can fail with EINVAL
+        // even when the complete response is buffered. Wait for readability instead.
+        use std::os::fd::AsRawFd;
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .context("read timed out")?;
+        let mut poll = libc::pollfd {
+            fd: stream.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let ready = unsafe { libc::poll(&mut poll, 1, remaining.as_millis().max(1) as i32) };
+        if ready < 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error.into());
+        }
+        anyhow::ensure!(ready > 0, "read timed out");
         let n = stream.read(&mut chunk)?;
         if n == 0 {
             bail!("incomplete control message");
@@ -371,5 +386,33 @@ impl Drop for Server {
         for worker in self.workers.drain(..) {
             let _ = worker.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn truncated_closed_response_is_not_success() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        server.write_all(b"{\"ok\":true}").unwrap();
+        drop(server);
+        assert!(
+            read_json(&mut client)
+                .unwrap_err()
+                .to_string()
+                .contains("incomplete")
+        );
+    }
+    #[test]
+    fn reads_a_complete_response_after_the_peer_has_closed() {
+        let (mut client, mut server) = UnixStream::pair().unwrap();
+        let value = json!({"ok":true,"result":"x".repeat(1000)});
+        server
+            .write_all(&serde_json::to_vec(&value).unwrap())
+            .unwrap();
+        server.write_all(b"\n").unwrap();
+        drop(server);
+        assert_eq!(read_json(&mut client).unwrap(), value);
     }
 }
