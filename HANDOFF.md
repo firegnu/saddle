@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+- 最新设计审阅：原 Claude 按用户要求只读审阅 28c8d1c，提出3项必须改、6项建议。主控已亲自修订全部必须项、采纳5项建议并部分采纳1项；记录 `docs/任务/插件系统设计-审阅处理.md`。结构不变，尚未实现或由 Claude 复审。修订分支/worktree 已清理。
+
 - 最新工作：用户确认独立进程＋版本化协议＋Rust SDK，并要求接下来主控自己做、不再委派。已写 `docs/插件系统设计.md`、`docs/插件Demo设计.md`，更新 `docs/DESIGN.md` §62；设计提交 83c0350。只是草案，不表示插件系统、SDK、管理入口或 demo 已实现。
 - 文档检查：diff 空白检查通过；TOML/JSON 示例可解析、本地链接有效、代码围栏配对。未运行功能测试、编译、重启、安装，不改真实任务/通知服务。设计分支/worktree 已正常合并清理，无新增 agent。
 
@@ -34,7 +36,7 @@ T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计�
 
 插件工作的下一步：用户审阅设计草案与管理入口/demo 线框，确认后再安排实现；不把架构认可扩大为已经批准具体 UI 或稳定协议。具体帧字段、Unicode 宽度约定与运行预算需在 demo 实现前定稿。Demo 先验证插件通路，Drover 为第二个插件；未迁移前不声称 Saddle 已无 Drover 依赖。只按现有授权继续设计，不自行安装或发布插件。
 
-本轮后续由主控亲自做，不再委派。已有讨论 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
+本轮后续由主控亲自做，不再委派。已有讨论/审阅 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle、attached=1）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
 
 ## 先读与记录
 
@@ -44,4 +46,4 @@ Dispatch：Drover 0ec134ce246c420aabb6654254ddcf97；Saddle 05458465051541c4a9c2
 
 T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任务/T58-任务流转文档测试.md。
 
-插件讨论与设计记录：Dispatch 7c3ecbc86ee14ec8bf887e78a55ef9d1。两轮讨论已结束；旧回调不自动再委派，需求与决定以 §62 及最新用户指示为准。
+插件讨论与设计记录：Dispatch 7c3ecbc86ee14ec8bf887e78a55ef9d1。两轮讨论与首次文档审阅已结束；审阅回复 at=1790753355.926681 已处理。旧回调不重复处理或自动委派，需求与决定以 §62 及最新用户指示为准。
