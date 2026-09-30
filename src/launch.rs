@@ -212,11 +212,7 @@ impl Form {
         }
         order.push(ADVANCED);
         if self.advanced {
-            order.extend([2, 3]);
-            if self.anchor.is_none() {
-                order.push(4);
-            }
-            order.push(PREVIEW);
+            order.extend([2, 3, 4, PREVIEW]);
         }
         order
     }
@@ -332,7 +328,7 @@ impl Form {
                 self.advanced = !self.advanced;
                 self.field = ADVANCED;
             }
-            KeyCode::F(5) if self.advanced && self.anchor.is_none() => {
+            KeyCode::F(5) if self.advanced => {
                 self.place = (self.place + 1) % 6;
                 self.field = 4;
             }
@@ -357,12 +353,10 @@ impl Form {
             KeyCode::Enter | KeyCode::Char(' ') if self.field == ADVANCED => {
                 self.advanced = !self.advanced;
             }
-            KeyCode::Left if self.field == 4 && self.anchor.is_none() => {
+            KeyCode::Left if self.field == 4 => {
                 self.place = (self.place + 5) % 6
             }
-            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ')
-                if self.field == 4 && self.anchor.is_none() =>
-            {
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') if self.field == 4 => {
                 self.place = (self.place + 1) % 6
             }
             KeyCode::PageUp | KeyCode::PageDown if self.advanced => {
@@ -709,17 +703,6 @@ impl Form {
                     );
                     hits.extend(controls);
                 }
-                4 if self.anchor.is_some() => {
-                    // The + Tab / Split entry already chose the location: state it, no selector.
-                    frame.render_widget(
-                        Paragraph::new(vec![
-                            "Open in".into(),
-                            bound_place(Place::ALL[self.place]).into(),
-                        ])
-                        .style(Style::default().fg(t.muted)),
-                        rect,
-                    );
-                }
                 4 => {
                     let label = format!("Open in: {} (←/→)", Place::ALL[self.place].label());
                     let (_, controls) = buttons::draw_outlined_top(
@@ -839,18 +822,6 @@ impl Form {
     }
 }
 
-/// Static text for a location fixed by the + Tab or Split entry.
-fn bound_place(place: Place) -> &'static str {
-    match place {
-        Place::Current => "Opens in the current pane",
-        Place::Tab => "Opens in a new tab · set by + Tab",
-        Place::Left => "Opens in a split on the left · set by Split",
-        Place::Right => "Opens in a split on the right · set by Split",
-        Place::Up => "Opens in a split above · set by Split",
-        Place::Down => "Opens in a split below · set by Split",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -954,7 +925,7 @@ mod tests {
     }
 
     #[test]
-    fn bound_location_is_static_text_and_new_keeps_the_selector() {
+    fn bound_location_defaults_the_selector_and_can_choose_the_current_pane() {
         use ratatui::{Terminal, backend::TestBackend};
         let render = |form: &mut Form| {
             let mut terminal = Terminal::new(TestBackend::new(106, 46)).unwrap();
@@ -978,22 +949,32 @@ mod tests {
         let (screen, selector) = render(&mut form);
         assert!(screen.contains("Open in: Current pane (←/→)"), "{screen}");
         assert!(selector);
-        for (place, text) in [
-            (Place::Tab, "Opens in a new tab · set by + Tab"),
-            (Place::Right, "Opens in a split on the right · set by Split"),
+        // + Tab / Split only supply the default; the same selector reaches the current pane.
+        for (place, default, back) in [
+            (Place::Tab, "Open in: New tab (←/→)", 1),
+            (Place::Right, "Open in: Split right (←/→)", 3),
         ] {
             let mut form = Form::new("/tmp/demo".into());
-            form.anchor = Some(Ticket {
+            let anchor = Some(Ticket {
                 pane: 1,
                 revision: 0,
             });
+            form.anchor = anchor;
             form.place = Place::ALL.iter().position(|p| *p == place).unwrap();
             press(&mut form, KeyCode::F(4));
             let (screen, selector) = render(&mut form);
-            assert!(screen.contains(text), "{screen}");
-            assert!(!screen.contains("Open in:") && !screen.contains("(bound)"));
-            assert!(!selector);
-            assert!(!form.focus_order().contains(&4));
+            assert!(screen.contains(default), "{screen}");
+            assert!(selector);
+            assert!(form.focus_order().contains(&4));
+            while form.field != 4 {
+                press(&mut form, KeyCode::Tab);
+            }
+            for _ in 0..back {
+                press(&mut form, KeyCode::Left);
+            }
+            assert_eq!(Place::ALL[form.place], Place::Current);
+            assert!(render(&mut form).0.contains("Open in: Current pane (←/→)"));
+            assert_eq!(form.anchor, anchor, "the originating pane stays bound");
         }
     }
 

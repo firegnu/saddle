@@ -698,7 +698,7 @@ Agents ‹Tasks›             Agent terminal
 - 历史失败已看身份包含项目路径、任务 id、标题和正文，仅存于本次运行。选择跟随条目身份，消失后退至附近；点击行直接打开，Mark seen 作用于键盘／滚轮选中的历史失败。
 - 任务跳转复用 Tasks，按项目切换后定位任务；有未完成表单或跨项目写操作时保留草稿并提示完成／取消后再打开，避免跳转丢失输入。
 
-## 43. T27：New agent 绑定打开位置说明（2026-09-28）
+## 43. T27：New agent 绑定打开位置说明（2026-09-28，位置锁定呈现已由 §60 T51 替代）
 
 用户确认本方案并要求先更新任务书，之后手动委派。
 
@@ -1039,3 +1039,11 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 - 仅调用 `drover dispatch-pending --pos N --target-token TOKEN --json`，绑定点击时项目与展示中这一项 `dispatch_pending.pos/target_token`。字段缺失或不可用时禁用入口；不自行构造参数、不串联 move/next、不绕过现有门禁。
 - 按 Drover `docs/指定派发JSON接口.md`（schema_version 1）消费结果，区分发送确认与本地记录结果，手动模式显示 `manual_text`；拒绝、不确定、记录失败和草稿拼接如实提示并刷新，不自动更换目标或重试。沿用项目切换／异步结果归属保护。
 - 保留 Next 等既有项目操作；只改 Saddle 界面、公开 CLI 适配与直接检查，不改上游或全局技能，不用真实队列验证。
+
+## 60. T51 New agent 可选当前窗格（2026-09-30）
+
+用户反馈：在 saddle 中创建 agent 时仍无法选择在当前 pane 打开（截图为 `Opens in a new tab · set by + Tab`），并放行本任务。本节替代 §43 T27 的位置锁定呈现：从 `+ Tab`、Split 或占位窗格进入的 New agent，Advanced 中的 Open in 与 Agents 的 New 使用同一个六位置选择器（点击／F5／←→，Tab 焦点可达），入口只提供默认位置——`+ Tab` 默认新标签页，Split 默认对应方向，占位窗格沿用当前窗格。
+
+- 位置可改，发起窗格的绑定不变：Current pane 指发起创建的那个窗格（`+ Tab` 时的活动窗格、Split 或占位窗格本身），分屏／新 tab 也相对于它；不因之后的活动窗格或异步焦点变化换目标。提交仍先核对发起窗格的身份与修订号，已变化则报 `originating pane changed` 并保留草稿。
+- 替换当前窗格沿用既有规则：发起窗格是运行中的 shell 时先走原有结束 shell 确认；取消不改布局。
+- 不清空 anchor：它继续负责来源校验、取消时丢弃临时表单并恢复 Agents 草稿等既有行为。创建参数、agent 生命周期、Agents New 表单均不变；不新增设置或快捷键。

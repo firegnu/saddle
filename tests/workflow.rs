@@ -2663,6 +2663,40 @@ fn replacing_a_running_shell_confirms_then_keeps_the_same_pane() {
 }
 
 #[test]
+fn t51_location_new_can_choose_the_originating_pane_with_existing_confirmation() {
+    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    h.see("Synthetic title");
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Terminal");
+    h.see("SHELL READY");
+    let initial = h.ctl(&["inspect"]);
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "New agent…");
+    h.see("Create agent");
+    h.click("Advanced");
+    h.see("Open in: New tab");
+    h.click("Open in: New tab"); // Split left
+    h.send(b"\x1b[D\x1b[D");
+    h.see("Open in: Current pane");
+    h.send(b"\x13");
+    h.see("End these running terminals");
+    h.click("End shells y");
+    h.event("start agents/main");
+    h.see("agents/main-actual READY");
+    let after = h.ctl(&["inspect"]);
+    h.quit();
+    assert_eq!(after["tabs"].as_array().unwrap().len(), 2, "{after}");
+    assert_eq!(after["active_pane"], initial["active_pane"]);
+    assert_eq!(after["tabs"][1]["panes"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        after["tabs"][1]["panes"][0]["id"],
+        initial["tabs"][1]["panes"][0]["id"]
+    );
+    assert_eq!(after["tabs"][1]["panes"][0]["agent"], "agents/main-actual");
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
 fn control_socket_is_private_and_slow_clients_do_not_block_terminal_input() {
     use std::os::unix::{fs::PermissionsExt, net::UnixStream};
     let mut h = Harness::start();
