@@ -1,88 +1,41 @@
 # 会话交接
 
-更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。已更新日常 release，补齐一条命令打包与开发入门；用户随后明确“跑起来了”，确认日常版 Counter 可用。用户看过Counter后进一步确认：Saddle拥有外壳，插件不增加常驻UI；主控已亲自把侧栏逐插件按钮替换为统一插件命令面板。工作区/覆盖绘制保留。用户随后授权按步骤迁移：主控已亲自完成通用 Attention 来源接口和独立演示插件，Drover 迁移尚未开始。用户已确认统一插件面板感觉不错。
+更新：2026-09-30。Drover 已从 Saddle 内建功能迁成可选进程插件；主控亲自完成，没有委派。代码已合并推送，日常 release 文件已更新，但没有强制重启用户窗口，也没有替用户登记/启用插件。当前用户窗口仍可能是旧版，不能当作新版已运行。
 
-## 当前状态
+## 当前交付
 
-- 本轮通用 Attention：实现6658cdc、固定独立SDK/审查05efd12、合并8888bb2、空提交收尾62453ee；plugin-attention分支/worktree已清理。Dispatch 36bcaa6d63734a279bd34fdad66741b1，任务与审查见 docs/任务/插件Attention来源.md。主控亲自完成，无委派。
-- attention.v1：插件完整快照、来源隔离、更新/撤回、带目标打开；旧会话/旧修订点击拒绝，断连显示不可用、停用撤下，快照不自动发通知或变更业务状态。旧Counter无需升级；Agent Attention与内建Drover任务/提醒仍保留。
-- 最终标准套件323 passed / 1 failed / 8 ignored；失败为T20当前pane/picker在3239行等待Create agent，未改main33f4efe也在同一行复现，根因未确认。Clippy通过；插件/Attention模块22 passed / 1 ignored；协议容量检查通过。最终日常release全部9条插件PTY（包括真实独立SDK Attention demo和旧Counter）通过。详见任务记录，不能写全套全绿。
-- 日常入口~/.local/bin/saddle仍指向共享target/release/saddle；实际release检查完成后SHA-256为`d92ff67177a1d6143264ae57f50e1661694a87a20d6d4db6c228eda3ea9dfc8a`，源代码合并8888bb2。旧631d2fed程序备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-attention-20260930-191209`。只更新磁盘，没有强制重启用户窗口。
-- 独立演示SDK固定公开提交6658cdc2d4f0534fba52b0360a109de46f60d895，仓库外打包和真实PTY通过。正式包已生成 `/Users/firegnu/Developer/personal_projs/saddle/examples/attention-plugin/dist/attention-plugin`，尚未登记到真实Saddle。启用后出现两条合成Attention，点击显示sample-1/2；u更新/恢复，w撤回，Esc关闭。没有真实任务或后台服务操作。
-- 用户先前明确要求关闭原Claude讨论agent；已公开corral stop并核对not_found，`saddle/dev-plugin-design-1`已关闭。没有操作其他agent。后续主控仍亲自做，不委派。
+- 实现 `ff79aa6`、合并 `425ec55`、空提交收尾 `ae072dc`；本轮 `drover-plugin` 分支/worktree已清理。Dispatch `e6105d3907a3410b8defbbbfe1d69576`。任务、主控审查和发布证据：`docs/任务/Drover插件迁移.md`。
+- 插件源码按用户选择暂放 `plugins/drover/`。原队列/CLI/详情/Links/Dispatch/通知规则迁入独立Rust crate，仅依赖公开SDK；插件具有界面和后台观察，关视图继续后台，停用停止并撤下来源，不自动派发/提交/接受。
+- 宿主不再读取Drover登记项目、不调用Drover CLI、不保留Tasks入口和专用通知设置。Agent Attention保留，插件条目通过通用来源接口汇总。旧 `[queue]` 表兼容加载但不再生效；新agent候选来自公开Corral cwd和启动目录。
+- 通用SDK新增光标、打开时cwd、动态Esc返回、用户输入绑定的agent导航、关闭视图和带目标通知。原instance/附着校验保留；导航新tab保护已有终端。快速输入和鼠标反馈重绘检查已补齐，旧Counter/Attention二进制兼容。
+- 上游Drover地址已实查：`/Users/firegnu/Developer/personal_projs/drover`，origin `https://github.com/firegnu/drover.git`。上游源码/CLI核心/通知watch、本机真实队列/偏好、Corral/corral-dispatch和用户agent均未改。
 
-以下为前轮历史记录，当前发布以上述Attention版为准。
+## 日常版本与安装
 
-- 本轮统一面板：实现63ae93b，合并baab2f2，空提交收尾0999dd5；plugin-palette分支/worktree已清理。主控亲自实现，原讨论agent及T38/T55工作树未操作。
-- 固定Plugins入口在Settings附近；面板约72列18行，搜索/选择/状态/Open或Switch，Manage plugins为次要入口。所有注册插件可见；没有新增快捷键。旧Counter侧栏按钮与F6逻辑已移除，SDK/能力清单/Counter二进制保持不变。
-- 最终完整标准检查（test-threads=4）：316 passed / 1 failed / 7 ignored；失败为既有T25布局保存用例收尾picker未找到目标，单独复跑通过，根因未确认。插件模块最终13 passed / 1 ignored，Clippy通过。实际日常release的全部8条插件PTY检查（含真实Counter）通过，日志/tmp/saddle-palette-release-pty.log；不宣称全套全绿。
-- 日常入口~/.local/bin/saddle仍指向共享target/release/saddle；实际release检查完成后SHA-256为`631d2fed76b93b0d3f225b482d709daccaeb7c847b07d717ca61126eb8610324`，对应合并baab2f2源代码。旧程序备份`/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-palette-20260930-184030`（旧哈希e9bd3444）。插件登记/配置/程序未改变，也没有强制重启用户窗口；本轮面板尚待用户重启后目视确认。
+- 入口 `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。新SHA-256：`40671d1c538b29e5e0fd77ebc653b338ccef20dd35129bcb640bf66951c02ac4`，是已做release隔离PTY检查的同一二进制；实际入口 `--help` 通过。
+- 旧程序与发布元数据备份：`/Users/firegnu/Library/Application Support/saddle-release-backups/drover-plugin-20260930-204507`。旧SHA `d92ff67177a1d6143264ae57f50e1661694a87a20d6d4db6c228eda3ea9dfc8a`。插件尚未登记，回退不涉及任务数据迁移。
+- 正式目录：`/Users/firegnu/Developer/personal_projs/saddle/plugins/drover/dist/drover-plugin`。包含 `plugin.toml` 和 `bin/saddle-drover`，插件SHA `b0549c4b0eeb08dd4c0cdf700f52b178ce76b981c31a081120dc607e732bfeb6`。
+- 本机PATH没有dlog，正式包的args已显式保留用户旧配置中的 `/Users/firegnu/Developer/personal_projs/dispatch-log/dlog`。源码清单通用默认仍为PATH查找。再次运行package.sh会覆盖清单，需保留此参数；详见插件README。
+- 用户下一步：重启日常Saddle → Plugins → Manage plugins → Add local，填写上述完整目录 → Read manifest → Add disabled → Enable。关闭管理页，从Plugins选择Drover。没有Drover插件时仍可独立管理Corral agent和终端。
+- 首次观察已有Awaiting只建基线、不补弹旧任务。观察新通知要使用之后的新Awaiting事件；用户未授权任何新测试任务或真实队列推进。
 
-- 上轮入口实现（现已替换其入口）：9a8e656；独立 SDK 固定与审查 dea3710；合并 bf072b8 已推送；空提交收尾 e0696cc，plugin-entry 分支/worktree 已清理。Counter 清单默认 overlay，启用后左侧显示 Counter；鼠标直接打开，Agents 中 F6/Enter 也可打开。Esc 关闭恢复焦点，Ctrl-] 返回 Agents，关闭保留进程。已有旧 Counter tab 优先复用，关闭旧 tab 后再点入口才使用 overlay。
-- 设计依据仍为89a4709及 docs/插件入口与界面接入设计.md，第一步已实施；第二步 Attention 来源、第三步 Drover 迁移尚未开始。没有真实队列/服务/上游修改，没有委派或操作其他 agent。
-- 上轮入口标准检查312 passed / 1 failed / 7 ignored；失败是原有 t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell 的关闭确认 unwrap，单独复跑通过，根因未确认。早先一次 picker/task_links 失败在最终检查通过。Clippy通过；插件模块12 passed，普通插件PTY3 passed，真实独立SDK/Counter的2条ignored检查显式通过，实际日常release的同2条检查也通过。详见 docs/任务/插件直接入口与覆盖界面实现.md，不宣称全绿。
-- Counter 独立项目现固定公开 SDK revision `9a8e6568ee65dcc247aa6516294a451f3ecd502b`；仓库外打包与真实PTY验证通过。旧清单仍兼容，新清单要求 ui.entry.v1 / panel.overlay.v1；overlay 不写布局，不启动额外插件进程。
+## 验证与残留
 
-- 上轮实现交付：6d39a06（示例 package.sh、开发入门及 README），合并 27f3279，收尾 fc2c060；plugin-delivery 分支/worktree 已清理，main 已推送。主控亲自完成，没有委派、队列或上游变更。
-- 用户一条打包命令：`./examples/counter-plugin/package.sh`；正式产物已生成在主仓库 `examples/counter-plugin/dist/counter-plugin`。在日常新版 Settings → Plugins 中添加该完整目录、Enable、Open panel；本轮没有替用户登记。
-- 上轮标准检查：306 passed / 1 failed / 6 ignored，Clippy通过；失败为已记录的 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`（workflow.rs:2508）。独立仓库外打包通过；debug 和实际 release 的插件 PTY 主路径各 1 passed。详见 docs/任务/插件Demo交付与发布.md，不写全绿。
+- 最终标准套件 **330 passed / 1 failed / 8 ignored**（`--test-threads=4`），Clippy和fmt通过。唯一失败：`ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close` 的close请求返回 `instance_unavailable / Invalid argument (os error 22)`；原样单独复跑 **1 passed**。根因未确认，不能写全套全绿，不扩大修控制服务或T29。
+- T25退出检查的测试前提修正：等公开轮询确实观察ATT接入后再模拟agent消失，避免终端READY先到造成观察缺失；生产退出逻辑未改。目标和最终全套该项均通过。
+- 实际插件进程合成检查7 passed；旧Counter/Attention兼容PTY组11 passed；SDK stdio隔离探针1 passed。
+- release候选与正式包：插件PTY组11 passed、任务/导航组7 passed、新Awaiting通知/点击/关闭/偏好切换1 passed。均临时HOME、假CLI，无真实agent/任务。发布复制同字节产物，未改运行服务。
+- 日志：`/tmp/saddle-all-final.log`、`/tmp/saddle-clippy-final.log`、`/tmp/saddle-ctl-final-recheck.log`、`/tmp/saddle-drover-release-{plugins,tasks,notify}.log`；完整记录见任务文档。跨worktree共享target时核对构建来源，勿把旧缓存/零匹配当验证。
 
-- 前轮插件实现：5191a78，demo 固定公开 SDK revision 与审查记录 13f2e47，合并 d05f7a4，空提交收尾 5977f49。分支 plugin-demo 与独立基线 worktree 均已清理，没有创建/关闭/发送任何 agent；主控遵照用户要求自己做。
-- 已有功能：Settings → Plugins F5；登记本地目录（默认停用）、启停/重启/移除、新 tab 面板、结构化输入、内部通知；插件进程独立 session/无 PTY，SDK 处理 stdio；layout v2 保留旧备份，ctl inspect 支持 plugin。
-- SDK 在 crates/plugin-protocol、crates/plugin-sdk；独立 demo 在 examples/counter-plugin，当时依赖 Git revision 5191a782bb7671390c124485258d83e434104560 的公开 SDK（当前版本见本轮记录），有自己的 Cargo.lock。复制到 /tmp/saddle-plugin-external.h9LoWT/counter 独立构建并用其产物验证通过；没有将该目录登记到真实 Saddle。
-- 前轮实现验证：最终标准套件 305 passed / 1 failed / 6 ignored；失败为既有 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，在未修改基线2bfe1c4同一步再次复现。Clippy通过。两项本轮需外部构建的 ignored 检查已显式运行通过（SDK stdio probe、实际 Saddle PTY demo）。另新增极小管理页窗口检查单独通过。详情见 docs/任务/插件首个Demo实现.md，不写全绿。
-- 隔离 PTY 覆盖添加/启用/打开、Enter/鼠标、通知、Shift+Enter、关闭重开保留、重启归零、停用；假 Corral/Drover、临时 HOME/config/state/runtime。进程故障回收、宽字符和旧布局等检查通过。
-- 上轮日常入口 `~/.local/bin/saddle` 指向共享 target/release/saddle，当时构建为 bf072b8 对应入口/覆盖版，SHA-256 `e9bd34449a432265138334f8c43b2e41aab78c295ca05678bd6dbaa45b79f5d6`；同一正式 Counter 目录的程序与清单已更新，登记无需重做。旧二进制与旧插件包备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-entry-20260930-175548`（旧二进制99695dbe）。实际 release 两条插件PTY检查通过，日志 /tmp/saddle-entry-release-pty.log。仅更新磁盘，未强制重启用户窗口；该版用户已看到，随后要求改为统一命令面板；最新发布见本轮记录。
+## 保留上下文
 
-- 设计记录：docs/DESIGN.md §62、docs/插件系统设计.md、docs/插件协议.md、docs/插件Demo设计.md。本轮已增加侧栏入口与覆盖界面；其他挂载位置按实际需求补充，Drover 迁移尚未实施。
+- 用户长期方向：Corral/corral-dispatch可独立；Saddle是其GUI操作台，外壳归Saddle；功能以可选进程插件加入。统一Plugins面板管理状态/打开，插件不增加常驻侧栏按钮。路线已批准，不重开Wasm/Extism讨论。
+- 原Claude讨论agent `saddle/dev-plugin-design-1` 已按用户要求关闭。用户要求主控后续亲自做，不再委派；没有新agent需要关闭。
+- Counter正式目录 `examples/counter-plugin/dist/counter-plugin` 与Attention demo `examples/attention-plugin/dist/attention-plugin` 保持原样。旧demo用于合成演示，Drover插件才是真实任务来源。
+- T38 `t38-dispatch-study`（c15bc4d）和T55 `t55-notification-flow`（3cc417d）工作树保留；不可为了清理而合并/删除。Drover仓库未跟踪T27核心拆分任务文档属于用户，不动。
+- 任务流转v2此前已联合发布：done提交验收，go接受，next派发，各任务独立，Git检查作参考。T57/T58文档已交付并被用户接受；不重复推进。其他Pending不自动开始。
+- Drover CLI/notifications watch继续独立，本轮不重写或删除它们。插件不是新的任务推进服务。
 
-- 前轮联合发布 Saddle main：2a6862c；主控审查 c97270a；空提交收尾 c939fd1。本交接与发布记录随最终文档提交推送，确切 SHA 见 git log 和 Dispatch 05458465051541c4a9c2cc908dc9fe3e 收尾 note。无遗留本轮实现改动。
-- Drover main 已发布 e0d8118（合并 b02f142，收尾16ef806），origin/main 已核对一致。Drover 无关未跟踪 T27 文档保留。
-- 前次联合发布的 Saddle 二进制哈希 e63d8e5a 已被本轮插件版替换并备份；当时用户重启实例 5d8f7242dcc4636b、PID63344 是历史核验，不代表当前运行实例或本轮已重启。
-- 服务 dev.drover.loop 已改为 `drover notifications watch`，launchctl running、PID83246；旧推进 PID46666 已退出。保留的 loop 名字不是自动推进功能。
-- 发布时公开状态与备份一致；后续用户现场测试 T57，已进入 Done。T58 已提交并被接受，现为 Done（run_id cd6de94f20b244538dde947598122f88；t1=1790749359.1966999，t2=1790749376.7627158）。T48、T54、T55 已从 Pending 删除，具体状态以公开 list/show 为准。
-- T58 实现 1863d22，审查 85baab4，空提交收尾 cc9e52a；交付仅新增指定文档与任务记录，不改代码或配置。文档 diff 检查通过，未测试、编译或重启。
+## 先读
 
-## 验证与限制
-
-- Drover 旧 gate=false 后 go 的兼容返工已复审；新 accepted 严格要求 Awaiting，不伪造旧接受。
-- Saddle 主控标准检查292 passed / 1 failed / 3 ignored，Clippy通过。失败为既有 picker 用例 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，独立 target 的 main基线亦在同一步失败；未修 T29，不能写全绿。
-- 隔离联合主路径通过，主控复跑1 passed：A退回保留未合并分支，B提交后出现测试PTY内部提示/Attention，接受后Done，无自动派发。该证据为隔离测试；发布后用户另行现场确认 T57 已待验收并弹出通知，随后接受。
-- 备份目录：/Users/firegnu/Library/Application Support/saddle-release-backups/20260930-135645。含旧数据/配置/服务、旧Saddle二进制、公开切换前后状态和核验。新事件不兼容旧二进制写操作，回退须协调版本与日志。
-
-## 保留的工作
-
-- 本轮 Saddle drover-schema2 和 Drover task-flow-simplification 分支/worktree 均已清理；自开 saddle/dev-drover-schema2-1 随工作目录删除已关闭。drover/main 保留，其他用户 agent 未停止。
-- T55 的 t55-notification-flow（3cc417d）与 T38 的 t38-dispatch-study（c15bc4d）保留，不能为解除完成阻挡而合并/删除。
-- T57 测试文档已交付并由用户接受。T58 worktree/分支已安全清理，自开 saddle/dev-t58-flow-doc-1 因工作目录已删而一并关闭。
-- T51 当前pane、T52 Shift+Enter 已交付并由用户放行。其他 Pending 不自动启动。
-
-## 下一步
-
-本步已交付通用 Attention 和独立合成演示。用户正常重启 Saddle 后，在 Settings → Plugins 添加上述 attention-plugin 目录并启用，关闭设置，再从 Attention 点击 Demo item。没有替用户安装登记，也没有强制重启。插件开发方式仍为独立Rust项目+固定Git SDK+package.sh。Counter保持原目录与原程序。
-
-下一步是 Drover 插件迁移：先列清现有 Tasks、项目选择、编辑/确认、任务关联跳转、通知偏好及基线规则；用现有公开 Drover CLI 搬入插件，按实际需求补视图输入缺口。随后切换来源、删除宿主旧Drover专用路径，避免两份轮询/通知。Attention自身以及Agent等待/错误/回复保留在Saddle。不要宣称本次已迁移Drover，不扩大到Corral/corral-dispatch，不新增任务推进后台。
-
-用户要求主控亲自完成，原讨论agent已按用户要求关闭，不再委派。真实队列/服务不因插件开发而推进；T38/T55遗留worktree保留。已有T20/picker偶发失败如实保留，不顺带修T29。后续跨worktree使用共享target时，核对测试列表/构建源目录；缓存可能保留上一工作树测试程序，不能把零匹配或基线程序当成候选验证。
-
-## 先读与记录
-
-AGENTS.md、dispatch-log/USAGE.md；docs/DESIGN.md §62 与两份插件设计文档；任务流转参考 §61；docs/任务/Saddle-Drover联合发布.md及对应主控审查/隔离联调记录；Drover主仓库docs/任务流转JSON接口.md。真实操作仅走公开CLI。
-
-Dispatch：Drover 0ec134ce246c420aabb6654254ddcf97；Saddle 05458465051541c4a9c2cc908dc9fe3e。Drover第一阶段回调若晚到，先核对已处理，不重复安装或启动服务。
-
-T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任务/T58-任务流转文档测试.md。
-
-插件讨论与设计记录：Dispatch 7c3ecbc86ee14ec8bf887e78a55ef9d1。两轮讨论与首次文档审阅已结束；审阅回复 at=1790753355.926681 已处理。旧回调不重复处理或自动委派，需求与决定以 §62 及最新用户指示为准。
-
-插件实现记录：Dispatch d2cd3a7e030b4a619cc707241f33aedd，仅记录主控实施和审查，无代理派发、无队列变更。测试日志 /tmp/saddle-plugin-demo-final-tests.log，基线 /tmp/saddle-plugin-baseline-t20-repeat.log，审查说明 docs/任务/插件首个Demo实现.md。
-
-插件交付/发布记录：Dispatch a54eebf9f78f4544a969aa1487288e9c，docs/任务/插件Demo交付与发布.md；只记录主控工作，不是代理派发。
-
-插件日常入口设计记录：Dispatch 6f1022252d304e12899e8d72264bffc8，docs/任务/插件日常入口接入设计.md；主控文档工作，无代理派发。
-
-插件直接入口实施记录：Dispatch a981890142784b43b5ece49b90f827d1，docs/任务/插件直接入口与覆盖界面实现.md；仅主控实施/审查，无代理派发。
-
-统一插件命令面板记录：Dispatch 7a3a7633047440acb3ef27635a2eb18e；docs/任务/插件命令面板.md，主控亲自实施/审查，无代理派发。
-
-通用Attention来源记录：Dispatch 36bcaa6d63734a279bd34fdad66741b1；docs/任务/插件Attention来源.md，主控亲自实施/审查/发布。最终日志 /tmp/saddle-attention-final-tests.log、/tmp/saddle-attention-release-pty.log。
+`AGENTS.md`、`dispatch-log/USAGE.md`、`docs/DESIGN.md` §62及Drover迁移小节、`docs/插件协议.md` §10–11、`plugins/drover/README.md`、本轮任务文档。设计理由留设计文档；本交接只留状态和下一步。

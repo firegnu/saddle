@@ -43,3 +43,10 @@
 - 打包命令通过；release插件包与目标目录中的实际插件二进制SHA一致 `b0549c4b0eeb08dd4c0cdf700f52b178ce76b981c31a081120dc607e732bfeb6`。独立目标目录release宿主验证：插件PTY组 **11 passed**、任务/导航组 **7 passed**、新Awaiting通知及点击/关闭/偏好切换主路径 **1 passed**，全部临时HOME和假CLI；日志 `/tmp/saddle-drover-release-plugins.log`、`/tmp/saddle-drover-release-tasks.log`、`/tmp/saddle-drover-release-notify.log`。
 - 增加workspace第二个可执行文件后，原 `cargo run -- --help` 出现二义性；显式 `default-run = "saddle"` 保持原启动方式。此配置用实际命令检查。
 - 本次真实任务、系统通知watch、Drover/Corral/corral-dispatch源码与用户agent均未操作；插件不会自动登记或启用。发布记录和正式目录见 HANDOFF。
+
+## 交付与发布
+
+- 实现 `ff79aa6`，合并 `425ec55`，空提交收尾 `ae072dc`。本轮分支/worktree已清理，没有创建或关闭agent；T38/T55工作树保持原样。
+- 日常入口 `~/.local/bin/saddle` 的链接保持不变，磁盘程序已更新为经过上述release检查的同一字节产物；SHA-256 `40671d1c538b29e5e0fd77ebc653b338ccef20dd35129bcb640bf66951c02ac4`。旧版备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/drover-plugin-20260930-204507`，旧哈希 `d92ff67177a1d6143264ae57f50e1661694a87a20d6d4db6c228eda3ea9dfc8a`。实际日常入口 `--help` 验证通过，未重启当前窗口。
+- 正式插件目录 `/Users/firegnu/Developer/personal_projs/saddle/plugins/drover/dist/drover-plugin`，含清单与已验证二进制。本机 PATH 没有 `dlog`，打包目录的清单 args 显式沿用用户原配置中的 `/Users/firegnu/Developer/personal_projs/dispatch-log/dlog`；源码清单仍是通用默认值。再次打包覆盖清单时须保留这一参数。
+- 用户下一步：重启 Saddle，Plugins → Manage plugins → Add local，填写上述完整目录，读取并添加，Enable；关闭管理页，从 Plugins 打开 Drover。本轮没有替用户登记启用，也没有操作真实任务或通知偏好。
