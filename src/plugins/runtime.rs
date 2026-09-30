@@ -425,6 +425,12 @@ fn run(
                     ping = Some((next, Instant::now()));
                 }
                 for _ in 0..8 {
+                    // Leave pending inputs in the bounded producer queue while
+                    // the pipe is backed up; transferring them must not overflow
+                    // our own output queue.
+                    if writeq.len() >= wire::MAX_QUEUE {
+                        break;
+                    }
                     let item = {
                         let mut q = queue.lock().unwrap();
                         let item = q.items.pop_front();
@@ -468,7 +474,10 @@ fn run(
                     writeq.push_back(bytes);
                 }
             }
-            if let Some(bytes) = writeq.front() {
+            // Match the input transfer budget. Writing only one message per turn
+            // artificially built up a backlog even when the peer read promptly.
+            for _ in 0..8 {
+                let Some(bytes) = writeq.front() else { break };
                 match input.write(&bytes[writing..]) {
                     Ok(0) => anyhow::bail!("plugin input closed"),
                     Ok(n) => {
@@ -478,7 +487,7 @@ fn run(
                             writing = 0;
                         }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                     Err(e) => return Err(e.into()),
                 }
             }
