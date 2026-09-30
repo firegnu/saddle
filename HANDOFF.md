@@ -4,7 +4,10 @@
 
 ## 当前状态
 
-- 最新交付：用户已认可参考轮廓，本轮仅Clawd动作节奏收尾。外形/尺寸/颜色/位置固定；Idle约走3秒停4秒，起止缓动、边缘先停再折返，停顿偶尔眨眼；Working约2秒轻动手，Waiting约8秒短暂示意，其余静候。没有改业务或状态来源。实现 `61dea22`，收尾 `ba62f9c`，已合并推送、备份更新日常宿主并清理 `clawd-rhythm` 分支/worktree；用户重启观察。主控亲自完成，没有委派或操作真实agent；不再自行扩展吉祥物调整。
+- 最新交付：顶层 `mascot_enabled = true` 默认启用，缺省仍开启；Settings → General → Clawd mascot支持点击、空格/Enter/左右切换，Ctrl-S保存布尔值并立即生效，Esc取消、Ctrl-D恢复默认。关闭只隐藏绘制并暂停计时，未改外形/动作/布局/输入或agent状态。实现 `63a6042`，收尾 `1c74266`，已合并推送、备份更新日常宿主并清理 `mascot-setting` 分支/worktree；用户重启一次加载新版，以后Settings切换无需重启。用户真实配置没有修改。
+- 本轮标准检查 **373 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；隔离release开关主路径1项通过。新增配置/Settings/真实CLI检查覆盖默认、启动false、布尔值保存、取消、恢复默认、即时显示/隐藏、无输入光标、无agent按键和布局不变，有效RED→GREEN。任务/审查 `docs/任务/吉祥物配置开关.md`，Dispatch `cb6c5068d16c4c0bb2b3d82becd6dc26`；日志 `/tmp/saddle-mascot-setting-{all,clippy,red,green,flow,release}.log`。三处Diff演示hash不变；真实配置/插件/agent/队列/服务未操作，未重启用户窗口。主控亲自完成，没有委派。
+
+- 此前交付：用户已认可参考轮廓，本轮仅Clawd动作节奏收尾。外形/尺寸/颜色/位置固定；Idle约走3秒停4秒，起止缓动、边缘先停再折返，停顿偶尔眨眼；Working约2秒轻动手，Waiting约8秒短暂示意，其余静候。没有改业务或状态来源。实现 `61dea22`，收尾 `ba62f9c`，已合并推送、备份更新日常宿主并清理 `clawd-rhythm` 分支/worktree；用户重启观察。主控亲自完成，没有委派或操作真实agent；不再自行扩展吉祥物调整。
 - 本轮标准检查 **370 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；隔离release动画/点击不输入1项通过。新增停顿恢复与动作静候比例检查有效RED→GREEN，轮廓常量及draw函数与认可版逐字一致。任务/审查 `docs/任务/Clawd动画节奏收尾.md`，Dispatch `93771e3c372f464aa4a9c1dbe6d953c7`；日志 `/tmp/saddle-clawd-rhythm-{all,clippy,red,green,release}.log`。三处Diff演示hash不变；真实配置/插件/agent/队列/服务未操作，未重启用户窗口。
 
 - 此前交付：用户提供Claude Code启动截图指出轮廓失真。Clawd改为四分字符块，8列×3行（顶部半行留白），恢复细竖黑眼、矩形身体、低位短臂及四条细腿；走路四腿始终可见，只轻微移动内脚。仍复用tab空白，不改变布局/状态/输入业务。实现 `e56dedb`，收尾 `6b5912e`，已合并推送、备份更新日常宿主并清理 `clawd-reference` 分支/worktree；用户重启后观察。主控亲自完成，没有委派或操作真实agent。
@@ -52,7 +55,8 @@
 
 ## 安装与退役
 
-- 当前Clawd节奏定稿宿主SHA-256 `2e399432f3388f105c8d955eb690ea31dd70655b07ce537faac60a216665c7bc`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-rhythm-20261001-022715/` 含旧版及安装记录。日常入口symlink不变；用户重启后加载，无需重装插件。
+- 当前吉祥物开关版宿主SHA-256 `edc860153666829bf2f1446cce2a2e77a3feea0eff3912b5f2ce03cc7a96a768`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/mascot-setting-20261001-023823/` 含旧版及安装记录。日常入口symlink不变；用户重启加载新版，无需重装插件。
+- 此前Clawd节奏定稿宿主SHA-256 `2e399432f3388f105c8d955eb690ea31dd70655b07ce537faac60a216665c7bc`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-rhythm-20261001-022715/` 含旧版及安装记录。日常入口symlink不变；用户重启后加载，无需重装插件。
 - 此前参考轮廓校正版宿主SHA-256 `e4ef277dd085c8d89953e0dadc116b650db72e7cb5f2de6dd91232fd3ac34494`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-reference-20261001-021626/` 含旧版及安装记录。日常入口symlink不变；用户重启后加载，无需重装插件。
 - 此前7列×2行Clawd宿主SHA-256 `7bdb229ad9799814c6ec37a6c4d95173e0b7d176051aa9cbad4ff1aa68896642`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-tiny-20261001-020657/` 含旧版及安装记录。日常入口symlink不变，用户重启后加载，不需要重装插件。
 - 此前小号Clawd宿主SHA-256 `8ad60e7a9eb6b27a0bd75a35712ccebacef6a882f10ec5c723686bb76edb7b14`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-compact-20261001-015841/` 含更新前程序与安装记录，入口symlink不变。只更新宿主，不需要重新安装插件；等待用户重启观察。
