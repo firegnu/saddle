@@ -328,6 +328,7 @@ fn plugin_management_and_add_dialog_fit_tiny_terminals() {
     let dir = tempfile::tempdir().unwrap();
     let mut manager = saddle::plugins::Manager::open(dir.path().join("plugins.toml"));
     let mut page = saddle::plugins::ui::Page::default();
+    let settings = saddle::settings::Settings::open(dir.path().join("config.toml"), true);
     for adding in [false, true] {
         if adding {
             for _ in 0..4 {
@@ -345,7 +346,9 @@ fn plugin_management_and_add_dialog_fit_tiny_terminals() {
             let mut terminal =
                 ratatui::Terminal::new(ratatui::backend::TestBackend::new(cols, rows)).unwrap();
             terminal
-                .draw(|frame| page.draw(&saddle::theme::Theme::default(), frame, &manager))
+                .draw(|frame| {
+                    page.draw(&saddle::theme::Theme::default(), frame, &manager, &settings)
+                })
                 .unwrap();
         }
     }

@@ -20,6 +20,8 @@ pub struct Page {
     adding: Option<Adding>,
     hits: Vec<(Rect, usize)>,
     rows: Vec<(Rect, usize)>,
+    tabs: Vec<(crate::input::Focus, buttons::Hit)>,
+    pointer: buttons::Pointer,
 }
 struct Adding {
     input: Input,
@@ -31,6 +33,7 @@ pub enum Outcome {
     Stay,
     Back,
     Open(String),
+    Page(crossterm::event::KeyEvent),
 }
 impl Page {
     pub fn select_plugin(&mut self, id: &str, m: &Manager) {
@@ -108,6 +111,21 @@ impl Page {
                 _ => {}
             }
             return Outcome::Stay;
+        }
+        if let Event::Key(key) = &event {
+            self.pointer.cancel();
+            if matches!(key.code, KeyCode::F(1..=5)) {
+                return Outcome::Page(*key);
+            }
+        }
+        if let Event::Mouse(mouse) = &event {
+            let captured = self.pointer.captured();
+            if let Some((_, key)) = self.pointer.event(*mouse, &self.tabs) {
+                return Outcome::Page(key);
+            }
+            if captured || self.pointer.captured() {
+                return Outcome::Stay;
+            }
         }
         self.selected = self
             .selected
@@ -222,21 +240,27 @@ impl Page {
         }
         Outcome::Stay
     }
-    pub fn draw(&mut self, t: &Theme, frame: &mut Frame, m: &Manager) {
+    pub fn draw(
+        &mut self,
+        t: &Theme,
+        frame: &mut Frame,
+        m: &Manager,
+        settings: &crate::settings::Settings,
+    ) {
         // Keep the existing details/footer room; only reserve rows for actual entries.
         let height = if self.adding.is_some() {
             28
         } else {
-            16 + m.registry.entries.len().clamp(1, 12) as u16
+            19 + m.registry.entries.len().clamp(1, 12) as u16
         };
-        let area = crate::theme::centered(frame.area(), 80, height);
+        let area = crate::theme::centered(frame.area(), 76, height);
         frame.render_widget(Clear, area);
         frame.render_widget(
             t.block(
                 if self.adding.is_some() {
                     " Add local plugin "
                 } else {
-                    " Settings · Plugins "
+                    crate::settings::TITLE
                 },
                 true,
             )
@@ -244,8 +268,14 @@ impl Page {
             area,
         );
         let inside = crate::ui::inner(area);
+        let inside = Rect {
+            x: inside.x + 1.min(inside.width),
+            width: inside.width.saturating_sub(2),
+            ..inside
+        };
         self.rows.clear();
         self.hits.clear();
+        self.tabs.clear();
         let choices: Vec<_> = if let Some(add) = &self.adding {
             vec![
                 ("Read manifest", true),
@@ -288,6 +318,13 @@ impl Page {
             add.input
                 .draw(frame, add.field, add.focus == 0, "Plugin directory", t);
         } else {
+            let (body, tabs) =
+                settings.draw_header(t, frame, body, Some(crate::settings::Page::Plugins));
+            self.tabs = tabs
+                .into_iter()
+                .map(|hit| (crate::input::Focus::Agents, hit))
+                .collect();
+            self.pointer.paint(t, frame, &self.tabs);
             let header =
                 "Changes here apply immediately.\n\n  Name                     Enabled  Runtime";
             frame.render_widget(Paragraph::new(header), body);

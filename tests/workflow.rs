@@ -4658,7 +4658,7 @@ fn plugin_split_picker_does_not_start_a_disabled_plugin() {
     h.click("Disable");
     h.see("Disabled");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Settings · Plugins"));
+    h.until(|h| !h.contents().contains("Changes here apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
     let before = h.ctl(&["inspect"])["tabs"].clone();
@@ -4862,7 +4862,7 @@ fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
     h.click("Disable");
     h.see("Disabled");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Settings · Plugins"));
+    h.until(|h| !h.contents().contains("Changes here apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
     h.click("Plugins");
@@ -4975,7 +4975,7 @@ fn plugin_palette_switches_overlays_and_blocks_background_layout_writes() {
     assert_eq!(h.ctl(&["inspect"])["tabs"], original["tabs"]);
     open_fixture_palette(&mut h);
     h.click("Manage plugins");
-    h.see("Settings · Plugins");
+    h.see("Changes here apply immediately.");
     h.see("ID: test.entry");
 }
 
@@ -4987,9 +4987,9 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     h.send(b"\r");
     h.see("Search plugins");
     h.click("Manage plugins");
-    h.see("Settings · Plugins");
+    h.see("Changes here apply immediately.");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Settings · Plugins"));
+    h.until(|h| !h.contents().contains("Changes here apply immediately."));
     h.click("Plugins"); // fixed host entry remains behind Settings; cannot replace it
     for _ in 0..3 {
         h.pump();
@@ -5018,11 +5018,58 @@ fn plugin_manager_details_follow_the_visible_entries() {
     let mut h = plugin_entry_harness("overlay");
     open_fixture_palette(&mut h);
     h.click("Manage plugins");
-    h.see("Settings · Plugins");
+    h.see("Changes here apply immediately.");
     h.see("ID: test.entry");
     let (_, entry_row) = h.locate("Entry fixture", 0).unwrap();
     let (_, detail_row) = h.locate("ID: test.entry", 0).unwrap();
     assert_eq!(detail_row, entry_row + 2, "{}", h.contents());
+}
+
+#[test]
+fn plugin_settings_tabs_switch_directly_and_preserve_the_settings_draft() {
+    let mut h = plugin_entry_harness("overlay");
+    h.send(b",");
+    h.see("Sidebar width");
+    h.send(b"\x1560");
+    h.send(b"\x1b[15~");
+    h.see("Changes here apply immediately.");
+    h.settle();
+    for label in [
+        "General F1",
+        "Colors F2",
+        "Advanced F3",
+        "Diagnostics F4",
+        "Plugins F5",
+    ] {
+        assert!(
+            h.contents().contains(label),
+            "{label} missing: {}",
+            h.contents()
+        );
+    }
+    h.click("Colors F2");
+    h.see("Interface");
+    h.see("Preview");
+    h.click("Plugins F5");
+    h.see("Changes here apply immediately.");
+    h.send(b"\x1bOQ"); // F2
+    h.see("Interface");
+    h.send(b"\x1b[15~");
+    h.see("Changes here apply immediately.");
+    h.click("Advanced F3");
+    h.see("corral command");
+    h.send(b"\x1b[15~");
+    h.see("Changes here apply immediately.");
+    h.click("Diagnostics F4");
+    h.see("Copy summary c");
+    h.send(b"\x1b[15~");
+    h.see("Changes here apply immediately.");
+    h.click("General F1");
+    h.see("Sidebar width");
+    h.see("60");
+    h.send(b"\x13");
+    h.see("Settings saved");
+    assert!(h.log("config.toml").contains("left_width = 60"));
 }
 
 #[test]
@@ -5033,7 +5080,7 @@ fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings
     h.settle();
     assert!(!h.screen.screen().hide_cursor());
     h.send(b"\x1b[15~"); // F5 opens plugin management over the Settings draft.
-    h.see("Settings · Plugins");
+    h.see("Changes here apply immediately.");
     h.see("Input ▸ Plugin settings");
     h.settle();
     assert!(h.screen.screen().hide_cursor(), "{}", h.contents());
@@ -5044,7 +5091,7 @@ fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings
     h.send(b"/tmp/plugin-input-check");
     h.see("/tmp/plugin-input-check");
     h.send(b"\x1b");
-    h.see("Settings · Plugins");
+    h.see("Changes here apply immediately.");
     h.settle();
     assert!(h.screen.screen().hide_cursor());
     h.send(b"\x1b");
@@ -5055,7 +5102,7 @@ fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings
     h.see("Input ▸ Agents");
     open_fixture_palette(&mut h);
     h.click("Manage plugins");
-    h.see("Settings · Plugins");
+    h.see("Changes here apply immediately.");
     h.settle();
     assert!(h.screen.screen().hide_cursor());
 }

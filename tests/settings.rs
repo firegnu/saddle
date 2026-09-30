@@ -231,6 +231,35 @@ fn every_page_and_notice_draws_in_tiny_and_normal_windows() {
 }
 
 #[test]
+fn colors_preview_groups_examples_and_separates_them_from_real_controls() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = Settings::open(dir.path().join("config.toml"), true);
+    press(&mut settings, KeyCode::F(2));
+    for width in [76, 140] {
+        let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
+        terminal
+            .draw(|frame| {
+                settings.draw(&saddle::theme::Theme::default(), frame);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let rows: Vec<String> = (0..40)
+            .map(|y| (0..width).map(|x| buffer[(x, y)].symbol()).collect())
+            .collect();
+        let preview = rows
+            .iter()
+            .position(|row| row.contains("Preview · unsaved colors"))
+            .unwrap();
+        assert!(rows[preview + 1].contains("Status  ● Working   ○ Idle   ? Waiting   ! Error"));
+        assert!(rows[preview + 2].contains("Text    Normal   Muted   Code   Heading"));
+        assert!(rows[preview + 3].trim_matches(['┃', ' ']).is_empty());
+        assert!(rows[preview + 4].contains("Save Ctrl-S"));
+        assert!(!rows[preview..preview + 4].join("\n").contains("‹Save›"));
+    }
+}
+
+#[test]
 fn saving_through_a_symlink_keeps_the_link_and_the_file_mode() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir().unwrap();

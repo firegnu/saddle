@@ -371,8 +371,9 @@ impl App {
                 );
                 self.draw_plugin_overlay(frame, panes);
                 self.draw_closing(frame);
-                if let Some(page) = &mut self.plugin_page {
-                    page.draw(&self.config.colors, frame, &self.plugins);
+                if let (Some(page), Some(settings)) = (&mut self.plugin_page, &self.settings) {
+                    page.draw(&self.config.colors, frame, &self.plugins, settings);
+                    frame.render_widget(ratatui::widgets::Clear, panes.status);
                     frame.render_widget(
                         ratatui::widgets::Paragraph::new(" Input ▸ Plugin settings · Esc Back")
                             .style(self.config.colors.base()),
@@ -945,6 +946,15 @@ impl App {
             match outcome {
                 crate::plugins::ui::Outcome::Stay => {}
                 crate::plugins::ui::Outcome::Back => self.plugin_page = None,
+                crate::plugins::ui::Outcome::Page(key) => {
+                    if key.code != KeyCode::F(5) {
+                        self.plugin_page = None;
+                        if let Some(settings) = &mut self.settings {
+                            let outcome = settings.key(key);
+                            self.settings_outcome(outcome);
+                        }
+                    }
+                }
                 crate::plugins::ui::Outcome::Open(id) => {
                     self.plugin_page = None;
                     self.parked_settings = self.settings.take();

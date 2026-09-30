@@ -577,33 +577,10 @@ impl Settings {
         if body.is_empty() {
             return hits;
         }
-        // The file path, clipped at the left so its name stays visible.
-        let path = shown(&self.path);
-        let room = usize::from(body.width).saturating_sub(8);
-        let path = if path.width() > room {
-            let tail: String = path
-                .chars()
-                .rev()
-                .scan(1, |w, c| {
-                    *w += c.to_string().width();
-                    (*w <= room).then_some(c)
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .collect();
-            format!("…{tail}")
-        } else {
-            path
-        };
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("Config: ", Style::default().fg(t.muted)),
-                Span::styled(path, Style::default().fg(t.text)),
-            ])),
-            Rect { height: 1, ..body },
-        );
-        shrink_top(&mut body, 1);
+        let show_tabs = diagnostics || (!self.conflict && self.broken.is_none());
+        let (rest, tabs) = self.draw_header(t, frame, body, show_tabs.then_some(self.page));
+        body = rest;
+        hits.extend(tabs);
         // The message line sits above the buttons.
         if body.height > 1 && !self.message.is_empty() {
             frame.render_widget(
@@ -646,35 +623,6 @@ impl Settings {
             );
             return hits;
         }
-        // Compact tabs keep all five pages together at the normal dialog width.
-        let tabs: Vec<_> = PAGES
-            .iter()
-            .map(|&(page, label, n)| {
-                let button = Button::new(label, KeyCode::F(n), true);
-                if page == self.page {
-                    button.primary()
-                } else {
-                    button
-                }
-            })
-            .collect();
-        let (rest, tab_hits) = buttons::draw_compact_top(t, frame, body, &tabs);
-        for hit in &tab_hits {
-            let current = PAGES
-                .iter()
-                .any(|&(page, _, n)| page == self.page && hit.key.code == KeyCode::F(n));
-            frame.buffer_mut().set_style(
-                hit.area,
-                if current {
-                    Style::default().add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(t.muted)
-                },
-            );
-        }
-        hits.extend(tab_hits);
-        body = rest;
-        shrink_top(&mut body, 1);
         if diagnostics {
             self.draw_report(t, frame, body);
             return hits;
@@ -682,7 +630,7 @@ impl Settings {
         let preview = self.theme();
         // The Colors page keeps a small preview under its list when there is room.
         if self.page == Page::Colors && body.height >= 12 {
-            let height = 5;
+            let height = 4;
             draw_preview(
                 t,
                 &preview,
@@ -693,6 +641,78 @@ impl Settings {
         }
         self.draw_fields(t, &preview, frame, body);
         hits
+    }
+
+    /// Shared Settings path and page navigation; no editable fields or input cursor.
+    pub(crate) fn draw_header(
+        &self,
+        t: &Theme,
+        frame: &mut Frame,
+        mut body: Rect,
+        active: Option<Page>,
+    ) -> (Rect, Vec<buttons::Hit>) {
+        if body.is_empty() {
+            return (body, Vec::new());
+        }
+        // The file path, clipped at the left so its name stays visible.
+        let path = shown(&self.path);
+        let room = usize::from(body.width).saturating_sub(8);
+        let path = if path.width() > room {
+            let tail: String = path
+                .chars()
+                .rev()
+                .scan(1, |w, c| {
+                    *w += c.to_string().width();
+                    (*w <= room).then_some(c)
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            format!("…{tail}")
+        } else {
+            path
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("Config: ", Style::default().fg(t.muted)),
+                Span::styled(path, Style::default().fg(t.text)),
+            ])),
+            Rect { height: 1, ..body },
+        );
+        shrink_top(&mut body, 1);
+        let Some(active) = active else {
+            return (body, Vec::new());
+        };
+        // Compact tabs keep all five pages together at the normal dialog width.
+        let tabs: Vec<_> = PAGES
+            .iter()
+            .map(|&(page, label, n)| {
+                let button = Button::new(label, KeyCode::F(n), true);
+                if page == active {
+                    button.primary()
+                } else {
+                    button
+                }
+            })
+            .collect();
+        let (rest, tab_hits) = buttons::draw_compact_top(t, frame, body, &tabs);
+        for hit in &tab_hits {
+            let current = PAGES
+                .iter()
+                .any(|&(page, _, n)| page == active && hit.key.code == KeyCode::F(n));
+            frame.buffer_mut().set_style(
+                hit.area,
+                if current {
+                    Style::default().add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(t.muted)
+                },
+            );
+        }
+        body = rest;
+        shrink_top(&mut body, 1);
+        (body, tab_hits)
     }
 
     fn draw_fields(&mut self, t: &Theme, preview: &Theme, frame: &mut Frame, area: Rect) {
@@ -899,82 +919,33 @@ fn shrink_top(area: &mut Rect, rows: u16) {
     area.height -= rows;
 }
 
-/// A few sample lines in the drafted colors: the Agents panel, a selected agent, a dialog and
-/// the shared status colors.
+/// Two readable examples, separate from the real Save/Cancel controls.
 fn draw_preview(t: &Theme, p: &Theme, frame: &mut Frame, area: Rect) {
     let s = |text: &'static str, fg: Color| Span::styled(text, Style::default().fg(fg));
     let lines = [
         (
             p.agents_bg,
             vec![
-                Span::styled(
-                    " Agents · 3 ",
-                    Style::default()
-                        .fg(p.agents_text)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                s("dev/ ", p.agents_accent),
-                s("◓ working ", p.agents_blue),
-                s("○ idle ", p.agents_green),
-                s("? waiting ", p.agents_yellow),
-                s("! error ", p.agents_red),
-                s("↑0", p.agents_faint),
-            ],
-        ),
-        (
-            p.agent_selected,
-            vec![
-                s(" ┃ ", p.agents_accent),
-                s("main ", p.agents_text),
-                s("✳ claude ", p.claude),
-                s(">_ codex ", p.codex),
-                s("pi ", p.pi),
-                s("omp ", p.omp),
-                s("⎇ main ", p.agents_branch),
-                s("…/src ", p.agents_dim),
-                s("ATT 0", p.agents_dimmer),
-            ],
-        ),
-        (
-            p.overlay,
-            vec![
-                Span::styled(" Input ▸ ", Style::default().fg(p.input_text).bg(p.focus)),
-                s(" Text ", p.text),
-                s("Bright ", p.bright),
-                s("Muted ", p.muted),
-                s("Dim ", p.dim),
-                s("◉ ", p.connected),
-                s("● ", p.working),
-                s("• ", p.unread),
-                s("‹Save› ", p.focus),
-                s("‹Stop›", p.danger),
+                s("Status  ", t.muted),
+                s("● Working   ", p.agents_blue),
+                s("○ Idle   ", p.agents_green),
+                s("? Waiting   ", p.agents_yellow),
+                s("! Error", p.agents_red),
             ],
         ),
         (
             p.bg,
             vec![
-                s(" Running ", p.agent_working),
-                s("Done ", p.agent_idle),
-                s("Awaiting ", p.agent_blocked),
-                s("Dropped ", p.agent_stalled),
-                s("Failed ", p.agent_error),
-                s("Pending ", p.agent_starting),
-                s("`code` ", p.reply_code),
-                s("# Heading", p.reply_heading),
+                s("Text    ", t.muted),
+                s("Normal   ", p.text),
+                s("Muted   ", p.muted),
+                s("Code   ", p.reply_code),
+                s("Heading", p.reply_heading),
             ],
         ),
     ];
     frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                "Preview",
-                Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "  unsaved colors; the rest of saddle changes on Save",
-                Style::default().fg(t.muted),
-            ),
-        ])),
+        Paragraph::new("Preview · unsaved colors").style(Style::default().fg(t.muted)),
         Rect { height: 1, ..area },
     );
     for (offset, (background, spans)) in lines.into_iter().enumerate() {
