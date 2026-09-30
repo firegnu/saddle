@@ -2,13 +2,24 @@
 use crate::agents::Status;
 use ratatui::{Frame, layout::Rect, style::Color};
 
-pub const HEIGHT: u16 = 2;
-const WIDTH: usize = 7;
+pub const HEIGHT: u16 = 3;
+const WIDTH: usize = 8;
 pub const MIN_WIDTH: u16 = WIDTH as u16 + 4;
 // Reference: Claude Code's Clawd sticker. Pixel RGB, not the terminal's ANSI orange.
 const CLAY: Color = Color::Rgb(0xd9, 0x77, 0x57);
 const EYES: Color = Color::Rgb(0, 0, 0);
-const REST: [&str; 4] = [" ##### ", "#o###o#", "#######", "# # # #"];
+// Two horizontal and two vertical subpixels per terminal cell.
+const REST: [&str; 6] = [
+    "                ",
+    "  ############  ",
+    "  ##o######o##  ",
+    "################",
+    "  ############  ",
+    "  # #      # #  ",
+];
+const QUADRANTS: [&str; 16] = [
+    " ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█",
+];
 
 pub struct Mascot {
     target: Option<(String, Option<String>)>,
@@ -99,20 +110,25 @@ impl Mascot {
         let x = area.x + 1 + self.x as u16;
         let y = area.bottom() - HEIGHT;
         for (row, pair) in pixels.chunks_exact(2).enumerate() {
-            for (col, (&top, &bottom)) in pair[0].iter().zip(&pair[1]).enumerate() {
-                if top == b' ' && bottom == b' ' {
+            for col in 0..WIDTH {
+                let samples = [
+                    pair[0][col * 2],
+                    pair[0][col * 2 + 1],
+                    pair[1][col * 2],
+                    pair[1][col * 2 + 1],
+                ];
+                if samples.iter().all(|&p| p == b' ') {
                     continue;
                 }
-                let color = |p| if p == b'o' { EYES } else { self.clay };
+                let mask = samples
+                    .iter()
+                    .enumerate()
+                    .fold(0, |mask, (bit, &p)| mask | (usize::from(p == b'#') << bit));
                 let cell = &mut frame.buffer_mut()[(x + col as u16, y + row as u16)];
-                if top == b' ' {
-                    cell.set_symbol("▄").set_fg(color(bottom));
-                } else if bottom == b' ' {
-                    cell.set_symbol("▀").set_fg(color(top));
-                } else {
-                    cell.set_symbol("▀")
-                        .set_fg(color(top))
-                        .set_bg(color(bottom));
+                cell.set_symbol(QUADRANTS[mask]).set_fg(self.clay);
+                // Eye cells contain only clay and black; other cells retain the surface background.
+                if samples.contains(&b'o') {
+                    cell.set_bg(EYES);
                 }
             }
         }
@@ -129,41 +145,39 @@ impl Mascot {
     }
 }
 
-fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH]; 4] {
+fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH * 2]; 6] {
     let mut p = REST.map(|row| row.as_bytes().try_into().unwrap());
     match status {
         Status::Idle => {
-            // Lift alternate short feet vertically; never splay them sideways.
-            // The last second of each stroll is a pause with all feet grounded.
-            if frame % 36 < 30 {
-                p[3] = if frame % 4 < 2 {
-                    *b"#   #  "
-                } else {
-                    *b"  #   #"
-                };
+            // A half-cell shuffle of the inner feet; all four thin legs stay visible.
+            if frame % 36 < 30 && frame % 4 >= 2 {
+                p[5] = *b"  #  #    #  #  ";
             }
             if frame % 36 == 33 {
-                p[1][1] = b'#';
-                p[1][5] = b'#';
+                p[2][4] = b'#';
+                p[2][11] = b'#';
             }
         }
         Status::Working => {
-            let arm = if frame.is_multiple_of(2) { 0 } else { 6 };
-            p[0][arm] = b'#';
-            p[1][arm] = b' ';
+            let arm = if frame.is_multiple_of(2) { 0 } else { 14 };
+            p[2][arm..arm + 2].fill(b'#');
+            p[3][arm..arm + 2].fill(b' ');
         }
         Status::Waiting => {
-            p[0][6] = if frame % 8 < 4 { b'#' } else { b' ' };
-            p[1][6] = b'#';
+            if frame % 8 < 4 {
+                p[2][14..16].fill(b'#');
+                p[3][14..16].fill(b' ');
+            }
         }
         Status::Starting => {
             if frame % 8 < 4 {
-                p[0][0] = b'#';
+                p[2][0..2].fill(b'#');
+                p[3][0..2].fill(b' ');
             }
         }
         Status::Exited => {
-            p[1][1] = b'#';
-            p[1][5] = b'#';
+            p[2][4] = b'#';
+            p[2][11] = b'#';
         }
         _ => {}
     }
@@ -207,7 +221,7 @@ mod tests {
     fn frames_keep_clawd_eyes_silhouette_and_four_legs() {
         assert_eq!(
             pixels(Status::Unknown, 0, true),
-            REST.map(|r| <[u8; WIDTH]>::try_from(r.as_bytes()).unwrap())
+            REST.map(|r| <[u8; WIDTH * 2]>::try_from(r.as_bytes()).unwrap())
         );
         for status in [
             Status::Idle,
@@ -220,20 +234,29 @@ mod tests {
         ] {
             for n in 0..16 {
                 let p = pixels(status, n, true);
-                assert_eq!(p[1][1], b'o');
-                assert_eq!(p[1][5], b'o');
-                assert_eq!(
-                    p[3].iter().filter(|&&v| v == b'#').count(),
-                    if status == Status::Idle { 2 } else { 4 }
+                assert_eq!(p[2][4], b'o');
+                assert_eq!(p[2][11], b'o');
+                assert_eq!(p[5].iter().filter(|&&v| v == b'#').count(), 4);
+                assert!(
+                    !p[5].windows(2).any(|w| w == b"##"),
+                    "legs stay thin and separate"
                 );
-                assert!([1, 3, 5].iter().all(|&x| p[3][x] == b' '));
+                for pair in p.chunks_exact(2) {
+                    for x in (0..WIDTH * 2).step_by(2) {
+                        let samples = [pair[0][x], pair[0][x + 1], pair[1][x], pair[1][x + 1]];
+                        assert!(
+                            !(samples.contains(&b'o') && samples.contains(&b' ')),
+                            "each cell needs at most two colors"
+                        );
+                    }
+                }
                 assert!(p.iter().flatten().all(|&v| [b' ', b'#', b'o'].contains(&v)));
             }
         }
-        assert_eq!(pixels(Status::Idle, 30, true)[3], *b"# # # #");
+        assert_eq!(pixels(Status::Idle, 30, true)[5], *b"  # #      # #  ");
         assert_eq!(
-            pixels(Status::Idle, 0, true)[..3],
-            pixels(Status::Idle, 2, true)[..3]
+            pixels(Status::Idle, 0, true)[..5],
+            pixels(Status::Idle, 2, true)[..5]
         );
         assert_ne!(pixels(Status::Idle, 0, true), pixels(Status::Idle, 2, true));
         assert_ne!(
