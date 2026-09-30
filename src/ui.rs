@@ -206,7 +206,7 @@ pub fn draw_workspace(
         );
         if let Some(mascot) = mascot {
             if let (Some(area), Some(name)) = (
-                terminals.mascot_area(view.panes.viewer),
+                terminals.mascot_area(view.panes.viewer, &hits.terminal),
                 terminals.mascot_target(),
             ) {
                 let agent = panel.agents.iter().find(|a| a.name == name);

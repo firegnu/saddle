@@ -675,7 +675,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(44, 160);
-    h.event("size p/b 106x34"); // Four rows belong to the mascot, outside the PTY.
+    h.event("size p/b 106x38"); // Decoration does not consume terminal rows.
     // Agent disappearance returns to the prompt, without selecting another viewer.
     std::fs::write(
         h.dir.path().join("agents.json"),
@@ -2071,6 +2071,8 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     h.click_in("Open content below", "p/a");
     h.until(|h| h.contents().matches(" ×│").count() == 1);
     h.see("Agent · p/a");
+    h.see("Input ▸ p/a");
+    h.see("INPUT RECEIVED");
     let a = h.locate("Agent · p/a", 0).unwrap();
     let b = h.locate("Agent · p/b", 0).unwrap();
     assert!(a.0 == b.0 && a.1 > b.1, "p/a must move below p/b");
@@ -5446,7 +5448,7 @@ fn clawd_animates_in_its_own_band_and_never_sends_input() {
     h.see("p/a READY");
     let left = |h: &Harness| {
         (52..140).find(|&x| {
-            let c = h.screen.screen().cell(3, x).unwrap();
+            let c = h.screen.screen().cell(0, x).unwrap();
             c.fgcolor() == vt100::Color::Rgb(217, 119, 87) && c.contents() == "▀"
         })
     };
@@ -5455,15 +5457,16 @@ fn clawd_animates_in_its_own_band_and_never_sends_input() {
     h.until(|h| left(h).is_some_and(|x| x != start));
     assert!(h.input_hex("p/a").is_empty());
     // Click the decoration, then use a real key as an acknowledgement barrier.
-    h.send(b"\x1b[<0;56;5M\x1b[<0;56;5mZ");
+    let x = left(&h).unwrap() + 1;
+    h.send(format!("\x1b[<0;{x};2M\x1b[<0;{x};2mZ").as_bytes());
     h.event("input p/a 5a");
     assert_eq!(h.input_hex("p/a"), "5a");
     let mut agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
     agents["p/a"] = serde_json::json!("blocked");
     std::fs::write(h.dir.path().join("agents.json"), agents.to_string()).unwrap();
-    h.until(|h| (52..140).any(|x| h.screen.screen().cell(3, x).unwrap().contents() == "?"));
+    h.until(|h| (52..140).any(|x| h.screen.screen().cell(0, x).unwrap().contents() == "?"));
     let (_, title_y) = h.locate_from("Agent · p/a", 0, 52).unwrap();
-    assert_eq!(title_y, 7, "tab strip + four mascot rows");
+    assert_eq!(title_y, 3, "mascot must not displace the terminal");
     assert!(left(&h).is_some(), "waiting keeps Clawd orange");
     h.quit();
     assert!(!h.log("events").contains("stop "));

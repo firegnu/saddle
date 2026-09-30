@@ -844,17 +844,17 @@ fn history_and_copy_stay_in_normal_split_and_narrow_pane_footers() {
 }
 
 #[test]
-fn agent_mascot_band_reserves_space_without_moving_tabs_or_pane_hits() {
+fn agent_mascot_never_reserves_terminal_space_or_moves_tabs() {
     use saddle::terminals::{self, Control};
     let mut panes = Terminals::new("unused-fake-corral".into());
     let id = panes.active_pane().id;
     panes.get_mut(id).unwrap().viewer.showing = Some("demo/main".into());
     let area = Rect::new(0, 0, 80, 30);
-    let expected = Rect::new(0, 7, 80, 23);
+    let expected = Rect::new(0, 3, 80, 27);
     assert_eq!(
         panes.rects(area),
         vec![(id, expected)],
-        "four mascot rows must be outside the PTY"
+        "mascot must not reduce PTY space"
     );
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal
@@ -872,12 +872,30 @@ fn agent_mascot_band_reserves_space_without_moving_tabs_or_pane_hits() {
                 hits.iter()
                     .any(|(h, c)| matches!(c, Control::NewTab) && h.area.y == 0)
             );
-            assert!(
-                hits.iter()
-                    .all(|(h, _)| !h.area.intersects(Rect::new(0, 3, 80, 4)))
-            );
+            let mascot = panes.mascot_area(area, &hits).unwrap();
+            assert_eq!(mascot.y, 0);
+            assert_eq!(mascot.height, 3);
+            assert!(hits.iter().all(|(h, _)| !h.area.intersects(mascot)));
         })
         .unwrap();
     panes.get_mut(id).unwrap().viewer.showing = None;
     assert_eq!(panes.rects(area), vec![(id, Rect::new(0, 3, 80, 27))]);
+}
+
+#[test]
+fn crowded_tabs_hide_mascot_without_changing_tab_controls_or_geometry() {
+    use saddle::terminals::{self, Control};
+    let mut panes = Terminals::new("unused-fake-corral".into());
+    let id = panes.active_pane().id;
+    panes.get_mut(id).unwrap().viewer.showing = Some("project/very-long-agent-name".into());
+    let area = Rect::new(0, 0, 40, 20);
+    let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+    terminal
+        .draw(|f| {
+            let hits = terminals::draw(&Theme::default(), f, area, &panes, true, &[]);
+            assert!(panes.mascot_area(area, &hits).is_none());
+            assert!(hits.iter().any(|(_, c)| matches!(c, Control::Tab(_))));
+        })
+        .unwrap();
+    assert_eq!(panes.rects(area), vec![(id, Rect::new(0, 3, 40, 17))]);
 }

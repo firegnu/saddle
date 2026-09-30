@@ -2,20 +2,19 @@
 use crate::agents::Status;
 use ratatui::{Frame, layout::Rect, style::Color};
 
-pub const HEIGHT: u16 = 4;
-const WIDTH: usize = 11;
+pub const HEIGHT: u16 = 3;
+const WIDTH: usize = 9;
+pub const MIN_WIDTH: u16 = WIDTH as u16 + 4;
 // Reference: Claude Code's Clawd sticker. Pixel RGB, not the terminal's ANSI orange.
 const CLAY: Color = Color::Rgb(0xd9, 0x77, 0x57);
 const EYES: Color = Color::Rgb(0, 0, 0);
-const REST: [&str; 8] = [
-    " ######### ",
-    " ######### ",
-    "##o#####o##",
-    "###########",
-    " ######### ",
-    " ######### ",
-    " # #   # # ",
-    " # #   # # ",
+const REST: [&str; 6] = [
+    " ####### ",
+    "##o###o##",
+    " ####### ",
+    " ####### ",
+    " # # # # ",
+    " # # # # ",
 ];
 
 pub struct Mascot {
@@ -97,13 +96,13 @@ impl Mascot {
         now: f64,
     ) {
         let area = area.intersection(frame.area());
-        if area.width < WIDTH as u16 + 4 || area.height < HEIGHT {
+        if area.width < MIN_WIDTH || area.height < HEIGHT {
             self.hide();
             return;
         }
         let limit = f64::from(area.width - WIDTH as u16 - 4);
         self.advance(target, status, now, limit);
-        let pixels = pixels(status, (self.phase * 8.0) as u64, self.right);
+        let pixels = pixels(status, (self.phase * 6.0) as u64, self.right);
         let x = area.x + 1 + self.x as u16;
         for (row, pair) in pixels.chunks_exact(2).enumerate() {
             for (col, (&top, &bottom)) in pair[0].iter().zip(&pair[1]).enumerate() {
@@ -136,40 +135,40 @@ impl Mascot {
     }
 }
 
-fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH]; 8] {
+fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH]; 6] {
     let mut p = REST.map(|row| row.as_bytes().try_into().unwrap());
     match status {
         Status::Idle => {
             // Alternate the feet, keeping all four upper legs visible.
             if frame % 4 >= 2 {
-                p[7] = *b"  # # # #  ";
+                p[5] = *b"# #   # #";
             }
             // Brief blink during the pause.
             if frame % 48 == 43 {
-                p[2][2] = b'#';
-                p[2][8] = b'#';
+                p[1][2] = b'#';
+                p[1][6] = b'#';
             }
         }
         Status::Working => {
-            let arm = if frame.is_multiple_of(2) { 0 } else { 10 };
-            p[1][arm] = b'#';
-            p[3][arm] = b' ';
+            let arm = if frame.is_multiple_of(2) { 0 } else { 8 };
+            p[0][arm] = b'#';
+            p[1][arm] = b' ';
         }
         Status::Waiting => {
             // A small wave beside the question mark; no flashing body color.
-            p[0][10] = if frame % 8 < 4 { b'#' } else { b' ' };
-            p[1][10] = b'#';
-            p[3][10] = b' ';
+            p[0][8] = if frame % 8 < 4 { b'#' } else { b' ' };
+            p[1][8] = b'#';
+            p[2][8] = b' ';
         }
         Status::Starting => {
             if frame % 8 < 4 {
-                p[1][0] = b'#';
-                p[1][10] = b'#';
+                p[0][0] = b'#';
+                p[1][8] = b'#';
             }
         }
         Status::Exited => {
-            p[2][2] = b'#';
-            p[2][8] = b'#';
+            p[1][2] = b'#';
+            p[1][6] = b'#';
         }
         _ => {}
     }
@@ -226,10 +225,10 @@ mod tests {
         ] {
             for n in 0..16 {
                 let p = pixels(status, n, true);
-                assert_eq!(p[2][2], b'o');
-                assert_eq!(p[2][8], b'o');
-                assert_eq!(p[6].iter().filter(|&&v| v == b'#').count(), 4);
-                assert_eq!(p[7].iter().filter(|&&v| v == b'#').count(), 4);
+                assert_eq!(p[1][2], b'o');
+                assert_eq!(p[1][6], b'o');
+                assert_eq!(p[4].iter().filter(|&&v| v == b'#').count(), 4);
+                assert_eq!(p[5].iter().filter(|&&v| v == b'#').count(), 4);
                 assert!(p.iter().flatten().all(|&v| [b' ', b'#', b'o'].contains(&v)));
             }
         }

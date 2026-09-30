@@ -698,14 +698,25 @@ impl Terminals {
         }
         pane.viewer.showing.as_deref().or(pane.viewer.target())
     }
-    pub fn mascot_area(&self, area: Rect) -> Option<Rect> {
-        (self.mascot_target().is_some() && area.width >= 24 && area.height >= 18)
-            .then(|| Rect::new(area.x, area.y + STRIP, area.width, crate::mascot::HEIGHT))
+    pub fn mascot_area(&self, area: Rect, hits: &[Hit]) -> Option<Rect> {
+        if self.mascot_target().is_none() || area.height < STRIP {
+            return None;
+        }
+        // Use only genuinely unused tab-strip space; never squeeze or cover a tab.
+        let right = hits
+            .iter()
+            .filter(|(hit, _)| hit.area.y < area.y + STRIP)
+            .map(|(hit, _)| hit.area.right())
+            .max()
+            .unwrap_or(area.x);
+        let x = right.saturating_add(2).min(area.right());
+        let width = area.right().saturating_sub(x);
+        (width >= crate::mascot::MIN_WIDTH).then(|| Rect::new(x, area.y, width, STRIP))
     }
     pub fn rects(&self, area: Rect) -> Vec<(u64, Rect)> {
         let mut result = Vec::new();
-        // Drawing, PTY sizing and hit testing share the same decoration inset.
-        let inset = STRIP + self.mascot_area(area).map_or(0, |r| r.height);
+        // The mascot uses spare tab-strip space and never changes pane geometry.
+        let inset = STRIP;
         let area = Rect::new(
             area.x,
             area.y + area.height.min(inset),

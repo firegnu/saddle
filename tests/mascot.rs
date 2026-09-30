@@ -55,7 +55,7 @@ fn render(
 }
 fn band_text(buffer: &Buffer) -> String {
     let a = saddle::layout::Panes::new(buffer.area, &Default::default()).viewer;
-    (3..7.min(buffer.area.height))
+    (0..3.min(buffer.area.height))
         .flat_map(|y| (a.x..a.right()).map(move |x| buffer[(x, y)].symbol()))
         .collect()
 }
@@ -92,28 +92,29 @@ fn mascot_follows_displayed_pane_and_existing_waiting_error_states() {
     assert!(!band_text(&b).contains('?'));
     let viewer = saddle::layout::Panes::new(b.area, &Default::default()).viewer;
     assert!(
-        (3..7)
+        (0..3)
             .any(|y| (viewer.x..viewer.right()).any(|x| b[(x, y)].fg == Color::Rgb(217, 119, 87)))
     );
-    assert!(
-        (3..7).any(|y| (viewer.x..viewer.right()).any(|x| b[(x, y)].fg == Color::Rgb(0, 0, 0)))
-    );
+    assert!((0..3).any(|y| {
+        (viewer.x..viewer.right())
+            .any(|x| b[(x, y)].fg == Color::Rgb(0, 0, 0) || b[(x, y)].bg == Color::Rgb(0, 0, 0))
+    }));
     panes.focus(first);
     assert!(band_text(&render(&panes, &mut panel, &mut m, 140, 40, 100.2)).contains('?'));
     panel.agents[0].error = Some("unavailable".into());
     assert!(band_text(&render(&panes, &mut panel, &mut m, 140, 40, 100.4)).contains('!'));
     let tab = panes.new_tab();
-    assert!(panes.mascot_area(viewer).is_none());
+    assert!(panes.mascot_area(viewer, &[]).is_none());
     panes.get_mut(tab).unwrap().viewer.remembered = saddle::layout_state::Content::Plugin {
         id: "test.plugin".into(),
     };
-    assert!(panes.mascot_area(viewer).is_none());
+    assert!(panes.mascot_area(viewer, &[]).is_none());
     panes.focus(first);
     for width in 0..28 {
         for height in 0..20 {
             render(&panes, &mut panel, &mut m, width, height, 100.5);
         }
     }
-    assert!(panes.mascot_area(Rect::new(0, 0, 23, 40)).is_none());
-    assert!(panes.mascot_area(Rect::new(0, 0, 80, 17)).is_none());
+    assert!(panes.mascot_area(Rect::new(0, 0, 12, 40), &[]).is_none());
+    assert!(panes.mascot_area(Rect::new(0, 0, 80, 2), &[]).is_none());
 }
