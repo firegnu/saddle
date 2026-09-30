@@ -4662,6 +4662,10 @@ fn plugin_entry_opens_overlay_without_changing_layout_and_keeps_process() {
     open_fixture_palette(&mut h);
     h.send(b"\r");
     h.see("Clicks: 0");
+    assert!(
+        !h.contents().contains("Close pane"),
+        "underlying pane chrome must be covered"
+    );
     let inspect = h.ctl(&["inspect"]);
     assert_eq!(inspect["focus"], "plugin_overlay");
     assert_eq!(inspect["overlay"]["plugin_id"], "test.entry");

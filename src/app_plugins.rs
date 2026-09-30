@@ -228,15 +228,25 @@ impl App {
         } else {
             "Esc Close"
         };
-        frame.render_widget(ratatui::widgets::Clear, o.area);
+        // The host owns the overlay frame. Hide the underlying terminal chrome
+        // instead of leaving a second frame visible around every plugin.
+        frame.render_widget(ratatui::widgets::Clear, panes.viewer);
+        frame
+            .buffer_mut()
+            .set_style(panes.viewer, self.config.colors.base());
         frame.render_widget(
             self.config
                 .colors
                 .block(format!(" {} · {escape} ", o.panel.name), true),
             o.area,
         );
-        o.panel
-            .draw(frame, ui::inner(o.area), self.plugin_palette.is_none());
+        let mut content = o.panel.clone();
+        if content.interactive {
+            // Transient input feedback belongs to host chrome, not over the
+            // plugin's first content row. Failure placeholders remain in place.
+            content.note.clear();
+        }
+        content.draw(frame, ui::inner(o.area), self.plugin_palette.is_none());
         if o.area.width >= 3 && o.area.height > 0 {
             frame.render_widget(
                 ratatui::widgets::Paragraph::new("×"),
@@ -244,10 +254,15 @@ impl App {
             );
         }
         frame.render_widget(ratatui::widgets::Clear, panes.status);
+        let notices = [o.notice.as_str(), o.panel.note.as_str()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
         frame.render_widget(
             ratatui::widgets::Paragraph::new(format!(
                 " Input ▸ {} · {escape} · Ctrl-] Agents {}",
-                o.panel.name, o.notice
+                o.panel.name, notices
             ))
             .style(self.config.colors.base()),
             panes.status,
