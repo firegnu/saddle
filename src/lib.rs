@@ -30,3 +30,5 @@ pub mod ui;
 pub mod viewer;
 
 pub mod theme;
+
+pub mod plugins;

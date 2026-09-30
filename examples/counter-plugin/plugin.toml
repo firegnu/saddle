@@ -1,0 +1,8 @@
+manifest_version = 1
+id = "demo.counter"
+name = "Counter demo"
+version = "0.1.0"
+protocol_major = 1
+executable = "bin/saddle-counter"
+args = []
+required_capabilities = ["panel.v1", "notify.v1"]

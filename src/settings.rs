@@ -35,12 +35,14 @@ pub enum Page {
     Colors,
     Advanced,
     Diagnostics,
+    Plugins,
 }
-const PAGES: [(Page, &str, u8); 4] = [
+const PAGES: [(Page, &str, u8); 5] = [
     (Page::General, "General F1", 1),
     (Page::Colors, "Colors F2", 2),
     (Page::Advanced, "Advanced F3", 3),
     (Page::Diagnostics, "Diagnostics F4", 4),
+    (Page::Plugins, "Plugins F5", 5),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -170,6 +172,7 @@ fn color(theme: &Theme, name: &str) -> Option<Color> {
 }
 
 pub enum Outcome {
+    Plugins,
     Stay,
     Cancel,
     /// Written: the saved configuration and the labels of saved settings that need a restart.
@@ -425,6 +428,9 @@ impl Settings {
     }
 
     pub fn key(&mut self, key: KeyEvent) -> Outcome {
+        if key.code == KeyCode::F(5) {
+            return Outcome::Plugins;
+        }
         if self.saving {
             return Outcome::Stay;
         }
@@ -699,9 +705,9 @@ impl Settings {
         } else if self.page == Page::Colors {
             34
         } else if self.page == Page::General {
-            15
+            18
         } else {
-            13
+            16
         };
         let area = crate::theme::centered(frame.area(), 76, height);
         frame.render_widget(Clear, area);
@@ -728,6 +734,7 @@ impl Settings {
         } else if self.broken.is_some() {
             vec![
                 Button::new("Diagnostics F4", KeyCode::F(4), true),
+                Button::new("Plugins F5", KeyCode::F(5), true),
                 Button::new("Cancel Esc", KeyCode::Esc, true),
                 Button::control("Reload Ctrl-R", KeyCode::Char('r'), true),
             ]

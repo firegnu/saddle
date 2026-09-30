@@ -79,11 +79,11 @@ impl App {
         let tabs: Vec<_> = self.viewer.tabs.iter().map(|tab| {
             let panes: Vec<_> = tab.panes.iter().map(|p| {
                 let shell = p.viewer.shell.as_ref();
-                let kind = if shell.is_some() || matches!(p.viewer.remembered, crate::layout_state::Content::Shell { .. }) { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() || p.viewer.remembered.name().is_some() { "agent" } else { "empty" };
-                json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,
+                let kind = if p.plugin_id().is_some() {"plugin"} else if shell.is_some() || matches!(p.viewer.remembered, crate::layout_state::Content::Shell { .. }) { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() || p.viewer.remembered.name().is_some() { "agent" } else { "empty" };
+                json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,"plugin_id":p.plugin_id(),
                     "agent":p.requested().or(p.viewer.target()).or(p.viewer.remembered.name()),"corral_instance":p.viewer.metadata.instance,
-                    "cwd":p.source_cwd().unwrap_or(&self.queue.project),"cwd_source":if p.source_cwd().is_some() {"pane"} else {"tasks_project"},
-                    "state":if p.starting {"starting"} else if p.requested().is_some() {"accepted"} else {p.viewer.state()},
+                    "cwd":if p.plugin_id().is_some(){None}else{Some(p.source_cwd().unwrap_or(&self.queue.project))},"cwd_source":if p.plugin_id().is_some(){"none"}else if p.source_cwd().is_some() {"pane"} else {"tasks_project"},
+                    "state":if let Some(plugin)=p.plugin.as_ref().filter(|_|p.plugin_id().is_some()){plugin.state.to_lowercase()} else if p.starting {"starting".into()} else if p.requested().is_some() {"accepted".into()} else {p.viewer.state().into()},
                     "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"exit_code":p.viewer.exit_code,"note":p.viewer.note})
             }).collect();
             json!({"id":tab.id,"active_pane":tab.active,"layout":tab.layout(),"panes":panes})
