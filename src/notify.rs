@@ -22,28 +22,10 @@ use unicode_width::UnicodeWidthStr;
 /// How long a prompt stays up.
 pub const SHOWN: Duration = Duration::from_secs(5);
 
-/// A task run awaiting release, as Drover's stable identity v1 defines it: repository path,
-/// task id, start time, start commit, main at start and the event type.
-pub type Identity = [String; 6];
-
-/// `None` when a field is missing or empty, or the start time is not a number: such a task is
-/// never prompted, only listed in Attention.
-pub fn identity(project: &str, task: &Task) -> Option<Identity> {
-    let text = |value: &Option<String>| value.clone().filter(|v| !v.is_empty());
-    Some([
-        project.to_owned(),
-        text(&task.id)?,
-        start_time(task.t0.as_ref()?)?,
-        text(&task.start)?,
-        text(&task.main)?,
-        "awaiting_release".to_owned(),
-    ])
-}
-/// The start time as binary64, big-endian, in lowercase hex; -0 counts as +0.
-fn start_time(value: &serde_json::Value) -> Option<String> {
-    let t = value.as_f64().filter(|t| t.is_finite())?;
-    let t = if t == 0.0 { 0.0 } else { t };
-    Some(format!("{:016x}", t.to_bits()))
+/// Drover's opaque public notification identity. Git references never enter this key.
+pub type Identity = String;
+pub fn identity(_project: &str, task: &Task) -> Option<Identity> {
+    task.notification_key.clone().filter(|key| !key.is_empty())
 }
 
 pub struct Toast {

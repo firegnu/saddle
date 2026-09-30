@@ -8,17 +8,11 @@ impl Panel {
             .map(|(_, t)| t.body.clone())
             .unwrap_or_else(|| detail.task.body.clone());
         let range = detail.data.as_ref().and_then(|d| {
-            let current = self
-                .live(detail)
-                .map_or(d.task.location == "current", |(group, _)| {
-                    group == "Current"
-                });
-            let end = if current {
-                d.git.observed_head.as_ref()
-            } else {
-                d.git.end_head.as_ref()
-            }?;
-            Some((d.git.start_head.clone()?, end.clone()))
+            if d.task.status.as_deref() != Some("running") || d.evidence.git.state != "available" {
+                return None;
+            }
+            let end = d.evidence.git.fields.get("head_sha")?.as_str()?;
+            Some((d.task.start.clone()?, end.into()))
         });
         Some(crate::links::Key {
             project: self.project.clone(),

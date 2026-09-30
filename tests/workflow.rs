@@ -578,7 +578,7 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
     h.click("project-two ▾ c");
     h.click("project-one");
     h.see("Queue project-one");
-    h.see("Manual");
+    h.see("Queue: Ready");
     h.quit();
     assert!(!h.log("events").contains("attach "));
 }
@@ -595,9 +595,9 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.click("Tasks · ");
     h.see("detail line 0");
     h.click("Run details ↵");
-    h.see("From the queue list");
+    h.see("Run records");
     h.click("Task text t");
-    h.until(|h| !h.contents().contains("From the queue list"));
+    h.until(|h| !h.contents().contains("Run records"));
     h.click("Add task a");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
@@ -641,12 +641,14 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Native queue task");
     h.send(b"\r");
     h.see("Input ▸ Tasks · Run details");
+    h.see("Run records");
+    h.send(b"t");
     h.see("detail line 0");
     h.send(b"\x1b[6~\x1b[6~\x1b[6~");
     // Three pages reach line 50 with the outlined toolbars above the details.
     h.see("detail line 50");
     assert!(!h.screen.screen().contents().contains("detail line 0"));
-    h.send(b"t");
+    h.send(b"\x1b[5~\x1b[5~\x1b[5~");
     h.see("detail line 0");
     h.see("Native queue task");
     h.send(b"a");
@@ -665,16 +667,9 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.see("Paused");
     h.send(b"p");
     h.see("Ready");
-    h.send(b"l");
-    h.see("Loop on");
-    h.send(b"g");
-    h.see("checked public criteria");
-    h.see("Input ▸ Tasks · Help / Result");
-    h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
+    h.send(b"lng"); // Retired shortcuts cannot issue writes.
+    h.send(b"r");
     h.see("Native queue task");
-    h.send(b"n");
-    h.see("next request accepted");
     h.quit();
     assert!(!h.log("queue-events").contains("board"));
     assert!(!h.log("events").contains("attach "));
@@ -827,10 +822,6 @@ fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
     assert_eq!(state["paused"], true);
     h.send(b"p");
     h.see("Ready");
-    h.send(b"l");
-    h.see("Loop on");
-    h.send(b"l");
-    h.see("Loop off");
     h.send(b"a");
     h.see("Ctrl-S");
     h.send("\x1b[200~原生新增\x1b[201~".as_bytes());
@@ -1089,11 +1080,11 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
 #[test]
 fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
     let mut h = Harness::start();
-    let history: Vec<_> = (0..40).map(|i| serde_json::json!({"id":format!("H{i}"),"title":format!("History-{i:02}"),"status":"done"})).collect();
+    let history: Vec<_> = (0..40).rev().map(|i| serde_json::json!({"id":format!("H{i}"),"title":format!("History-{i:02}"),"status":"done"})).collect();
     std::fs::write(
         h.dir.path().join("queue-state.json"),
         serde_json::to_vec(&serde_json::json!({
-            "mode":{"gate":true,"loop":false},"paused":false,"pending":[],"history":history
+            "schema_version":2,"ok":true,"project":"/synthetic","mode":{"gate":true,"loop":false},"paused":false,"pending":[],"history":history
         }))
         .unwrap(),
     )
@@ -1236,12 +1227,12 @@ text = "#abcdef"
         Color::Rgb(0x44, 0x55, 0x66)
     );
     assert_eq!(
-        label_cell(&h, "Check & release g").fgcolor(),
-        Color::Rgb(0x11, 0x22, 0x33)
+        label_cell(&h, "Pause p").fgcolor(),
+        Color::Rgb(0xab, 0xcd, 0xef)
     );
     // Tasks is a dialog surface, like the other popups.
     assert_eq!(
-        label_cell(&h, "Check & release g").bgcolor(),
+        label_cell(&h, "Pause p").bgcolor(),
         Color::Rgb(0x20, 0x30, 0x40)
     );
     h.send(b"c");
@@ -1315,7 +1306,7 @@ fn task_edit_from_run_details_saves_and_returns_to_the_same_view() {
     h.see("T1 Native queue task");
     h.click("Run details ↵");
     h.see("Input ▸ Tasks · Run details");
-    h.see("detail line 0");
+    h.see("Run records");
     h.click("Edit e");
     h.see("Edit task");
     h.send(b" revised\x13");
@@ -1348,8 +1339,8 @@ args = sys.argv[1:]
 with (root / 'queue-events').open('a') as f:
     f.write(json.dumps(args) + '\n')
 if args == ['list', '--json']:
-    print(json.dumps(dict(mode=dict(loop=False, gate=True), paused=False, awaiting=None,
-        current=dict(id='T4', title='Detail target 任务', body='list body'),
+    print(json.dumps(dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=dict(loop=False, gate=True), paused=False, awaiting=None,
+        current=dict(id='T4', title='Detail target 任务', body='list body', run_id='run-4', status='running'),
         pending=[dict(id='T5', title='Queued next', body='')],
         history=[dict(id='T3', title='Older done', status='done')])))
 elif args == ['show', 'T4', '--json', '--with-agent-status']:
@@ -1370,7 +1361,7 @@ else:
     h.see("list body");
     assert_eq!(shows(&h), 0, "Task text needs no show");
     h.click("Run details ↵");
-    h.see("Completion checks");
+    h.see("Repository reference");
     h.see("Input ▸ Tasks · Run details");
     assert_eq!(shows(&h), 1);
     // Scroll keys stay in Tasks while an agent is attached in Viewer.
@@ -1388,7 +1379,12 @@ else:
     h.send(b"\x1b");
     h.see("Input ▸ p/a"); // Closing returns to the Viewer it was opened from.
     h.see("Agent · p/a");
-    h.until(|h| !h.screen.screen().contents().contains("Completion checks"));
+    h.until(|h| {
+        !h.screen
+            .screen()
+            .contents()
+            .contains("Repository reference")
+    });
     let after_close = shows(&h);
     let deadline = Instant::now() + Duration::from_secs(6);
     while Instant::now() < deadline {
@@ -2165,7 +2161,7 @@ fn tasks_open_on_the_focused_agents_repository_unless_it_has_no_tasks() {
         std::fs::create_dir(dir.join("wt-two/sub")).unwrap();
         std::fs::write(
             three.join("queue-state.json"),
-            r#"{"mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
+            r#"{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
         )
         .unwrap();
         std::fs::write(
@@ -3490,12 +3486,12 @@ state_file = Path.cwd() / 'queue-state.json'
 if state_file.exists():
     state = json.loads(state_file.read_text())
 elif Path.cwd().name == 'project-one':
-    state = dict(mode=mode, paused=False, current=None,
+    state = dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=mode, paused=False, current=None,
         awaiting=dict(id='T3', title='Ready to ship', body='awaiting body text'),
         pending=[dict(id='T4', title='Next up', body='')],
         history=[dict(id='T2', title='Old done', body='', status='done')])
 else:
-    state = dict(mode=mode, paused=False, current=None, awaiting=None, pending=[],
+    state = dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=mode, paused=False, current=None, awaiting=None, pending=[],
         history=[dict(id='T3', title='Broke build', body='failure body text', status='failed', reason='check failed'),
                  dict(id='T1', title='Fine one', body='fine body text', status='done')])
 if args == ['list', '--json']:
@@ -3565,7 +3561,7 @@ fn t22_attention_gathers_agents_and_every_project_and_opens_targets() {
     h.see("Attention · 1");
     std::fs::write(
         h.dir.path().join("project-one/queue-state.json"),
-        r#"{"mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
+        r#"{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
     )
     .unwrap();
     h.see("Attention · 0");
@@ -3995,21 +3991,19 @@ fn t25_save_failure_is_visible_and_app_remains_usable() {
 
 #[test]
 fn task_links_open_explicit_file_and_return_without_terminal_input() {
-    let mut h =
-        Harness::start_prepared(
-            include_str!("fixtures/drover.py"),
-            false,
-            "",
-            16384,
-            |root| {
-                std::fs::write(root.join("delivery.md"), "SYNTHETIC DELIVERY\nsecond line")
-                    .unwrap();
-                std::fs::write(root.join("queue-state.json"), serde_json::json!({
-                "mode": {}, "paused": false, "history": [],
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            std::fs::write(root.join("delivery.md"), "SYNTHETIC DELIVERY\nsecond line").unwrap();
+            std::fs::write(root.join("queue-state.json"), serde_json::json!({
+                "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
                 "pending": [{"id":"T1", "title":"Link task", "body":"Artifact: delivery.md"}]
             }).to_string()).unwrap();
-            },
-        );
+        },
+    );
     h.see("Synthetic title");
     h.click("Tasks · ");
     h.see("Link task");
@@ -4052,7 +4046,7 @@ fn dispatch_harness(dlog: Option<&str>) -> Harness {
             std::fs::write(
                 root.join("queue-state.json"),
                 serde_json::json!({
-                    "mode": {}, "paused": false, "history": [],
+                    "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
                     "pending": [{"id":"T38", "title":"Dispatch task", "body":"SYNTHETIC BODY"}]
                 })
                 .to_string(),
@@ -4151,7 +4145,7 @@ fn task_links_validate_original_instance_before_attach_and_before_existing_navig
             )
             .unwrap();
             std::fs::write(root.join("queue-state.json"), serde_json::json!({
-            "mode": {}, "paused": false, "history": [],
+            "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
             "pending": [{"id":"T1", "title":"Agent link task", "body":"Agent: p/a | instance=012345abcdef"}]
         }).to_string()).unwrap();
         },
@@ -4209,7 +4203,7 @@ fn task_links_switching_task_during_status_never_opens_the_old_agent() {
             )
             .unwrap();
             std::fs::write(root.join("queue-state.json"), serde_json::json!({
-            "mode": {}, "paused": false, "history": [],
+            "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
             "pending": [{"id":"T1", "title":"Link source", "body":"Agent: p/a | instance=012345abcdef"},
                         {"id":"T2", "title":"Other task", "body":"Agent: p/taken | instance=012345abcdef"}]
         }).to_string()).unwrap();
@@ -4248,7 +4242,7 @@ fn task_links_attach_failure_stays_in_tasks_and_unknown_identity_is_disabled() {
             .unwrap();
             std::fs::write(root.join("fail-attach"), "").unwrap();
             std::fs::write(root.join("queue-state.json"), serde_json::json!({
-            "mode": {}, "paused": false, "history": [],
+            "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
             "pending": [{"id":"T1", "title":"Broken connection", "body":"Agent: p/a | instance=012345abcdef\nAgent: p/b"}]
         }).to_string()).unwrap();
         },
@@ -4282,7 +4276,7 @@ fn task_links_shell_exit_during_replacement_confirmation_releases_the_request() 
             .unwrap();
             std::fs::write(root.join("recovery.txt"), "RECOVERY FILE CONTENT").unwrap();
             std::fs::write(root.join("queue-state.json"), serde_json::json!({
-                "mode": {}, "paused": false, "history": [],
+                "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
                 "pending": [{"id":"T1", "title":"Shell link recovery", "body":"Artifact: recovery.txt\nAgent: p/a | instance=012345abcdef"}]
             }).to_string()).unwrap();
         },
@@ -4364,7 +4358,7 @@ if len(args) == 3 and args[0] == 'notifications' and args[1] in ('status', 'on',
 if args == ['list', '--json']:
     task = Path.cwd() / 'awaiting.json'
     awaiting = json.loads(task.read_text()) if task.exists() else None
-    print(json.dumps(dict(mode=dict(loop=False, gate=True), paused=False, current=None,
+    print(json.dumps(dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=dict(loop=False, gate=True), paused=False, current=None,
                           awaiting=awaiting, pending=[], history=[])))
     sys.exit(0)
 print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
@@ -4380,6 +4374,7 @@ impl Harness {
                 "id": id, "title": format!("Ship {id}"), "body": "", "key": "", "status": "done",
                 "location": "awaiting", "start": format!("s-{id}-{t0}"), "main": "m", "t0": t0,
                 "end": "e", "t1": t0 + 1.0,
+                "run_id": format!("run-{t0}"), "notification_key": format!("{project}/{id}/{t0}"),
             })
             .to_string(),
         )

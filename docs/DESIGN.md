@@ -1059,3 +1059,10 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 - Git 和已有检查显示为仓库参考，不代表任务归属或验收通过；旧提交、真实接受及退回事实按公开字段展示，未知保持未知。
 - 通知身份改用公开 notification_key，Attention 与既有内部提示继续观察 Awaiting。通知偏好仍 schema 1；基线、去重、渠道及不补弹规则保持。
 - 本阶段只接入既定流程，不做插件化或任何自动推进。Drover 与 Saddle 在隔离联调后再协调切换，不单独发布，不操作真实 T57。
+
+### §61 接入取舍（2026-09-30）
+
+- Submit / Accept / Return 复用原 Tasks 确认子页；打开时固定项目、任务和 run_id，再读取一次 show 的动作目标，不在后台更换令牌。任何写入失败均要求手动 Refresh 后重新确认；退回须重新勾选工作已停止。
+- list 历史按 v2 返回的倒序显示；有编号的 Pending 也可读取详情。详情读取按项目、任务、打开代次及 run_id 归属，分组或运行变化会丢弃旧结果。
+- 详情按公开的运行记录、submission、旧 completion_record、return_history、previous_runs 和仓库 evidence 展示；不重建旧门槛。未保存的接受时间显示 not recorded，陈旧检查同时保留原始结果。公开契约未提供历史 Git 结束端点，Links 不补造历史提交区间；Running 仅在 Git 参考可用且两个端点均存在时提供 start..HEAD 参考。
+- 新流转成功须退出 0、schema 2、ok=true、任务/运行/结果状态一致且 record=recorded；派发另核对 delivery、record 与 run_id，送达或记账不确定均单独报告且不重试。通知偏好仍按 schema 1 读取。

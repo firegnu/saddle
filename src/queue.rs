@@ -1,4 +1,4 @@
-use crate::drover::{Operation, Request, Snapshot, Task};
+use crate::drover::{Operation, Request, Snapshot, Task, Transition};
 use crate::theme::Theme;
 #[path = "queue_dispatch.rs"]
 mod dispatch_impl;
@@ -34,12 +34,13 @@ pub enum Page {
         pending: Vec<Task>,
         index: usize,
     },
-    /// Confirming that the running task is complete, without its checks.
-    Manual(Box<Manual>),
+    /// Confirming one explicit task transition.
+    Confirm(Box<Confirmation>),
 }
-/// The completion or return confirmation, bound to the run its own `drover show` read.
-pub struct Manual {
-    pub returning: bool,
+/// The selected transition confirmation, bound to the run its own `drover show` read.
+pub struct Confirmation {
+    pub action: Transition,
+    pub run_id: String,
     pub work_stopped: bool,
     /// The project and task it opened on; `seq` is new for each reading of the target.
     pub key: DetailKey,
@@ -50,9 +51,9 @@ pub struct Manual {
     /// Drover said the run changed; only a new reading and a new confirmation go on.
     pub expired: bool,
 }
-/// The Mark complete manually… button's key. No key press produces it: terminals never send
+/// The Submit for review / Accept button key. No key press produces it: terminals never send
 /// Null, and the list ignores Alt combinations.
-pub fn manual_click() -> KeyEvent {
+pub fn transition_click() -> KeyEvent {
     KeyEvent::new(KeyCode::Null, KeyModifiers::ALT)
 }
 /// The Return to pending button has no terminal shortcut.
@@ -68,9 +69,9 @@ pub fn dispatch_selected_click() -> KeyEvent {
     KeyEvent::new(KeyCode::Null, KeyModifiers::SUPER)
 }
 /// Why the page cannot confirm its target now, or `None` when it can.
-pub fn manual_problem(manual: &Manual) -> Option<String> {
-    let id = &manual.key.id;
-    let detail = match &manual.target {
+pub fn confirmation_problem(confirmation: &Confirmation) -> Option<String> {
+    let id = &confirmation.key.id;
+    let detail = match &confirmation.target {
         None => return Some(format!("Reading {id}'s current run…")),
         Some(Err(error)) => {
             return Some(format!(
@@ -79,35 +80,28 @@ pub fn manual_problem(manual: &Manual) -> Option<String> {
         }
         Some(Ok(detail)) => detail,
     };
-    if detail.task.id != *id {
+    if detail.task.id.as_ref() != Some(id)
+        || detail.task.run_id.as_deref() != Some(&confirmation.run_id)
+    {
+        return Some("The task run changed; cancel and select it again.".into());
+    }
+    if !confirmation
+        .action
+        .allows(detail.task.status.as_deref().unwrap_or_default())
+    {
         return Some(format!(
-            "drover answered for {} instead of {id}; nothing can be confirmed. Refresh.",
-            detail.task.id
+            "{id} is no longer in the state required for {}.",
+            confirmation.action.label()
         ));
     }
-    if detail.task.location != "current" {
-        return Some(format!(
-            "{id} is no longer running (now {}); nothing to confirm.",
-            detail.task.location
-        ));
-    }
-    let target = if manual.returning {
-        &detail.return_to_pending
-    } else {
-        &detail.manual_completion
+    let Some(target) = detail.task.actions.get(confirmation.action.command()) else {
+        return Some("This action is unavailable for the shown task.".into());
     };
-    let Some(target) = target else {
-        return Some(if manual.returning {
-            "This drover does not support return to pending (show has no return_to_pending). Update drover; nothing was sent."
-        } else {
-            "This drover does not support manual completion (show has no manual_completion). Update drover; nothing was sent."
-        }.into());
-    };
-    if manual.expired {
+    if confirmation.expired {
         return Some("This run's confirmation expired. Refresh, then confirm again.".into());
     }
     match &target.target_token {
-        Some(token) if !token.is_empty() => None,
+        Some(token) if !token.is_empty() && target.unavailable_reason.is_none() => None,
         _ => Some(format!(
             "Confirmation unavailable now: {}. Refresh to try again.",
             target
@@ -160,7 +154,7 @@ pub struct Panel {
     /// A task to select once the list has it, found by identity rather than position.
     pub(crate) locate: Option<Task>,
     /// A cancelled confirmation reason, by task id and action, for the next opening.
-    pub(crate) manual_draft: Option<(String, bool, String)>,
+    pub(crate) return_draft: Option<(String, Transition, String)>,
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -204,7 +198,7 @@ impl Panel {
         }
         let point = (column, row).into();
         if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
-            if hit.key == manual_click()
+            if hit.key == transition_click()
                 || hit.key == return_click()
                 || hit.key == dispatch_click()
                 || hit.key == dispatch_selected_click()
@@ -275,11 +269,11 @@ impl Panel {
                 .danger(),
                 B::new("Cancel Esc", K::Esc, !self.busy),
             ],
-            Page::Manual(ref manual) => {
+            Page::Confirm(ref confirmation) => {
                 let mut buttons = Vec::new();
-                if manual.returning {
+                if confirmation.action == Transition::Return {
                     buttons.push(B::control(
-                        if manual.work_stopped {
+                        if confirmation.work_stopped {
                             "[x] Work has stopped ^w"
                         } else {
                             "[ ] Work has stopped ^w"
@@ -290,21 +284,23 @@ impl Panel {
                 }
                 buttons.extend([
                     B::new(
-                        if manual.returning {
-                            "Return to pending ↵"
-                        } else {
-                            "Mark complete ↵"
+                        match confirmation.action {
+                            Transition::Submit => "Submit for review ↵",
+                            Transition::Accept => "Accept ↵",
+                            Transition::Return => "Return to pending ↵",
                         },
                         K::Enter,
                         !self.busy
-                            && manual_problem(manual).is_none()
-                            && (!manual.returning || manual.work_stopped),
+                            && confirmation_problem(confirmation).is_none()
+                            && (confirmation.action != Transition::Return
+                                || (confirmation.work_stopped
+                                    && !confirmation.reason.trim().is_empty())),
                     )
                     .primary(),
                     B::control(
                         "Refresh ^r",
                         K::Char('r'),
-                        !self.busy && manual.target.is_some(),
+                        !self.busy && confirmation.target.is_some(),
                     ),
                     B::new("Cancel Esc", K::Esc, !self.busy),
                 ]);
@@ -336,7 +332,7 @@ impl Panel {
             .map(|t| ("Current", t))
             .chain(s.awaiting.iter().map(|t| ("Awaiting", t)))
             .chain(s.pending.iter().map(|t| ("Pending", t)))
-            .chain(s.history.iter().rev().map(|t| ("History", t)))
+            .chain(s.history.iter().map(|t| ("History", t)))
             .collect()
     }
     fn pending_index(&self) -> Option<usize> {
@@ -362,8 +358,8 @@ impl Panel {
         let target = s
             .pending
             .get(self.pending_index()?)?
-            .dispatch_pending
-            .as_ref()?;
+            .actions
+            .get("dispatch-pending")?;
         match (
             &target.pos,
             &target.target_token,
@@ -381,8 +377,7 @@ impl Panel {
             .into_iter()
             .find(|(_, t)| same_task(t, &detail.task))
     }
-    /// The `drover show` target while Run details or Links is chosen. Pending and unnumbered
-    /// tasks without return history are not covered by show; unnumbered tasks never are.
+    /// The `drover show` target while Run details or Links is chosen; only numbered tasks are covered.
     pub fn detail_key(&self) -> Option<DetailKey> {
         if !matches!(self.view, View::Details | View::Links) {
             return None;
@@ -392,12 +387,6 @@ impl Panel {
             id.strip_prefix('T')
                 .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
         })?;
-        if self
-            .live(detail)
-            .is_some_and(|(group, task)| group == "Pending" && task.return_history.is_empty())
-        {
-            return None;
-        }
         Some(DetailKey {
             project: self.project.clone(),
             id: id.clone(),
@@ -415,57 +404,69 @@ impl Panel {
         }
         if let Some(detail) = &mut self.content {
             match result {
-                Ok(data) => {
+                Ok(data)
+                    if data.task.id == detail.task.id && data.task.run_id == detail.task.run_id =>
+                {
                     detail.data = Some(Box::new(data));
                     detail.error = None;
                 }
+                Ok(_) => detail.error = Some("Task run changed; refresh the task list.".into()),
                 Err(error) => detail.error = Some(format!("{error:#}")),
             }
         }
     }
     /// The target reading the confirmation page waits for, if any.
-    pub fn manual_key(&self) -> Option<DetailKey> {
+    pub fn confirmation_key(&self) -> Option<DetailKey> {
         match &self.page {
-            Page::Manual(manual) if manual.target.is_none() => Some(manual.key.clone()),
+            Page::Confirm(confirmation) if confirmation.target.is_none() => {
+                Some(confirmation.key.clone())
+            }
             _ => None,
         }
     }
     /// Takes a target reading only if it is the one the open page waits for.
-    pub fn absorb_manual(
+    pub fn absorb_confirmation(
         &mut self,
         key: &DetailKey,
         result: anyhow::Result<crate::drover::Detail>,
     ) {
-        if let Page::Manual(manual) = &mut self.page
-            && manual.key == *key
-            && manual.target.is_none()
+        if let Page::Confirm(confirmation) = &mut self.page
+            && confirmation.key == *key
+            && confirmation.target.is_none()
         {
             if let Ok(detail) = &result
-                && manual.returning
-                && detail.task.id == manual.key.id
+                && detail.task.id.as_ref() == Some(&confirmation.key.id)
             {
-                manual.title.clone_from(&detail.task.title);
+                confirmation.title.clone_from(&detail.task.title);
             }
-            manual.target = Some(result.map(Box::new).map_err(|e| format!("{e:#}")));
+            confirmation.target = Some(result.map(Box::new).map_err(|e| format!("{e:#}")));
         }
     }
-    /// Opens the confirmation page on the selected running task.
-    fn open_manual(&mut self, returning: bool) {
+    /// Opens the confirmation page on the selected Running or Awaiting task.
+    fn open_confirmation(&mut self, returning: bool) {
         if self.busy || self.read_error.is_some() {
             return;
         }
-        let Some(("Current", task)) = self.tasks().get(self.selected).copied() else {
+        let Some((group, task)) = self.tasks().get(self.selected).copied() else {
             return;
         };
-        let (Some(id), title) = (task.id.clone(), task.title.clone()) else {
+        let action = match (returning, group) {
+            (true, "Current" | "Awaiting") => Transition::Return,
+            (false, "Current") => Transition::Submit,
+            (false, "Awaiting") => Transition::Accept,
+            _ => return,
+        };
+        let (Some(id), Some(run_id)) = (task.id.clone(), task.run_id.clone()) else {
             return;
         };
-        let reason = match self.manual_draft.take() {
-            Some((draft, kind, reason)) if draft == id && kind == returning => reason,
+        let title = task.title.clone();
+        let reason = match self.return_draft.take() {
+            Some((draft, kind, reason)) if draft == id && kind == action => reason,
             _ => String::new(),
         };
-        self.page = Page::Manual(Box::new(Manual {
-            returning,
+        self.page = Page::Confirm(Box::new(Confirmation {
+            action,
+            run_id,
             work_stopped: false,
             key: DetailKey {
                 project: self.project.clone(),
@@ -480,8 +481,8 @@ impl Panel {
         self.scroll = 0;
         self.message.clear();
     }
-    fn manual_key_press(&mut self, key: KeyEvent) -> Option<Request> {
-        let Page::Manual(manual) = &mut self.page else {
+    fn confirmation_key_press(&mut self, key: KeyEvent) -> Option<Request> {
+        let Page::Confirm(confirmation) = &mut self.page else {
             return None;
         };
         if self.busy {
@@ -490,73 +491,67 @@ impl Panel {
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Esc => {
-                let reason = std::mem::take(&mut manual.reason);
-                self.manual_draft = Some((manual.key.id.clone(), manual.returning, reason));
+                let reason = std::mem::take(&mut confirmation.reason);
+                self.return_draft =
+                    Some((confirmation.key.id.clone(), confirmation.action, reason));
                 self.page = Page::List;
                 self.scroll = 0;
                 self.message.clear();
             }
             KeyCode::Char('r') if control => {
                 // A new reading; the old one's answer no longer matches the key.
-                manual.key.seq = crate::detail::opening();
-                manual.target = None;
-                manual.expired = false;
-                manual.work_stopped = false;
+                confirmation.key.seq = crate::detail::opening();
+                confirmation.target = None;
+                confirmation.expired = false;
+                confirmation.work_stopped = false;
                 self.message.clear();
             }
-            KeyCode::Char('w') if control && manual.returning => {
-                manual.work_stopped = !manual.work_stopped;
+            KeyCode::Char('w') if control && (confirmation.action == Transition::Return) => {
+                confirmation.work_stopped = !confirmation.work_stopped;
             }
-            KeyCode::Char('u') if control => manual.reason.clear(),
+            KeyCode::Char('u') if control => confirmation.reason.clear(),
             KeyCode::Enter => {
-                if let Some(problem) = manual_problem(manual) {
+                if let Some(problem) = confirmation_problem(confirmation) {
                     self.message_failed = true;
                     self.message = problem;
                     return None;
                 }
-                if manual.returning && !manual.work_stopped {
+                if confirmation.action == Transition::Return && !confirmation.work_stopped {
                     self.message_failed = true;
                     self.message =
                         "Confirm that work has stopped before returning this task".into();
                     return None;
                 }
-                if manual.reason.trim().is_empty() {
+                if confirmation.action == Transition::Return
+                    && confirmation.reason.trim().is_empty()
+                {
                     self.message_failed = true;
                     self.message = "Reason is required".into();
                     return None;
                 }
-                let Some(Ok(detail)) = &manual.target else {
+                let Some(Ok(detail)) = &confirmation.target else {
                     return None;
                 };
-                let token = if manual.returning {
-                    &detail.return_to_pending
-                } else {
-                    &detail.manual_completion
-                }
-                .as_ref()?
-                .target_token
-                .clone()?;
+                let token = detail
+                    .task
+                    .actions
+                    .get(confirmation.action.command())?
+                    .target_token
+                    .clone()?;
                 self.busy = true;
                 self.message_failed = false;
-                if manual.returning {
-                    self.message = "Returning to pending…".into();
-                    return Some(Request::Run(Operation::ReturnToPending {
-                        project: manual.key.project.clone(),
-                        id: manual.key.id.clone(),
-                        token,
-                        reason: manual.reason.trim().into(),
-                    }));
-                }
-                self.message = "Marking complete manually…".into();
-                return Some(Request::Run(Operation::CompleteManually {
-                    project: manual.key.project.clone(),
-                    id: manual.key.id.clone(),
+                self.message = format!("{}…", confirmation.action.label());
+                return Some(Request::Run(Operation::Transition {
+                    project: confirmation.key.project.clone(),
+                    id: confirmation.key.id.clone(),
+                    run_id: confirmation.run_id.clone(),
                     token,
-                    reason: manual.reason.trim().into(),
+                    action: confirmation.action,
+                    reason: confirmation.reason.trim().into(),
                 }));
             }
             KeyCode::Backspace => {
-                manual.reason.pop();
+                confirmation.reason.pop();
             }
             KeyCode::Up => self.scroll = self.scroll.saturating_sub(1),
             KeyCode::Down => self.scroll = self.scroll.saturating_add(1),
@@ -567,7 +562,7 @@ impl Panel {
                     .modifiers
                     .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
             {
-                manual.reason.push(c)
+                confirmation.reason.push(c)
             }
             _ => {}
         }
@@ -588,7 +583,8 @@ impl Panel {
         };
         if !self.content.as_ref().is_some_and(|content| {
             same_task(&content.task, &task)
-                && (content.group == group || task.return_history.is_empty())
+                && content.group == group
+                && content.task.run_id == task.run_id
         }) {
             self.content = Some(Box::new(crate::detail::TaskDetail::new(group, task)));
             self.text_scroll = 0;
@@ -720,8 +716,8 @@ impl Panel {
             path.extend(text.chars().filter(|c| !c.is_control()));
             return;
         }
-        if let Page::Manual(manual) = &mut self.page {
-            manual
+        if let Page::Confirm(confirmation) = &mut self.page {
+            confirmation
                 .reason
                 .extend(text.chars().map(|c| if c.is_control() { ' ' } else { c }));
             return;
@@ -750,13 +746,18 @@ impl Panel {
                 self.message = text.clone();
                 if matches!(
                     operation,
-                    Operation::Go | Operation::Next | Operation::DispatchPending { .. }
+                    Operation::Transition { .. } | Operation::DispatchPending { .. }
                 ) {
-                    self.page = Page::Feedback(text);
-                    self.scroll = 0;
-                } else if let Operation::ReturnToPending { id, .. } = operation {
-                    if let Some(task) = self.snapshot.as_ref().and_then(|s| s.current.as_ref())
-                        && task.id.as_ref() == Some(id)
+                    if let Operation::Transition {
+                        id,
+                        action: Transition::Return,
+                        ..
+                    } = operation
+                        && let Some(task) = self
+                            .tasks()
+                            .into_iter()
+                            .map(|(_, t)| t)
+                            .find(|t| t.id.as_ref() == Some(id))
                     {
                         self.selection_after_write = Some((0, task.clone()));
                     }
@@ -764,11 +765,6 @@ impl Panel {
                     self.scroll = 0;
                     self.view = View::Details;
                     self.content = None;
-                } else if matches!(operation, Operation::CompleteManually { .. }) {
-                    // Run details then show the saved record from `drover show`.
-                    self.page = Page::Feedback(text);
-                    self.scroll = 0;
-                    self.view = View::Details;
                 } else if let Operation::Edit {
                     pending,
                     index,
@@ -813,15 +809,10 @@ impl Panel {
             Err(error) => {
                 self.message_failed = true;
                 self.message = format!("{error:#}");
-                if let Page::Manual(manual) = &mut self.page {
+                if let Page::Confirm(confirmation) = &mut self.page {
                     // Never retried here: an expired target needs a new reading and consent.
-                    manual.expired |= manual.returning
-                        || error
-                            .downcast_ref::<crate::drover::ManualError>()
-                            .is_some_and(|e| e.code == "target_changed");
-                    if manual.expired {
-                        manual.work_stopped = false;
-                    }
+                    confirmation.expired = true;
+                    confirmation.work_stopped = false;
                     return;
                 }
                 if !matches!(self.page, Page::Add { .. } | Page::Edit { .. }) {
@@ -835,12 +826,12 @@ impl Panel {
         if key.kind == KeyEventKind::Release {
             return None;
         }
-        if matches!(self.page, Page::Manual(_)) {
-            return self.manual_key_press(key);
+        if matches!(self.page, Page::Confirm(_)) {
+            return self.confirmation_key_press(key);
         }
-        if key == manual_click() || key == return_click() {
+        if key == transition_click() || key == return_click() {
             if matches!(self.page, Page::List) {
-                self.open_manual(key == return_click());
+                self.open_confirmation(key == return_click());
             }
             return None;
         }
@@ -1178,7 +1169,7 @@ impl Panel {
                     to,
                 }));
             }
-            KeyCode::Char(c @ ('g' | 'n' | 'p' | 'l')) if !self.busy => {
+            KeyCode::Char('p') if !self.busy && matches!(self.page, Page::List) => {
                 if self.read_error.is_some() {
                     return None;
                 }
@@ -1187,12 +1178,7 @@ impl Panel {
                     self.message = "Waiting for queue data; action not sent".into();
                     return None;
                 };
-                let operation = match c {
-                    'g' => Operation::Go,
-                    'n' => Operation::Next,
-                    'p' => Operation::Pause(!snapshot.paused),
-                    _ => Operation::Loop(!snapshot.mode.r#loop),
-                };
+                let operation = Operation::Pause(!snapshot.paused);
                 self.busy = true;
                 self.message_failed = false;
                 self.message = "Running action…".into();
@@ -1269,22 +1255,8 @@ impl Panel {
             ("Idle", t.agent_idle)
         };
         Line::from(vec![
-            Span::styled(
-                if s.mode.gate { "Manual" } else { "Auto" },
-                Style::default().fg(t.muted),
-            ),
-            Span::raw(" · "),
             Span::styled("Queue: ", Style::default().fg(t.muted)),
             Span::styled(state, emphasis(color)),
-            Span::raw(" · "),
-            Span::styled(
-                if s.mode.r#loop { "Loop on" } else { "Loop off" },
-                if s.mode.r#loop {
-                    emphasis(t.agent_idle)
-                } else {
-                    Style::default().fg(t.dim)
-                },
-            ),
         ])
     }
     /// Draws the Tasks popup into `area`: project and queue actions on top, then either the
@@ -1411,20 +1383,15 @@ impl Panel {
             t,
             frame,
             actions,
-            &[
-                B::new("Next n", K::Char('n'), ready),
-                B::new("Check & release g", K::Char('g'), ready).primary(),
-                B::new(
-                    if self.snapshot.as_ref().is_some_and(|s| s.paused) {
-                        "Resume p"
-                    } else {
-                        "Pause p"
-                    },
-                    K::Char('p'),
-                    ready,
-                ),
-                B::new("Loop l", K::Char('l'), ready),
-            ],
+            &[B::new(
+                if self.snapshot.as_ref().is_some_and(|s| s.paused) {
+                    "Resume p"
+                } else {
+                    "Pause p"
+                },
+                K::Char('p'),
+                ready,
+            )],
         );
         self.buttons.extend(hits);
         if below.height < 2 {
@@ -1442,13 +1409,7 @@ impl Panel {
             Page::Add { .. } => " Add task ",
             Page::Edit { .. } => " Edit task ",
             Page::Delete { .. } => " Delete task ",
-            Page::Manual(ref manual) => {
-                if manual.returning {
-                    " Return to pending "
-                } else {
-                    " Mark complete manually "
-                }
-            }
+            Page::Confirm(ref confirmation) => confirmation.action.label(),
         };
         let mut line = vec![ratatui::text::Span::styled(
             "─".repeat(usize::from(rule.width)),
@@ -1504,10 +1465,14 @@ impl Panel {
         );
         self.buttons.extend(hits);
         let mut controls = vec![B::new("Add task a", K::Char('a'), ready)];
-        let running = self
+        let active = self
             .tasks()
             .get(self.selected)
-            .is_some_and(|(group, task)| *group == "Current" && task.id.is_some());
+            .is_some_and(|(group, task)| {
+                matches!(*group, "Current" | "Awaiting")
+                    && task.id.is_some()
+                    && task.run_id.is_some()
+            });
         if let Some(index) = self.pending_index() {
             controls.extend([
                 B::new("Edit e", K::Char('e'), ready),
@@ -1527,9 +1492,14 @@ impl Panel {
             button.key = dispatch_selected_click();
             controls.push(button);
         }
-        if running {
-            let mut button = B::new("Mark complete manually…", K::Null, ready);
-            button.key = manual_click();
+        if active {
+            let label = if self.tasks()[self.selected].0 == "Current" {
+                "Submit for review"
+            } else {
+                "Accept"
+            };
+            let mut button = B::new(label, K::Null, ready);
+            button.key = transition_click();
             controls.push(button);
             let mut button = B::new("Return to pending…", K::Null, ready);
             button.key = return_click();
@@ -2114,7 +2084,7 @@ impl Panel {
                 title.draw(frame, title_inner, typing && !*body_focus, "", t);
                 text.draw(frame, text_inner, typing && *body_focus, "", t);
             }
-            Page::Manual(_) => self.draw_manual(t, frame, body, focused),
+            Page::Confirm(_) => self.draw_confirmation(t, frame, body, focused),
             Page::AllPending => {
                 let lines = self.all_pending_lines(t, body.width.saturating_sub(1));
                 let height = usize::from(body.height);
@@ -2141,7 +2111,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control the project; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nClick a task: Show it beside the list\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll the task text or details\nWheel / trackpad: Scroll the list or text under the pointer\nr: Refresh; g: Check and release\nn: Send next task\np: Pause / Resume; l: Toggle loop\na: Add task\nA: All pending tasks in registered projects\ne: Edit pending task\nu / d: Move pending up / down\nx: Delete pending (kept in History as Dropped)\nDispatch selected (button, pending task): send this task now instead of the first; unavailable while paused, running or awaiting release\nReturn to pending… (button, running task): confirm work has stopped and give a reason; retains the task and pauses the queue\nMark complete manually… (button, running task): confirm it done with a reason; it then awaits release\nTab: Switch field; Ctrl-S: Save\nEsc: Back; on the list, close Tasks\nq: Close Tasks; Ctrl-]: Agents\n\nNext / Check & release / Pause / Loop apply to the project,\nregardless of the selected history task.".into(),
+                    Page::Help=>"Tasks help\nTop actions control explicit dispatch; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll text or details\nr: Refresh; p: Pause / Resume explicit dispatch\na: Add task; A: All pending\ne: Edit pending; u / d: Move pending; x: Delete pending\nDispatch selected: explicitly send the selected Pending task\nSubmit for review: selected Running to Awaiting\nAccept: selected Awaiting to Done\nReturn to pending: Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.\nTab: Switch field; Ctrl-S: Save\nEsc: Back or close Tasks; Ctrl-]: Agents".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
@@ -2169,7 +2139,7 @@ impl Panel {
 impl Panel {
     /// The confirmation page: what is confirmed and what it does not do, the checks as drover
     /// reported them, then the one-line reason.
-    fn draw_manual(
+    fn draw_confirmation(
         &mut self,
         t: &Theme,
         frame: &mut ratatui::Frame,
@@ -2182,7 +2152,7 @@ impl Panel {
             text::{Line, Span},
             widgets::{Block, Paragraph},
         };
-        let Page::Manual(manual) = &self.page else {
+        let Page::Confirm(confirmation) = &self.page else {
             return;
         };
         if body.height < 6 {
@@ -2191,7 +2161,7 @@ impl Panel {
         }
         let width = body.width.saturating_sub(1);
         let muted = Style::default().fg(t.muted);
-        let name = std::path::Path::new(&manual.key.project)
+        let name = std::path::Path::new(&confirmation.key.project)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
@@ -2200,46 +2170,41 @@ impl Panel {
                 Span::styled("Project  ", muted),
                 Span::styled(name, Style::default().fg(t.bright)),
                 Span::styled(
-                    format!("  {}", manual.key.project),
+                    format!("  {}", confirmation.key.project),
                     Style::default().fg(t.dim),
                 ),
             ]),
             Line::from(vec![
                 Span::styled("Task     ", muted),
                 Span::styled(
-                    manual.key.id.clone(),
+                    confirmation.key.id.clone(),
                     Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
                 ),
-                Span::raw(format!(" · {}", manual.title)),
+                Span::raw(format!(" · {}", confirmation.title)),
             ]),
             Line::raw(""),
         ];
         lines.extend(
             wrap_text(
-                if manual.returning {
-                    "Confirm that this run's work has stopped, including any implementers. Returning the task does not stop agents. Its ID and text stay the same, it moves to the front of Pending, and the queue becomes paused. This run and your reason are kept; the task is not completed or dropped. No next task is sent."
-                } else { "Confirm that this run is complete although its checks may not be met. It then waits for your release (Check & release) like a finished task. This does not run the check command, send go or next, change loop or pause, touch Git branches or commits, or stop agents." },
+                if confirmation.action == Transition::Return {
+                    "Confirm that this run's work has stopped, including any implementers. Returning the task does not stop agents. Its ID and text stay the same, it moves to the front of Pending, and the dispatch pause setting stays unchanged. This run and your reason are kept; the task is not completed or dropped. No next task is sent."
+                } else if confirmation.action == Transition::Submit { "Submit this run for review. It will wait for acceptance. Repository evidence is reference only." } else { "Accept this run's delivery and record it as Done. The next task requires explicit dispatch." },
                 width,
             )
             .into_iter()
             .map(|l| l.style(Style::default().fg(t.text))),
         );
-        if let Some(problem) = manual_problem(manual) {
+        if let Some(problem) = confirmation_problem(confirmation) {
             lines.push(Line::raw(""));
             lines.extend(wrap_text(&problem, width).into_iter().map(|l| {
-                l.style(Style::default().fg(if manual.target.is_none() {
+                l.style(Style::default().fg(if confirmation.target.is_none() {
                     t.agent_starting
                 } else {
                     t.agent_blocked
                 }))
             }));
         }
-        if let Some(Ok(detail)) = &manual.target
-            && detail.task.id == manual.key.id
-            && !manual.returning
-        {
-            lines.extend(crate::detail::check_lines(t, detail, usize::from(width)));
-        }
+        lines.push(Line::raw(format!("Run      {}", confirmation.run_id)));
         let info = Rect::new(body.x, body.y, body.width, body.height - 3);
         let height = usize::from(info.height);
         self.scroll = self.scroll.min(lines.len().saturating_sub(height));
@@ -2247,22 +2212,22 @@ impl Panel {
             Paragraph::new(lines).scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
             Rect::new(info.x, info.y, width, info.height),
         );
-        let Page::Manual(manual) = &self.page else {
+        let Page::Confirm(confirmation) = &self.page else {
             return;
         };
+        if confirmation.action != Transition::Return {
+            return;
+        }
         let field_area = Rect::new(body.x, body.bottom() - 3, body.width, 3);
         let field = Block::bordered()
-            .title(if manual.returning {
-                "Reason (required) · Enter Return to pending · Esc Cancel"
-            } else {
-                "Reason (required) · Enter Mark complete · Esc Cancel"
-            })
+            .title("Reason (required) · Enter Return to pending · Esc Cancel")
             .border_style(Style::default().fg(t.focus));
         let inner = field.inner(field_area);
         frame.render_widget(field, field_area);
-        let reason_width = unicode_width::UnicodeWidthStr::width(manual.reason.as_str()) as u16;
+        let reason_width =
+            unicode_width::UnicodeWidthStr::width(confirmation.reason.as_str()) as u16;
         frame.render_widget(
-            Paragraph::new(manual.reason.as_str()).scroll((
+            Paragraph::new(confirmation.reason.as_str()).scroll((
                 0,
                 reason_width.saturating_sub(inner.width.saturating_sub(1)),
             )),

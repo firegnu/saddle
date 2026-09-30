@@ -82,7 +82,7 @@ impl TaskDetail {
                 return out.rows;
             }
             out.note(if task.id.is_some() {
-                "From the queue list; drover show covers started tasks only."
+                "From the queue list; task details are unavailable."
             } else {
                 "Unnumbered task; showing queue list data only."
             });
@@ -99,94 +99,36 @@ impl TaskDetail {
             return out.rows;
         };
         let task = &data.task;
-        let group = match task.location.as_str() {
-            "current" => "Current",
-            "awaiting" => "Awaiting",
-            "pending" => "Pending",
+        let group = match task.status.as_deref() {
+            Some("running") => "Current",
+            Some("awaiting_release") => "Awaiting",
+            Some("pending") => "Pending",
             _ => "History",
         };
-        let (status, color) = crate::queue::task_status(t, group, Some(&task.status));
-        let current = task.location == "current";
-        out.header(
-            Some(&task.id),
-            status,
-            color,
-            Some(match data.timing.elapsed_seconds {
-                Some(seconds) if current => format!("{} so far", duration(seconds)),
-                Some(seconds) => duration(seconds),
-                None => "elapsed unknown".into(),
-            }),
-            &task.title,
-        );
-        match &self.error {
-            Some(error) => {
-                out.line(vec![Span::styled(
-                    format!("Refresh failed: {error}"),
-                    Style::default().fg(t.agent_error),
-                )]);
-                out.line(vec![Span::styled(
-                    format!(
-                        "Showing stale details from {}. Retrying every 5s.",
-                        time_of_day(data.observed_at)
-                    ),
-                    Style::default().fg(t.agent_blocked),
-                )]);
-            }
-            None => out.note(&format!(
-                "Updated {} · refreshes every 5s",
-                time_of_day(data.observed_at)
-            )),
-        }
-        let attention = &data.attention;
-        let manual = task
-            .completion_record
-            .as_ref()
-            .is_some_and(|r| r.method == "manual");
-        match attention.state.as_str() {
-            "awaiting_release" => out.line(vec![Span::styled(
-                if manual {
-                    "Awaiting release · marked complete manually, not by checks"
-                } else {
-                    "Awaiting release"
-                },
-                bold(t.agent_blocked),
-            )]),
-            "suggested" => out.line(vec![Span::styled(
-                "Suggested attention: main agent idle with unmet checks (inferred)",
-                bold(t.agent_blocked),
-            )]),
-            _ => {}
-        }
-        for warning in &data.warnings {
-            let text = match warning.code.as_str() {
-                "snapshot_changed" => "Inconsistent snapshot: changed during read",
-                "snapshot_verification_unavailable" => "Snapshot not verified",
-                code => code,
-            };
+        let (status, color) = crate::queue::task_status(t, group, task.status.as_deref());
+        out.header(task.id.as_deref(), status, color, None, &task.title);
+        if let Some(error) = &self.error {
             out.line(vec![Span::styled(
-                format!(
-                    "{text} ({}); the next refresh retries",
-                    warning.sources.join(", ")
-                ),
-                Style::default().fg(t.agent_blocked),
+                format!("Refresh failed: {error}"),
+                Style::default().fg(t.agent_error),
             )]);
+            out.note(&format!(
+                "Showing stale details from {}. Retrying every 5s.",
+                time_of_day(data.evidence.observed_at)
+            ));
+        } else {
+            out.note(&format!(
+                "Updated {} · refreshes every 5s",
+                time_of_day(data.evidence.observed_at)
+            ));
         }
-
-        out.return_history(data);
-        out.manual_record(data);
-        out.checks(
-            &data.completion,
-            &task.location,
-            if data.completion.scope == "current_repository" {
-                "Completion checks · recomputed now"
-            } else {
-                "Completion checks"
-            },
-        );
-        out.last_check(&data.last_check, "Last check");
-        out.progress(data);
-        out.route(data);
-        out.records(data);
+        out.records(task);
+        for (index, run) in task.previous_runs.iter().enumerate() {
+            out.heading(&format!("Previous run {}", index + 1));
+            out.records(run);
+        }
+        out.evidence(&data.evidence);
+        out.body(&task.body);
         out.rows
     }
 }
@@ -196,459 +138,100 @@ struct Out<'a> {
     width: usize,
     rows: Vec<Line<'static>>,
 }
-/// The checks and last check-command record `drover show` reported, as the confirmation
-/// page shows them before a manual completion.
-pub(crate) fn check_lines(t: &Theme, data: &Detail, width: usize) -> Vec<Line<'static>> {
-    let mut out = Out {
-        t,
-        width,
-        rows: Vec::new(),
-    };
-    out.checks(
-        &data.completion,
-        &data.task.location,
-        "Completion checks · as reported now, not run",
-    );
-    out.last_check(&data.last_check, "Last check · saved sample, not run now");
-    out.rows
-}
 impl Out<'_> {
-    fn return_history(&mut self, data: &Detail) {
-        if data.task.return_history.is_empty() {
-            return;
-        }
-        self.heading("Return history");
-        for (index, record) in data.task.return_history.iter().enumerate() {
-            self.note(&format!("Returned run {}", index + 1));
-            for (label, at) in [
-                ("Dispatched", &record.dispatched_at),
-                ("Returned", &record.returned_at),
-            ] {
-                self.field(
-                    label,
-                    &[(
-                        at.as_ref()
-                            .and_then(|n| n.as_f64())
-                            .map(clock)
-                            .unwrap_or_else(|| "not recorded".into()),
-                        self.t.text,
-                    )],
-                );
+    fn evidence(&mut self, evidence: &crate::drover::Evidence) {
+        self.heading("Repository reference");
+        self.note("Observed repository data; does not establish task ownership or control task transitions.");
+        for (label, reference) in [("Git", &evidence.git), ("Last check", &evidence.last_check)] {
+            self.heading(label);
+            let color = match reference.state.as_str() {
+                "failed" => self.t.agent_error,
+                "stale" => self.t.agent_blocked,
+                _ => self.t.text,
+            };
+            self.field("State", &[(reference.state.clone(), color)]);
+            if label == "Git" && reference.state != "available" {
+                self.note("Git data is incomplete or stale; empty results do not establish a clean repository.");
             }
-            self.field("Reason", &[(record.reason.clone(), self.t.text)]);
-            self.field(
-                "Work stopped",
-                &[(
-                    if record.work_stopped {
-                        "confirmed by user; agents were not stopped by this action"
-                    } else {
-                        "not confirmed"
-                    }
-                    .into(),
-                    self.t.muted,
-                )],
-            );
-        }
-    }
-    /// A manual completion's saved record: the user's reason and time, and the checks then.
-    fn manual_record(&mut self, data: &Detail) {
-        let t = self.t;
-        let Some(record) = &data.task.completion_record else {
-            return;
-        };
-        self.heading("Manual completion");
-        self.field(
-            "Method",
-            &[(
-                if record.method == "manual" {
-                    "manual · confirmed by the user, not automatic checks".into()
-                } else {
-                    record.method.clone()
-                },
-                t.agent_blocked,
-            )],
-        );
-        self.field(
-            "Confirmed",
-            &[(
-                record
-                    .confirmed_at
-                    .map(clock)
-                    .unwrap_or_else(|| "not recorded".into()),
-                t.text,
-            )],
-        );
-        self.field("Reason", &[(record.reason.clone(), t.text)]);
-        if let Some(workspace) = &record.workspace {
-            self.field(
-                "Workspace",
-                &[(
-                    format!(
-                        "{}{}",
-                        workspace.state,
-                        if workspace.tracked_dirty {
-                            " · tracked changes"
-                        } else {
-                            ""
-                        }
-                    ),
-                    t.text,
-                )],
-            );
-        }
-        match &record.completion {
-            Some(completion) => self.checks(completion, "saved", "Checks saved at confirmation"),
-            None => self.note("  Checks at confirmation: not readable"),
-        }
-        match &record.last_check {
-            Some(check) => self.last_check(check, "Last check saved at confirmation"),
-            None => self.note("  Last check at confirmation: not readable"),
-        }
-    }
-    /// Completion check rows under `heading`, or why there are none.
-    fn checks(&mut self, completion: &crate::drover::Completion, location: &str, heading: &str) {
-        let t = self.t;
-        self.heading(heading);
-        match &completion.rows {
-            Some(rows) => {
-                if location == "awaiting" {
-                    self.note("The recorded done stands; recomputed checks do not change it.");
-                }
-                for row in rows {
-                    let (mark, state, color) = match row.state.as_str() {
-                        "met" => ("✓", "met", t.agent_idle),
-                        "unmet" => ("✗", "unmet", t.agent_blocked),
-                        "unavailable" => ("?", "unavailable", t.muted),
-                        "not_applicable" => ("–", "not applicable", t.dim),
-                        "not_run" => ("·", "not run", t.muted),
-                        other => ("·", other, t.muted),
+            if label == "Last check" {
+                self.note("Saved reference only; no check was run by this view.");
+                if let Some(record) = reference.fields.get("record") {
+                    let (result, color) = match record.get("ok").and_then(|v| v.as_bool()) {
+                        Some(false) => ("failed", self.t.agent_error),
+                        Some(true) => ("passed in saved record", self.t.text),
+                        None => ("unknown", self.t.muted),
                     };
-                    let mut spans = vec![
-                        Span::styled(format!("  {mark} "), bold(color)),
-                        Span::raw(capitalized(&phrase(&row.id))),
-                        Span::raw("  "),
-                        Span::styled(state.to_owned(), bold(color)),
-                    ];
-                    if !matches!(row.state.as_str(), "met" | "unmet") {
-                        spans.push(Span::styled(
-                            format!(" · {}", phrase(&row.reason)),
-                            Style::default().fg(t.muted),
-                        ));
-                    }
-                    self.push(4, spans);
-                    self.text(4, &row.why, Style::default().fg(t.text));
+                    self.field("Saved result", &[(result.into(), color)]);
                 }
             }
-            None => {
-                self.push(
-                    4,
-                    vec![Span::styled(
-                        format!(
-                            "  Not saved · {}",
-                            completion
-                                .unavailable_reason
-                                .as_deref()
-                                .map(phrase)
-                                .unwrap_or_else(|| "not recorded".into())
-                        ),
-                        Style::default().fg(t.text),
-                    )],
-                );
-                self.note("  Current checks are not applied to past tasks.");
+            for (key, value) in &reference.fields {
+                self.value(&phrase(key), value);
             }
         }
     }
-    /// The last check-command record, with what it does not prove.
-    fn last_check(&mut self, check: &crate::drover::LastCheck, heading: &str) {
-        let t = self.t;
-        self.heading(heading);
-        let (label, color) = match check.status.as_str() {
-            "valid" => ("Valid", t.agent_idle),
-            "stale" => ("Stale", t.agent_blocked),
-            "missing" => ("Missing", t.muted),
-            "invalid" => ("Invalid", t.agent_error),
-            "unavailable" => ("Unavailable", t.muted),
-            other => (other, t.muted),
-        };
-        let mut reasons: Vec<String> = check.stale_reasons.iter().map(|r| phrase(r)).collect();
-        reasons.extend(check.unavailable_reason.as_deref().map(phrase));
-        let mut spans = vec![Span::styled(format!("  {label}"), bold(color))];
-        if !reasons.is_empty() {
-            spans.push(Span::styled(
-                format!(" · {}", reasons.join(", ")),
-                Style::default().fg(t.muted),
-            ));
-        }
-        self.push(4, spans);
-        if let Some(record) = &check.record {
-            let (result, color) = match record.ok {
-                Some(true) => ("passed", t.agent_idle),
-                Some(false) => ("failed", t.agent_error),
-                None => ("result unknown", t.muted),
-            };
+    fn records(&mut self, task: &Task) {
+        self.heading("Run records");
+        self.field(
+            "Run",
+            &[(
+                task.run_id.clone().unwrap_or_else(|| "not recorded".into()),
+                self.t.text,
+            )],
+        );
+        for (label, value) in [
+            ("Started", &task.t0),
+            ("Submit / done", &task.t1),
+            ("Accepted", &task.t2),
+        ] {
             self.field(
-                "Result",
-                &[
-                    (result.into(), color),
-                    (format!(" · {}", clock(record.t)), t.muted),
-                ],
-            );
-            self.field("Command", &[(record.cmd.clone(), t.text)]);
-            self.text(4, &record.why, Style::default().fg(t.text));
-        }
-        match check.status.as_str() {
-            "valid" => {
-                self.note("  Last saved result for this task, main and command; not run now.")
-            }
-            "missing" | "invalid" => {
-                self.note("  No valid record; this does not mean it never ran.")
-            }
-            _ => {}
-        }
-        if check.scope == "retained_sample" {
-            self.note("  Retained sample, not the check at completion.");
-        }
-    }
-    /// Git range and main progress, with unknown values explained.
-    fn progress(&mut self, data: &Detail) {
-        let t = self.t;
-        let task = &data.task;
-        let current = task.location == "current";
-        let git = &data.git;
-        let unknown = |key: &str| match git.unavailable_reasons.get(key) {
-            Some(reason) => format!("unknown · {}", phrase(reason)),
-            None => "unknown".into(),
-        };
-        self.heading("Progress");
-        match task.location.as_str() {
-            "current" => {}
-            "awaiting" => self.field(
-                "Waiting",
+                label,
                 &[(
-                    data.timing
-                        .release_wait_seconds
-                        .map(|s| format!("{} so far", duration(s)))
-                        .unwrap_or_else(|| "unknown".into()),
-                    t.text,
-                )],
-            ),
-            _ => self.field(
-                "Release wait",
-                &[(
-                    data.timing
-                        .release_wait_seconds
-                        .map(duration)
-                        .unwrap_or_else(|| "unknown".into()),
-                    t.text,
-                )],
-            ),
-        }
-        self.field(
-            "Commits",
-            &[(
-                git.range_commits
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| unknown("range_commits")),
-                t.text,
-            )],
-        );
-        self.note(if current {
-            "  Counts start..HEAD, not only this task's commits."
-        } else {
-            "  Counts start..end HEAD, not only this task's commits."
-        });
-        self.field(
-            "Main",
-            &[(
-                git.main_commits_since_start
-                    .map(|n| format!("+{n} since start"))
-                    .unwrap_or_else(|| unknown("main_commits_since_start")),
-                t.text,
-            )],
-        );
-        self.field(
-            "Main tip",
-            &[(
-                git.main_tip_committed_at
-                    .map(|at| format!("committed {} (main now)", clock(at)))
-                    .unwrap_or_else(|| unknown("main_tip_committed_at")),
-                t.text,
-            )],
-        );
-        let sha = |value: &Option<String>, missing: &str| {
-            value
-                .as_deref()
-                .map(|s| s.chars().take(7).collect())
-                .unwrap_or_else(|| missing.to_owned())
-        };
-        self.field(
-            "Start",
-            &[(
-                format!(
-                    "HEAD {} · main {}",
-                    sha(&git.start_head, "not recorded"),
-                    sha(&git.start_main, "not recorded")
-                ),
-                t.text,
-            )],
-        );
-        if !current {
-            self.field(
-                "End HEAD",
-                &[(
-                    format!("{} (at done; not main)", sha(&git.end_head, "not recorded")),
-                    t.text,
-                )],
-            );
-        }
-        self.field(
-            "Now",
-            &[(
-                format!(
-                    "HEAD {} · main {}",
-                    sha(&git.observed_head, "unavailable"),
-                    sha(&git.observed_main, "unavailable")
-                ),
-                t.text,
-            )],
-        );
-    }
-    /// Routing from the current task file, hold, and the attention inference.
-    fn route(&mut self, data: &Detail) {
-        let t = self.t;
-        let attention = &data.attention;
-        self.heading("Route, hold & attention");
-        let route = match &data.routing {
-            None => "none (no routed task file)".to_owned(),
-            Some(routing) => format!(
-                "{} · {}{} · {}",
-                routing.tier,
-                if routing.cross {
-                    "cross review"
-                } else {
-                    "no cross review"
-                },
-                if routing.overridden {
-                    " · overridden"
-                } else {
-                    ""
-                },
-                if routing.source == "task_file_now" {
-                    "from the current task file".to_owned()
-                } else {
-                    format!("from {}", phrase(&routing.source))
-                }
-            ),
-        };
-        self.field("Route", &[(route, t.text)]);
-        let hold = &data.hold;
-        let mut value = match hold.enabled {
-            Some(true) => vec![
-                ("On".to_owned(), t.agent_blocked),
-                (" · stop after done".to_owned(), t.text),
-            ],
-            Some(false) => vec![("Off".to_owned(), t.text)],
-            None => vec![(
-                format!(
-                    "Unknown · {}",
-                    hold.unavailable_reason
-                        .as_deref()
-                        .map(phrase)
-                        .unwrap_or_else(|| "not recorded".into())
-                ),
-                t.muted,
-            )],
-        };
-        if hold.scope == "task_end_events" {
-            value.push((" (at task end)".into(), t.text));
-        }
-        self.field("Hold", &value);
-        self.field(
-            "Attention",
-            &[
-                (
-                    capitalized(&phrase(&attention.state)),
-                    match attention.state.as_str() {
-                        "suggested" | "awaiting_release" => t.agent_blocked,
-                        _ => t.text,
-                    },
-                ),
-                (
-                    format!(
-                        " · {}{}",
-                        phrase(&attention.reason),
-                        if attention.inference && attention.state == "suggested" {
-                            " (inferred)"
-                        } else {
-                            ""
-                        }
-                    ),
-                    t.text,
-                ),
-            ],
-        );
-        if !attention.unmet_rows.is_empty() {
-            let rows: Vec<_> = attention.unmet_rows.iter().map(|r| phrase(r)).collect();
-            self.field("Unmet", &[(rows.join(", "), t.agent_blocked)]);
-        }
-        if let Some(agent) = &attention.agent {
-            let known = |value: &Option<String>| value.clone().unwrap_or_else(|| "unknown".into());
-            // The Agents list palette, on the state word only.
-            let state = match agent.state.as_deref() {
-                Some("working") => t.agent_working,
-                Some("blocked") => t.agent_blocked,
-                Some("idle") => t.agent_idle,
-                Some("starting") => t.agent_starting,
-                _ => t.muted,
-            };
-            let mut rest = format!(" · via {}", known(&agent.last_input_source));
-            if let Some(idle) = agent.idle_for {
-                rest += &format!(" · idle {}", duration(idle));
-            }
-            self.field(
-                "Main agent",
-                &[
-                    (format!("{} · ", known(&agent.name)), t.text),
-                    (known(&agent.state), state),
-                    (rest, t.text),
-                ],
-            );
-        }
-    }
-    /// Recorded start, finish and release times, then the body.
-    fn records(&mut self, data: &Detail) {
-        let t = self.t;
-        let task = &data.task;
-        let current = task.location == "current";
-        self.heading("Records");
-        let at = |value: Option<f64>| value.map(clock).unwrap_or_else(|| "not recorded".into());
-        self.field("Started", &[(at(data.timing.started_at), t.text)]);
-        if !current {
-            let label = if task.status == "dropped" {
-                "Dropped"
-            } else {
-                "Done"
-            };
-            self.field(label, &[(at(data.timing.ended_at), t.text)]);
-        }
-        if task.location == "awaiting" {
-            self.field("Released", &[("not yet".into(), t.text)]);
-        } else if task.location == "history" && task.status == "done" {
-            self.field(
-                "Released",
-                &[(
-                    data.timing
-                        .released_at
+                    value
+                        .as_ref()
+                        .and_then(|v| v.as_f64())
                         .map(clock)
-                        .unwrap_or_else(|| "no release recorded".into()),
-                    t.text,
+                        .unwrap_or_else(|| "not recorded".into()),
+                    self.t.text,
                 )],
             );
+        }
+        if let Some(submission) = &task.submission {
+            self.heading("Submission / legacy completion");
+            self.value("Recorded event", submission);
+        }
+        if let Some(record) = &task.completion_record {
+            self.heading("Legacy manual completion");
+            self.note(
+                "Historical user confirmation; does not establish checks passed or acceptance.",
+            );
+            self.value("Saved record", record);
+        }
+        if !task.return_history.is_empty() {
+            self.heading("Return history");
+            self.note("Work stopped is the user's confirmation, not an observed agent state.");
+            for record in &task.return_history {
+                self.value("Returned", record);
+            }
         }
         if let Some(reason) = &task.reason {
-            self.field("Reason", &[(reason.clone(), t.text)]);
+            self.field("Reason", &[(reason.clone(), self.t.text)]);
         }
-        self.body(&task.body);
+    }
+    /// Historical and reference payloads are shown as supplied; unknown fields carry no inference.
+    fn value(&mut self, label: &str, value: &serde_json::Value) {
+        if let serde_json::Value::Object(fields) = value {
+            self.note(label);
+            for (key, value) in fields {
+                self.value(&phrase(key), value);
+            }
+            return;
+        }
+        let text = match value {
+            serde_json::Value::Null => "unknown".into(),
+            serde_json::Value::String(text) => text.clone(),
+            _ => value.to_string(),
+        };
+        self.field(label, &[(text, self.t.text)]);
     }
     /// Adds one logical line, wrapped to the width at spaces where possible; continuation rows
     /// start `indent` columns in. Control characters are dropped, so text is never interpreted.
@@ -731,7 +314,7 @@ impl Out<'_> {
     fn field(&mut self, label: &str, value: &[(String, Color)]) {
         const LABEL: usize = 13;
         let mut spans = vec![Span::styled(
-            format!("  {}", crate::ui::pad(label, LABEL)),
+            format!("  {} ", crate::ui::pad(label, LABEL)),
             Style::default().fg(self.t.muted),
         )];
         spans.extend(
@@ -739,7 +322,7 @@ impl Out<'_> {
                 .iter()
                 .map(|(text, color)| Span::styled(text.clone(), Style::default().fg(*color))),
         );
-        self.push(if self.width >= 44 { LABEL + 2 } else { 4 }, spans);
+        self.push(if self.width >= 44 { LABEL + 3 } else { 4 }, spans);
     }
     fn header(
         &mut self,
@@ -790,22 +373,6 @@ pub(crate) fn phrase(code: &str) -> String {
         "cache_for_other_task" => "cache belongs to another task".into(),
         "agent_self_turn" => "agent started its own turn".into(),
         _ => code.replace('_', " "),
-    }
-}
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
-}
-fn duration(seconds: f64) -> String {
-    let s = seconds.max(0.0) as u64;
-    match s {
-        0..60 => format!("{s}s"),
-        60..3600 => format!("{}m {}s", s / 60, s % 60),
-        3600..86400 => format!("{}h {}m", s / 3600, s % 3600 / 60),
-        _ => format!("{}d {}h", s / 86400, s % 86400 / 3600),
     }
 }
 /// Local date and time of a Unix timestamp.
