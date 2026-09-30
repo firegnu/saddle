@@ -161,6 +161,8 @@ fn truecolor() -> bool {
 struct App {
     plugins: crate::plugins::Manager,
     plugin_page: Option<crate::plugins::ui::Page>,
+    plugin_entries: crate::plugins::entry::Bar,
+    plugin_overlay: Option<plugins_impl::Overlay>,
     parked_settings: Option<crate::settings::Settings>,
     plugin_toast: Option<(Rect, Rect)>,
 
@@ -323,6 +325,8 @@ impl App {
         Ok(Self {
             plugins,
             plugin_page: None,
+            plugin_entries: Default::default(),
+            plugin_overlay: None,
             parked_settings: None,
             plugin_toast: None,
             layout_store,
@@ -437,8 +441,10 @@ impl App {
                             popup: self.attention.as_mut(),
                         },
                         settings: self.settings.as_mut(),
+                        plugin_entries: Some(&mut self.plugin_entries),
                     }),
                 );
+                self.draw_plugin_overlay(frame, panes);
                 self.draw_closing(frame);
                 if let Some(page) = &mut self.plugin_page {
                     page.draw(&self.config.colors, frame, &self.plugins);
@@ -487,7 +493,8 @@ impl App {
             && self.attention.is_none()
             && self.new_agent.as_ref().is_none_or(|f| !f.visible);
         self.plugins.theme(&self.config.colors);
-        self.plugins.sync(&mut self.viewer, panes.viewer, focused);
+        self.sync_plugins(panes, focused);
+        self.plugin_entries.update(self.plugins.entries());
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
@@ -1114,13 +1121,36 @@ impl App {
                 crate::plugins::ui::Outcome::Stay => {}
                 crate::plugins::ui::Outcome::Back => self.plugin_page = None,
                 crate::plugins::ui::Outcome::Open(id) => {
-                    self.viewer.open_plugin(&id);
                     self.plugin_page = None;
                     self.parked_settings = self.settings.take();
-                    self.focus = Focus::Viewer;
+                    self.focus = self.settings_return;
+                    self.open_plugin_view(&id);
                 }
             }
             return Ok(false);
+        }
+        if self.plugin_overlay.is_some() {
+            self.plugin_overlay_event(&event);
+            return Ok(false);
+        }
+        if !self.plugin_ui_busy() {
+            let (handled, entry) = self
+                .plugin_entries
+                .event(&event, self.focus == Focus::Agents);
+            if let Some(entry) = entry
+                && self
+                    .plugins
+                    .entries()
+                    .iter()
+                    .any(|e| e == &entry && e.state == "Running")
+            {
+                self.open_plugin_view(&entry.plugin);
+            }
+            if handled {
+                return Ok(false);
+            }
+        } else {
+            self.plugin_entries.cancel();
         }
         match event {
             Event::Key(key) => {

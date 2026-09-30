@@ -16,6 +16,9 @@ for line in sys.stdin:
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     let manifest = Manifest {
         manifest_version: 1,
+        view: None,
+        action: None,
+        entry: None,
         id: "test.plugin".into(),
         name: "Test".into(),
         version: "0.1.0".into(),
@@ -61,6 +64,9 @@ fn registration_defaults_disabled_and_concurrent_edit_is_not_overwritten() {
     std::os::unix::fs::symlink("/bin/echo", plugin.join("entry")).unwrap();
     let manifest = Manifest {
         manifest_version: 1,
+        view: None,
+        action: None,
+        entry: None,
         id: "demo.other".into(),
         name: "Other".into(),
         version: "1".into(),
@@ -113,6 +119,9 @@ fn peer(mode: &str) -> (tempfile::TempDir, Manifest) {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     let m = Manifest {
         manifest_version: 1,
+        view: None,
+        action: None,
+        entry: None,
         id: "test.peer".into(),
         name: "Peer".into(),
         version: "1".into(),
@@ -202,6 +211,9 @@ fn sdk_business_stdout_and_child_stdin_cannot_corrupt_protocol() {
     .unwrap();
     let m = Manifest {
         manifest_version: 1,
+        view: None,
+        action: None,
+        entry: None,
         id: "test.stdio".into(),
         name: "Probe".into(),
         version: "1".into(),
@@ -258,4 +270,149 @@ fn plugin_management_and_add_dialog_fit_tiny_terminals() {
                 .unwrap();
         }
     }
+}
+
+#[test]
+fn entry_manifest_requires_explicit_capabilities_and_valid_references() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink("/bin/echo", dir.path().join("entry")).unwrap();
+    let base = r#"
+manifest_version = 1
+id = "test.entry"
+name = "Entry fixture"
+version = "1"
+protocol_major = 1
+executable = "entry"
+required_capabilities = ["panel.v1", "ui.entry.v1", "panel.overlay.v1"]
+entry = "open"
+[view]
+id = "main"
+placement = "overlay"
+[action]
+id = "open"
+title = "Counter"
+view = "main"
+"#;
+    std::fs::write(dir.path().join("plugin.toml"), base).unwrap();
+    assert!(Manifest::read(dir.path()).is_ok());
+    for bad in [
+        base.replace("\"ui.entry.v1\", ", ""),
+        base.replace(", \"panel.overlay.v1\"", ""),
+        base.replace("entry = \"open\"", "entry = \"missing\""),
+        base.replace("view = \"main\"", "view = \"other\""),
+        base.replace("placement = \"overlay\"", "placement = \"unknown\""),
+        base.replace("title = \"Counter\"", "title = \"\""),
+    ] {
+        std::fs::write(dir.path().join("plugin.toml"), bad).unwrap();
+        assert!(Manifest::read(dir.path()).is_err());
+    }
+}
+#[test]
+fn entry_bar_scrolls_and_never_activates_a_replaced_or_disabled_entry() {
+    use crossterm::event::{
+        Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+    use saddle::plugins::entry::{Bar, Entry};
+    use saddle_plugin_protocol::Placement;
+    let key = |code| Event::Key(KeyEvent::new(code, KeyModifiers::NONE));
+    let mouse = |kind| {
+        Event::Mouse(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+    let mut bar = Bar::default();
+    let mut entries: Vec<_> = (0..8)
+        .map(|i| Entry {
+            plugin: format!("p{i}"),
+            action: "open".into(),
+            title: format!("View {i}"),
+            placement: Placement::Overlay,
+            state: "Running".into(),
+        })
+        .collect();
+    bar.update(entries.clone());
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(20, 3)).unwrap();
+    let draw = |bar: &mut Bar, t: &mut ratatui::Terminal<_>| {
+        t.draw(|f| bar.draw(f, f.area(), &Default::default()))
+            .unwrap();
+    };
+    draw(&mut bar, &mut terminal);
+    bar.event(&mouse(MouseEventKind::Down(MouseButton::Left)), true);
+    entries[0].plugin = "replacement".into();
+    bar.update(entries.clone());
+    draw(&mut bar, &mut terminal);
+    assert!(
+        bar.event(&mouse(MouseEventKind::Up(MouseButton::Left)), true)
+            .1
+            .is_none()
+    );
+    bar.event(&key(KeyCode::F(6)), true);
+    for _ in 0..7 {
+        bar.event(&key(KeyCode::Down), true);
+    }
+    draw(&mut bar, &mut terminal);
+    assert_eq!(
+        bar.event(&key(KeyCode::Enter), true).1.unwrap().plugin,
+        "p7"
+    );
+    entries[7].state = "Failed".into();
+    bar.update(entries);
+    assert!(bar.event(&key(KeyCode::Enter), true).1.is_none());
+    assert!(!bar.event(&key(KeyCode::F(6)), false).0);
+}
+
+#[test]
+fn overlay_resize_rejects_the_previously_displayed_frame() {
+    use ratatui::layout::Rect;
+    use saddle::plugins::{Manager, registry::Registry};
+    let dir = tempfile::tempdir().unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(
+        dir.path().join("counter"),
+        include_str!("fixtures/plugin_counter.py"),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        dir.path().join("counter"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    let manifest:Manifest=serde_json::from_value(serde_json::json!({"manifest_version":1,"id":"test.entry","name":"Fixture","version":"1","protocol_major":1,"executable":"counter","required_capabilities":["panel.v1"]})).unwrap();
+    std::fs::write(
+        dir.path().join("plugin.toml"),
+        toml::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+    let path = dir.path().join("plugins.toml");
+    let mut registry = Registry::open(path.clone());
+    registry.add(dir.path(), &manifest).unwrap();
+    registry.enabled("test.entry", true).unwrap();
+    let mut manager = Manager::open(path);
+    let mut terminals = saddle::terminals::Terminals::new("unused".into());
+    let area = Rect::new(0, 0, 80, 24);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let old = loop {
+        let p = manager
+            .sync_with_overlay(&mut terminals, area, false, Some(("test.entry", area)))
+            .unwrap();
+        if p.interactive {
+            break p;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    manager.sync_with_overlay(
+        &mut terminals,
+        area,
+        false,
+        Some(("test.entry", Rect::new(0, 0, 40, 12))),
+    );
+    assert!(!manager.input(
+        &old,
+        serde_json::json!({"type":"key","code":{"name":"enter"},"phase":"press","modifiers":[]})
+    ));
+    manager.disable("test.entry").unwrap();
 }

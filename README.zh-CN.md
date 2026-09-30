@@ -110,6 +110,8 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 打开 **Settings → Plugins（F5）**，添加可信的本地插件目录，再启用并打开 Saddle 内的面板。添加后默认停用；关闭面板保留进程，Disable 停止进程。登记保存的是目录路径，请保留该目录。
 
+声明入口的插件会直接出现在 Attention 上方；点击入口，或在 Agents 中按 F6、↑↓选择、Enter 打开。Counter 默认居中弹出，Esc 关闭并恢复来源焦点，Ctrl-] 返回 Agents；关闭仍保留插件进程。已有工作区面板优先聚焦，不重复创建。
+
 开发者运行 `./examples/counter-plugin/package.sh`，即可构建并打包独立 Counter 示例；在设置中添加产物 `examples/counter-plugin/dist/counter-plugin`。使用者只需拿到这个目录，不需要 Rust 或开发环境变量。SDK 目前是开发接口，详见 [Counter 说明](examples/counter-plugin/README.md) 和 [插件开发入门](docs/插件开发入门.md)。Drover 插件迁移另行进行。
 
 ## 任务关联跳转

@@ -255,7 +255,7 @@ fn run(
         let mut size = (0u16, 0u16, 0u64);
         let mut last_frame = 0;
         let mut failed = None;
-        writeq.push_back(wire::encode(&Message::request(1,"initialize",json!({"session":format!("{}-{}",child.id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos()),"protocol_major":1,"capabilities":["panel.v1","notify.v1"],"width_profile":wire::PROFILE,"limits":wire::limits(),"theme":{"text":"default","muted":{"indexed":8},"background":"default","accent":{"indexed":6},"error":{"indexed":1}}})))?);
+        writeq.push_back(wire::encode(&Message::request(1,"initialize",json!({"session":format!("{}-{}",child.id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos()),"protocol_major":1,"capabilities":wire::CAPABILITIES,"reserved_keys":["ctrl+]"],"view_reserved_keys":{"workspace":["ctrl+]"],"overlay":["ctrl+]","esc"]},"width_profile":wire::PROFILE,"limits":wire::limits(),"theme":{"text":"default","muted":{"indexed":8},"background":"default","accent":{"indexed":6},"error":{"indexed":1}}})))?);
         loop {
             if let Some(status) = child.try_wait()? {
                 shared.lock().unwrap().pid = None;

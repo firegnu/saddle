@@ -1,3 +1,4 @@
+pub mod entry;
 pub mod registry;
 pub mod runtime;
 pub mod ui;
@@ -236,12 +237,45 @@ impl Manager {
         }
         self.notices.lock().unwrap().expire();
     }
+    pub fn entries(&self) -> Vec<entry::Entry> {
+        self.running
+            .iter()
+            .filter(|(_, r)| r.enabled)
+            .filter_map(|(id, r)| {
+                let action = r.manifest.action.as_ref()?;
+                Some(entry::Entry {
+                    plugin: id.clone(),
+                    action: action.id.clone(),
+                    title: action.title.clone(),
+                    placement: r.manifest.view.as_ref()?.placement,
+                    state: r.runtime.state(),
+                })
+            })
+            .collect()
+    }
+    pub fn placement(&self, id: &str) -> saddle_plugin_protocol::Placement {
+        self.running
+            .get(id)
+            .and_then(|r| r.manifest.view.as_ref())
+            .map_or(saddle_plugin_protocol::Placement::Workspace, |v| {
+                v.placement
+            })
+    }
     pub fn sync(
         &mut self,
         terminals: &mut crate::terminals::Terminals,
         area: ratatui::layout::Rect,
         focused: bool,
     ) {
+        self.sync_with_overlay(terminals, area, focused, None);
+    }
+    pub fn sync_with_overlay(
+        &mut self,
+        terminals: &mut crate::terminals::Terminals,
+        area: ratatui::layout::Rect,
+        focused: bool,
+        overlay: Option<(&str, ratatui::layout::Rect)>,
+    ) -> Option<Panel> {
         self.tick();
         let visible = terminals.rects(area);
         let active = terminals.active_pane().id;
@@ -251,7 +285,10 @@ impl Manager {
             .flat_map(|t| &t.panes)
             .filter_map(|p| p.plugin_id().map(|id| (p.id, id.to_owned())))
             .collect();
-        let open: BTreeSet<_> = panes.iter().map(|(_, id)| id.as_str()).collect();
+        let mut open: BTreeSet<_> = panes.iter().map(|(_, id)| id.as_str()).collect();
+        if let Some((id, _)) = overlay {
+            open.insert(id);
+        }
         for (id, r) in &mut self.running {
             if !open.contains(id.as_str()) && r.size.is_some() {
                 r.runtime
@@ -261,61 +298,76 @@ impl Manager {
             }
         }
         for (pane, id) in panes {
-            let mut view = Panel::unavailable(&id);
-            if let Some(r) = self.running.get_mut(&id) {
-                let rect = visible
-                    .iter()
-                    .find(|(p, _)| *p == pane)
-                    .map(|(_, r)| crate::ui::inner(*r));
-                let s = r.runtime.snapshot();
-                view.name = r.manifest.name.clone();
-                view.state = s.state.clone();
-                view.note = s.note.clone();
-                view.picture = s.picture;
-                view.interactive = s.interactive;
-                if s.state == "Running" {
-                    if r.theme != self.theme {
-                        r.theme = self.theme.clone();
-                        r.runtime.send(Message::event("theme", self.theme.clone()));
-                    }
-                    if let Some(rect) = rect {
-                        let size = (rect.width, rect.height);
-                        if r.size != Some(size) {
-                            let name = if r.size.is_some() {
-                                "panel.resize"
-                            } else {
-                                "panel.open"
-                            };
-                            r.revision += 1;
-                            r.runtime.send(Message::event(name,json!({"panel":"main","cols":size.0,"rows_count":size.1,"size_revision":r.revision})));
-                            r.size = Some(size);
-                            view.interactive = false;
-                        }
-                    }
-                    let focus = focused && active == pane && rect.is_some();
-                    if r.focused != focus {
-                        r.focused = focus;
-                        r.runtime.send(Message::event(
-                            "panel.focus",
-                            json!({"panel":"main","focused":focus}),
-                        ));
-                    }
-                }
-                view.interactive &= view
-                    .picture
-                    .as_ref()
-                    .is_some_and(|p| p.revision == r.revision);
-                if view.state == "Disabled" {
-                    view.note = "Plugin disabled · Open Plugins / Close".into();
-                }
-            } else if let Some(error) = self.errors.get(&id) {
-                view.note = error.clone();
-            } else if self.registry.entries.iter().any(|e| e.id == id) {
-                view.state = "Disabled".into();
-                view.note = "Plugin disabled · Open Plugins / Close".into();
-            }
+            let rect = visible
+                .iter()
+                .find(|(p, _)| *p == pane)
+                .map(|(_, r)| crate::ui::inner(*r));
+            let view = self.sync_panel(
+                &id,
+                rect,
+                focused && active == pane && rect.is_some(),
+                false,
+            );
             terminals.get_mut(pane).unwrap().plugin = Some(view);
         }
+        overlay.map(|(id, rect)| self.sync_panel(id, Some(rect), true, true))
+    }
+    fn sync_panel(
+        &mut self,
+        id: &str,
+        rect: Option<ratatui::layout::Rect>,
+        focused: bool,
+        overlay: bool,
+    ) -> Panel {
+        let mut view = Panel::unavailable(id);
+        if let Some(r) = self.running.get_mut(id) {
+            let s = r.runtime.snapshot();
+            view.name = r.manifest.name.clone();
+            view.state = s.state.clone();
+            view.note = s.note;
+            view.picture = s.picture;
+            view.interactive = s.interactive;
+            if s.state == "Running" {
+                if r.theme != self.theme {
+                    r.theme = self.theme.clone();
+                    r.runtime.send(Message::event("theme", self.theme.clone()));
+                }
+                if let Some(rect) = rect {
+                    let size = (rect.width, rect.height);
+                    if r.size != Some(size) {
+                        let name = if r.size.is_some() {
+                            "panel.resize"
+                        } else {
+                            "panel.open"
+                        };
+                        r.revision += 1;
+                        r.runtime.send(Message::event(name,json!({"panel":"main","cols":size.0,"rows_count":size.1,"size_revision":r.revision,"reserved_keys":if overlay {vec!["ctrl+]","esc"]} else {vec!["ctrl+]"]}})));
+                        r.size = Some(size);
+                        view.interactive = false;
+                    }
+                }
+                if r.focused != focused {
+                    r.focused = focused;
+                    r.runtime.send(Message::event(
+                        "panel.focus",
+                        json!({"panel":"main","focused":focused}),
+                    ));
+                }
+            }
+            view.interactive &= view
+                .picture
+                .as_ref()
+                .is_some_and(|p| p.revision == r.revision);
+            if view.state == "Disabled" {
+                view.note = "Plugin disabled · Open Plugins / Close".into();
+            }
+        } else if let Some(error) = self.errors.get(id) {
+            view.note = error.clone();
+        } else if self.registry.entries.iter().any(|e| e.id == id) {
+            view.state = "Disabled".into();
+            view.note = "Plugin disabled · Open Plugins / Close".into();
+        }
+        view
     }
     pub fn input(&mut self, panel: &Panel, event: serde_json::Value) -> bool {
         if !panel.interactive {
@@ -327,7 +379,7 @@ impl Manager {
         let Some(r) = self.running.get_mut(&panel.id) else {
             return false;
         };
-        if r.runtime.state() != "Running" {
+        if r.runtime.state() != "Running" || pic.revision != r.revision {
             return false;
         }
         if !r.focused {

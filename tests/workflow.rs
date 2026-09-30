@@ -4982,7 +4982,8 @@ fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
             std::fs::copy(&binary, plugin.join("bin/saddle-counter")).unwrap();
             std::fs::write(
                 plugin.join("plugin.toml"),
-                include_str!("../examples/counter-plugin/plugin.toml"),
+                include_str!("../examples/counter-plugin/plugin.toml")
+                    .replace("placement = \"overlay\"", "placement = \"workspace\""),
             )
             .unwrap();
         },
@@ -5040,4 +5041,190 @@ fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
     h.send(b"\x1b");
     h.send(b"\x1b");
     h.see("Plugin disabled");
+}
+
+fn plugin_entry_harness(placement: &str) -> Harness {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |dir| {
+            let plugin = dir.join("plugin");
+            std::fs::create_dir(&plugin).unwrap();
+            common::script(
+                &plugin,
+                "counter",
+                include_str!("fixtures/plugin_counter.py"),
+            );
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                r#"
+manifest_version = 1
+id = "test.entry"
+name = "Entry fixture"
+version = "1"
+protocol_major = 1
+executable = "counter"
+required_capabilities = ["panel.v1", "ui.entry.v1", "panel.overlay.v1"]
+entry = "open"
+[view]
+id = "main"
+placement = "overlay"
+[action]
+id = "open"
+title = "Fixture Counter"
+view = "main"
+"#
+                .replace(
+                    "placement = \"overlay\"",
+                    &format!("placement = {placement:?}"),
+                ),
+            )
+            .unwrap();
+            std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"test.entry\"\ndirectory = {:?}\nenabled = true\n",plugin)).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.until(|h| h.screen.screen().contents().contains("Fixture Counter  F6"));
+    h
+}
+#[test]
+fn plugin_entry_opens_overlay_without_changing_layout_and_keeps_process() {
+    let mut h = plugin_entry_harness("overlay");
+    let before = h.ctl(&["inspect"])["tabs"].clone();
+    h.send(b"\x1b[17~\r"); // F6 then Enter: no management page.
+    h.see("Clicks: 0");
+    let inspect = h.ctl(&["inspect"]);
+    assert_eq!(inspect["focus"], "plugin_overlay");
+    assert_eq!(inspect["overlay"]["plugin_id"], "test.entry");
+    let init: serde_json::Value = serde_json::from_str(&h.log("plugin/initialize.json")).unwrap();
+    assert!(
+        init["view_reserved_keys"]["overlay"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|v| v == "esc")
+    );
+    assert_eq!(inspect["tabs"], before);
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.click("Fixture Counter");
+    h.see("Clicks: 1");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    assert!(!h.screen.screen().contents().contains("Clicks:"));
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
+}
+
+#[test]
+fn plugin_overlay_protects_host_actions_and_restores_viewer_focus() {
+    let mut h = plugin_entry_harness("overlay");
+    h.send(b"\r");
+    h.see("READY");
+    let before = h.ctl(&["inspect"]);
+    h.click("Fixture Counter");
+    h.see("Clicks: 0");
+    let reply = h.ctl(&[
+        "open",
+        "--instance",
+        before["instance"].as_str().unwrap(),
+        "--relative-to",
+        "active",
+        "--shell",
+        "--cwd",
+        h.dir.path().to_str().unwrap(),
+        "--place",
+        "tab",
+        "--request-id",
+        "overlay-busy",
+    ]);
+    assert_eq!(reply["error"]["code"], "busy", "{reply}");
+    h.click("Settings");
+    h.send(b",q");
+    for _ in 0..4 {
+        h.pump();
+    }
+    assert!(h.screen.screen().contents().contains("Clicks: 0"));
+    h.send(b"\x1b");
+    h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
+    assert_eq!(h.ctl(&["inspect"])["active_pane"], before["active_pane"]);
+    assert_eq!(h.ctl(&["inspect"])["tabs"], before["tabs"]);
+}
+#[test]
+fn plugin_workspace_entry_reuses_panel_and_disable_removes_entry() {
+    let mut h = plugin_entry_harness("workspace");
+    h.click("Fixture Counter");
+    h.see("Clicks: 0");
+    let before = h.ctl(&["inspect"])["tabs"].clone();
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    h.send(b"\x1d");
+    h.click("Fixture Counter");
+    h.see("Clicks: 1");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+    h.send(b"\x1d,\x1b[15~");
+    h.see("Running");
+    h.click("Disable");
+    h.see("Disabled");
+    h.send(b"\x1b\x1b");
+    h.until(|h| !h.screen.screen().contents().contains("Fixture Counter"));
+}
+
+#[test]
+#[ignore = "requires separately packaged SDK Counter in SADDLE_TEST_PLUGIN"]
+fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
+    let binary = std::env::var("SADDLE_TEST_PLUGIN").unwrap();
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |dir| {
+            let plugin = dir.join("counter");
+            std::fs::create_dir_all(plugin.join("bin")).unwrap();
+            std::fs::copy(&binary, plugin.join("bin/saddle-counter")).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                include_str!("../examples/counter-plugin/plugin.toml"),
+            )
+            .unwrap();
+            std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"demo.counter\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
+        },
+    );
+    h.until(|h| h.screen.screen().contents().contains("Counter  F6"));
+    h.send(b",");
+    h.see("Settings");
+    h.send(b"\x1b[17~"); // entry shortcut cannot replace the current dialog
+    for _ in 0..4 {
+        h.pump();
+    }
+    assert!(h.screen.screen().contents().contains("Settings"));
+    assert!(!h.screen.screen().contents().contains("Clicks:"));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"\x1b[17~\r");
+    h.see("Clicks: 0");
+    let original = h.ctl(&["inspect"])["tabs"].clone();
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    h.see("Count: 1");
+    h.click("Increment");
+    h.see("Clicks: 2");
+    h.send(b"\x1b[13;2u");
+    for _ in 0..4 {
+        h.pump();
+    }
+    assert!(h.screen.screen().contents().contains("Clicks: 2"));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.click("Counter");
+    h.see("Clicks: 2");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
 }

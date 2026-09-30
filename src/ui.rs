@@ -54,6 +54,7 @@ pub struct Workspace<'a> {
     pub modal: bool,
     pub attention: Attention<'a>,
     pub settings: Option<&'a mut crate::settings::Settings>,
+    pub plugin_entries: Option<&'a mut crate::plugins::entry::Bar>,
 }
 /// The Attention entry's items and, while open, its popup.
 pub struct Attention<'a> {
@@ -67,43 +68,68 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, placement, mut search, mut form, program, modal, attention, mut settings) =
-        match workspace {
-            Some(w) => (
-                Some(w.terminals),
-                w.placement,
-                w.search,
-                w.form,
-                w.program,
-                w.modal,
-                w.attention,
-                w.settings,
-            ),
-            None => (
-                None,
-                None,
-                None,
-                None,
-                "corral",
-                false,
-                Attention {
-                    items: &[],
-                    loading: false,
-                    popup: None,
-                },
-                None,
-            ),
-        };
+    let (
+        terminals,
+        placement,
+        mut search,
+        mut form,
+        program,
+        modal,
+        attention,
+        mut settings,
+        mut plugin_entries,
+    ) = match workspace {
+        Some(w) => (
+            Some(w.terminals),
+            w.placement,
+            w.search,
+            w.form,
+            w.program,
+            w.modal,
+            w.attention,
+            w.settings,
+            w.plugin_entries,
+        ),
+        None => (
+            None,
+            None,
+            None,
+            None,
+            "corral",
+            false,
+            Attention {
+                items: &[],
+                loading: false,
+                popup: None,
+            },
+            None,
+            None,
+        ),
+    };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
-    let mut hits = draw_agents(frame, panel, &view);
+    let plugin_rows = plugin_entries.as_ref().map_or(0, |bar| {
+        bar.height(
+            inner(view.panes.agents).height,
+            agents_header(view.panes.agents).width,
+        )
+    });
+    let mut hits = draw_agents(frame, panel, &view, plugin_rows);
     let header = agents_header(view.panes.agents);
     let row = Rect {
-        y: header.y + 1,
+        y: header.y + 1 + plugin_rows,
         ..header
     }
     .intersection(inner(view.panes.agents));
+    if let Some(bar) = plugin_entries.as_mut() {
+        bar.draw(
+            frame,
+            Rect::new(header.x, header.y + 1, header.width, plugin_rows)
+                .intersection(inner(view.panes.agents)),
+            t,
+        );
+    }
     let wraps = settings_wraps(header);
     let settings_row = if wraps {
         Rect {
@@ -659,7 +685,7 @@ fn bar_rows(controls: &[Control], width: u16) -> Vec<Vec<(u16, usize)>> {
     }
     rows
 }
-fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
+fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>, plugin_rows: u16) -> Hits {
     let t = view.colors;
     let area = view.panes.agents;
     if area.is_empty() {
@@ -699,7 +725,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>) -> Hits {
     );
     // The second row carries the Attention and Settings entries, drawn with the workspace; a
     // narrow column gives Settings a third.
-    let entries = 1 + u16::from(settings_wraps(content));
+    let entries = 1 + u16::from(settings_wraps(content)) + plugin_rows;
     if content.height >= entries + 2 {
         rule(frame, content.y + entries + 1);
     }
