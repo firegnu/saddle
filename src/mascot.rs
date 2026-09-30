@@ -160,6 +160,10 @@ fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH * 2]; 6] {
             }
         }
         Status::Working => {
+            // Small, regular steps under a steady body; outer feet remain planted.
+            if frame % 6 >= 3 {
+                p[5] = *b"  #  #    #  #  ";
+            }
             if frame % 12 >= 9 {
                 let arm = if (frame / 12).is_multiple_of(2) {
                     0
@@ -171,7 +175,11 @@ fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH * 2]; 6] {
             }
         }
         Status::Waiting => {
-            if matches!(frame % 48, 40..=41 | 44..=45) {
+            if frame % 24 == 10 {
+                p[2][4] = b'#';
+                p[2][11] = b'#';
+            }
+            if matches!(frame % 24, 16..=17 | 20..=21) {
                 p[2][14..16].fill(b'#');
                 p[3][14..16].fill(b' ');
             }
@@ -243,11 +251,18 @@ mod tests {
         assert!(m.x > 0.0 && m.x < 4.0 && !m.right);
     }
     #[test]
-    fn working_and_waiting_gestures_leave_long_quiet_intervals() {
+    fn working_upper_body_and_waiting_leave_quiet_intervals() {
         let rest = pixels(Status::Unknown, 0, true);
         for (status, frames) in [(Status::Working, 24), (Status::Waiting, 48)] {
             let quiet = (0..frames)
-                .filter(|&n| pixels(status, n, true) == rest)
+                .filter(|&n| {
+                    let p = pixels(status, n, true);
+                    if status == Status::Working {
+                        p[..5] == rest[..5]
+                    } else {
+                        p == rest
+                    }
+                })
                 .count();
             assert!(
                 quiet >= frames as usize * 3 / 4,
@@ -257,6 +272,32 @@ mod tests {
                 quiet < frames as usize,
                 "still provide an occasional gesture"
             );
+        }
+    }
+    #[test]
+    fn working_steps_and_waiting_gestures_keep_a_stable_body() {
+        let rest = pixels(Status::Unknown, 0, true);
+        assert_ne!(
+            pixels(Status::Working, 0, true)[5],
+            pixels(Status::Working, 3, true)[5],
+            "working feet must move"
+        );
+        assert!(
+            (0..24).any(|n| pixels(Status::Waiting, n, true) != rest),
+            "waiting should animate within four seconds"
+        );
+        for n in 0..48 {
+            for status in [Status::Working, Status::Waiting] {
+                let p = pixels(status, n, true);
+                assert_eq!(p[1], rest[1], "head stays still");
+                assert_eq!(p[4], rest[4], "body stays still");
+                assert_eq!(p[5].iter().filter(|&&v| v == b'#').count(), 4);
+                assert_eq!(p[5][2], b'#', "outer feet stay grounded");
+                assert_eq!(p[5][13], b'#');
+                if status == Status::Waiting {
+                    assert_eq!(p[5], rest[5]);
+                }
+            }
         }
     }
     #[test]
@@ -274,10 +315,13 @@ mod tests {
             Status::Stalled,
             Status::Unknown,
         ] {
-            for n in 0..16 {
+            for n in 0..96 {
                 let p = pixels(status, n, true);
-                assert_eq!(p[2][4], b'o');
-                assert_eq!(p[2][11], b'o');
+                let blink = (status == Status::Idle && n % 42 == 28)
+                    || (status == Status::Waiting && n % 24 == 10);
+                let eye = if blink { b'#' } else { b'o' };
+                assert_eq!(p[2][4], eye);
+                assert_eq!(p[2][11], eye);
                 assert_eq!(p[5].iter().filter(|&&v| v == b'#').count(), 4);
                 assert!(
                     !p[5].windows(2).any(|w| w == b"##"),
