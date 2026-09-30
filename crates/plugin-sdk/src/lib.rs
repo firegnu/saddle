@@ -163,8 +163,14 @@ pub struct Context {
     requests: Vec<(u64, String)>,
     next: u64,
     dirty: bool,
+    reserved_keys: Vec<String>,
 }
 impl Context {
+    /// Keys owned by the host for this view; these never become plugin input.
+    pub fn reserved_keys(&self) -> &[String] {
+        &self.reserved_keys
+    }
+
     pub fn redraw(&mut self) {
         self.dirty = true;
     }
@@ -209,6 +215,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
         requests: Vec::new(),
         next: 0,
         dirty: false,
+        reserved_keys: Vec::new(),
     };
     let mut ready = false;
     let mut highest = 0;
@@ -247,11 +254,17 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                                     && params["width_profile"] == protocol::PROFILE,
                                 "incompatible handshake"
                             );
+                            context.reserved_keys = params["reserved_keys"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|v| v.as_str().map(str::to_owned))
+                                .collect();
                             ready = true;
                             theme = params["theme"].clone();
                             Message::response(
                                 id,
-                                json!({"id":plugin.id(),"version":plugin.version(),"protocol_major":1,"capabilities":["panel.v1","notify.v1"],"width_profile":protocol::PROFILE}),
+                                json!({"id":plugin.id(),"version":plugin.version(),"protocol_major":1,"capabilities":protocol::CAPABILITIES.iter().filter(|c| params["capabilities"].as_array().is_some_and(|caps| caps.iter().any(|v| v == **c))).collect::<Vec<_>>(),"width_profile":protocol::PROFILE}),
                             )
                         }
                         "ping" if ready => Message::response(id, json!({})),
@@ -282,6 +295,12 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                     ensure!(ready, "event before handshake");
                     match name.as_str() {
                         "panel.open" | "panel.resize" => {
+                            if let Some(keys) = data["reserved_keys"].as_array() {
+                                context.reserved_keys = keys
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(str::to_owned))
+                                    .collect();
+                            }
                             let cols = data["cols"]
                                 .as_u64()
                                 .filter(|x| *x <= 65535)
@@ -344,6 +363,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                         requests: vec![],
                         next: context.next,
                         dirty: false,
+                        reserved_keys: context.reserved_keys.clone(),
                     },
                 )?;
                 continue;

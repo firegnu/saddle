@@ -89,7 +89,7 @@ impl App {
             json!({"id":tab.id,"active_pane":tab.active,"layout":tab.layout(),"panes":panes})
         }).collect();
         json!({"ok":true,"instance":self.control.id,"active_tab":self.viewer.active,
-            "active_pane":self.viewer.active_pane().id,"focus":format!("{:?}",self.focus).to_lowercase(),"caller":caller,"tabs":tabs})
+            "active_pane":self.viewer.active_pane().id,"focus":if self.plugin_overlay.is_some(){"plugin_overlay".into()}else{format!("{:?}",self.focus).to_lowercase()},"overlay":self.plugin_overlay.as_ref().map(|p|json!({"kind":"plugin","plugin_id":p.id})),"caller":caller,"tabs":tabs})
     }
     pub(super) fn control_tick(&mut self) {
         for record in &mut self.records {
@@ -185,7 +185,9 @@ impl App {
                 )
             };
         }
-        if self.placement.is_some()
+        if self.plugin_overlay.is_some()
+            || self.plugin_page.is_some()
+            || self.placement.is_some()
             || self.search.is_some()
             || self.settings.is_some()
             || self.new_agent.as_ref().is_some_and(|f| f.visible)

@@ -1115,3 +1115,9 @@ Counter 独立项目提供 `package.sh [输出目录]`，通过 Cargo 构建本�
 用户在日常版成功运行 Counter 后明确：Drover 的 Tasks 等功能应直接出现在 Saddle 中，不能要求进入插件管理再 Open panel。只读参考 Herdr 0.9.3 后，用户确认入口、界面位置和提醒独立接入的方向。
 
 下一层设计见 [插件入口与界面接入设计](插件入口与界面接入设计.md)：保留进程、SDK 与结构化画面；由插件声明功能入口与视图，宿主展示直接入口并承载工作区/居中覆盖界面；短提示和 Attention 当前条目分开。先用 Counter 验证入口及位置，再做通用提醒来源，最后另列 Drover 迁移清单；不把任务状态与推进逻辑写入宿主。具体接口与线框是主控建议，尚未实施。本轮仅交付设计文档，没有改变已发布协议、真实队列、配置或服务。
+
+### §62 直接入口与覆盖界面实施边界
+
+用户以“开始吧”授权第一步。清单新增可选 view/action/entry：首步视图为 main，placement 为 workspace 或 overlay，action 只打开该视图，entry 引用操作 ID；需要声明 ui.entry.v1，overlay 另需 panel.overlay.v1，旧宿主明确拒绝不认识的必需能力。SDK 握手支持并公开 reserved_keys，已有画面和输入格式保留。
+
+左侧提供直接可见、可滚动的入口行；F6 仅在 Agents 中进入入口选择，↑↓与 Enter 操作、Esc 返回，避免拦截终端输入。覆盖界面不进入 layout，Esc 关闭并恢复有效来源焦点，Ctrl-] 关闭并返回 Agents；不覆盖正在编辑的 Settings/确认框。已有工作区面板优先聚焦，保持单逻辑视图/单进程。Counter 的新版清单默认 overlay；旧插件继续工作区入口。实施记录见 docs/任务/插件直接入口与覆盖界面实现.md。Attention 和业务目标上下文不在本次实现范围。

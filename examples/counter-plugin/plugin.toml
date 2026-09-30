@@ -5,4 +5,14 @@ version = "0.1.0"
 protocol_major = 1
 executable = "bin/saddle-counter"
 args = []
-required_capabilities = ["panel.v1", "notify.v1"]
+required_capabilities = ["panel.v1", "notify.v1", "ui.entry.v1", "panel.overlay.v1"]
+entry = "open"
+
+[view]
+id = "main"
+placement = "overlay"
+
+[action]
+id = "open"
+title = "Counter"
+view = "main"

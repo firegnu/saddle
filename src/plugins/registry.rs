@@ -16,6 +16,12 @@ pub struct Manifest {
     #[serde(default)]
     pub args: Vec<String>,
     pub required_capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<saddle_plugin_protocol::ViewDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<saddle_plugin_protocol::OpenAction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
 }
 pub fn valid_id(s: &str) -> bool {
     !s.is_empty()
@@ -60,9 +66,35 @@ impl Manifest {
         ensure!(
             m.required_capabilities
                 .iter()
-                .all(|c| matches!(c.as_str(), "panel.v1" | "notify.v1")),
+                .all(|c| saddle_plugin_protocol::CAPABILITIES.contains(&c.as_str())),
             "unsupported required capability"
         );
+        if m.view.is_some() || m.action.is_some() || m.entry.is_some() {
+            let view = m.view.as_ref().context("missing view declaration")?;
+            let action = m.action.as_ref().context("missing open action")?;
+            ensure!(
+                view.id == "main"
+                    && action.view == view.id
+                    && valid_id(&action.id)
+                    && m.entry.as_ref() == Some(&action.id)
+                    && !action.title.is_empty()
+                    && action.title.len() <= 128
+                    && !action.title.chars().any(char::is_control),
+                "invalid plugin entry"
+            );
+            ensure!(
+                m.required_capabilities.iter().any(|c| c == "ui.entry.v1")
+                    && m.required_capabilities.iter().any(|c| c == "panel.v1"),
+                "entry requires ui.entry.v1 and panel.v1"
+            );
+            ensure!(
+                view.placement != saddle_plugin_protocol::Placement::Overlay
+                    || m.required_capabilities
+                        .iter()
+                        .any(|c| c == "panel.overlay.v1"),
+                "overlay requires panel.overlay.v1"
+            );
+        }
         let exe = m.program(dir)?;
         use std::os::unix::fs::PermissionsExt;
         let meta = fs::metadata(exe)?;

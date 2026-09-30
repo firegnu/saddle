@@ -263,3 +263,25 @@ where
 {
     T::deserialize(deserializer).map(Some)
 }
+
+/// Host and SDK features negotiated during initialize.
+pub const CAPABILITIES: &[&str] = &["panel.v1", "notify.v1", "ui.entry.v1", "panel.overlay.v1"];
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Placement {
+    Workspace,
+    Overlay,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewDeclaration {
+    pub id: String,
+    pub placement: Placement,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenAction {
+    pub id: String,
+    pub title: String,
+    pub view: String,
+}
