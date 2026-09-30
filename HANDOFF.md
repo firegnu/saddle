@@ -4,7 +4,10 @@
 
 ## 当前状态
 
-- 最新交付：插件管理页按实际插件数量收缩高度，列表与详情间一行留白；保留Settings草稿但暂停其背后绘制，消除透出的输入光标。管理页仅Add local目录输入显示光标，返回Settings恢复原输入；状态栏标明当前输入目标。实现 `e956557`，收尾 `c601b38`，已合并推送、原子更新日常宿主并清理 `plugin-manager-layout` 分支/worktree。主控亲自完成；用户重启后观察，本轮没有重启用户窗口。
+- 最新交付：Colors预览改为Status/Text两行，与真实操作隔开；Plugins管理页复用Settings配置路径与五个页签，统一76列宽度/内边距，点击或F1–F4直接切页，F5留在当前选择，设置草稿保留。插件操作仍即时生效。实现 `c76e761`，收尾 `37b8a6c`，已合并推送、原子更新日常宿主并清理 `settings-pages` 分支/worktree。主控亲自做；用户重启后观察，本轮未重启其窗口。
+- 验证：标准 **360 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；最终release切页/草稿保存及预览2项通过。日志 `/tmp/saddle-settings-pages-{red,green-final,all,clippy,release-check}.log`。任务/审查 `docs/任务/Settings预览与插件页签统一.md`，Dispatch `9125dd85794742b383fbb2978a33658d`。三处Diff演示hash不变，真实配置、插件包、agent、队列和服务未操作。
+
+- 此前交付：插件管理页按实际插件数量收缩高度，列表与详情间一行留白；保留Settings草稿但暂停其背后绘制，消除透出的输入光标。管理页仅Add local目录输入显示光标，返回Settings恢复原输入；状态栏标明当前输入目标。实现 `e956557`，收尾 `c601b38`，已合并推送、原子更新日常宿主并清理 `plugin-manager-layout` 分支/worktree。主控亲自完成；用户重启后观察，本轮没有重启用户窗口。
 - 管理页验证：最终标准 **358 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；最终release隔离PTY复现回归2项通过。首轮未改动的Viewer切换测试在3秒截止处超时，单项复查及完整复跑通过；保留失败记录，不声称修复此偶发问题。任务/审查 `docs/任务/插件管理页空白与光标.md`，Dispatch `660365b63e6949c58239fb3725e03b56`；日志 `/tmp/saddle-plugin-manager-{red,green,all,all-final,viewer-recheck,clippy,release-check}.log`。三处Diff演示hash不变，真实配置、agent、队列、服务和插件包未操作。
 
 - 此前交付：Agents标题右侧将Plugins/Settings合并为同排操作，统一清晰正文色并悬停提亮；Attention独占第二行，0时弱化，有条目时文字与计数用状态色。窄窗口入口自动换到状态下方。实现 `42da29d`，收尾 `e693894`；已合并推送、更新日常宿主并清理 `agents-header-actions` 分支/worktree。任务/审查 `docs/任务/Agents顶部入口与状态分层.md`，Dispatch `3ffa43dbf0a6486c9203bfa3ebc0b72c`。主控亲自做，未重启用户窗口；下一步由用户重启观察。
@@ -31,13 +34,15 @@
 
 ## 安装与退役
 
-- 最新宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-manager-layout-20261001-004752/`，保存此前Agents顶部版和安装hash记录。已核对日常入口SHA，等待用户重启加载。
+- 最新宿主备份：`~/Library/Application Support/saddle-release-backups/settings-pages-20261001-010154/`，保存此前插件管理页修复版和安装hash记录。日常入口已更新并核对SHA；等待用户重启。
+
+- 此前宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-manager-layout-20261001-004752/`，保存此前Agents顶部版和安装hash记录。已核对日常入口SHA，等待用户重启加载。
 
 - 此前宿主备份：`~/Library/Application Support/saddle-release-backups/agents-header-actions-20261001-003543/`，包含此前Settings紧凑标签版及安装hash记录。日常入口已原子替换并核对SHA，当前窗口未重启。
 
 - 此前宿主备份：`~/Library/Application Support/saddle-release-backups/settings-compact-tabs-20261001-002259/`，包含此前 `eebb3117…` 插件分屏版及安装hash记录。日常程序已原子替换并核对SHA；旧窗口继续运行，等待用户重启。
 
-- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。插件管理页修复版SHA-256：`925e14d38d40f25f48bbb50051c718b1154f449a7d4b51dac7a562266f6bf0c4`。
+- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。Settings页签统一版SHA-256：`ed44209ed84a2fa5b81d06e7418944fa230659ec85e3edcaa59ed66d6cca10a5`。
 - 最新宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-split-20260930-231227/`，保存入口右对齐版 `5080dbb2…` 和安装hash记录。插件包、配置和真实任务数据均未改动。
 - 此前宿主备份：`~/Library/Application Support/saddle-release-backups/plugins-header-right-20260930-224044/`，包含此前 `a259aba2…` 程序和hash记录。
 - 当前宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-centered-overlay-20260930-223126/`，包含此前 `3db84341…` 宿主和hash记录。插件包与真实配置/任务数据不变。
