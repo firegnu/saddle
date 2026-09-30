@@ -1,23 +1,26 @@
 # 会话交接
 
-更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。已更新日常 release，补齐一条命令打包与开发入门；用户随后明确“跑起来了”，确认日常版 Counter 可用。现按用户要求参考 Herdr，已整理插件日常入口接入设计，尚未实现。
+更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。已更新日常 release，补齐一条命令打包与开发入门；用户随后明确“跑起来了”，确认日常版 Counter 可用。参考 Herdr 后，主控已亲自实现第一阶段：插件侧栏直接入口与工作区/居中覆盖展示。Attention 来源与 Drover 迁移仍未实施。
 
 ## 当前状态
 
-- 最新设计：89a4709，合并 92a70c7，收尾 7239cfb；plugin-entry-design 分支/worktree 已清理。文档 docs/插件入口与界面接入设计.md：入口、界面位置、提醒分开；先 Counter 直接入口和展示位置，再通用 Attention 来源，最后 Drover 迁移。具体接口与线框是主控建议，尚未实施。
-- 本轮只改设计与交接，新增链接、围栏及 diff 检查通过；未跑功能测试、编译或重启，未改协议/配置/队列/服务。原 release 保持不变；用户已通过管理页添加正式 Counter 并确认运行。
+- 最新实现：9a8e656；独立 SDK 固定与审查 dea3710；合并 bf072b8 已推送；空提交收尾 e0696cc，plugin-entry 分支/worktree 已清理。Counter 清单默认 overlay，启用后左侧显示 Counter；鼠标直接打开，Agents 中 F6/Enter 也可打开。Esc 关闭恢复焦点，Ctrl-] 返回 Agents，关闭保留进程。已有旧 Counter tab 优先复用，关闭旧 tab 后再点入口才使用 overlay。
+- 设计依据仍为89a4709及 docs/插件入口与界面接入设计.md，第一步已实施；第二步 Attention 来源、第三步 Drover 迁移尚未开始。没有真实队列/服务/上游修改，没有委派或操作其他 agent。
+- 本轮最终标准检查312 passed / 1 failed / 7 ignored；失败是原有 t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell 的关闭确认 unwrap，单独复跑通过，根因未确认。早先一次 picker/task_links 失败在最终检查通过。Clippy通过；插件模块12 passed，普通插件PTY3 passed，真实独立SDK/Counter的2条ignored检查显式通过，实际日常release的同2条检查也通过。详见 docs/任务/插件直接入口与覆盖界面实现.md，不宣称全绿。
+- Counter 独立项目现固定公开 SDK revision `9a8e6568ee65dcc247aa6516294a451f3ecd502b`；仓库外打包与真实PTY验证通过。旧清单仍兼容，新清单要求 ui.entry.v1 / panel.overlay.v1；overlay 不写布局，不启动额外插件进程。
 
 - 上轮实现交付：6d39a06（示例 package.sh、开发入门及 README），合并 27f3279，收尾 fc2c060；plugin-delivery 分支/worktree 已清理，main 已推送。主控亲自完成，没有委派、队列或上游变更。
 - 用户一条打包命令：`./examples/counter-plugin/package.sh`；正式产物已生成在主仓库 `examples/counter-plugin/dist/counter-plugin`。在日常新版 Settings → Plugins 中添加该完整目录、Enable、Open panel；本轮没有替用户登记。
-- 最新标准检查：306 passed / 1 failed / 6 ignored，Clippy通过；失败为已记录的 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`（workflow.rs:2508）。独立仓库外打包通过；debug 和实际 release 的插件 PTY 主路径各 1 passed。详见 docs/任务/插件Demo交付与发布.md，不写全绿。
+- 上轮标准检查：306 passed / 1 failed / 6 ignored，Clippy通过；失败为已记录的 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`（workflow.rs:2508）。独立仓库外打包通过；debug 和实际 release 的插件 PTY 主路径各 1 passed。详见 docs/任务/插件Demo交付与发布.md，不写全绿。
 
 - 前轮插件实现：5191a78，demo 固定公开 SDK revision 与审查记录 13f2e47，合并 d05f7a4，空提交收尾 5977f49。分支 plugin-demo 与独立基线 worktree 均已清理，没有创建/关闭/发送任何 agent；主控遵照用户要求自己做。
 - 已有功能：Settings → Plugins F5；登记本地目录（默认停用）、启停/重启/移除、新 tab 面板、结构化输入、内部通知；插件进程独立 session/无 PTY，SDK 处理 stdio；layout v2 保留旧备份，ctl inspect 支持 plugin。
-- SDK 在 crates/plugin-protocol、crates/plugin-sdk；独立 demo 在 examples/counter-plugin，只依赖 Git revision 5191a782bb7671390c124485258d83e434104560 的公开 SDK，有自己的 Cargo.lock。复制到 /tmp/saddle-plugin-external.h9LoWT/counter 独立构建并用其产物验证通过；没有将该目录登记到真实 Saddle。
+- SDK 在 crates/plugin-protocol、crates/plugin-sdk；独立 demo 在 examples/counter-plugin，当时依赖 Git revision 5191a782bb7671390c124485258d83e434104560 的公开 SDK（当前版本见本轮记录），有自己的 Cargo.lock。复制到 /tmp/saddle-plugin-external.h9LoWT/counter 独立构建并用其产物验证通过；没有将该目录登记到真实 Saddle。
 - 前轮实现验证：最终标准套件 305 passed / 1 failed / 6 ignored；失败为既有 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，在未修改基线2bfe1c4同一步再次复现。Clippy通过。两项本轮需外部构建的 ignored 检查已显式运行通过（SDK stdio probe、实际 Saddle PTY demo）。另新增极小管理页窗口检查单独通过。详情见 docs/任务/插件首个Demo实现.md，不写全绿。
 - 隔离 PTY 覆盖添加/启用/打开、Enter/鼠标、通知、Shift+Enter、关闭重开保留、重启归零、停用；假 Corral/Drover、临时 HOME/config/state/runtime。进程故障回收、宽字符和旧布局等检查通过。
-- 日常入口 `~/.local/bin/saddle` 仍指向共享 target/release/saddle，现已构建为插件版，SHA-256 `99695dbeb72724160443418be64809e61b33995badfa7d7515d2a17ed29961da`。备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-20260930-170510`。发布时只更新磁盘二进制，主控没有强制退出窗口或修改日常登记/队列/服务；随后用户自己添加正式 Counter 并确认可运行。
-- 设计记录：docs/DESIGN.md §62、docs/插件系统设计.md、docs/插件协议.md、docs/插件Demo设计.md。侧栏/状态栏等挂载位置以后按实际需求补充，当前支持右侧工作区面板；Drover 第二阶段尚未实施。
+- 日常入口 `~/.local/bin/saddle` 仍指向共享 target/release/saddle，本轮已构建为 bf072b8 对应入口/覆盖版，SHA-256 `563afa78e57a9b92ce788526cef2b3265940377c981cb8ccf720c89dd8a43b36`；同一正式 Counter 目录的程序与清单已更新，登记无需重做。旧二进制与旧插件包备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-entry-20260930-175548`（旧二进制99695dbe）。实际 release 两条插件PTY检查通过，日志 /tmp/saddle-entry-release-pty.log。仅更新磁盘，未强制重启用户窗口；本轮新版尚待用户重启观察，不把上轮用户确认当成本轮已验收。
+
+- 设计记录：docs/DESIGN.md §62、docs/插件系统设计.md、docs/插件协议.md、docs/插件Demo设计.md。本轮已增加侧栏入口与覆盖界面；其他挂载位置按实际需求补充，Drover 迁移尚未实施。
 
 - 前轮联合发布 Saddle main：2a6862c；主控审查 c97270a；空提交收尾 c939fd1。本交接与发布记录随最终文档提交推送，确切 SHA 见 git log 和 Dispatch 05458465051541c4a9c2cc908dc9fe3e 收尾 note。无遗留本轮实现改动。
 - Drover main 已发布 e0d8118（合并 b02f142，收尾16ef806），origin/main 已核对一致。Drover 无关未跟踪 T27 文档保留。
@@ -44,7 +47,7 @@
 
 T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计不操作队列，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
 
-插件工作的下一步：按 docs/插件入口与界面接入设计.md，从 Counter 的日常直接入口与工作区/居中覆盖展示位置开始实施。该层目前只有设计文档，未写功能代码。用户已确认正式 Counter 运行，不重复要求重开或添加，不再使用那串临时测试环境命令。开发说明见 docs/插件开发入门.md。当前是已验证的开发协议，不是稳定1.0或多插件长稳性能承诺。Demo 通路已验证，Drover 为第二个插件；先讨论迁移清单和必要挂载位置，未授权前不迁移或重写 Drover。T29既有picker失败保留，不自动开启新任务。
+插件工作的下一步：用户重启日常 Saddle 后观察 Counter 直接入口，不需要重新添加。若旧 Counter tab 仍在，关闭后再点左侧 Counter 观察覆盖界面。第一阶段实现已完成；接下来按设计讨论/实施通用 Attention 来源，之后才做 Drover 迁移，不自动扩大本轮范围。开发说明见 docs/插件开发入门.md。当前仍是开发协议，不承诺稳定1.0或多插件长稳性能。T29既有偶发失败保留，不自动开启新任务。
 
 本轮后续由主控亲自做，不再委派。已有讨论/审阅 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle、attached=1）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
 
@@ -63,3 +66,5 @@ T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任
 插件交付/发布记录：Dispatch a54eebf9f78f4544a969aa1487288e9c，docs/任务/插件Demo交付与发布.md；只记录主控工作，不是代理派发。
 
 插件日常入口设计记录：Dispatch 6f1022252d304e12899e8d72264bffc8，docs/任务/插件日常入口接入设计.md；主控文档工作，无代理派发。
+
+插件直接入口实施记录：Dispatch a981890142784b43b5ece49b90f827d1，docs/任务/插件直接入口与覆盖界面实现.md；仅主控实施/审查，无代理派发。
