@@ -231,3 +231,31 @@ fn sdk_business_stdout_and_child_stdin_cannot_corrupt_protocol() {
     runtime.stop();
     assert!(runtime.wait_for("Disabled", Duration::from_secs(3)));
 }
+#[test]
+fn plugin_management_and_add_dialog_fit_tiny_terminals() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = saddle::plugins::Manager::open(dir.path().join("plugins.toml"));
+    let mut page = saddle::plugins::ui::Page::default();
+    for adding in [false, true] {
+        if adding {
+            for _ in 0..4 {
+                page.event(
+                    Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+                    &mut manager,
+                );
+            }
+            page.event(
+                Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+                &mut manager,
+            );
+        }
+        for (cols, rows) in [(1, 1), (10, 3), (20, 5), (40, 12), (100, 40)] {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(cols, rows)).unwrap();
+            terminal
+                .draw(|frame| page.draw(&saddle::theme::Theme::default(), frame, &manager))
+                .unwrap();
+        }
+    }
+}

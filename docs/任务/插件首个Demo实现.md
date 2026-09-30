@@ -32,4 +32,14 @@ RED→GREEN：
 
 其他定向检查：中英文/组合字符/emoji/样式边界、非法控制码及超长行、未知登记版本保留、并发登记拒绝覆盖、身份不符停止回收、顽固进程先回收再重启、旧布局备份；真实 SDK stdio probe 验证 println/子命令日志不污染协议、子命令 stdin 已关闭。
 
-标准检查与最终复核结果在收尾前补充。只把已运行证据列为通过，不把源码合入当作安装或实机验证。
+最终标准检查：`cargo test --offline --all-targets --no-fail-fast` 为 **305 passed / 1 failed / 6 ignored**。失败 `t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases` 位于 workflow.rs:3239，picker 点击后仍留在原弹窗。同一未修改基线 2bfe1c4 的该例首次单独通过，再跑在同一步失败；基线全量 workflow 亦有 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal` 失败。保留既有 T29 范围，不为插件任务扩大修复 picker。
+
+较早全量运行另有 `closing_a_start_target_keeps_the_created_agent_available_without_attaching` 一次失败，单独复跑通过，最终全量也通过；未声称其偶发根因已查清。F5 引入的两个 Settings 可见性回归已修正，15 项 Settings 检查全部通过。
+
+`cargo clippy --offline --all-targets -- -D warnings` 通过。标准套件跳过项中，本轮两项需外部构建产物的检查已另行显式运行通过：真实 SDK stdio probe，以及独立 demo 的实际 Saddle PTY 流程。其余既有跳过项未扩大运行。标准检查后新增的管理页/添加弹窗极小窗口检查单独通过；没有为凑全绿重复整个套件。
+
+独立交付验证：SDK/protocol 固定 Git revision `5191a782bb7671390c124485258d83e434104560`；demo 复制到 `/tmp/saddle-plugin-external.h9LoWT/counter`，使用 Git 依赖构建及随后 `--offline --locked` 构建通过，未引用宿主私有模块。提交尚未推送时，仅本次 git-fetch 的环境将远程 URL 改写为本地 Git 仓库传输，不写全局配置；依赖与锁文件仍为公开 Git URL/固定 revision。用这份仓库外产物再跑实际 Saddle PTY 检查通过，合并后该 SDK revision 随 main 一起推送。
+
+补充 RED→GREEN：公开信封把 result:null 错认成字段缺失，roundtrip 检查失败；区分字段存在与 null 后通过。文档围栏、JSON/TOML、链接及 diff 空白检查通过。
+
+主控审查结论：首个插件面板通路可交付源码；没有发现尚待处理的插件范围阻断项。运行预算是首版保守上限，不代表已经做多插件长时间压力测试；T29 的既有不稳定用例保留。未安装/发布到用户实际工作区，未迁移 Drover，不把源码合入当作用户实机验收。

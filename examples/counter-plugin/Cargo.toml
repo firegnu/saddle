@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 [workspace]
 [dependencies]
-saddle-plugin-sdk = { path = "../../crates/plugin-sdk" }
+saddle-plugin-sdk = { git = "https://github.com/firegnu/saddle", rev = "5191a782bb7671390c124485258d83e434104560" }
 anyhow = "1"
 serde_json = "1"
