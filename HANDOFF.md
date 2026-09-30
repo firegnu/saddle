@@ -4,7 +4,10 @@
 
 ## 当前状态
 
-- 最新交付：仅UI/UX整理。插件启动面板使用箭头/加粗选中、按条目数收缩、显示可见范围/总数，窄窗口名称与状态分隔且帮助自适应；失败保留原因并补管理入口指引。General收紧为12行/8列数字框；Agents实例/ATT 0/VIA元信息提亮。实现 `3210e1c`，收尾 `80f47ee`，已合并推送、备份后原子更新日常宿主并清理 `interface-polish` 分支/worktree。主控亲自做，无委派；用户重启后观察，未重启其窗口。
+- 最新交付：Clawd状态吉祥物，按参考图11×8轮廓/陶土橘 `#D97757`/黑眼/短臂/四腿绘制；右侧tab下方4行动画带，只跟随当前焦点pane的agent。Idle慢走转向停顿，Working原地动手，Waiting挥手问号，错误/疑似停滞静止叹号。小窗口/普通终端/插件隐藏，原状态判据及输入/会话/任务/插件业务不变。实现 `5e6acb2`，收尾 `cdeb2d4`，已合并推送、备份后原子更新日常宿主并清理 `clawd-mascot` 分支/worktree。主控亲自完成，无委派或真实agent操作；用户重启后观察。
+- 本轮验证：标准 **367 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；发布版动画/不传鼠标输入、modified Enter/粘贴2项通过。首轮两项workflow失败查明为旧坐标/尺寸与部分重画过早断言，改测试定位/等待后完整复跑通过，未改输入/会话移动代码。任务/审查 `docs/任务/Clawd状态吉祥物.md`，Dispatch `de272393c79b4e83abae5f4d46276225`；日志 `/tmp/saddle-clawd-{all-final,clippy-final,release-check}.log`。实际渲染导出预览 `/tmp/saddle-clawd-preview.png`，不是用户窗口截图。三处Diff演示hash不变，配置/插件包/agent/队列/服务未操作，未重启用户窗口。
+
+- 此前交付：仅UI/UX整理。插件启动面板使用箭头/加粗选中、按条目数收缩、显示可见范围/总数，窄窗口名称与状态分隔且帮助自适应；失败保留原因并补管理入口指引。General收紧为12行/8列数字框；Agents实例/ATT 0/VIA元信息提亮。实现 `3210e1c`，收尾 `80f47ee`，已合并推送、备份后原子更新日常宿主并清理 `interface-polish` 分支/worktree。主控亲自做，无委派；用户重启后观察，未重启其窗口。
 - 本轮边界：默认选择、状态/动作门控、键鼠动作、设置编辑/校验/保存逐段核对未改；未改业务、插件生命周期、任务流转、命令、协议或数据。标准 **362 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；release隔离Settings流程1项通过。记录 `docs/任务/界面可读性与紧凑布局.md`，Dispatch `cf97a33503754763883ef63ed4712eac`；日志 `/tmp/saddle-interface-polish-{red,green,all,clippy,release-check}.log`。三处Diff演示hash不变，真实配置、插件包、agent、队列与服务未操作。
 
 - 此前交付：Colors预览改为Status/Text两行，与真实操作隔开；Plugins管理页复用Settings配置路径与五个页签，统一76列宽度/内边距，点击或F1–F4直接切页，F5留在当前选择，设置草稿保留。插件操作仍即时生效。实现 `c76e761`，收尾 `37b8a6c`，已合并推送、原子更新日常宿主并清理 `settings-pages` 分支/worktree。主控亲自做；用户重启后观察，本轮未重启其窗口。
@@ -37,6 +40,7 @@
 
 ## 安装与退役
 
+- 最新Clawd宿主SHA-256 `7983c23351ed092f64f3bd60af2b9b119167ba75f5f1b789d489df476ab8fd64`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-mascot-20261001-014512/` 含更新前程序与安装记录，入口symlink不变。只更新宿主，不需要重新安装插件。
 - 本轮日常宿主SHA-256 `296b5028b1bb3798e220a011f69139d1abf66b83d2b8d8aaa64f5643d850c42a`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/interface-polish-20261001-012020/` 含更新前程序及安装hash记录。仅更新宿主二进制，入口symlink不变，未重启用户窗口。
 - 最新宿主备份：`~/Library/Application Support/saddle-release-backups/settings-pages-20261001-010154/`，保存此前插件管理页修复版和安装hash记录。日常入口已更新并核对SHA；等待用户重启。
 
