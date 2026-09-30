@@ -76,21 +76,22 @@ impl Mascot {
         self.last = Some(now);
         self.phase += dt;
         self.x = self.x.min(limit);
-        if status == Status::Idle {
-            // Slow stroll with a short pause every six seconds.
-            if self.phase % 6.0 < 5.0 {
-                self.x += if self.right { dt * 3.0 } else { -dt * 3.0 };
-            }
-            if self.x >= limit {
-                self.x = limit;
-                self.right = false;
-            }
-            if self.x <= 0.0 {
-                self.x = 0.0;
-                self.right = true;
+        if status == Status::Idle && dt > 0.0 && limit > 0.0 {
+            // Three seconds strolling, four resting; ease into and out of each stroll.
+            let stroll = self.phase % 7.0;
+            if stroll < 3.0 {
+                let speed = 3.0 * (stroll / 0.4).min(1.0).min((3.0 - stroll) / 0.4);
+                self.x += if self.right { dt * speed } else { -dt * speed };
+                if (self.right && self.x >= limit) || (!self.right && self.x <= 0.0) {
+                    self.x = self.x.clamp(0.0, limit);
+                    self.right = self.x <= 0.0;
+                    // Rest at the edge before taking the first step back.
+                    self.phase = 3.0;
+                }
             }
         }
     }
+
     pub fn draw(
         &mut self,
         frame: &mut Frame,
@@ -150,21 +151,27 @@ fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH * 2]; 6] {
     match status {
         Status::Idle => {
             // A half-cell shuffle of the inner feet; all four thin legs stay visible.
-            if frame % 36 < 30 && frame % 4 >= 2 {
+            if frame % 42 < 18 && frame % 4 >= 2 {
                 p[5] = *b"  #  #    #  #  ";
             }
-            if frame % 36 == 33 {
+            if frame % 42 == 28 {
                 p[2][4] = b'#';
                 p[2][11] = b'#';
             }
         }
         Status::Working => {
-            let arm = if frame.is_multiple_of(2) { 0 } else { 14 };
-            p[2][arm..arm + 2].fill(b'#');
-            p[3][arm..arm + 2].fill(b' ');
+            if frame % 12 >= 9 {
+                let arm = if (frame / 12).is_multiple_of(2) {
+                    0
+                } else {
+                    14
+                };
+                p[2][arm..arm + 2].fill(b'#');
+                p[3][arm..arm + 2].fill(b' ');
+            }
         }
         Status::Waiting => {
-            if frame % 8 < 4 {
+            if matches!(frame % 48, 40..=41 | 44..=45) {
                 p[2][14..16].fill(b'#');
                 p[3][14..16].fill(b' ');
             }
@@ -200,7 +207,7 @@ mod tests {
         for n in 1..=8 {
             m.advance(key, Status::Idle, n as f64 / 4.0, 4.0);
         }
-        assert!(m.x > 0.0 && m.x < 4.0 && !m.right);
+        assert!(m.x > 0.0 && m.x <= 4.0 && !m.right);
         let stopped = m.x;
         m.advance(key, Status::Working, 2.1, 4.0);
         for n in 9..=16 {
@@ -216,6 +223,41 @@ mod tests {
         assert_eq!(m.x, 0.0);
         m.advance(("p/a", Some("new-instance")), Status::Idle, 900.0, 0.0);
         assert_eq!(m.x, 0.0, "resize and backwards clock remain bounded");
+    }
+    #[test]
+    fn idle_pauses_at_the_edge_before_returning() {
+        let mut m = Mascot::default();
+        let key = ("p/a", Some("one"));
+        m.advance(key, Status::Idle, 0.0, 4.0);
+        for n in 1..=8 {
+            m.advance(key, Status::Idle, n as f64 / 4.0, 4.0);
+        }
+        assert_eq!(m.x, 4.0, "reaching the edge starts a pause");
+        for n in 9..=16 {
+            m.advance(key, Status::Idle, n as f64 / 4.0, 4.0);
+            assert_eq!(m.x, 4.0, "do not immediately bounce back");
+        }
+        for n in 17..=24 {
+            m.advance(key, Status::Idle, n as f64 / 4.0, 4.0);
+        }
+        assert!(m.x > 0.0 && m.x < 4.0 && !m.right);
+    }
+    #[test]
+    fn working_and_waiting_gestures_leave_long_quiet_intervals() {
+        let rest = pixels(Status::Unknown, 0, true);
+        for (status, frames) in [(Status::Working, 24), (Status::Waiting, 48)] {
+            let quiet = (0..frames)
+                .filter(|&n| pixels(status, n, true) == rest)
+                .count();
+            assert!(
+                quiet >= frames as usize * 3 / 4,
+                "most frames should be still: {status:?}"
+            );
+            assert!(
+                quiet < frames as usize,
+                "still provide an occasional gesture"
+            );
+        }
     }
     #[test]
     fn frames_keep_clawd_eyes_silhouette_and_four_legs() {
@@ -261,11 +303,11 @@ mod tests {
         assert_ne!(pixels(Status::Idle, 0, true), pixels(Status::Idle, 2, true));
         assert_ne!(
             pixels(Status::Working, 0, true),
-            pixels(Status::Working, 1, true)
+            pixels(Status::Working, 9, true)
         );
         assert_ne!(
             pixels(Status::Waiting, 0, true),
-            pixels(Status::Waiting, 4, true)
+            pixels(Status::Waiting, 40, true)
         );
         assert_eq!(
             pixels(Status::Error, 0, true),
