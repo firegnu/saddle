@@ -4,7 +4,8 @@
 
 ## 当前状态
 
-- 最新界面整理：实现 `1b8af30`，已合并并更新日常宿主。插件弹层按全窗口宽高80%居中，保留调暗背景，用主题灰色细线外框。用户需要重启Saddle观察；插件包不变。记录见 `docs/任务/插件全窗口居中与灰色外框.md`，Dispatch `3781a843710a41c687a641acfde2dce7`；本轮分支/worktree已清理，未强制退出窗口。
+- 最新入口整理：实现 `460935d`，Plugins移到Agents标题右侧，与下一行Settings右对齐；左侧只保留Agents/Attention。窄窗口放不下时右侧换行。已合并、更新日常宿主、清理本轮分支/worktree；用户需要重启Saddle观察，未强制退出窗口。记录见 `docs/任务/Plugins入口右对齐.md`；Dispatch `8b9c4cebd9da493eae61b3018c0509f1`。
+- 插件居中：实现 `1b8af30`，插件弹层按全窗口宽高80%居中，保留调暗背景，用主题灰色细线外框；用户已反馈可以。记录见 `docs/任务/插件全窗口居中与灰色外框.md`，Dispatch `3781a843710a41c687a641acfde2dce7`。
 - 此前单层外框：实现 `0618693`，Drover不再画整页框，临时运行提示移到底部；用户已确认更安静。此次全窗口居中替代了上一轮隐藏整个右侧工作区的做法。记录见 `docs/任务/插件单层外框整理.md`，Dispatch `ab034c84cd5740c7a364161fde44119b`。
 - 最新修复：Tasks 插件 `Failed · output queue full`。宿主每轮转入8条却只发送1条造成内部积压，已对齐有界发送预算并在内部队列满时暂停转入。实现 `62a8a92`，主控亲自完成并更新日常宿主；任务数据、插件包、队列规则均未改变。记录见 `docs/任务/插件输出队列溢出修复.md`；Dispatch `e37de990ef504bb89baa5e492b10d367`。
 - 用户已重启验证过输出队列修复，Tasks成功打开，随后报告重复边框。下一步**退出并启动 Saddle**加载最新界面整理，再从 Plugins → Tasks（Drover）打开；只重启插件不能加载宿主更改。
@@ -15,7 +16,8 @@
 
 ## 安装与退役
 
-- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。全窗口居中版SHA-256：`a259aba2eddd5ea6790a8eb91ebc5cf6030ea66f19ecc5e880212e2ef54bf227`。
+- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。入口右对齐版SHA-256：`5080dbb2e9852db3f5686591b09fd2e08edafc650fdc99a8f45b622234d54f69`。
+- 最新宿主备份：`~/Library/Application Support/saddle-release-backups/plugins-header-right-20260930-224044/`，包含此前 `a259aba2…` 程序和hash记录。插件包、配置与任务数据均未改动。
 - 当前宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-centered-overlay-20260930-223126/`，包含此前 `3db84341…` 宿主和hash记录。插件包与真实配置/任务数据不变。
 - 最新备份：`~/Library/Application Support/saddle-release-backups/plugin-single-frame-20260930-221953/`，包括更新前宿主和Drover二进制。插件清单、Counter包、真实配置/任务数据未改动。
 - 本次宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-output-queue-20260930-220920/`，包含此前 `d722aff4…` 宿主与安装hash记录；未替换插件包或修改真实配置。
@@ -35,6 +37,7 @@
 
 ## 验证
 
+- Plugins入口右对齐：标准335 passed / 0 failed / 4 ignored，Clippy/fmt/diff通过；发布版首行Plugins位置及Settings保存/侧栏缩放检查1项通过。旧Settings测试从第3行改为新布局第2行。日志 `/tmp/saddle-plugins-right-{all-final,clippy-final,release-app}.log`。
 - 全窗口居中：最终标准335 passed / 0 failed / 4 ignored，Clippy/fmt/diff通过；实际Drover和Counter流程各1项，release定位/灰色外框/关闭恢复1项通过。旧滚轮测试硬编码右侧坐标已改为从画面定位列表，首尾滚动通过后重跑全套成功。日志 `/tmp/saddle-centered-{all-final,clippy-final,scroll,release-layout}.log`，隔离PTY画面 `/tmp/saddle-centered-{drover,counter}.txt`。
 - 单层外框：标准335 passed / 0 failed / 4 ignored，Clippy/fmt/diff通过；实际Counter与Drover流程debug/release各1项通过。已检查隔离PTY渲染文本，去除临时捕获代码，日志 `/tmp/saddle-single-frame-*.log`；用户实际窗口的最新效果待其重启观察。
 - 输出队列修复：自动化复现明确 RED `Failed · output queue full` → GREEN，完整有序接收160条消息；暂不可写/大消息/子进程回收通过。标准检查 **335 passed / 0 failed / 4 ignored**，Clippy、fmt、diff通过；release插件23 passed/1 ignored、真实插件输入流程1 passed。均为临时配置/合成数据，日志 `/tmp/saddle-output-queue-*.log`。用户窗口重启后的实际效果仍待用户观察。
