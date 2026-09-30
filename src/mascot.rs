@@ -2,20 +2,13 @@
 use crate::agents::Status;
 use ratatui::{Frame, layout::Rect, style::Color};
 
-pub const HEIGHT: u16 = 3;
-const WIDTH: usize = 9;
+pub const HEIGHT: u16 = 2;
+const WIDTH: usize = 7;
 pub const MIN_WIDTH: u16 = WIDTH as u16 + 4;
 // Reference: Claude Code's Clawd sticker. Pixel RGB, not the terminal's ANSI orange.
 const CLAY: Color = Color::Rgb(0xd9, 0x77, 0x57);
 const EYES: Color = Color::Rgb(0, 0, 0);
-const REST: [&str; 6] = [
-    " ####### ",
-    "##o###o##",
-    " ####### ",
-    " ####### ",
-    " # # # # ",
-    " # # # # ",
-];
+const REST: [&str; 4] = [" ##### ", "#o###o#", "#######", "# # # #"];
 
 pub struct Mascot {
     target: Option<(String, Option<String>)>,
@@ -104,13 +97,14 @@ impl Mascot {
         self.advance(target, status, now, limit);
         let pixels = pixels(status, (self.phase * 6.0) as u64, self.right);
         let x = area.x + 1 + self.x as u16;
+        let y = area.bottom() - HEIGHT;
         for (row, pair) in pixels.chunks_exact(2).enumerate() {
             for (col, (&top, &bottom)) in pair[0].iter().zip(&pair[1]).enumerate() {
                 if top == b' ' && bottom == b' ' {
                     continue;
                 }
                 let color = |p| if p == b'o' { EYES } else { self.clay };
-                let cell = &mut frame.buffer_mut()[(x + col as u16, area.y + row as u16)];
+                let cell = &mut frame.buffer_mut()[(x + col as u16, y + row as u16)];
                 if top == b' ' {
                     cell.set_symbol("▄").set_fg(color(bottom));
                 } else if bottom == b' ' {
@@ -128,47 +122,48 @@ impl Mascot {
             _ => None,
         };
         if let Some(mark) = mark {
-            frame.buffer_mut()[(x + WIDTH as u16 + 1, area.y)]
+            frame.buffer_mut()[(x + WIDTH as u16 + 1, y)]
                 .set_symbol(mark)
                 .set_fg(self.clay);
         }
     }
 }
 
-fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH]; 6] {
+fn pixels(status: Status, frame: u64, right: bool) -> [[u8; WIDTH]; 4] {
     let mut p = REST.map(|row| row.as_bytes().try_into().unwrap());
     match status {
         Status::Idle => {
-            // Alternate the feet, keeping all four upper legs visible.
-            if frame % 4 >= 2 {
-                p[5] = *b"# #   # #";
+            // Lift alternate short feet vertically; never splay them sideways.
+            // The last second of each stroll is a pause with all feet grounded.
+            if frame % 36 < 30 {
+                p[3] = if frame % 4 < 2 {
+                    *b"#   #  "
+                } else {
+                    *b"  #   #"
+                };
             }
-            // Brief blink during the pause.
-            if frame % 48 == 43 {
-                p[1][2] = b'#';
-                p[1][6] = b'#';
+            if frame % 36 == 33 {
+                p[1][1] = b'#';
+                p[1][5] = b'#';
             }
         }
         Status::Working => {
-            let arm = if frame.is_multiple_of(2) { 0 } else { 8 };
+            let arm = if frame.is_multiple_of(2) { 0 } else { 6 };
             p[0][arm] = b'#';
             p[1][arm] = b' ';
         }
         Status::Waiting => {
-            // A small wave beside the question mark; no flashing body color.
-            p[0][8] = if frame % 8 < 4 { b'#' } else { b' ' };
-            p[1][8] = b'#';
-            p[2][8] = b' ';
+            p[0][6] = if frame % 8 < 4 { b'#' } else { b' ' };
+            p[1][6] = b'#';
         }
         Status::Starting => {
             if frame % 8 < 4 {
                 p[0][0] = b'#';
-                p[1][8] = b'#';
             }
         }
         Status::Exited => {
-            p[1][2] = b'#';
-            p[1][6] = b'#';
+            p[1][1] = b'#';
+            p[1][5] = b'#';
         }
         _ => {}
     }
@@ -225,13 +220,21 @@ mod tests {
         ] {
             for n in 0..16 {
                 let p = pixels(status, n, true);
-                assert_eq!(p[1][2], b'o');
-                assert_eq!(p[1][6], b'o');
-                assert_eq!(p[4].iter().filter(|&&v| v == b'#').count(), 4);
-                assert_eq!(p[5].iter().filter(|&&v| v == b'#').count(), 4);
+                assert_eq!(p[1][1], b'o');
+                assert_eq!(p[1][5], b'o');
+                assert_eq!(
+                    p[3].iter().filter(|&&v| v == b'#').count(),
+                    if status == Status::Idle { 2 } else { 4 }
+                );
+                assert!([1, 3, 5].iter().all(|&x| p[3][x] == b' '));
                 assert!(p.iter().flatten().all(|&v| [b' ', b'#', b'o'].contains(&v)));
             }
         }
+        assert_eq!(pixels(Status::Idle, 30, true)[3], *b"# # # #");
+        assert_eq!(
+            pixels(Status::Idle, 0, true)[..3],
+            pixels(Status::Idle, 2, true)[..3]
+        );
         assert_ne!(pixels(Status::Idle, 0, true), pixels(Status::Idle, 2, true));
         assert_ne!(
             pixels(Status::Working, 0, true),

@@ -115,6 +115,6 @@ fn mascot_follows_displayed_pane_and_existing_waiting_error_states() {
             render(&panes, &mut panel, &mut m, width, height, 100.5);
         }
     }
-    assert!(panes.mascot_area(Rect::new(0, 0, 12, 40), &[]).is_none());
+    assert!(panes.mascot_area(Rect::new(0, 0, 10, 40), &[]).is_none());
     assert!(panes.mascot_area(Rect::new(0, 0, 80, 2), &[]).is_none());
 }

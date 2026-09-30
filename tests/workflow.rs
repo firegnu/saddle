@@ -5448,7 +5448,7 @@ fn clawd_animates_in_its_own_band_and_never_sends_input() {
     h.see("p/a READY");
     let left = |h: &Harness| {
         (52..140).find(|&x| {
-            let c = h.screen.screen().cell(0, x).unwrap();
+            let c = h.screen.screen().cell(1, x).unwrap();
             c.fgcolor() == vt100::Color::Rgb(217, 119, 87) && c.contents() == "▀"
         })
     };
@@ -5464,7 +5464,7 @@ fn clawd_animates_in_its_own_band_and_never_sends_input() {
     let mut agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
     agents["p/a"] = serde_json::json!("blocked");
     std::fs::write(h.dir.path().join("agents.json"), agents.to_string()).unwrap();
-    h.until(|h| (52..140).any(|x| h.screen.screen().cell(0, x).unwrap().contents() == "?"));
+    h.until(|h| (52..140).any(|x| h.screen.screen().cell(1, x).unwrap().contents() == "?"));
     let (_, title_y) = h.locate_from("Agent · p/a", 0, 52).unwrap();
     assert_eq!(title_y, 3, "mascot must not displace the terminal");
     assert!(left(&h).is_some(), "waiting keeps Clawd orange");
