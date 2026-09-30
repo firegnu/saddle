@@ -89,7 +89,10 @@ fn edit_follows_the_selected_task_and_preserves_the_form_on_failure() {
     let target = panel.detail_key().unwrap();
     assert_eq!(target.id, "T2");
     panel.absorb_detail(&target, Ok(show("T2", "current", "doing")));
-    assert_eq!(opened(&panel).data.as_ref().unwrap().task.id, "T2");
+    assert_eq!(
+        opened(&panel).data.as_ref().unwrap().task.id.as_deref(),
+        Some("T2")
+    );
     // A running task is read-only.
     panel.key(key(K::Char('e')));
     assert!(matches!(panel.page, Page::List));
@@ -472,8 +475,13 @@ fn show(id: &str, location: &str, status: &str) -> saddle::drover::Detail {
     let mut value: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
     value["task"]["id"] = id.into();
-    value["task"]["location"] = location.into();
-    value["task"]["status"] = status.into();
+    value["task"]["run_id"] = serde_json::Value::Null;
+    value["task"]["status"] = match location {
+        "current" => "running",
+        "awaiting" => "awaiting_release",
+        _ => status,
+    }
+    .into();
     serde_json::from_value(value).unwrap()
 }
 fn opened(panel: &Panel) -> &saddle::detail::TaskDetail {
@@ -509,17 +517,18 @@ fn details_follow_the_task_id_through_completion_and_ignore_older_targets() {
         }))
         .unwrap(),
     );
-    assert_eq!(panel.detail_key(), Some(first.clone()));
-    panel.absorb_detail(&first, Ok(show("T4", "awaiting", "done")));
+    let awaiting = panel.detail_key().unwrap();
+    assert_ne!(awaiting, first, "group changes invalidate old reads");
+    panel.absorb_detail(&awaiting, Ok(show("T4", "awaiting", "done")));
     assert_eq!(
-        opened(&panel).data.as_ref().unwrap().task.location,
-        "awaiting"
+        opened(&panel).data.as_ref().unwrap().task.status.as_deref(),
+        Some("awaiting_release")
     );
     // Switching views keeps the same target; only Run details are queried.
     panel.key(key(K::Char('t')));
     assert_eq!(panel.detail_key(), None);
     panel.key(key(K::Enter));
-    assert_eq!(panel.detail_key(), Some(first.clone()));
+    assert_eq!(panel.detail_key(), Some(awaiting.clone()));
     // Selecting it again after another task is a new target; old results are dropped.
     panel.select(0);
     assert_eq!(panel.detail_key().unwrap().id, "T5");
@@ -541,7 +550,7 @@ fn details_follow_the_task_id_through_completion_and_ignore_older_targets() {
 }
 
 #[test]
-fn pending_and_unnumbered_details_use_list_data_until_the_task_starts() {
+fn numbered_pending_supports_show_while_unnumbered_tasks_use_list_data() {
     let mut panel = Panel::default();
     let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
         "mode": {}, "paused": false, "current": null, "awaiting": null,
@@ -554,7 +563,11 @@ fn pending_and_unnumbered_details_use_list_data_until_the_task_starts() {
     for index in 0..4 {
         panel.select(index);
         assert_eq!(panel.view, View::Details, "row {index}");
-        assert_eq!(panel.detail_key(), None, "row {index}");
+        assert_eq!(
+            panel.detail_key().is_some(),
+            index == 0,
+            "only numbered Pending is queryable; row {index}"
+        );
     }
     panel.select(0);
     let mut started = snapshot;
@@ -594,215 +607,6 @@ fn content_keys_scroll_the_text_without_moving_the_list() {
         View::Details,
         "the chosen view stays across tasks"
     );
-}
-
-fn running(panel: &mut Panel) {
-    panel.project = "/tmp/project-a".into();
-    panel.absorb(
-        serde_json::from_value(serde_json::json!({
-            "mode": {"loop": true, "gate": false}, "paused": false, "awaiting": null,
-            "current": {"id":"T4", "title":"Research", "t0": 100.0},
-            "pending": [{"id":"T5", "title":"Next"}],
-            "history": []
-        }))
-        .unwrap(),
-    );
-}
-fn target(token: Option<&str>) -> saddle::drover::Detail {
-    let mut detail = show("T4", "current", "doing");
-    detail.manual_completion = Some(saddle::drover::ManualTarget {
-        target_token: token.map(Into::into),
-        unavailable_reason: token.is_none().then(|| "snapshot_unavailable".into()),
-    });
-    detail
-}
-fn manual(panel: &Panel) -> &saddle::queue::Manual {
-    match &panel.page {
-        Page::Manual(manual) => manual,
-        _ => panic!("the manual completion page is open"),
-    }
-}
-fn type_text(panel: &mut Panel, text: &str) {
-    for c in text.chars() {
-        assert!(panel.key(key(K::Char(c))).is_none(), "typing never sends");
-    }
-}
-
-#[test]
-fn manual_completion_binds_the_opened_run_and_sends_its_token_verbatim() {
-    let mut panel = Panel::default();
-    running(&mut panel);
-    // Only the running task offers it, and only by its button.
-    panel.select(1);
-    assert!(panel.key(saddle::queue::manual_click()).is_none());
-    assert!(matches!(panel.page, Page::List));
-    panel.select(0);
-    assert!(panel.key(saddle::queue::manual_click()).is_none());
-    let first = panel.manual_key().expect("the page queries its target");
-    assert_eq!(
-        (first.project.as_str(), first.id.as_str()),
-        ("/tmp/project-a", "T4")
-    );
-    assert_eq!(manual(&panel).title, "Research");
-
-    // Nothing is sent before a target arrives, or without a reason.
-    type_text(&mut panel, "accepted research");
-    assert!(panel.key(key(K::Enter)).is_none());
-    // A result for another opening is ignored.
-    let other = saddle::queue::DetailKey {
-        seq: first.seq + 1000,
-        ..first.clone()
-    };
-    panel.absorb_manual(&other, Ok(target(Some("wrong"))));
-    assert!(manual(&panel).target.is_none());
-    panel.absorb_manual(&first, Ok(target(Some("tok/+= 1"))));
-    assert_eq!(panel.manual_key(), None, "one reading per opening");
-    // A later queue refresh moving on to T5 does not retarget the open page.
-    panel.absorb(
-        serde_json::from_value(serde_json::json!({
-            "mode": {}, "paused": false, "pending": [], "history": [],
-            "current": {"id":"T5", "title":"Next"}, "awaiting": null
-        }))
-        .unwrap(),
-    );
-    let Some(Request::Run(operation)) = panel.key(key(K::Enter)) else {
-        panic!("Mark complete sends one public write");
-    };
-    assert_eq!(
-        operation,
-        Operation::CompleteManually {
-            project: "/tmp/project-a".into(),
-            id: "T4".into(),
-            token: "tok/+= 1".into(),
-            reason: "accepted research".into(),
-        }
-    );
-    assert!(panel.busy);
-    assert!(
-        panel.key(key(K::Enter)).is_none(),
-        "no second submission while busy"
-    );
-    assert!(panel.key(key(K::Esc)).is_none());
-    assert!(matches!(panel.page, Page::Manual(_)), "busy pages stay");
-    panel.complete(&operation, Ok("T4 marked complete manually".into()));
-    assert!(matches!(panel.page, Page::Feedback(_)));
-    assert_eq!(panel.view, View::Details, "the saved record shows next");
-}
-
-#[test]
-fn cancelled_or_rejected_manual_completion_writes_nothing_and_keeps_the_reason() {
-    let mut panel = Panel::default();
-    running(&mut panel);
-    panel.key(saddle::queue::manual_click());
-    let first = panel.manual_key().unwrap();
-    panel.absorb_manual(&first, Ok(target(Some("tok-1"))));
-    // Blank reasons are refused locally.
-    type_text(&mut panel, "   ");
-    assert!(panel.key(key(K::Enter)).is_none());
-    assert!(!panel.busy && panel.message.contains("Reason"));
-    panel.key(KeyEvent::new(K::Char('u'), M::CONTROL));
-    type_text(&mut panel, "keep branch");
-    // Cancel sends nothing and keeps the draft for this task.
-    assert!(panel.key(key(K::Esc)).is_none());
-    assert!(matches!(panel.page, Page::List));
-    panel.key(saddle::queue::manual_click());
-    assert_eq!(manual(&panel).reason, "keep branch");
-    let second = panel.manual_key().unwrap();
-    assert_ne!(second, first, "reopening reads the target afresh");
-    panel.absorb_manual(&first, Ok(target(Some("tok-old"))));
-    assert!(
-        manual(&panel).target.is_none(),
-        "an older reading is dropped"
-    );
-    panel.absorb_manual(&second, Ok(target(Some("tok-2"))));
-
-    // The target expired: the page stays, and only a refresh and a new confirmation proceed.
-    let Some(Request::Run(operation)) = panel.key(key(K::Enter)) else {
-        panic!("confirmation sends");
-    };
-    panel.complete(
-        &operation,
-        Err(saddle::drover::ManualError {
-            code: "target_changed".into(),
-            why: "运行已变化".into(),
-        }
-        .into()),
-    );
-    assert!(!panel.busy && matches!(panel.page, Page::Manual(_)));
-    assert!(
-        panel.message.contains("target_changed"),
-        "{}",
-        panel.message
-    );
-    assert_eq!(manual(&panel).reason, "keep branch");
-    assert!(
-        panel.key(key(K::Enter)).is_none(),
-        "an expired token is never resent"
-    );
-    assert!(panel.key(KeyEvent::new(K::Char('r'), M::CONTROL)).is_none());
-    let third = panel.manual_key().expect("refresh reads a new target");
-    assert_ne!(third, second);
-    assert!(
-        panel.key(key(K::Enter)).is_none(),
-        "nothing until the new target arrives"
-    );
-    panel.absorb_manual(&third, Ok(target(Some("tok-3"))));
-    let Some(Request::Run(Operation::CompleteManually { token, .. })) = panel.key(key(K::Enter))
-    else {
-        panic!("the user confirms again");
-    };
-    assert_eq!(token, "tok-3");
-    // Busy drover: reported, and retried only by the user.
-    panel.complete(
-        &operation,
-        Err(saddle::drover::ManualError {
-            code: "state_busy".into(),
-            why: "忙".into(),
-        }
-        .into()),
-    );
-    assert!(panel.message.contains("state_busy") && matches!(panel.page, Page::Manual(_)));
-}
-
-#[test]
-fn manual_completion_refuses_targets_it_cannot_bind() {
-    let mut panel = Panel::default();
-    running(&mut panel);
-    type_text(&mut panel, "");
-    for (detail, words) in [
-        (Ok(target(None)), "snapshot unavailable"),
-        (Ok(show("T4", "current", "doing")), "does not support"),
-        (
-            Ok({
-                let mut d = target(Some("tok"));
-                d.task.location = "awaiting".into();
-                d
-            }),
-            "no longer running",
-        ),
-        (
-            Ok({
-                let mut d = target(Some("tok"));
-                d.task.id = "T5".into();
-                d
-            }),
-            "T5",
-        ),
-        (Err(anyhow::anyhow!("show failed")), "show failed"),
-    ] {
-        panel.page = Page::List;
-        panel.key(saddle::queue::manual_click());
-        let key_now = panel.manual_key().unwrap();
-        panel.absorb_manual(&key_now, detail);
-        type_text(&mut panel, "x");
-        assert!(panel.key(key(K::Enter)).is_none(), "{words}");
-        assert!(
-            saddle::queue::manual_problem(manual(&panel)).is_some_and(|p| p.contains(words)),
-            "{words}: {:?}",
-            saddle::queue::manual_problem(manual(&panel))
-        );
-        panel.key(key(K::Esc));
-    }
 }
 
 #[test]
@@ -886,140 +690,15 @@ fn dispatch_is_the_third_view_and_queries_only_explicit_task_numbers() {
     );
 }
 
-fn return_target(token: Option<&str>) -> saddle::drover::Detail {
-    let mut detail = target(Some("not-the-return-token"));
-    detail.return_to_pending = Some(saddle::drover::ManualTarget {
-        target_token: token.map(Into::into),
-        unavailable_reason: token.is_none().then(|| "target_unavailable".into()),
-    });
-    detail
-}
-
-#[test]
-fn returning_requires_own_token_reason_and_explicit_stopped_confirmation() {
-    let mut panel = Panel::default();
-    running(&mut panel);
-    panel.view = View::Dispatch;
-    panel.key(saddle::queue::return_click());
-    let first = panel.manual_key().unwrap();
-    type_text(&mut panel, "误派发");
-    assert!(panel.key(key(K::Enter)).is_none(), "no token yet");
-    panel.absorb_manual(&first, Ok(return_target(Some("return/+= token"))));
-    assert!(
-        panel.key(key(K::Enter)).is_none(),
-        "work not confirmed stopped"
-    );
-    panel.key(KeyEvent::new(K::Char('w'), M::CONTROL));
-    panel.key(KeyEvent::new(K::Char('u'), M::CONTROL));
-    assert!(panel.key(key(K::Enter)).is_none(), "reason required");
-    type_text(&mut panel, "误派发");
-    let Some(Request::Run(op)) = panel.key(key(K::Enter)) else {
-        panic!("return requested")
-    };
-    assert_eq!(
-        op,
-        Operation::ReturnToPending {
-            project: panel.project.clone(),
-            id: "T4".into(),
-            token: "return/+= token".into(),
-            reason: "误派发".into(),
-        }
-    );
-    assert!(panel.key(key(K::Enter)).is_none(), "only once");
-    panel.complete(
-        &op,
-        Err(saddle::drover::ReturnError {
-            code: "target_changed".into(),
-            why: "another run".into(),
-        }
-        .into()),
-    );
-    assert!(manual(&panel).expired);
-    assert!(!manual(&panel).work_stopped);
-    assert!(panel.key(key(K::Enter)).is_none());
-    panel.key(KeyEvent::new(K::Char('r'), M::CONTROL));
-    let second = panel.manual_key().unwrap();
-    assert_ne!(first, second);
-    panel.absorb_manual(&first, Ok(return_target(Some("old"))));
-    assert!(manual(&panel).target.is_none());
-    panel.absorb_manual(&second, Ok(return_target(Some("new"))));
-    assert!(
-        panel.key(key(K::Enter)).is_none(),
-        "refresh requires consent again"
-    );
-    panel.key(KeyEvent::new(K::Char('w'), M::CONTROL));
-    let Some(Request::Run(op)) = panel.key(key(K::Enter)) else {
-        panic!("new confirmation")
-    };
-    panel.complete(&op, Ok("T4 returned to Pending · Queue paused".into()));
-    assert!(matches!(panel.page, Page::Feedback(_)));
-    let snapshot = serde_json::from_value(serde_json::json!({
-        "mode":{}, "paused": true, "current":null, "awaiting":null, "history":[], "pending": [{"id":"T4", "title":"Research", "return_history": [{
-            "reason":"误派发", "dispatched_at":100, "returned_at":200, "work_stopped":true
-        }]}, {"id":"T5", "title":"Next"}]
-    })).unwrap();
-    panel.absorb(snapshot);
-    panel.key(key(K::Esc));
-    assert_eq!(panel.tasks()[panel.selected].0, "Pending");
-    assert_eq!(
-        panel.detail_key().unwrap().id,
-        "T4",
-        "returned pending can read history"
-    );
-    assert!(panel.snapshot.as_ref().unwrap().paused);
-}
-
-#[test]
-fn return_confirmation_cancel_old_drover_and_changed_target_never_write() {
-    let mut panel = Panel::default();
-    running(&mut panel);
-    for detail in [
-        target(Some("only-manual-completion")),
-        return_target(None),
-        {
-            let mut d = return_target(Some("tok"));
-            d.task.id = "T5".into();
-            d
-        },
-        {
-            let mut d = return_target(Some("tok"));
-            d.task.location = "awaiting".into();
-            d
-        },
-    ] {
-        panel.key(saddle::queue::return_click());
-        let request = panel.manual_key().unwrap();
-        panel.absorb_manual(&request, Ok(detail));
-        panel.paste("误派发");
-        panel.key(KeyEvent::new(K::Char('w'), M::CONTROL));
-        assert!(panel.key(key(K::Enter)).is_none());
-        assert!(!panel.busy);
-        assert!(panel.key(key(K::Esc)).is_none());
-        assert!(matches!(panel.page, Page::List));
-    }
-    panel.key(saddle::queue::manual_click());
-    assert!(
-        manual(&panel).reason.is_empty(),
-        "return reason is not a completion reason"
-    );
-    panel.key(key(K::Esc));
-    panel.select(1);
-    panel.key(saddle::queue::return_click());
-    assert!(
-        matches!(panel.page, Page::List),
-        "pending cannot be returned again"
-    );
-}
-
 fn three_pending(panel: &mut Panel, state: serde_json::Value) {
     panel.project = "/tmp/project-a".into();
     let mut value = serde_json::json!({
         "mode": {"loop": false, "gate": true}, "paused": false, "current": null,
         "awaiting": null, "history": [{"id":"T0", "title":"Old", "status":"done"}],
         "pending": [
-            {"id":"T1", "title":"First", "dispatch_pending": {"pos":1, "target_token":"d1:one", "unavailable_reason":null}},
-            {"id":"T2", "title":"Second", "dispatch_pending": {"pos":2, "target_token":"d1:two", "unavailable_reason":null}},
-            {"id":"T3", "title":"Third", "dispatch_pending": {"pos":3, "target_token":"d1:three", "unavailable_reason":null}}
+            {"id":"T1", "title":"First", "actions":{"dispatch-pending":{"pos":1, "target_token":"d1:one", "unavailable_reason":null}}},
+            {"id":"T2", "title":"Second", "actions":{"dispatch-pending":{"pos":2, "target_token":"d1:two", "unavailable_reason":null}}},
+            {"id":"T3", "title":"Third", "actions":{"dispatch-pending":{"pos":3, "target_token":"d1:three", "unavailable_reason":null}}}
         ]
     });
     for (field, v) in state.as_object().unwrap() {
@@ -1061,13 +740,7 @@ fn dispatch_selected_sends_the_selected_pending_target_not_the_first() {
     panel.complete(&op, Err(anyhow::anyhow!("Delivery result unknown")));
     assert!(matches!(&panel.page, Page::Feedback(text) if text.contains("unknown")));
     panel.key(key(K::Esc));
-    assert!(
-        matches!(
-            panel.key(key(K::Char('n'))),
-            Some(Request::Run(Operation::Next))
-        ),
-        "Next stays"
-    );
+    assert!(panel.key(key(K::Char('n'))).is_none(), "Next is retired");
 }
 
 #[test]
@@ -1078,13 +751,13 @@ fn dispatch_selected_is_refused_without_a_usable_target_or_when_the_queue_cannot
         serde_json::json!({"awaiting": {"id":"T9", "title":"Awaiting", "status":"done"}}),
         serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second"}]}),
         serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
-            "dispatch_pending": {"pos":2, "target_token":null, "unavailable_reason":"target_ambiguous"}}]}),
+            "actions":{"dispatch-pending":{"pos":2, "target_token":null, "unavailable_reason":"target_ambiguous"}}}]}),
         serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
-            "dispatch_pending": {"pos":2, "target_token":"d1:two", "unavailable_reason":"state_invalid"}}]}),
+            "actions":{"dispatch-pending":{"pos":2, "target_token":"d1:two", "unavailable_reason":"state_invalid"}}}]}),
         serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
-            "dispatch_pending": {"pos":0, "target_token":"d1:two", "unavailable_reason":null}}]}),
+            "actions":{"dispatch-pending":{"pos":0, "target_token":"d1:two", "unavailable_reason":null}}}]}),
         serde_json::json!({"pending": [{"id":"T1", "title":"First"}, {"id":"T2", "title":"Second",
-            "dispatch_pending": {"target_token":"d1:two", "unavailable_reason":null}}]}),
+            "actions":{"dispatch-pending":{"target_token":"d1:two", "unavailable_reason":null}}}]}),
     ];
     for state in unusable {
         let mut panel = Panel::default();

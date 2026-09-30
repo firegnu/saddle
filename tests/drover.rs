@@ -26,7 +26,7 @@ fn queue_reads_public_json_in_the_configured_project_without_launching_a_board()
         r#"#!/bin/sh
 [ "$1" = list ] && [ "$2" = --json ] || exit 99
 [ -f project-marker ] || exit 98
-printf '%s\n' '{"mode":{"loop":true,"gate":true},"paused":true,"current":{"id":"T1","title":"Doing","body":"current body"},"awaiting":null,"pending":[{"id":null,"title":"中文任务","body":"task detail"}],"history":[{"id":"T0","title":"Past","status":"dropped","reason":"test"}]}'
+printf '%s\n' '{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loop":true,"gate":true},"paused":true,"current":{"id":"T1","title":"Doing","body":"current body"},"awaiting":null,"pending":[{"id":null,"title":"中文任务","body":"task detail"}],"history":[{"id":"T0","title":"Past","status":"dropped","reason":"test"}]}'
 "#,
     );
     std::fs::write(temp.path().join("project-marker"), "").unwrap();
@@ -36,7 +36,7 @@ printf '%s\n' '{"mode":{"loop":true,"gate":true},"paused":true,"current":{"id":"
     }
     .snapshot()
     .unwrap();
-    assert!(snapshot.paused && snapshot.mode.r#loop && snapshot.mode.gate);
+    assert!(snapshot.paused);
     assert_eq!(snapshot.current.unwrap().id.as_deref(), Some("T1"));
     assert_eq!(snapshot.pending[0].title, "中文任务");
     assert_eq!(snapshot.pending[0].body, "task detail");
@@ -84,18 +84,9 @@ esac
     for (op, expected) in [
         (Operation::Pause(true), "pause"),
         (Operation::Pause(false), "resume"),
-        (Operation::Loop(true), "loop on"),
-        (Operation::Loop(false), "loop off"),
     ] {
         assert_eq!(client.execute(&op, &cancel).unwrap(), expected);
     }
-    assert!(
-        client
-            .execute(&Operation::Go, &cancel)
-            .unwrap_err()
-            .to_string()
-            .contains("criteria not met")
-    );
 }
 
 #[test]
@@ -259,7 +250,7 @@ fn stale_pending_content_order_or_state_never_sends_a_write() {
         program: common::script(temp.path(), "drover", include_str!("fixtures/drover.py")),
         cwd: temp.path().into(),
     };
-    let state = serde_json::json!({"mode":{}, "paused":false, "current":null, "awaiting":null, "history":[], "pending":[
+    let state = serde_json::json!({"schema_version":2,"ok":true,"project":"/synthetic","mode":{}, "paused":false, "current":null, "awaiting":null, "history":[], "pending":[
         {"id":null,"title":"First","body":"Original"}, {"id":"T2","title":"Second","body":"Other"}
     ]});
     let state_path = temp.path().join("queue-state.json");
@@ -327,7 +318,7 @@ fn all_pending_reads_every_project_through_public_json_and_keeps_failures_separa
 [ "$1" = list ] && [ "$2" = --json ] || exit 99
 if [ -f fail ]; then echo 'synthetic unreadable queue' >&2; exit 3; fi
 name=$(basename "$PWD")
-printf '{"mode":{},"paused":false,"current":{"title":"not pending"},"awaiting":null,"pending":[{"id":"T1","title":"%s 中文待办","body":"body"}],"history":[{"title":"old"}]}\n' "$name"
+printf '{"schema_version":2,"ok":true,"project":"/synthetic","mode":{},"paused":false,"current":{"title":"not pending"},"awaiting":null,"pending":[{"id":"T1","title":"%s 中文待办","body":"body"}],"history":[{"title":"old"}]}\n' "$name"
 "#,
     );
     let projects: Vec<String> = ["alpha", "broken", "gamma"]
@@ -386,39 +377,20 @@ exit $(cat code)
     let good: serde_json::Value = serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
     respond(&good.to_string(), 0);
     let detail = client.show("T4", &cancel).unwrap();
-    assert_eq!(
-        (detail.task.id.as_str(), detail.task.location.as_str()),
-        ("T4", "current")
-    );
+    assert_eq!(detail.task.id.as_deref(), Some("T4"));
+    assert_eq!(detail.task.status.as_deref(), Some("running"));
     assert_eq!(detail.task.body, "原始正文\n第二行");
-    assert_eq!(detail.timing.release_wait_seconds, None);
-    assert_eq!(detail.git.range_commits, Some(7));
-    assert_eq!(detail.git.end_head, None);
-    assert_eq!(
-        detail.git.unavailable_reasons["end_head"],
-        "end_head_not_recorded"
-    );
-    let rows = detail.completion.rows.as_ref().unwrap();
-    assert_eq!(
-        rows.iter().map(|r| r.state.as_str()).collect::<Vec<_>>(),
-        ["unmet", "met", "unavailable", "not_run"]
-    );
-    assert_eq!(detail.last_check.status, "missing");
-    assert_eq!(detail.hold.enabled, None);
-    assert_eq!(detail.attention.unmet_rows, ["completion_marker"]);
-    assert_eq!(
-        detail.attention.agent.as_ref().unwrap().idle_for,
-        Some(300.0)
-    );
+    assert_eq!(detail.evidence.git.state, "unavailable");
+    assert_eq!(detail.evidence.last_check.state, "stale");
 
     let mut newer = good.clone();
-    newer["schema_version"] = 2.into();
+    newer["schema_version"] = 3.into();
     respond(&newer.to_string(), 0);
     let error = format!("{:#}", client.show("T4", &cancel).unwrap_err());
     assert!(error.contains("schema_version"), "{error}");
 
     respond(
-        r#"{"schema_version":1,"ok":false,"observed_at":1,"error":{"code":"task_not_found","why":"没有该任务"}}"#,
+        r#"{"schema_version":2,"ok":false,"observed_at":1,"error":{"code":"task_not_found","why":"没有该任务"}}"#,
         2,
     );
     let error = format!("{:#}", client.show("T4", &cancel).unwrap_err());
@@ -428,7 +400,7 @@ exit $(cat code)
     );
 
     let mut partial = good.clone();
-    partial.as_object_mut().unwrap().remove("completion");
+    partial.as_object_mut().unwrap().remove("evidence");
     respond(&partial.to_string(), 0);
     assert!(client.show("T4", &cancel).is_err());
 
@@ -473,7 +445,7 @@ cat response
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
             .unwrap();
-        assert_eq!(detail.task.id, "T4");
+        assert_eq!(detail.task.id.as_deref(), Some("T4"));
     }
     let started = Instant::now();
     drop(worker);
@@ -599,7 +571,7 @@ fn list_json_keeps_the_awaiting_start_identity_fields() {
         temp.path(),
         "drover",
         r#"#!/bin/sh
-printf '%s\n' '{"mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":{"id":"T5","title":"Done","body":"","key":"Done","start":"aaaa","main":"bbbb","t0":100.0,"status":"done","location":"awaiting","end":"cccc","t1":160},"pending":[],"history":[{"id":"T4","title":"Old","body":"","t0":true,"status":"done"}]}'
+printf '%s\n' '{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":{"id":"T5","title":"Done","body":"","key":"Done","start":"aaaa","main":"bbbb","t0":100.0,"status":"done","location":"awaiting","end":"cccc","t1":160},"pending":[],"history":[{"id":"T4","title":"Old","body":"","t0":true,"status":"done"}]}'
 "#,
     );
     let snapshot = Client {
@@ -614,305 +586,6 @@ printf '%s\n' '{"mode":{"loop":false,"gate":true},"paused":false,"current":null,
     assert_eq!(awaiting.t0, Some(serde_json::json!(100.0)));
     // A malformed start time elsewhere does not break the snapshot.
     assert_eq!(snapshot.history[0].t0, Some(serde_json::json!(true)));
-}
-
-#[test]
-fn show_json_carries_the_manual_target_and_saved_record_without_requiring_them() {
-    use std::sync::atomic::AtomicBool;
-    let temp = tempfile::tempdir().unwrap();
-    let program = common::script(temp.path(), "drover", "#!/bin/sh\ncat response\n");
-    let client = Client {
-        program,
-        cwd: temp.path().into(),
-    };
-    let cancel = AtomicBool::new(false);
-    let mut value: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
-    std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
-    let old = client.show("T4", &cancel).unwrap();
-    assert_eq!(old.manual_completion, None, "an older drover has no target");
-    assert_eq!(old.task.completion_record, None, "no record is back-filled");
-
-    value["manual_completion"] =
-        serde_json::json!({"target_token": "opaque/+=token", "unavailable_reason": null});
-    value["task"]["location"] = "awaiting".into();
-    value["task"]["completion_record"] = serde_json::json!({
-        "method": "manual", "reason": "调研成果已验收", "confirmed_at": 1790000000.0,
-        "completion": {"scope": "current_repository", "rows": [
-            {"id": "branches_merged", "state": "unmet", "reason": "branch_not_merged", "why": "t33 未合入"}
-        ], "unavailable_reason": null},
-        "last_check": {},
-        "workspace": {"state": "dirty", "tracked_dirty": true}
-    });
-    std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
-    let detail = client.show("T4", &cancel).unwrap();
-    let target = detail.manual_completion.unwrap();
-    assert_eq!(target.target_token.as_deref(), Some("opaque/+=token"));
-    let record = detail.task.completion_record.unwrap();
-    assert_eq!(
-        (record.method.as_str(), record.reason.as_str()),
-        ("manual", "调研成果已验收")
-    );
-    assert_eq!(record.completion.unwrap().rows.unwrap()[0].state, "unmet");
-    assert_eq!(record.last_check, None, "an unreadable sample is left out");
-    assert!(record.workspace.unwrap().tracked_dirty);
-}
-
-#[test]
-fn manual_completion_sends_the_token_verbatim_and_reports_public_codes() {
-    use saddle::drover::{ManualError, Operation};
-    use std::sync::atomic::AtomicBool;
-    let temp = tempfile::tempdir().unwrap();
-    let program = common::script(
-        temp.path(),
-        "drover",
-        r#"#!/bin/sh
-for arg in "$@"; do printf '[%s]' "$arg" >> calls; done
-echo >> calls
-cat response
-exit $(cat code)
-"#,
-    );
-    let project = temp.path().display().to_string();
-    let client = Client {
-        program,
-        cwd: temp.path().into(),
-    };
-    let respond = |body: &str, code: i32| {
-        std::fs::write(temp.path().join("response"), body).unwrap();
-        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
-    };
-    let cancel = AtomicBool::new(false);
-    let operation = Operation::CompleteManually {
-        project,
-        id: "T4".into(),
-        token: "tok $(touch bad) '\"".into(),
-        reason: "  接受 main 未前进  ".into(),
-    };
-    respond(
-        r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"awaiting_release","completion_record":{"method":"manual","reason":"接受 main 未前进","confirmed_at":1790000000.0,"completion":{"scope":"current_repository","rows":[{"id":"main_advanced","state":"unmet","reason":"main_not_advanced","why":"main 未前进"}],"unavailable_reason":null},"last_check":{},"workspace":{"state":"clean","tracked_dirty":false}}}"#,
-        0,
-    );
-    let text = client.execute(&operation, &cancel).unwrap();
-    assert!(
-        text.contains("T4")
-            && text.contains("Awaiting release")
-            && text.contains("接受 main 未前进"),
-        "{text}"
-    );
-    assert!(!temp.path().join("bad").exists());
-    let calls = std::fs::read_to_string(temp.path().join("calls")).unwrap();
-    assert_eq!(
-        calls,
-        "[complete-manually][T4][--target-token][tok $(touch bad) '\"][--reason][接受 main 未前进][--json]\n"
-    );
-
-    for (body, code, expected) in [
-        (
-            r#"{"schema_version":1,"ok":false,"error":{"code":"target_changed","why":"运行已变化"}}"#,
-            3,
-            "target_changed",
-        ),
-        (
-            r#"{"schema_version":1,"ok":false,"error":{"code":"state_busy","why":"忙"}}"#,
-            4,
-            "state_busy",
-        ),
-        (
-            r#"{"schema_version":1,"ok":false,"error":{"code":"invalid_arguments","why":"空原因"}}"#,
-            2,
-            "invalid_arguments",
-        ),
-    ] {
-        respond(body, code);
-        let error = client.execute(&operation, &cancel).unwrap_err();
-        let manual = error.downcast_ref::<ManualError>().expect("a public code");
-        assert_eq!(manual.code, expected);
-    }
-    // An older drover without the command, and answers that do not confirm this target.
-    for (body, code, expected) in [
-        (
-            "usage: drover [add|go|next|...]\nunknown command: complete-manually",
-            2,
-            "does not support",
-        ),
-        (r#"{"schema_version":2,"ok":true}"#, 0, "schema_version"),
-        (
-            r#"{"schema_version":1,"ok":true,"task_id":"T5","state":"awaiting_release"}"#,
-            0,
-            "T5",
-        ),
-        (
-            r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"done"}"#,
-            0,
-            "done",
-        ),
-        (
-            r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"awaiting_release"}"#,
-            1,
-            "exit",
-        ),
-    ] {
-        respond(body, code);
-        let error = client.execute(&operation, &cancel).unwrap_err();
-        assert!(error.downcast_ref::<ManualError>().is_none());
-        assert!(format!("{error:#}").contains(expected), "{error:#}");
-    }
-    // The same project spelled through a symlink (macOS temp dirs sit under /var) is the same.
-    let canonical = Operation::CompleteManually {
-        project: temp.path().canonicalize().unwrap().display().to_string(),
-        id: "T4".into(),
-        token: "tok".into(),
-        reason: "ok".into(),
-    };
-    respond(
-        r#"{"schema_version":1,"ok":true,"task_id":"T4","state":"awaiting_release"}"#,
-        0,
-    );
-    client.execute(&canonical, &cancel).unwrap();
-    // A target from another project is never sent to this one.
-    std::fs::remove_file(temp.path().join("calls")).unwrap();
-    let elsewhere = Operation::CompleteManually {
-        project: "/tmp/another-project".into(),
-        id: "T4".into(),
-        token: "tok".into(),
-        reason: "ok".into(),
-    };
-    assert!(client.execute(&elsewhere, &cancel).is_err());
-    assert!(!temp.path().join("calls").exists(), "nothing ran");
-}
-
-#[test]
-fn return_to_pending_uses_one_bound_public_write_and_validates_the_result() {
-    use saddle::drover::{Operation, ReturnError};
-    use std::sync::atomic::AtomicBool;
-    let temp = tempfile::tempdir().unwrap();
-    let program = common::script(
-        temp.path(),
-        "drover",
-        r#"#!/bin/sh
-for arg in "$@"; do printf '[%s]' "$arg" >> calls; done
-echo >> calls
-cat response
-exit $(cat code)
-"#,
-    );
-    let client = Client {
-        program,
-        cwd: temp.path().into(),
-    };
-    let op = Operation::ReturnToPending {
-        project: temp.path().display().to_string(),
-        id: "T4".into(),
-        token: "r1:$(touch bad) '".into(),
-        reason: "  误派发  ".into(),
-    };
-    let success = serde_json::json!({
-        "schema_version":1, "ok":true, "task_id":"T4", "state":"pending", "paused":true,
-        "return_record":{"reason":"误派发", "dispatched_at":100, "returned_at":200, "work_stopped":true}
-    });
-    let run = |value: &serde_json::Value, code: i32| {
-        std::fs::write(temp.path().join("response"), value.to_string()).unwrap();
-        std::fs::write(temp.path().join("code"), code.to_string()).unwrap();
-        client.execute(&op, &AtomicBool::new(false))
-    };
-    let text = run(&success, 0).unwrap();
-    assert!(
-        text.contains("T4 returned to Pending")
-            && text.contains("Queue paused")
-            && text.contains("误派发")
-    );
-    assert_eq!(
-        std::fs::read_to_string(temp.path().join("calls")).unwrap(),
-        "[return-to-pending][T4][--target-token][r1:$(touch bad) '][--reason][误派发][--work-stopped][--json]\n"
-    );
-    assert!(!temp.path().join("bad").exists());
-    for code in [
-        "target_changed",
-        "state_busy",
-        "invalid_arguments",
-        "write_failed",
-    ] {
-        let err = run(
-            &serde_json::json!({"schema_version":1,"ok":false,"error":{"code":code,"why":"拒绝"}}),
-            3,
-        )
-        .unwrap_err();
-        assert_eq!(err.downcast_ref::<ReturnError>().unwrap().code, code);
-    }
-    for (field, value) in [
-        ("task_id", serde_json::json!("T5")),
-        ("state", serde_json::json!("done")),
-        ("paused", serde_json::json!(false)),
-        ("schema_version", serde_json::json!(2)),
-        ("return_record", serde_json::Value::Null),
-    ] {
-        let mut bad = success.clone();
-        bad[field] = value;
-        assert!(run(&bad, 0).is_err(), "{field}");
-    }
-    assert!(run(&success, 1).is_err());
-    let mut unconfirmed = success.clone();
-    unconfirmed["return_record"]["work_stopped"] = false.into();
-    assert!(run(&unconfirmed, 0).is_err());
-    let Operation::ReturnToPending {
-        id, token, reason, ..
-    } = op
-    else {
-        unreachable!()
-    };
-    std::fs::remove_file(temp.path().join("calls")).unwrap();
-    assert!(
-        client
-            .execute(
-                &Operation::ReturnToPending {
-                    project: "/another/project".into(),
-                    id,
-                    token,
-                    reason
-                },
-                &AtomicBool::new(false)
-            )
-            .is_err()
-    );
-    assert!(!temp.path().join("calls").exists());
-}
-
-#[test]
-fn list_json_keeps_each_pending_dispatch_target_and_tolerates_missing_or_malformed_ones() {
-    let snapshot: saddle::drover::Snapshot = serde_json::from_value(serde_json::json!({
-        "mode":{}, "paused":false, "current":null, "awaiting":null, "history":[],
-        "pending":[
-            {"id":"T1","title":"A","body":"","dispatch_pending":{"pos":1,"target_token":"d1:aa","unavailable_reason":null,"future":1}},
-            {"id":"T2","title":"B","body":"","dispatch_pending":{"pos":2,"target_token":null,"unavailable_reason":"target_ambiguous"}},
-            {"id":"T3","title":"C","body":""},
-            {"id":"T4","title":"D","body":"","dispatch_pending":{"pos":"x","target_token":7}}
-        ]
-    }))
-    .unwrap();
-    let targets: Vec<_> = snapshot
-        .pending
-        .iter()
-        .map(|t| t.dispatch_pending.clone())
-        .collect();
-    assert_eq!(
-        targets[0],
-        Some(saddle::drover::PendingTarget {
-            pos: Some(1),
-            target_token: Some("d1:aa".into()),
-            unavailable_reason: None,
-        })
-    );
-    assert_eq!(
-        targets[1].as_ref().unwrap().unavailable_reason.as_deref(),
-        Some("target_ambiguous")
-    );
-    assert_eq!(targets[2], None, "an older drover has no field");
-    assert_eq!(
-        targets[3], None,
-        "a malformed field is left out, not guessed"
-    );
-    assert_eq!(snapshot.pending[3].title, "D", "the rest of the task stays");
 }
 
 #[test]
@@ -962,7 +635,7 @@ exit $(cat code)
                   exit: serde_json::Value,
                   record: &str| {
         serde_json::json!({
-            "schema_version":1, "ok":ok, "task_id":task, "state":state,
+            "schema_version":2, "ok":ok, "task_id":task, "run_id":"run-2", "state":state,
             "delivery":{"status":delivery, "attempted":!exit.is_null(), "corral_exit_code":exit,
                         "confirmed":delivery == "confirmed", "merged_with_draft":false},
             "record":{"status":record}, "manual_text":null
@@ -971,7 +644,7 @@ exit $(cat code)
     let confirmed = answer(
         true,
         "T2".into(),
-        "current".into(),
+        "running".into(),
         "confirmed",
         0.into(),
         "recorded",
@@ -989,7 +662,7 @@ exit $(cat code)
     let mut manual = answer(
         true,
         "T2".into(),
-        "current".into(),
+        "running".into(),
         "not_sent",
         serde_json::Value::Null,
         "recorded",
@@ -1009,7 +682,7 @@ exit $(cat code)
     let mut unconfirmed = answer(
         false,
         "T2".into(),
-        "current".into(),
+        "running".into(),
         "unconfirmed",
         3.into(),
         "recorded",
@@ -1054,13 +727,13 @@ exit $(cat code)
     let contradictory = answer(
         true,
         "T2".into(),
-        "current".into(),
+        "running".into(),
         "unconfirmed",
         0.into(),
         "recorded",
     );
     let mut schema = confirmed.clone();
-    schema["schema_version"] = 2.into();
+    schema["schema_version"] = 3.into();
     for (value, code, words) in [
         (&draft, 0, vec!["draft", "Delivered"]),
         (
@@ -1149,7 +822,7 @@ exit $(cat code)
     // A refused target says nothing about where the task is now.
     let error = run(
         serde_json::json!({
-            "schema_version":1, "ok":false, "task_id":null, "state":null,
+            "schema_version":2, "ok":false, "task_id":null, "state":null,
             "delivery":{"status":"not_attempted", "attempted":false, "corral_exit_code":null,
                         "confirmed":null, "merged_with_draft":null},
             "record":{"status":"not_attempted"}, "manual_text":null,
@@ -1165,7 +838,7 @@ exit $(cat code)
     // A draft merged into an unconfirmed delivery is not a delivery.
     let error = run(
         serde_json::json!({
-            "schema_version":1, "ok":false, "task_id":"T2", "state":"current",
+            "schema_version":2, "ok":false, "task_id":"T2", "state":"current",
             "delivery":{"status":"unconfirmed", "attempted":true, "corral_exit_code":3,
                         "confirmed":false, "merged_with_draft":true},
             "record":{"status":"recorded"}, "manual_text":null,

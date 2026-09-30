@@ -29,33 +29,28 @@ pub struct Task {
     pub body: String,
     pub status: Option<String>,
     pub reason: Option<String>,
-    /// The start event's time, commit and main: with the id, a run's identity. Kept as JSON so a
-    /// malformed time makes only that identity unusable, not the whole snapshot.
+    pub run_id: Option<String>,
+    pub notification_key: Option<String>,
     pub t0: Option<serde_json::Value>,
+    pub t1: Option<serde_json::Value>,
+    pub t2: Option<serde_json::Value>,
     pub start: Option<String>,
     pub main: Option<String>,
-    pub return_history: Vec<ReturnRecord>,
-    /// A pending task's target for `dispatch-pending`, as this listing showed it; absent from
-    /// an older drover, and left out when malformed.
-    #[serde(deserialize_with = "lenient")]
-    pub dispatch_pending: Option<PendingTarget>,
+    pub submission: Option<serde_json::Value>,
+    pub completion_record: Option<serde_json::Value>,
+    pub return_history: Vec<serde_json::Value>,
+    pub previous_runs: Vec<Task>,
+    pub actions: std::collections::BTreeMap<String, ActionTarget>,
 }
-/// The shown position and opaque token of one Pending task; handed back unchanged, never built.
+/// Opaque targets from the displayed public response, never reconstructed by Saddle.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct PendingTarget {
+pub struct ActionTarget {
     pub pos: Option<u64>,
     pub target_token: Option<String>,
     pub unavailable_reason: Option<String>,
 }
 #[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct Mode {
-    pub r#loop: bool,
-    pub gate: bool,
-}
-#[derive(Clone, Debug, Default, Deserialize)]
 pub struct Snapshot {
-    pub mode: Mode,
     pub paused: bool,
     pub current: Option<Task>,
     pub awaiting: Option<Task>,
@@ -86,16 +81,34 @@ impl Client {
                 String::from_utf8_lossy(&output.stderr).trim()
             );
         }
-        serde_json::from_slice(&output.stdout).context("drover list: invalid JSON")
+        let value: serde_json::Value =
+            serde_json::from_slice(&output.stdout).context("drover list: invalid JSON")?;
+        validate_read(&value, "list")?;
+        serde_json::from_value(value)
+            .context("drover list: response does not match schema_version 2")
     }
+}
+
+fn validate_read(value: &serde_json::Value, command: &str) -> Result<()> {
+    if value["schema_version"] != 2 {
+        bail!(
+            "drover {command}: unsupported schema_version {}",
+            value["schema_version"]
+        );
+    }
+    if value["ok"] != true {
+        bail!(
+            "drover {command}: {}: {}",
+            value["error"]["code"].as_str().unwrap_or("unknown error"),
+            value["error"]["why"].as_str().unwrap_or_default()
+        );
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Operation {
-    Go,
-    Next,
     Pause(bool),
-    Loop(bool),
     Add {
         title: String,
         body: String,
@@ -115,18 +128,13 @@ pub enum Operation {
         pending: Vec<Task>,
         index: usize,
     },
-    /// Return a specific run after the user confirms its work has stopped.
-    ReturnToPending {
+    /// One explicitly confirmed transition of a specific run.
+    Transition {
         project: String,
         id: String,
+        run_id: String,
         token: String,
-        reason: String,
-    },
-    /// The user's confirmation that one run is complete, bound by `drover show`'s token.
-    CompleteManually {
-        project: String,
-        id: String,
-        token: String,
+        action: Transition,
         reason: String,
     },
     /// Dispatch the Pending task the list showed at `pos`, bound by its listing token.
@@ -136,15 +144,47 @@ pub enum Operation {
         token: String,
     },
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Transition {
+    Submit,
+    Accept,
+    Return,
+}
+impl Transition {
+    pub fn command(self) -> &'static str {
+        match self {
+            Self::Submit => "done",
+            Self::Accept => "go",
+            Self::Return => "return-to-pending",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Submit => "Submit for review",
+            Self::Accept => "Accept",
+            Self::Return => "Return to pending",
+        }
+    }
+    pub fn allows(self, state: &str) -> bool {
+        match self {
+            Self::Submit => state == "running",
+            Self::Accept => state == "awaiting_release",
+            Self::Return => matches!(state, "running" | "awaiting_release"),
+        }
+    }
+    fn result_state(self) -> &'static str {
+        match self {
+            Self::Submit => "awaiting_release",
+            Self::Accept => "done",
+            Self::Return => "pending",
+        }
+    }
+}
 impl Operation {
     pub fn args(&self) -> Vec<String> {
         match self {
-            Self::Go => vec!["go".into()],
-            Self::Next => vec!["next".into()],
             Self::Pause(true) => vec!["pause".into()],
             Self::Pause(false) => vec!["resume".into()],
-            Self::Loop(true) => vec!["loop".into(), "on".into()],
-            Self::Loop(false) => vec!["loop".into(), "off".into()],
             Self::Add { title, body } => vec!["add".into(), title.clone(), body.clone()],
             Self::Edit {
                 index, title, body, ..
@@ -165,29 +205,29 @@ impl Operation {
                 (index + 1).to_string(),
                 "Deleted in saddle".into(),
             ],
-            Self::ReturnToPending {
-                id, token, reason, ..
-            } => vec![
-                "return-to-pending".into(),
-                id.clone(),
-                "--target-token".into(),
-                token.clone(),
-                "--reason".into(),
-                reason.trim().into(),
-                "--work-stopped".into(),
-                "--json".into(),
-            ],
-            Self::CompleteManually {
-                id, token, reason, ..
-            } => vec![
-                "complete-manually".into(),
-                id.clone(),
-                "--target-token".into(),
-                token.clone(),
-                "--reason".into(),
-                reason.trim().into(),
-                "--json".into(),
-            ],
+            Self::Transition {
+                id,
+                token,
+                action,
+                reason,
+                ..
+            } => {
+                let mut args = vec![
+                    action.command().into(),
+                    id.clone(),
+                    "--target-token".into(),
+                    token.clone(),
+                ];
+                if *action == Transition::Return {
+                    args.extend([
+                        "--reason".into(),
+                        reason.trim().into(),
+                        "--work-stopped".into(),
+                    ]);
+                }
+                args.push("--json".into());
+                args
+            }
             Self::DispatchPending { pos, token, .. } => vec![
                 "dispatch-pending".into(),
                 "--pos".into(),
@@ -201,11 +241,15 @@ impl Operation {
 }
 impl Client {
     pub fn execute(&self, operation: &Operation, cancel: &AtomicBool) -> Result<String> {
-        if let Operation::ReturnToPending { project, id, .. } = operation {
-            return self.return_to_pending(project, id, &operation.args(), cancel);
-        }
-        if let Operation::CompleteManually { project, id, .. } = operation {
-            return self.complete_manually(project, id, &operation.args(), cancel);
+        if let Operation::Transition {
+            project,
+            id,
+            run_id,
+            action,
+            ..
+        } = operation
+        {
+            return self.transition(project, id, run_id, *action, &operation.args(), cancel);
         }
         if let Operation::DispatchPending { project, .. } = operation {
             return self.dispatch_pending(project, &operation.args(), cancel);
@@ -422,173 +466,32 @@ impl Drop for RepoTasks {
     }
 }
 
-/// One task from public `drover show Tn --json` (schema_version 1). Only structured fields
-/// carry meaning; `why` texts are shown verbatim and never parsed.
+/// Schema 2 task plus repository evidence; no completion gates are consumed.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Detail {
+    pub project: String,
+    pub task: Task,
+    pub evidence: Evidence,
+}
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Evidence {
+    pub scope: String,
+    pub controls_transition: bool,
     pub observed_at: f64,
-    pub task: DetailTask,
-    pub timing: Timing,
-    pub git: GitProgress,
-    pub completion: Completion,
-    pub last_check: LastCheck,
-    pub routing: Option<Routing>,
-    pub hold: Hold,
-    pub attention: Attention,
-    pub warnings: Vec<Warning>,
-    /// Absent from a drover without manual completion.
-    #[serde(default)]
-    pub manual_completion: Option<ManualTarget>,
-    #[serde(default)]
-    pub return_to_pending: Option<ManualTarget>,
-}
-/// The run `drover show` read, as an opaque token to hand back unchanged.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct ManualTarget {
-    pub target_token: Option<String>,
-    pub unavailable_reason: Option<String>,
+    pub git: Reference,
+    pub last_check: Reference,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct DetailTask {
-    pub id: String,
-    pub title: String,
-    pub body: String,
-    pub status: String,
-    /// current, awaiting or history; an awaiting task's status is still done.
-    pub location: String,
-    #[serde(default)]
-    pub reason: Option<String>,
-    /// A manual completion's saved record; absent for every other task, never back-filled.
-    #[serde(default)]
-    pub completion_record: Option<CompletionRecord>,
-    #[serde(default)]
-    pub return_history: Vec<ReturnRecord>,
-}
-/// One returned run, saved by Drover; never reconstructed from current task state.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct ReturnRecord {
-    pub reason: String,
-    pub dispatched_at: Option<serde_json::Number>,
-    pub returned_at: Option<serde_json::Number>,
-    pub work_stopped: bool,
-}
-/// What the user confirmed and what the checks said then; not a check that passed.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct CompletionRecord {
-    pub method: String,
-    pub reason: String,
-    pub confirmed_at: Option<f64>,
-    /// Snapshots saved at confirmation; one that does not parse is left out, not guessed.
-    #[serde(default, deserialize_with = "lenient")]
-    pub completion: Option<Completion>,
-    #[serde(default, deserialize_with = "lenient")]
-    pub last_check: Option<LastCheck>,
-    #[serde(default, deserialize_with = "lenient")]
-    pub workspace: Option<Workspace>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-pub struct Workspace {
+pub struct Reference {
     pub state: String,
-    pub tracked_dirty: bool,
-}
-fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: serde::de::DeserializeOwned,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    Ok(serde_json::from_value(value).ok())
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Timing {
-    pub started_at: Option<f64>,
-    pub ended_at: Option<f64>,
-    pub released_at: Option<f64>,
-    pub elapsed_seconds: Option<f64>,
-    pub release_wait_seconds: Option<f64>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct GitProgress {
-    pub start_head: Option<String>,
-    pub start_main: Option<String>,
-    /// HEAD recorded at done, not main at that time.
-    pub end_head: Option<String>,
-    pub observed_head: Option<String>,
-    pub observed_main: Option<String>,
-    /// A range count, not commits owned by this task.
-    pub range_commits: Option<u64>,
-    pub main_commits_since_start: Option<u64>,
-    /// Commit time of main as observed now, even for history.
-    pub main_tip_committed_at: Option<f64>,
-    pub unavailable_reasons: std::collections::BTreeMap<String, String>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Completion {
-    pub scope: String,
-    /// Recomputed now for current/awaiting; `None` for history, whose snapshot was not saved.
-    pub rows: Option<Vec<CompletionRow>>,
-    pub unavailable_reason: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct CompletionRow {
-    pub id: String,
-    pub state: String,
-    pub reason: String,
-    pub why: String,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct LastCheck {
-    pub status: String,
-    pub scope: String,
-    pub record: Option<CheckRecord>,
-    pub stale_reasons: Vec<String>,
-    pub unavailable_reason: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct CheckRecord {
-    pub cmd: String,
-    pub why: String,
-    pub ok: Option<bool>,
-    pub t: f64,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Routing {
-    pub source: String,
-    pub tier: String,
-    pub cross: bool,
-    pub overridden: bool,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Hold {
-    pub enabled: Option<bool>,
-    pub scope: String,
-    pub unavailable_reason: Option<String>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Attention {
-    pub state: String,
-    pub reason: String,
-    pub unmet_rows: Vec<String>,
-    pub agent: Option<AttentionAgent>,
-    pub inference: bool,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct AttentionAgent {
-    pub name: Option<String>,
-    pub state: Option<String>,
-    pub last_input_source: Option<String>,
-    pub idle_for: Option<f64>,
-}
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Warning {
-    pub code: String,
-    pub sources: Vec<String>,
+    #[serde(flatten)]
+    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
 /// Budget for one `drover show`: its Git subcommands may each take 30 s and the optional agent
 /// status 10 s. A slower answer counts as a failure and is retried on the next refresh.
 const SHOW_TIMEOUT: Duration = Duration::from_secs(60);
 impl Client {
-    /// Read-only details of a started, finished or dropped task; never runs the check command.
+    /// Read-only details of a numbered task; never runs the check command.
     pub fn show(&self, id: &str, cancel: &AtomicBool) -> Result<Detail> {
         let output = crate::command::run(
             &self.program,
@@ -607,178 +510,66 @@ impl Client {
                     text(&output.stderr)
                 )
             })?;
-        if value["schema_version"] != 1 {
-            bail!(
-                "drover show: unsupported schema_version {}",
-                value["schema_version"]
-            );
-        }
-        if value["ok"] != true {
-            bail!(
-                "drover show: {}: {}",
-                value["error"]["code"].as_str().unwrap_or("unknown error"),
-                value["error"]["why"].as_str().unwrap_or_default()
-            );
+        validate_read(&value, "show")?;
+        if value["task"]["id"] != id {
+            bail!("drover show: answered for a different task than {id}");
         }
         if !output.status.success() {
             bail!("drover show ({}): {}", output.status, text(&output.stderr));
         }
-        serde_json::from_value(value)
-            .context("drover show: response does not match schema_version 1")
+        let detail: Detail = serde_json::from_value(value)
+            .context("drover show: response does not match schema_version 2")?;
+        if detail.evidence.scope != "repository_reference" || detail.evidence.controls_transition {
+            bail!("drover show: unsupported evidence scope or transition control");
+        }
+        Ok(detail)
     }
 }
-/// A public `complete-manually` failure code, with Drover's text shown but never parsed.
+/// A public transition rejection; its code is not inferred from prose.
 #[derive(Debug)]
-pub struct ManualError {
+pub struct TransitionError {
     pub code: String,
     pub why: String,
 }
-impl std::fmt::Display for ManualError {
+impl std::fmt::Display for TransitionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let meaning = match self.code.as_str() {
-            "target_changed" => {
-                "The task run changed since this page read it; nothing was completed. Refresh, then confirm again"
-            }
-            "state_busy" => {
-                "Drover is busy with another queue write; nothing was completed. Try again"
-            }
-            "invalid_arguments" => "Drover rejected the request",
-            "repository_unavailable" => "The project repository is unavailable",
-            "not_configured" => "The project is not set up for drover",
-            "configuration_unreadable" => "Drover cannot read the project configuration",
-            "state_unreadable" => "Drover cannot read the task state",
-            "state_invalid" => "Drover cannot determine the current run",
-            "snapshot_unavailable" => "Drover cannot take a reliable check snapshot",
-            "write_failed" => "Drover could not save the completion",
-            _ => "Manual completion failed",
-        };
-        write!(f, "{meaning} ({}): {}", self.code, self.why)
+        write!(
+            f,
+            "Task action failed ({}): {}. Refresh and confirm again; Saddle has not retried.",
+            self.code, self.why
+        )
     }
 }
-impl std::error::Error for ManualError {}
+impl std::error::Error for TransitionError {}
 impl Client {
-    /// Runs `complete-manually` in this project only, and accepts nothing but this target now
-    /// awaiting release. Never falls back to another write.
-    fn complete_manually(
+    fn transition(
         &self,
         project: &str,
         id: &str,
+        run_id: &str,
+        action: Transition,
         args: &[String],
         cancel: &AtomicBool,
     ) -> Result<String> {
         let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
         if real(&self.cwd) != real(std::path::Path::new(project)) {
-            bail!("The project changed; manual completion not sent.");
+            bail!("The project changed; task action not sent.");
         }
-        let output = crate::command::run(
-            &self.program,
-            &args.iter().map(String::as_str).collect::<Vec<_>>(),
-            Some(&self.cwd),
-            Duration::from_secs(120),
-            cancel,
-        )?;
-        let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 300);
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
-            bail!(
-                "This drover does not support manual completion ({}); nothing else was sent: {}{}",
-                output.status,
-                text(&output.stdout),
-                text(&output.stderr)
-            );
-        };
-        if value["schema_version"] != 1 {
-            bail!(
-                "drover complete-manually: unsupported schema_version {}",
-                value["schema_version"]
-            );
-        }
-        if value["ok"] == false {
-            return Err(ManualError {
-                code: value["error"]["code"]
-                    .as_str()
-                    .unwrap_or("unknown_error")
-                    .into(),
-                why: value["error"]["why"].as_str().unwrap_or_default().into(),
-            }
-            .into());
-        }
-        if value["ok"] != true
-            || value["task_id"] != id
-            || value["state"] != "awaiting_release"
-            || !output.status.success()
-        {
-            bail!(
-                "drover complete-manually ({} exit): unexpected answer for {id}; check the queue before retrying: {}",
-                output.status,
-                crate::ui::clip(&value.to_string(), 300)
-            );
-        }
-        let record: Option<CompletionRecord> =
-            serde_json::from_value(value["completion_record"].clone()).ok();
-        let mut lines = vec![format!("{id} marked complete manually · Awaiting release")];
-        if let Some(record) = record {
-            lines.push(format!("Reason: {}", record.reason));
-            if let Some(at) = record.confirmed_at {
-                lines.push(format!("Confirmed: {}", crate::detail::clock(at)));
-            }
-            if let Some(rows) = record.completion.and_then(|c| c.rows) {
-                let rows: Vec<_> = rows
-                    .iter()
-                    .map(|r| format!("{} {}", r.id.replace('_', " "), r.state.replace('_', " ")))
-                    .collect();
-                lines.push(format!("Checks saved at confirmation: {}", rows.join(", ")));
-            }
-            if let Some(workspace) = record.workspace {
-                lines.push(format!("Workspace: {}", workspace.state));
-            }
-        }
-        lines.push(String::new());
-        lines.push(
-            "Checks were not run and are not counted as passed. The task waits for your release (Check & release); saddle did not send go or next, change loop or pause, touch Git, or stop agents.".into(),
-        );
-        Ok(lines.join("\n"))
-    }
-}
-#[derive(Debug)]
-pub struct ReturnError {
-    pub code: String,
-    pub why: String,
-}
-impl std::fmt::Display for ReturnError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Return to pending failed ({}): {}", self.code, self.why)
-    }
-}
-impl std::error::Error for ReturnError {}
-impl Client {
-    fn return_to_pending(
-        &self,
-        project: &str,
-        id: &str,
-        args: &[String],
-        cancel: &AtomicBool,
-    ) -> Result<String> {
-        let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
-        if real(&self.cwd) != real(std::path::Path::new(project)) {
-            bail!("The project changed; return to pending not sent.");
-        }
-        let output = crate::command::run(
-            &self.program,
-            &args.iter().map(String::as_str).collect::<Vec<_>>(),
-            Some(&self.cwd),
-            Duration::from_secs(120),
-            cancel,
-        )?;
+        let output = crate::command::run(&self.program,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(), Some(&self.cwd),
+            Duration::from_secs(120), cancel)
+            .context("Task action result unknown; refresh and check the task before confirming again. Saddle has not retried")?;
         let value: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .context("Return to pending returned no valid JSON; check the queue before retrying. Nothing else was sent")?;
-        if value["schema_version"] != 1 {
+            .context("Task action returned no valid JSON; result unknown. Refresh and check the task. Saddle has not retried")?;
+        if value["schema_version"] != 2 {
             bail!(
-                "drover return-to-pending: unsupported schema_version {}",
+                "drover {}: unsupported schema_version {}; check the task before confirming again",
+                action.command(),
                 value["schema_version"]
             );
         }
         if value["ok"] == false {
-            return Err(ReturnError {
+            return Err(TransitionError {
                 code: value["error"]["code"]
                     .as_str()
                     .unwrap_or("unknown_error")
@@ -787,32 +578,29 @@ impl Client {
             }
             .into());
         }
-        if value["ok"] != true
+        if !output.status.success()
+            || value["ok"] != true
             || value["task_id"] != id
-            || value["state"] != "pending"
-            || value["paused"] != true
-            || !output.status.success()
+            || value["run_id"] != run_id
+            || value["state"] != action.result_state()
+            || value["record"]["status"] != "recorded"
         {
             bail!(
-                "drover return-to-pending: unexpected answer for {id}; check the queue before retrying: {}",
+                "drover {}: unexpected result for {id} / {run_id}; check the task before confirming again: {}",
+                action.command(),
                 crate::ui::clip(&value.to_string(), 300)
             );
         }
-        let record: ReturnRecord = serde_json::from_value(value["return_record"].clone())
-            .context("Return result has no valid record; check the queue before retrying")?;
-        if !record.work_stopped {
-            bail!("Return result does not confirm work stopped; check the queue before retrying");
-        }
-        Ok(format!(
-            "{id} returned to Pending · Queue paused\nReason: {}\nReturned: {}\n\nThe task keeps its ID and text at the front of Pending. This run's history is retained. No task was sent and no agent was stopped. Resume the queue when ready.",
-            record.reason,
-            record
-                .returned_at
-                .as_ref()
-                .and_then(|n| n.as_f64())
-                .map(crate::detail::clock)
-                .unwrap_or_else(|| "not recorded".into())
-        ))
+        Ok(match action {
+            Transition::Submit => format!(
+                "{id} submitted for review · Awaiting release\nRecord: recorded · Run: {run_id}"
+            ),
+            Transition::Accept => format!("{id} accepted · Done\nRecord: recorded · Run: {run_id}"),
+            Transition::Return => format!(
+                "{id} returned to Pending\nRecord: recorded · Run: {run_id}\nReason: {}\nDispatch pause setting is unchanged. Work stopped was confirmed by the user.",
+                args[5]
+            ),
+        })
     }
 }
 impl Client {
@@ -851,7 +639,7 @@ impl Client {
                 text(&output.stderr)
             );
         };
-        if value["schema_version"] != 1 {
+        if value["schema_version"] != 2 {
             bail!(
                 "drover dispatch-pending: unsupported schema_version {}. Saddle has not retried; check the queue and main agent.",
                 value["schema_version"]
@@ -873,6 +661,13 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
     let exit_text = exit.map_or("no exit code".to_owned(), |code| {
         format!("corral exit {code}")
     });
+    let confirmed = status == "confirmed"
+        && delivery["confirmed"] == true
+        && delivery["attempted"] == true
+        && exit == Some(0);
+    let recorded = record == "recorded"
+        && value["state"] == "running"
+        && value["run_id"].as_str().is_some_and(|id| !id.is_empty());
     let draft = delivery["merged_with_draft"] == true;
     let manual = value["manual_text"]
         .as_str()
@@ -882,7 +677,11 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
         None => "Selected task · not dispatched".to_owned(),
     }];
     lines.push(match status {
-        "confirmed" => "Delivered to the main agent (confirmed by corral).".to_owned(),
+        "confirmed" if confirmed => "Delivered to the main agent (confirmed by corral).".to_owned(),
+        "confirmed" => {
+            "Delivery result inconsistent; confirmation is unknown. Check the main agent."
+                .to_owned()
+        }
         "unconfirmed" => {
             format!("Delivery not confirmed ({exit_text}); check the main agent. Do not resend.")
         }
@@ -899,10 +698,10 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
         "unknown" => format!(
             "Delivery result unknown ({exit_text}); the text may or may not have been sent."
         ),
-        "not_sent" => {
-            "Delivery: not sent; no main agent is configured. Paste the text below to it yourself."
-                .to_owned()
+        "not_sent" if manual.is_some() => {
+            "Delivery: not sent; paste the text below to the main agent yourself.".to_owned()
         }
+        "not_sent" => "Delivery: not sent.".to_owned(),
         "not_attempted" => "Delivery: not attempted; nothing was sent.".to_owned(),
         other => format!("Delivery status unrecognized ({other}); check the main agent."),
     });
@@ -913,7 +712,11 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
         );
     }
     lines.push(match record {
-        "recorded" => "Record: recorded as started (now Current).".to_owned(),
+        "recorded" if recorded => "Record: recorded as Running.".to_owned(),
+        "recorded" => {
+            "Record: reported recorded, but the run/state is inconsistent; check the queue."
+                .to_owned()
+        }
         "not_attempted" => "Record: not recorded; drover saved no start.".to_owned(),
         "unknown" => "Record: unknown; the start may or may not have been saved.".to_owned(),
         other => format!("Record: unrecognized ({other})."),
@@ -939,9 +742,10 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
     }
     let clean = exited_zero
         && value["ok"] == true
-        && task.is_some()
-        && record == "recorded"
-        && ((status == "confirmed" && !draft) || (status == "not_sent" && manual.is_some()));
+        && task.is_some_and(|id| !id.is_empty())
+        && recorded
+        && ((confirmed && !draft)
+            || (status == "not_sent" && delivery["attempted"] == false && manual.is_some()));
     if value["ok"] == true && !clean {
         lines.push(format!(
             "Unexpected answer ({}); check the queue and main agent.",

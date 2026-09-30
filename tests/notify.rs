@@ -12,7 +12,8 @@ fn awaiting(id: &str, t0: serde_json::Value) -> Task {
     Task {
         id: Some(id.into()),
         title: format!("title {id}"),
-        status: Some("done".into()),
+        status: Some("awaiting_release".into()),
+        notification_key: Some(format!("opaque/{id}/{t0}")),
         t0: Some(t0),
         start: Some(format!("start-{id}")),
         main: Some("main-sha".into()),
@@ -44,78 +45,17 @@ fn shown(n: &Notifier, now: Instant) -> Vec<String> {
 }
 
 #[test]
-fn identity_follows_drover_v1_with_binary64_start_time() {
-    let task = awaiting("T1", json!(100));
-    assert_eq!(
-        identity(PROJECT, &task).unwrap(),
-        [
-            PROJECT,
-            "T1",
-            "4059000000000000",
-            "start-T1",
-            "main-sha",
-            "awaiting_release"
-        ]
-    );
-    // 100 and 100.0 are one start time; -0 counts as +0.
-    let float: serde_json::Value = serde_json::from_str("100.0").unwrap();
-    assert_eq!(
-        identity(PROJECT, &awaiting("T1", float)).unwrap()[2],
-        "4059000000000000"
-    );
-    let zero: serde_json::Value = serde_json::from_str("-0.0").unwrap();
-    assert_eq!(
-        identity(PROJECT, &awaiting("T1", zero)).unwrap()[2],
-        "0000000000000000"
-    );
-    // A fractional Unix time converts exactly, not through its decimal text.
-    let t: serde_json::Value = serde_json::from_str("1790000000.123456").unwrap();
-    assert_eq!(
-        identity(PROJECT, &awaiting("T1", t)).unwrap()[2],
-        format!("{:016x}", 1790000000.123456f64.to_bits())
-    );
-}
-
-#[test]
-fn missing_or_invalid_identity_fields_skip_the_prompt() {
-    for task in [
-        Task {
-            t0: None,
-            ..awaiting("T1", json!(1))
-        },
-        Task {
-            t0: Some(json!(true)),
-            ..awaiting("T1", json!(1))
-        },
-        Task {
-            t0: Some(json!(null)),
-            ..awaiting("T1", json!(1))
-        },
-        Task {
-            start: Some(String::new()),
-            ..awaiting("T1", json!(1))
-        },
-        Task {
-            main: None,
-            ..awaiting("T1", json!(1))
-        },
-        Task {
-            id: None,
-            ..awaiting("T1", json!(1))
-        },
-    ] {
-        assert!(identity(PROJECT, &task).is_none(), "{task:?}");
-    }
-    let mut n = Notifier::default();
-    let now = Instant::now();
-    n.preference(in_saddle(1));
-    n.snapshot(PROJECT, &snapshot(None), now);
-    let broken = Task {
-        main: None,
-        ..awaiting("T2", json!(5))
+fn missing_public_notification_key_skips_the_prompt() {
+    let task = Task {
+        notification_key: None,
+        ..awaiting("T1", json!(1))
     };
-    n.snapshot(PROJECT, &snapshot(Some(broken)), now);
-    assert!(n.visible(now).is_none());
+    assert!(identity(PROJECT, &task).is_none());
+    let empty = Task {
+        notification_key: Some(String::new()),
+        ..task
+    };
+    assert!(identity(PROJECT, &empty).is_none());
 }
 
 #[test]

@@ -1047,3 +1047,22 @@ T38 已在 running，前期调研结束。用户选择独立的 dispatch-log rep
 - 位置可改，发起窗格的绑定不变：Current pane 指发起创建的那个窗格（`+ Tab` 时的活动窗格、Split 或占位窗格本身），分屏／新 tab 也相对于它；不因之后的活动窗格或异步焦点变化换目标。提交仍先核对发起窗格的身份与修订号，已变化则报 `originating pane changed` 并保留草稿。
 - 替换当前窗格沿用既有规则：发起窗格是运行中的 shell 时先走原有结束 shell 确认；取消不改布局。
 - 不清空 anchor：它继续负责来源校验、取消时丢弃临时表单并恢复 Agents 草稿等既有行为。创建参数、agent 生命周期、Agents New 表单均不变；不新增设置或快捷键。
+
+
+## 61. 接入 Drover 简化任务流转（2026-09-30，已授权）
+
+本节替代旧任务流转中的 Loop/gate、Check & release、人工覆盖完成和撤回隐式暂停规则；保留 Tasks 布局、项目/任务分组、worktree 开发方式和通知无补弹原则。
+
+- Drover 状态为 Pending → Running → Awaiting release → Done。Saddle 使用任务接口 schema 2，所有转换通过公开 CLI，消费该任务 actions 给出的不透明目标令牌，不自行裁决 Git 或测试门槛。
+- 现有 Tasks 区域对选定 Running 提供 Submit for review，对选定 Awaiting 提供 Accept；分别仅调用 done/go。移除旧 Next、Loop、Check & release 和 Mark complete manually；保留 Dispatch selected 与 Pause/Resume。接受不派发下一项，提交不自动接受。
+- Running/Awaiting 均可退回 Pending，沿用原因和工作已停止确认；不隐式暂停。过期目标刷新后重新确认，不自动替换目标重试。
+- Git 和已有检查显示为仓库参考，不代表任务归属或验收通过；旧提交、真实接受及退回事实按公开字段展示，未知保持未知。
+- 通知身份改用公开 notification_key，Attention 与既有内部提示继续观察 Awaiting。通知偏好仍 schema 1；基线、去重、渠道及不补弹规则保持。
+- 本阶段只接入既定流程，不做插件化或任何自动推进。Drover 与 Saddle 在隔离联调后再协调切换，不单独发布，不操作真实 T57。
+
+### §61 接入取舍（2026-09-30）
+
+- Submit / Accept / Return 复用原 Tasks 确认子页；打开时固定项目、任务和 run_id，再读取一次 show 的动作目标，不在后台更换令牌。任何写入失败均要求手动 Refresh 后重新确认；退回须重新勾选工作已停止。
+- list 历史按 v2 返回的倒序显示；有编号的 Pending 也可读取详情。详情读取按项目、任务、打开代次及 run_id 归属，分组或运行变化会丢弃旧结果。
+- 详情按公开的运行记录、submission、旧 completion_record、return_history、previous_runs 和仓库 evidence 展示；不重建旧门槛。未保存的接受时间显示 not recorded，陈旧检查同时保留原始结果。公开契约未提供历史 Git 结束端点，Links 不补造历史提交区间；Running 仅在 Git 参考可用且两个端点均存在时提供 start..HEAD 参考。
+- 新流转成功须退出 0、schema 2、ok=true、任务/运行/结果状态一致且 record=recorded；派发另核对 delivery、record 与 run_id，送达或记账不确定均单独报告且不重试。通知偏好仍按 schema 1 读取。

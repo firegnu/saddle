@@ -390,9 +390,13 @@ pub fn draw_workspace(
                 target = "Confirm delete".into();
                 help = " y Delete  Esc Cancel  PgUp/PgDn Scroll";
             }
-            crate::queue::Page::Manual(_) => {
-                target = "Mark complete manually · Reason".into();
-                help = " Enter Mark complete  Ctrl-R Refresh  Ctrl-U Clear  Esc Cancel";
+            crate::queue::Page::Confirm(confirmation) => {
+                target = confirmation.action.label().into();
+                help = if confirmation.action == crate::drover::Transition::Return {
+                    " Enter Confirm  Ctrl-W Work stopped  Ctrl-R Refresh  Esc Cancel"
+                } else {
+                    " Enter Confirm  Ctrl-R Refresh  Esc Cancel"
+                };
             }
             crate::queue::Page::AllPending => {
                 target = "All pending".into();

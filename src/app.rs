@@ -176,8 +176,8 @@ struct App {
     /// project and input revision at that opening.
     repo_tasks: Option<(String, u64, drover::RepoTasks)>,
     detail: Option<(queue::DetailKey, drover::DetailWorker)>,
-    /// The one reading of the run a manual completion page confirms.
-    manual_target: Option<(queue::DetailKey, drover::DetailWorker)>,
+    /// The one reading of the run a task confirmation page shows.
+    confirmation_target: Option<(queue::DetailKey, drover::DetailWorker)>,
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
@@ -333,7 +333,7 @@ impl App {
             pending_load: None,
             repo_tasks: None,
             detail: None,
-            manual_target: None,
+            confirmation_target: None,
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
@@ -742,11 +742,11 @@ impl App {
         // Tasks drops a reading in progress, and reopening starts it again.
         let wanted = self
             .queue
-            .manual_key()
+            .confirmation_key()
             .filter(|_| self.focus == Focus::Queue);
-        if self.manual_target.as_ref().map(|(key, _)| key) != wanted.as_ref() {
-            self.manual_target = None;
-            self.manual_target = wanted.map(|key| {
+        if self.confirmation_target.as_ref().map(|(key, _)| key) != wanted.as_ref() {
+            self.confirmation_target = None;
+            self.confirmation_target = wanted.map(|key| {
                 let worker = drover::DetailWorker::start(
                     drover::Client {
                         program: expand_home(&self.config.queue.drover)
@@ -760,9 +760,9 @@ impl App {
                 (key, worker)
             });
         }
-        if let Some((key, worker)) = &self.manual_target {
+        if let Some((key, worker)) = &self.confirmation_target {
             for result in worker.updates.try_iter() {
-                self.queue.absorb_manual(key, result);
+                self.queue.absorb_confirmation(key, result);
             }
         }
         self.task_links_tick()?;
@@ -1185,7 +1185,7 @@ impl App {
                             queue::Page::Add { .. }
                                 | queue::Page::Edit { .. }
                                 | queue::Page::Project(_)
-                                | queue::Page::Manual(_)
+                                | queue::Page::Confirm(_)
                         );
                         // Closing keeps the page, selection and scroll for the next opening.
                         if (key.code == KeyCode::Char('q') && !typing)
@@ -1821,7 +1821,7 @@ impl App {
                 | queue::Page::Edit { .. }
                 | queue::Page::Delete { .. }
                 | queue::Page::Project(_)
-                | queue::Page::Manual(_)
+                | queue::Page::Confirm(_)
         ) || (self.queue.busy && self.queue.project != project);
         if unfinished {
             self.panel.message =

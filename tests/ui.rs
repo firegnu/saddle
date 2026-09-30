@@ -141,10 +141,7 @@ fn management_layouts_keep_cjk_status_and_input_target_visible() {
         }
         for label in [
             "demo ▾ c",
-            "Next n",
-            "Check & release g",
             "Pause p",
-            "Loop l",
             "Refresh r",
             "● Task text t",
             "○ Run details ↵",
@@ -729,6 +726,7 @@ fn queue_history_scrollbar_reaches_the_end_with_the_last_task_visible() {
     let (mut a, mut q) = fixture();
     q.absorb(Snapshot {
         history: (0..40)
+            .rev()
             .map(|i| Task {
                 id: Some(format!("T{i}")),
                 title: format!("History item {i:02}"),
@@ -899,12 +897,9 @@ fn queue_states_and_operation_results_have_semantic_colors() {
         q.absorb(snapshot);
         let buffer = render_queue(&mut q, 52, 32);
         assert_label_color(&buffer, label, color);
-        assert_label_color(&buffer, "Loop off", t::DIM);
-        assert!(text(&buffer).contains("Auto")); // Paused does not replace mode.
+        assert!(!text(&buffer).contains("Loop"));
         assert!(text(&buffer).contains("Queue: "), "{label}");
     }
-    q.snapshot.as_mut().unwrap().mode.r#loop = true;
-    assert_label_color(&render_queue(&mut q, 52, 32), "Loop on", t::AGENT_IDLE);
     q.read_error = Some("Synthetic read error".into());
     assert_label_color(&render_queue(&mut q, 52, 32), "Read failed", t::AGENT_ERROR);
     q.absorb(Snapshot {
@@ -926,13 +921,16 @@ fn queue_states_and_operation_results_have_semantic_colors() {
     ] {
         assert_label_color(&buffer, label, color);
     }
-    q.complete(&Operation::Next, Err(anyhow::anyhow!("Synthetic failure")));
+    q.complete(
+        &Operation::Pause(true),
+        Err(anyhow::anyhow!("Synthetic failure")),
+    );
     assert_label_color(
         &render_queue(&mut q, 80, 32),
         "Synthetic failure",
         t::AGENT_ERROR,
     );
-    q.complete(&Operation::Next, Ok("Synthetic success".into()));
+    q.complete(&Operation::Pause(true), Ok("Synthetic success".into()));
     assert_label_color(
         &render_queue(&mut q, 80, 32),
         "Synthetic success",
@@ -1340,9 +1338,10 @@ fn git_summary_line_follows_each_agents_directory_and_wraps_when_narrow() {
 fn show_json() -> serde_json::Value {
     serde_json::from_str(include_str!("fixtures/show.json")).unwrap()
 }
-fn detail_queue(list_task: serde_json::Value) -> queue::Panel {
+fn detail_queue(mut list_task: serde_json::Value) -> queue::Panel {
     let mut q = queue::Panel::default();
     q.project = "/tmp/demo".into();
+    list_task["run_id"] = "run-4".into();
     let location = list_task["at"].as_str().unwrap_or("current").to_owned();
     let mut state = serde_json::json!({"mode":{}, "paused":false, "current":null, "awaiting":null, "pending":[], "history":[]});
     if location == "history" {
@@ -1388,7 +1387,7 @@ fn run_details_sit_beside_the_list_inside_the_popup_only() {
     );
     let all = text(&buffer);
     for label in [
-        "Completion checks",
+        "Repository reference",
         "Run details ↵",
         "Task text t",
         "Close Esc",
@@ -1495,40 +1494,12 @@ fn task_tabs_mark_the_chosen_view_and_details_color_structured_states() {
         );
     }
 
-    // Headings take reply_heading; states their semantic colour; everything else stays neutral.
+    // Reference failures keep their semantic color and do not become completion gates.
     let buffer = render_queue(&mut q, 106, 120);
-    let color = |label: &str, skip: u16, len: u16| style(&buffer, label, skip, len).0;
-    for label in [
-        "Completion checks",
-        "Last check",
-        "Progress",
-        "Route, hold",
-        "Records",
-    ] {
+    for label in ["Repository reference", "Last check", "Run records"] {
         assert_eq!(style(&buffer, label, 0, 5), (heading, true), "{label}");
     }
-    assert_eq!(color("Running", 0, 7), theme::AGENT_WORKING);
-    assert_eq!(color("Suggested · idle", 0, 9), theme::AGENT_BLOCKED);
-    assert_eq!(color("Suggested · idle", 9, 7), theme::TEXT);
-    assert_eq!(color("completion marker", 0, 17), theme::AGENT_BLOCKED);
-    assert_eq!(color("saddle/main · idle", 0, 14), theme::TEXT);
-    assert_eq!(color("saddle/main · idle", 14, 4), theme::AGENT_IDLE);
-    assert_eq!(color("idle · via send", 4, 11), theme::TEXT);
-    assert_eq!(color("Unknown · task body", 0, 7), theme::MUTED);
-    assert_eq!(color("Hold", 0, 4), theme::MUTED);
-
-    let mut value = show_json();
-    value["hold"] =
-        serde_json::json!({"enabled":true,"scope":"current_events","unavailable_reason":null});
-    value["attention"]["agent"]["state"] = "working".into();
-    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
-    open_detail(&mut q, Some(value));
-    let buffer = render_queue(&mut q, 106, 120);
-    let color = |label: &str, skip: u16, len: u16| style(&buffer, label, skip, len).0;
-    assert_eq!(color("On · stop", 0, 2), theme::AGENT_BLOCKED);
-    assert_eq!(color("On · stop", 2, 7), theme::TEXT);
-    assert_eq!(color("saddle/main · working", 14, 7), theme::AGENT_WORKING);
-    assert_ne!(heading, theme::TEXT, "headings stand apart from body text");
+    assert!(text(&buffer).contains("stale"));
 }
 
 #[test]
@@ -1580,113 +1551,54 @@ fn content_views_and_edit_keep_reading_positions() {
 
 #[test]
 fn task_details_present_each_contract_section_without_inventing_values() {
-    // Current: recomputed checks, unknown Git values, warnings and hostile text.
     let mut value = show_json();
-    value["git"]["range_commits"] = serde_json::Value::Null;
-    value["git"]["unavailable_reasons"]["range_commits"] = "git_query_failed".into();
-    value["warnings"] =
-        serde_json::json!([{"code":"snapshot_changed","sources":["tasks.state","git_refs"]}]);
+    value["task"]["status"] = "done".into();
+    value["task"]["t1"] = 1790363000.into();
+    value["task"]["submission"] = serde_json::json!({"event":"done","gate":false,"t":1790363000});
     value["task"]["body"] = "safe \u{1b}[31mred\u{7} text".into();
-    value["completion"]["rows"][0]["why"] = "没有收尾提交 \u{1b}]0;title\u{7}".into();
-    let mut q = detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务"}));
-    open_detail(&mut q, Some(value));
-    let out = text(&render_queue(&mut q, 106, 120));
+    value["task"]["completion_record"] = serde_json::json!({"method":"manual","reason":"legacy override","last_check":{"record":{"ok":false,"why":"old failure"}}});
+    value["task"]["previous_runs"] = serde_json::json!([{
+        "run_id":"older-run", "t0":1790300000,"t1":1790301000,
+        "submission":{"event":"submitted"},
+        "return_history":[{"reason":"more research","work_stopped":true,"returned_at":1790302000}]
+    }]);
+    let mut q =
+        detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务", "at":"history"}));
+    open_detail(&mut q, Some(value.clone()));
+    let out = text(&render_queue(&mut q, 150, 150));
     for expected in [
-        "T4",
-        "Running",
-        "41m",
-        "Detail target 任务",
-        "Completion checks",
-        "recomputed now",
-        "✗ Completion marker",
-        "✓ Main advanced",
-        "? Branches merged",
-        "· Check command",
-        "没有收尾提交",
-        "Git query failed",
-        "not only this task",
-        "Last check",
-        "Missing",
-        "not mean it never ran",
-        "重",
-        "cross review",
-        "current task file",
-        "task body not recorded",
-        "Suggested",
-        "inferred",
-        "saddle/main",
-        "changed during read",
-        "tasks.state",
+        "Done",
+        "Repository reference",
+        "unavailable",
+        "stale",
+        "failed earlier",
+        "not recorded",
+        "Legacy manual completion",
+        "legacy override",
+        "old failure",
+        "Previous run 1",
+        "older-run",
+        "more research",
         "safe [31mred text",
     ] {
         assert!(out.contains(expected), "missing {expected}: {out}");
     }
     assert!(!out.contains('\u{1b}') && !out.contains('\u{7}'));
     assert!(
-        !out.contains("Commits      0") && !out.contains(" 0 commits"),
+        !out.contains("Completion checks") && !out.contains("Result       passed"),
         "{out}"
     );
-    let narrow = text(&render_queue(&mut q, 34, 200));
-    assert!(narrow.contains("Completion checks"), "{narrow}");
-
-    // Awaiting: the recorded done stands apart from today's recomputation.
-    let mut value = show_json();
-    value["task"]["location"] = "awaiting".into();
-    value["task"]["status"] = "done".into();
-    value["timing"]["ended_at"] = 1790363000.into();
-    value["timing"]["elapsed_seconds"] = 1598.into();
-    value["timing"]["release_wait_seconds"] = 20.into();
-    value["attention"] = serde_json::json!({"state":"awaiting_release","reason":"awaiting_release","unmet_rows":[],"agent":null,"inference":false});
-    let mut q =
-        detail_queue(serde_json::json!({"id":"T4", "title":"Detail target 任务", "at":"awaiting"}));
-    open_detail(&mut q, Some(value));
-    let out = text(&render_queue(&mut q, 106, 120));
-    for expected in ["Awaiting release", "recorded done stands", "20s so far"] {
-        assert!(out.contains(expected), "missing {expected}: {out}");
-    }
-
-    // History: nothing current is applied; the cache is a retained sample.
-    let mut value = show_json();
-    value["task"]["location"] = "history".into();
-    value["task"]["status"] = "done".into();
-    value["timing"]["ended_at"] = 1790363000.into();
-    value["timing"]["released_at"] = 1790363030.into();
-    value["timing"]["release_wait_seconds"] = 30.into();
-    value["git"]["main_commits_since_start"] = serde_json::Value::Null;
-    value["git"]["unavailable_reasons"] =
-        serde_json::json!({"main_commits_since_start":"completion_main_not_recorded"});
-    value["completion"] = serde_json::json!({"scope":"recorded_history","rows":null,"unavailable_reason":"completion_snapshot_not_recorded"});
-    value["last_check"] = serde_json::json!({"status":"stale","applicable":true,"scope":"retained_sample","checked_at":null,"ok":null,
-        "record":{"task":"T4","main":"abc","cmd":"cargo test","why":"2 failed","ok":false,"t":1790362900},
-        "stale_reasons":["main_changed"],"unavailable_reason":null});
-    value["hold"] =
-        serde_json::json!({"enabled":true,"scope":"task_end_events","unavailable_reason":null});
-    value["attention"] = serde_json::json!({"state":"not_applicable","reason":"historical_task","unmet_rows":[],"agent":null,"inference":false});
-    let mut q = detail_queue(
-        serde_json::json!({"id":"T4", "title":"Detail target 任务", "status":"done", "at":"history"}),
-    );
-    open_detail(&mut q, Some(value));
-    let out = text(&render_queue(&mut q, 106, 120));
-    for expected in [
-        "Done",
-        "completion snapshot not recorded",
-        "not applied",
-        "main at completion not recorded",
-        "Stale",
-        "main changed",
-        "Retained sample",
-        "cargo test",
-        "failed",
-        "2 failed",
-        "Released",
-        "Hold",
-        "On",
-    ] {
-        assert!(out.contains(expected), "missing {expected}: {out}");
-    }
-    for absent in ["recomputed now", "Completion marker", "Suggested"] {
-        assert!(!out.contains(absent), "unexpected {absent}: {out}");
-    }
+    // Only a real t2 gives an acceptance time.
+    value["task"]["t2"] = 1790363030.into();
+    let key = q.detail_key().unwrap();
+    q.absorb_detail(&key, Ok(serde_json::from_value(value).unwrap()));
+    let recorded = text(&render_queue(&mut q, 150, 150));
+    let accepted = recorded
+        .lines()
+        .find(|line| line.contains("Accepted"))
+        .unwrap();
+    assert!(!accepted.contains("not recorded"));
+    render_queue(&mut q, 34, 200);
 }
 
 #[test]
@@ -1700,7 +1612,7 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
         "{out}"
     );
     assert!(
-        !out.contains("Completion checks") && !out.contains("Elapsed"),
+        !out.contains("Repository reference") && !out.contains("Elapsed"),
         "{out}"
     );
     q.absorb_detail(
@@ -1712,7 +1624,7 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
         out.contains("task_not_found") && out.contains("Retrying"),
         "{out}"
     );
-    assert!(!out.contains("Completion checks"), "{out}");
+    assert!(!out.contains("Repository reference"), "{out}");
 
     let mut value = show_json();
     value["task"]["body"] = (0..80)
@@ -1736,7 +1648,7 @@ fn detail_loading_and_failures_never_fake_data_and_refreshes_keep_the_scroll() {
 
     q.absorb_detail(&key, Err(anyhow::anyhow!("show cancelled or timed out")));
     let out = text(&render_queue(&mut q, 100, 200));
-    for expected in ["timed out", "stale", "Completion checks", "Retrying"] {
+    for expected in ["timed out", "stale", "Repository reference", "Retrying"] {
         assert!(out.contains(expected), "missing {expected}: {out}");
     }
 }
@@ -1921,7 +1833,7 @@ fn agents_own_the_left_column_and_tasks_open_as_a_large_popup() {
         "list and content share rows: {row}"
     );
     assert_eq!(screen.matches("T12345").count(), 2, "{screen}");
-    for label in ["Check & release g", "Refresh r", "Add task a", "Close Esc"] {
+    for label in ["Pause p", "Refresh r", "Add task a", "Close Esc"] {
         assert!(screen.contains(label), "{label}: {screen}");
     }
 }
@@ -2590,7 +2502,7 @@ fn return_to_pending_is_a_running_task_confirmation() {
     q.absorb(
         serde_json::from_value(serde_json::json!({
             "mode":{}, "paused":false, "awaiting":null, "history":[],
-            "current": {"id":"T4", "title":"Research"},
+            "current": {"id":"T4", "title":"Research", "run_id":"run-4", "status":"running"},
             "pending": [{"id":"T5", "title":"Next"}]
         }))
         .unwrap(),
@@ -2612,7 +2524,7 @@ fn return_to_pending_is_a_running_task_confirmation() {
     for words in [
         "Return to pending",
         "T4 · Research",
-        "paused",
+        "unchanged",
         "stopped",
         "Reason",
         "Cancel Esc",
@@ -2625,12 +2537,12 @@ fn return_to_pending_is_a_running_task_confirmation() {
     ));
     q.view = queue::View::Dispatch;
     q.key(queue::return_click());
-    let key = q.manual_key().unwrap();
+    let key = q.confirmation_key().unwrap();
     let mut value: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
-    value["return_to_pending"] =
+    value["task"]["actions"]["return-to-pending"] =
         serde_json::json!({"target_token":"r1:test", "unavailable_reason":null});
-    q.absorb_manual(&key, Ok(serde_json::from_value(value).unwrap()));
+    q.absorb_confirmation(&key, Ok(serde_json::from_value(value).unwrap()));
     q.paste("Wrong dispatch");
     let find_button = |buffer: &Buffer, label: &str| {
         (0..buffer.area.height)
@@ -2653,7 +2565,10 @@ fn return_to_pending_is_a_running_task_confirmation() {
     };
     assert!(matches!(
         op,
-        saddle::drover::Operation::ReturnToPending { .. }
+        saddle::drover::Operation::Transition {
+            action: saddle::drover::Transition::Return,
+            ..
+        }
     ));
     q.complete(&op, Ok("returned".into()));
     q.key(crossterm::event::KeyEvent::new(
@@ -2665,21 +2580,21 @@ fn return_to_pending_is_a_running_task_confirmation() {
 }
 
 #[test]
-fn manual_completion_is_a_running_task_button_and_its_page_shows_checks_and_reason() {
+fn submit_is_a_selected_running_task_button_with_an_explicit_confirmation() {
     let mut q = queue::Panel::default();
     q.project = "/tmp/project-a".into();
     q.absorb(
         serde_json::from_value(serde_json::json!({
             "mode": {}, "paused": false, "awaiting": null,
-            "current": {"id":"T4", "title":"Research"},
+            "current": {"id":"T4", "title":"Research", "run_id":"run-4", "status":"running"},
             "pending": [{"id":"T5", "title":"Next"}], "history": []
         }))
         .unwrap(),
     );
     let screen = text(&render_queue(&mut q, 150, 40));
-    assert!(screen.contains("Mark complete manually…"), "{screen}");
+    assert!(screen.contains("Submit for review"), "{screen}");
     q.select(1);
-    assert!(!text(&render_queue(&mut q, 150, 40)).contains("Mark complete manually"));
+    assert!(!text(&render_queue(&mut q, 150, 40)).contains("Submit for review"));
     q.select(0);
     let buffer = render_queue(&mut q, 150, 40);
     // Clicking the button opens the page; the click needs no shortcut key.
@@ -2688,30 +2603,27 @@ fn manual_completion_is_a_running_task_button_and_its_page_shows_checks_and_reas
             let row: String = (0..buffer.area.width)
                 .map(|x| buffer[(x, y)].symbol().to_owned())
                 .collect();
-            row.find("Mark complete manually")
+            row.find("Submit for review")
                 .map(|at| (row[..at].chars().count() as u16, y))
         })
         .expect("the button is drawn");
     assert!(q.click(x, y).is_none());
-    let key = q.manual_key().expect("the page reads its target");
+    let key = q.confirmation_key().expect("the page reads its target");
     let mut value: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
-    value["manual_completion"] =
+    value["task"]["title"] = "Research".into();
+    value["task"]["actions"]["done"] =
         serde_json::json!({"target_token": "tok", "unavailable_reason": null});
-    q.absorb_manual(&key, Ok(serde_json::from_value(value).unwrap()));
-    q.paste("keep the research branch");
+    q.absorb_confirmation(&key, Ok(serde_json::from_value(value).unwrap()));
     let screen = text(&render_queue(&mut q, 150, 40));
     for words in [
-        "Mark complete manually",
+        "Submit for review",
         "project-a",
         "T4 · Research",
-        "as reported now, not run",
-        "Completion marker",
-        "saved sample, not run now",
-        "keep the research branch",
-        "Mark complete ↵",
+        "wait for acceptance",
+        "reference only",
+        "run-4",
         "Cancel Esc",
-        "send go or next",
     ] {
         assert!(screen.contains(words), "{words}\n{screen}");
     }
@@ -2831,7 +2743,7 @@ fn returned_pending_run_details_show_the_saved_history() {
     let mut q = queue::Panel::default();
     let record = serde_json::json!({"reason":"Wrong dispatch", "dispatched_at":1790000000, "returned_at":1790000100, "work_stopped":true});
     q.absorb(serde_json::from_value(serde_json::json!({"mode":{}, "paused":true, "current":null, "awaiting":null, "history":[], "pending":[{
-        "id":"T4", "title":"Research", "return_history":[record.clone()]
+        "id":"T4", "title":"Research", "run_id":"run-4", "return_history":[record.clone()]
     }]})).unwrap());
     q.key(crossterm::event::KeyEvent::new(
         crossterm::event::KeyCode::Enter,
@@ -2848,10 +2760,9 @@ fn returned_pending_run_details_show_the_saved_history() {
     for words in [
         "Return history",
         "Wrong dispatch",
-        "Dispatched",
         "Returned",
         "Work stopped",
-        "confirmed by user",
+        "user's confirmation",
     ] {
         assert!(screen.contains(words), "{words}\n{screen}");
     }
@@ -2867,8 +2778,8 @@ fn dispatch_selected_is_a_pending_task_button_that_sends_the_shown_target() {
             "mode":{}, "paused":false, "current":null, "awaiting":null,
             "history":[{"id":"T0", "title":"Old", "status":"done"}],
             "pending":[
-                {"id":"T1", "title":"First", "dispatch_pending":{"pos":1, "target_token":"d1:one", "unavailable_reason":null}},
-                {"id":"T2", "title":"Second", "dispatch_pending": second}
+                {"id":"T1", "title":"First", "actions":{"dispatch-pending":{"pos":1, "target_token":"d1:one", "unavailable_reason":null}}},
+                {"id":"T2", "title":"Second", "actions":{"dispatch-pending":second}}
             ]
         }))
         .unwrap()
@@ -2880,7 +2791,7 @@ fn dispatch_selected_is_a_pending_task_button_that_sends_the_shown_target() {
     let buffer = render_queue(&mut q, 150, 40);
     let screen = text(&buffer);
     assert!(
-        screen.contains("Dispatch selected") && screen.contains("Next n"),
+        screen.contains("Dispatch selected") && !screen.contains("Next n"),
         "{screen}"
     );
     let (x, y) = find(&buffer, "Dispatch selected").unwrap();
