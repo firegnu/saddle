@@ -1232,8 +1232,8 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
         .collect();
     // Row for row as in the design (spinner frames as drawn at this instant).
     let expected = [
-        " Agents · 4                                       ",
-        " Attention · 0                           Settings ",
+        " Agents · 4                              Settings ",
+        " Attention · 0                                    ",
         " ──────────────────────────────────────────────── ",
         " corral/ ──────────────────────────────────── (1) ",
         " ┃ ○ main                ✳ claude idle      ⦿ 11s ",
@@ -1566,13 +1566,13 @@ fn attached_reads_in_text_color_but_offers_no_second_attach_click() {
 }
 
 #[test]
-fn settings_entry_sits_right_of_attention_and_wraps_below_it_when_narrow() {
+fn settings_entry_shares_title_row_and_wraps_below_status_when_narrow() {
     use crossterm::event::KeyCode;
     let (mut a, mut q) = fixture();
     let (buffer, hits) = render(160, 30, &mut a, &mut q, Focus::Agents);
     let lines = agents_lines(&buffer);
     assert!(
-        lines[2].trim_matches('┃').trim_end().ends_with("Settings")
+        lines[1].trim_matches('┃').trim_end().ends_with("Settings")
             && lines[2].contains("Attention · 0"),
         "{lines:#?}"
     );
@@ -1582,11 +1582,11 @@ fn settings_entry_sits_right_of_attention_and_wraps_below_it_when_narrow() {
         .iter()
         .find(|h| h.key.code == KeyCode::Char(','))
         .expect("Settings entry is clickable");
-    assert_eq!((entry.area.y, entry.area.width), (2, 8));
+    assert_eq!((entry.area.y, entry.area.width), (1, 8));
     assert_eq!(entry.area.right(), 52 - 2);
 
     // A narrow column puts Settings on its own row; the list moves down one row.
-    let (buffer, hits) = render(80, 30, &mut a, &mut q, Focus::Agents);
+    let (buffer, hits) = render(40, 30, &mut a, &mut q, Focus::Agents);
     let lines = agents_lines(&buffer);
     assert!(!lines[2].contains("Settings"), "{lines:#?}");
     assert!(lines[2].contains("Attention"), "{lines:#?}");
@@ -1602,4 +1602,126 @@ fn settings_entry_sits_right_of_attention_and_wraps_below_it_when_narrow() {
         .unwrap();
     assert_eq!(entry.area.y, 3);
     assert!(hits.agents.iter().all(|(row, _)| *row >= 5));
+}
+
+fn render_header_actions(
+    left_width: u16,
+    pointer: &Pointer,
+    items: &[saddle::attention::Item],
+) -> (Buffer, ui::Hits) {
+    let (mut panel, _) = fixture();
+    let terminals = saddle::terminals::Terminals::new("unused-fake-corral".into());
+    let colors = saddle::theme::Theme::default();
+    let config = Config {
+        left_width,
+        ..Default::default()
+    };
+    let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
+    let mut hits = ui::Hits::default();
+    terminal
+        .draw(|frame| {
+            hits = ui::draw_workspace(
+                frame,
+                &mut panel,
+                View {
+                    colors: &colors,
+                    panes: Panes::new(frame.area(), &config),
+                    focus: Focus::Agents,
+                    showing: None,
+                    local: &[],
+                    viewer: None,
+                    projects: &[],
+                    viewer_note: "",
+                    reply: "",
+                    now: 100.0,
+                    pointer,
+                },
+                Some(ui::Workspace {
+                    terminals: &terminals,
+                    placement: None,
+                    search: None,
+                    form: None,
+                    program: "unused-fake-corral",
+                    modal: false,
+                    attention: ui::Attention {
+                        items,
+                        loading: false,
+                        popup: None,
+                    },
+                    settings: None,
+                }),
+            );
+        })
+        .unwrap();
+    (terminal.backend().buffer().clone(), hits)
+}
+
+#[test]
+fn header_actions_share_the_title_row_and_wrap_without_colliding_with_status() {
+    use crossterm::event::KeyCode;
+    use saddle::theme;
+    for (width, plugin_y, settings_y) in [(52, 1, 1), (30, 3, 3), (20, 3, 4)] {
+        let (buffer, hits) = render_header_actions(width, &Pointer::default(), &[]);
+        let settings = hits
+            .buttons
+            .iter()
+            .find(|h| h.key.code == KeyCode::Char(','))
+            .unwrap()
+            .area;
+        let attention = hits
+            .buttons
+            .iter()
+            .find(|h| h.key.code == KeyCode::Char('a'))
+            .unwrap()
+            .area;
+        assert_eq!(settings.y, settings_y, "width {width}: Settings row");
+        assert_eq!(hits.plugins.y, plugin_y, "width {width}: Plugins row");
+        assert_eq!(attention.y, 2, "Attention keeps its own second row");
+        assert!(!settings.intersects(hits.plugins));
+        assert!(!settings.intersects(attention));
+        assert!(!hits.plugins.intersects(attention));
+        assert!(hits.list.y > settings.y.max(attention.y));
+        assert_eq!(settings.right(), width - 2);
+        for (rect, label) in [(settings, "Settings"), (hits.plugins, "Plugins")] {
+            let text: String = (rect.x..rect.right())
+                .map(|x| buffer[(x, rect.y)].symbol())
+                .collect();
+            assert_eq!(text, label);
+            assert_eq!(buffer[(rect.x, rect.y)].fg, theme::AGENTS_TEXT);
+        }
+    }
+}
+
+#[test]
+fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
+    use crossterm::event::KeyCode;
+    use saddle::{
+        attention::{Item, Kind, Target},
+        theme,
+    };
+    let (_, hits) = render_header_actions(52, &Pointer::default(), &[]);
+    let settings = hits
+        .buttons
+        .iter()
+        .find(|h| h.key.code == KeyCode::Char(','))
+        .unwrap()
+        .area;
+    for rect in [hits.plugins, settings] {
+        let mut pointer = Pointer::default();
+        pointer.hover = Some((rect.x, rect.y).into());
+        let (buffer, _) = render_header_actions(52, &pointer, &[]);
+        assert_eq!(buffer[(rect.x, rect.y)].fg, theme::BRIGHT);
+    }
+    let item = Item {
+        target: Target::Agent("demo/main".into()),
+        kind: Kind::Waiting,
+        label: "Demo".into(),
+        note: String::new(),
+    };
+    let (buffer, _) = render_header_actions(52, &Pointer::default(), &[item]);
+    let (x, y) = find(&buffer, "Attention").unwrap();
+    assert_eq!(buffer[(x, y)].fg, theme::AGENTS_YELLOW);
+    assert_eq!(buffer[(x + 12, y)].fg, theme::AGENTS_YELLOW);
+    let (buffer, _) = render_header_actions(52, &Pointer::default(), &[]);
+    assert_eq!(buffer[(x, y)].fg, theme::AGENTS_DIM);
 }

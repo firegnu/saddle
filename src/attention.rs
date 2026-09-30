@@ -162,11 +162,7 @@ pub fn entry(t: &Theme, frame: &mut Frame, area: Rect, items: &[Item], loading: 
     let mut spans = vec![
         Span::styled(
             "Attention",
-            Style::default().fg(if count > 0 {
-                t.agents_text
-            } else {
-                t.agents_dim
-            }),
+            Style::default().fg(if count > 0 { color } else { t.agents_dim }),
         ),
         Span::styled(" · ", Style::default().fg(t.agents_dim)),
     ];
