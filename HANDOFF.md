@@ -4,8 +4,9 @@
 
 ## 当前状态
 
+- 最新界面整理：实现 `0618693`，已合并并更新日常宿主与 Drover 插件包。只保留宿主外框，隐藏弹层背后的终端框/工具栏；Drover不再画整页框，临时运行提示移到底部。Counter包无需修改。记录见 `docs/任务/插件单层外框整理.md`，Dispatch `ab034c84cd5740c7a364161fde44119b`。本轮分支/worktree已清理，用户需要重启Saddle加载两份新程序，未强制退出其窗口。
 - 最新修复：Tasks 插件 `Failed · output queue full`。宿主每轮转入8条却只发送1条造成内部积压，已对齐有界发送预算并在内部队列满时暂停转入。实现 `62a8a92`，主控亲自完成并更新日常宿主；任务数据、插件包、队列规则均未改变。记录见 `docs/任务/插件输出队列溢出修复.md`；Dispatch `e37de990ef504bb89baa5e492b10d367`。
-- 用户已重启过完整插件版，但当前窗口仍需**再次退出并启动 Saddle**加载此次宿主修复，再从 Plugins → Tasks（Drover）打开。没有强制退出当前窗口；只重启插件不能加载宿主修复。
+- 用户已重启验证过输出队列修复，Tasks成功打开，随后报告重复边框。下一步**退出并启动 Saddle**加载最新界面整理，再从 Plugins → Tasks（Drover）打开；只重启插件不能加载宿主更改。
 - 实现 `a024ad2`，合并 `826a5e0`；安装验证发现的 macOS ctl 读取修复 `4187aa3`，合并 `e0caa64`；空提交收尾 `5bc3231`。均已落地 main；本轮 worktree/分支 `drover-native-core` 已清理。
 - Dispatch `7785984ca0bc4ff186b50014fc89263b`；需求、审查、验证和发布证据见 `docs/任务/Drover插件完整替换.md`。
 - 插件已登记启用，无需重新添加目录。完整插件切换后的用户启动已确认，随后报告上述通信错误。
@@ -13,9 +14,10 @@
 
 ## 安装与退役
 
-- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。队列修复版SHA-256：`45b2d857fbb17abeecd6f122407ad88312a5b4754388c01316cc75bd23009691`。
+- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。单层外框版SHA-256：`3db84341fe328e8538fef9b280e7d388148db6ce3a2c6bd1f0fad8931d225f98`。
+- 最新备份：`~/Library/Application Support/saddle-release-backups/plugin-single-frame-20260930-221953/`，包括更新前宿主和Drover二进制。插件清单、Counter包、真实配置/任务数据未改动。
 - 本次宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-output-queue-20260930-220920/`，包含此前 `d722aff4…` 宿主与安装hash记录；未替换插件包或修改真实配置。
-- 正式插件目录：`/Users/firegnu/Developer/personal_projs/saddle/plugins/drover/dist/drover-plugin`。插件二进制SHA：`72b47ccf071e9cd4f6f73b8ab31ddfaaaa3495d3a0f6d4671fe60f833b4ac19b`。
+- 正式插件目录：`/Users/firegnu/Developer/personal_projs/saddle/plugins/drover/dist/drover-plugin`。插件二进制SHA：`85476253b67f6888c3e43a0943e3ac81b24716171485891f5d581791a223e8b2`。
 - 本机PATH无dlog，包清单args保留 `/Users/firegnu/Developer/personal_projs/dispatch-log/dlog`。重新打包会覆盖清单，应保留该参数。默认Corral来自PATH；旧 `--drover` 参数已移除。
 - `dev.drover.loop` 已 `launchctl bootout`，LaunchAgents链接及原plist已撤下；`~/.local/bin/drover`、`drover-board` 两个已核实链接撤下。没有按名字杀进程，没有删除原Drover仓库或用户数据。
 - 备份：`/Users/firegnu/Library/Application Support/saddle-release-backups/drover-native-20260930-213348`，包含原宿主/插件、命令链接、Saddle配置、Drover数据/服务配置、旧公开快照、文件hash和installed.json。回退先停用新插件，再恢复旧程序与服务；不要直接用备份数据覆盖后续新任务。
@@ -31,6 +33,7 @@
 
 ## 验证
 
+- 单层外框：标准335 passed / 0 failed / 4 ignored，Clippy/fmt/diff通过；实际Counter与Drover流程debug/release各1项通过。已检查隔离PTY渲染文本，去除临时捕获代码，日志 `/tmp/saddle-single-frame-*.log`；用户实际窗口的最新效果待其重启观察。
 - 输出队列修复：自动化复现明确 RED `Failed · output queue full` → GREEN，完整有序接收160条消息；暂不可写/大消息/子进程回收通过。标准检查 **335 passed / 0 failed / 4 ignored**，Clippy、fmt、diff通过；release插件23 passed/1 ignored、真实插件输入流程1 passed。均为临时配置/合成数据，日志 `/tmp/saddle-output-queue-*.log`。用户窗口重启后的实际效果仍待用户观察。
 - 最终 `cargo test --all-targets -- --test-threads=4`：**332 passed / 0 failed / 4 ignored**；Clippy、fmt和diff检查通过。日志 `/tmp/saddle-native-complete-{all,clippy}.log`。
 - release主控入口1 passed、通知1 passed、插件进程9 passed；旧Counter/Attention二进制兼容3 passed。均合成任务、临时配置/数据和假Corral/osascript；三项旧demo可选测试已单独运行。
