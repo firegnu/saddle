@@ -103,6 +103,17 @@ impl Harness {
         cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
         cmd.env("XDG_STATE_HOME", dir.path().join("state"));
+        for name in [
+            "XDG_CONFIG_HOME",
+            "XDG_DATA_HOME",
+            "XDG_CACHE_HOME",
+            "XDG_RUNTIME_DIR",
+            "TMPDIR",
+        ] {
+            let path = dir.path().join("isolated").join(name);
+            std::fs::create_dir_all(&path).unwrap();
+            cmd.env(name, path);
+        }
         cmd.env("SADDLE_RUNTIME_DIR", dir.path().join("run"));
         cmd.env("CORRAL_NAME", "synthetic-parent");
         cmd.env("CORRAL_INSTANCE", "synthetic-parent-instance");
@@ -4640,4 +4651,316 @@ os.execve({drover:?}, [{drover:?}] + sys.argv[1:], env)
         "{queue}"
     );
     assert!(!h.dir.path().join("no-corral-called").exists());
+}
+
+#[test]
+#[ignore = "requires development schema 2 CLI in SADDLE_DROVER_FLOW_BIN and SADDLE_FLOW_EVIDENCE_DIR; one isolated real-CLI path"]
+fn real_drover_schema2_return_submit_notify_accept_path() {
+    use serde_json::{Value, json};
+    use std::{fs, path::Path, process::Command};
+
+    let drover = std::env::var("SADDLE_DROVER_FLOW_BIN").expect("set development Drover CLI path");
+    let evidence =
+        std::env::var("SADDLE_FLOW_EVIDENCE_DIR").expect("set isolated evidence directory");
+    fs::create_dir_all(&evidence).unwrap();
+    // Forward the real CLI's bytes and exit code unchanged; save its actual public responses.
+    // A fresh environment, blank MAIN_AGENT and a refusing Corral prevent live-agent access.
+    let wrapper = format!(
+        r#"#!/usr/bin/env python3
+import json, os, subprocess, sys
+from pathlib import Path
+root = Path(__file__).parent
+args = sys.argv[1:]
+env = dict(PATH=str(root / 'cli-bin') + ':/opt/homebrew/bin:/usr/bin:/bin',
+           HOME=str(root / 'home'), LANG='en_US.UTF-8',
+           GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null',
+           DROVER_CORRAL_BIN=str(root / 'cli-bin/corral'))
+for name in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
+    path = root / 'isolated' / name
+    path.mkdir(parents=True, exist_ok=True)
+    env[name] = str(path)
+result = subprocess.run([{drover:?}] + args, env=env, capture_output=True)
+with open(Path({evidence:?}) / 'drover-calls.jsonl', 'a') as log:
+    log.write(json.dumps(dict(args=args, cwd=os.getcwd(), code=result.returncode,
+        stdout=result.stdout.decode(), stderr=result.stderr.decode())) + '\n')
+sys.stdout.buffer.write(result.stdout)
+sys.stderr.buffer.write(result.stderr)
+sys.exit(result.returncode)
+"#
+    );
+    let cli = |root: &Path, args: &[&str]| -> String {
+        let output = Command::new(root.join("queue"))
+            .args(args)
+            .env_clear()
+            .env("PATH", "/opt/homebrew/bin:/usr/bin:/bin")
+            .current_dir(root.join("flow-project"))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let read = |root: &Path, args: &[&str]| -> Value {
+        let value: Value = serde_json::from_str(&cli(root, args)).unwrap();
+        assert_eq!(value["ok"], true, "{value}");
+        value
+    };
+    let git = |root: &Path, args: &[&str]| -> String {
+        let output = Command::new("/usr/bin/git")
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", root.join("home"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "Synthetic Flow")
+            .env("GIT_AUTHOR_EMAIL", "flow@example.invalid")
+            .env("GIT_COMMITTER_NAME", "Synthetic Flow")
+            .env("GIT_COMMITTER_EMAIL", "flow@example.invalid")
+            .current_dir(root.join("flow-project"))
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}: {output:?}");
+        String::from_utf8(output.stdout).unwrap()
+    };
+    let mut a = Value::Null;
+    let mut h = Harness::start_prepared(&wrapper, false, "", 16384, |root| {
+        let repo = root.join("flow-project");
+        fs::create_dir(&repo).unwrap();
+        fs::create_dir(root.join("drover-data")).unwrap();
+        fs::create_dir(root.join("cli-bin")).unwrap();
+        common::script(
+            &root.join("cli-bin"),
+            "corral",
+            "#!/bin/sh\ntouch \"$(dirname \"$0\")/called\"\nexit 99\n",
+        );
+        fs::write(root.join("agents.json"), "{}").unwrap();
+        fs::write(
+            root.join("home/.drover/projects"),
+            format!("{}\n", repo.display()),
+        )
+        .unwrap();
+        // Only bootstrap configuration is written; queue/run events come from public commands.
+        fs::write(
+            repo.join(".drover.conf"),
+            format!(
+                "HANDOFF_DIR={}\nMAIN_AGENT=\n",
+                root.join("drover-data").display()
+            ),
+        )
+        .unwrap();
+        let mut config = fs::OpenOptions::new()
+            .append(true)
+            .open(root.join("config.toml"))
+            .unwrap();
+        writeln!(config, "cwd = {:?}", repo).unwrap();
+        git(root, &["init", "-q", "-b", "main"]);
+        git(
+            root,
+            &[
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-qm",
+                "Synthetic baseline",
+            ],
+        );
+        cli(
+            root,
+            &["add", "Synthetic A", "Keep the investigation branch"],
+        );
+        cli(
+            root,
+            &["add", "Synthetic B", "Independent research delivery"],
+        );
+        let pending = read(root, &["list", "--json"]);
+        assert_eq!(pending["schema_version"], 2);
+        let token = pending["pending"][0]["actions"]["dispatch-pending"]["target_token"]
+            .as_str()
+            .unwrap();
+        a = read(
+            root,
+            &[
+                "dispatch-pending",
+                "--pos",
+                "1",
+                "--target-token",
+                token,
+                "--json",
+            ],
+        );
+        assert_eq!(a["state"], "running");
+        assert_eq!(a["delivery"]["status"], "not_sent");
+        git(root, &["switch", "-qc", "synthetic-a"]);
+        fs::write(repo.join("investigation.txt"), "Unmerged A work\n").unwrap();
+        git(root, &["add", "investigation.txt"]);
+        git(
+            root,
+            &[
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "A investigation",
+            ],
+        );
+        git(root, &["switch", "-q", "main"]);
+        assert_eq!(
+            read(root, &["notifications", "off", "--json"])["system_enabled"],
+            false
+        );
+    });
+    let snapshot = |h: &Harness, label: &str| {
+        let value = read(h.dir.path(), &["list", "--json"]);
+        fs::write(
+            Path::new(&evidence).join(format!("{label}.json")),
+            serde_json::to_vec_pretty(&value).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            Path::new(&evidence).join(format!("{label}-screen.txt")),
+            h.contents(),
+        )
+        .unwrap();
+        value
+    };
+    let calls = || -> Vec<Value> {
+        fs::read_to_string(Path::new(&evidence).join("drover-calls.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    };
+    h.see("Tasks · Running");
+    // Two preference observations span a survey period before any Awaiting transition.
+    h.until(|_| {
+        calls()
+            .iter()
+            .filter(|c| c["args"] == json!(["notifications", "status", "--json"]) && c["code"] == 0)
+            .count()
+            >= 2
+    });
+    h.see("Attention · 0");
+    assert!(!h.contents().contains("ready for review"));
+    snapshot(&h, "01-startup-baseline");
+
+    h.click("Tasks · Running");
+    h.see("Synthetic A");
+    h.click("Return to pending…");
+    h.see("Input ▸ Return to pending");
+    h.send(b"Continue later; work stopped");
+    h.click("[ ] Work has stopped ^w");
+    h.see("[x] Work has stopped ^w");
+    h.until(|h| !h.contents().contains("Reading "));
+    snapshot(&h, "02a-return-confirmation");
+    h.click("Return to pending ↵");
+    h.see("returned to Pending");
+    let returned = snapshot(&h, "02-a-returned");
+    assert!(returned["current"].is_null() && returned["awaiting"].is_null());
+    assert_eq!(returned["paused"], false);
+    assert_eq!(returned["pending"][0]["id"], a["task_id"]);
+    assert!(git(h.dir.path(), &["branch", "--no-merged", "main"]).contains("synthetic-a"));
+
+    h.send(b"\x1b");
+    h.click("Synthetic B");
+    h.click("Dispatch selected");
+    h.see("Record: recorded as Running");
+    let running = snapshot(&h, "03-b-running");
+    assert_eq!(running["current"]["title"], "Synthetic B");
+    let b_id = running["current"]["id"].as_str().unwrap().to_owned();
+    let b_run = running["current"]["run_id"].clone();
+    h.send(b"\x1b");
+    h.click("Submit for review");
+    // Wait for this confirmation page before checking its loading state. A previous
+    // detail response or the list page's absence of "Reading" does not make it ready.
+    h.see("Input ▸ Submit for review");
+    h.until(|h| !h.contents().contains("Reading "));
+    snapshot(&h, "03a-submit-confirmation");
+    h.click("Submit for review ↵");
+    h.see("submitted for review");
+    let prompt = format!("flow-project · {b_id} ready for review");
+    h.see(&prompt);
+    let awaiting = snapshot(&h, "04-b-awaiting-toast");
+    assert_eq!(awaiting["awaiting"]["id"], b_id);
+    assert_eq!(awaiting["awaiting"]["run_id"], b_run);
+    assert!(awaiting["awaiting"]["notification_key"].is_string());
+    assert!(awaiting["current"].is_null());
+
+    h.send(b"\x1b");
+    h.see("Add task a");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.see("Attention · 1");
+    h.click("Attention · 1");
+    h.see("Input ▸ Attention");
+    h.see(&format!("flow-project · {b_id}"));
+    h.see("Awaiting release");
+    snapshot(&h, "05-attention");
+    h.send(b"\x1b");
+    h.click("Tasks · Awaiting");
+    h.click("Synthetic B");
+    h.click("Accept›");
+    h.see("Input ▸ Accept");
+    h.until(|h| !h.contents().contains("Reading "));
+    snapshot(&h, "05a-accept-confirmation");
+    h.click("Accept ↵");
+    h.see("accepted · Done");
+    let done = snapshot(&h, "06-b-accepted");
+    assert!(done["current"].is_null() && done["awaiting"].is_null());
+    assert_eq!(done["pending"].as_array().unwrap().len(), 1);
+    assert_eq!(done["pending"][0]["id"], a["task_id"]);
+    assert_eq!(done["history"][0]["id"], b_id);
+    assert_eq!(done["history"][0]["run_id"], b_run);
+    assert_eq!(done["history"][0]["status"], "done");
+    assert!(done["history"][0]["t2"].is_number());
+    h.send(b"\x1b");
+    h.see("Add task a");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.see("Attention · 0");
+    let final_state = snapshot(&h, "07-no-auto-dispatch");
+    assert!(final_state["current"].is_null() && final_state["awaiting"].is_null());
+    assert_eq!(final_state["pending"][0]["id"], a["task_id"]);
+    let branches = git(h.dir.path(), &["branch", "--no-merged", "main"]);
+    assert!(branches.contains("synthetic-a"));
+    fs::write(Path::new(&evidence).join("unmerged-branches.txt"), branches).unwrap();
+    h.quit();
+    assert!(!h.dir.path().join("cli-bin/called").exists());
+    assert!(h.log("events").lines().all(|line| line == "ls "));
+    let writes: Vec<_> = calls()
+        .into_iter()
+        .filter(|c| {
+            matches!(
+                c["args"][0].as_str(),
+                Some(
+                    "dispatch-pending"
+                        | "return-to-pending"
+                        | "done"
+                        | "go"
+                        | "next"
+                        | "loop"
+                        | "complete-manually"
+                )
+            )
+        })
+        .collect();
+    assert_eq!(
+        writes
+            .iter()
+            .map(|c| c["args"][0].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        [
+            "dispatch-pending",
+            "return-to-pending",
+            "dispatch-pending",
+            "done",
+            "go"
+        ]
+    );
+    assert!(writes.iter().all(|c| c["code"] == 0));
+    eprintln!(
+        "real CLI path passed: A={} remains Pending with synthetic-a unmerged; B={b_id}/{b_run} Done; rendered toast and Attention saved in {evidence}; saddle binary={}",
+        a["task_id"],
+        env!("CARGO_BIN_EXE_saddle")
+    );
 }
