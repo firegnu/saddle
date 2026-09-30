@@ -24,6 +24,12 @@ const ROWS: usize = 14;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Target {
     Agent(String),
+    Plugin {
+        plugin: String,
+        session: u64,
+        revision: u64,
+        item: String,
+    },
     /// A task by project and public identity: its id, or its text when unnumbered.
     Task {
         project: String,
@@ -54,6 +60,8 @@ pub enum Kind {
     Failed,
     ReadFailed,
     Reply,
+    Plugin,
+    Unavailable,
 }
 #[derive(Clone, Debug)]
 pub struct Item {
@@ -79,13 +87,16 @@ impl Item {
             Kind::Failed => "Failed",
             Kind::ReadFailed => "Read failed",
             Kind::Reply => "New reply",
+            Kind::Plugin => "Needs attention",
+            Kind::Unavailable => "Source unavailable",
         }
     }
     fn look(&self, t: &Theme) -> (&'static str, Color) {
         match self.kind {
             Kind::Waiting => ("?", t.agent_blocked),
             Kind::Error | Kind::Failed | Kind::ReadFailed => ("!", t.agent_error),
-            Kind::Awaiting => ("→", t.agent_blocked),
+            Kind::Awaiting | Kind::Plugin => ("→", t.agent_blocked),
+            Kind::Unavailable => ("!", t.agent_error),
             Kind::Reply => ("•", t.unread),
         }
     }
@@ -311,7 +322,10 @@ impl Popup {
         let index = self
             .selected
             .as_ref()
-            .and_then(|s| items.iter().position(|i| &i.target == s))
+            .and_then(|s| items.iter().position(|i| &i.target == s || matches!(
+                (&i.target, s),
+                (Target::Plugin { plugin: a, item: x, .. }, Target::Plugin { plugin: b, item: y, .. }) if a == b && x == y
+            )))
             .unwrap_or(self.index.min(items.len() - 1));
         self.index = index;
         self.selected = Some(items[index].target.clone());
@@ -336,6 +350,13 @@ impl Popup {
             KeyCode::Up | KeyCode::Char('k') => self.step(items, false),
             KeyCode::Down | KeyCode::Char('j') => self.step(items, true),
             KeyCode::Enter => {
+                // Never let a removed/replaced plugin row redirect an Enter to its neighbour.
+                if self.selected.as_ref().is_some_and(|target| {
+                    matches!(target, Target::Plugin { .. })
+                        && !items.iter().any(|i| &i.target == target)
+                }) {
+                    return Outcome::Stay;
+                }
                 if let Some(index) = self.current(items)
                     && !matches!(items[index].target, Target::Source(_))
                 {

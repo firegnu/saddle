@@ -1,7 +1,7 @@
 [workspace]
 members = ["crates/plugin-protocol", "crates/plugin-sdk"]
 default-members = [".", "crates/plugin-protocol", "crates/plugin-sdk"]
-exclude = ["examples/counter-plugin"]
+exclude = ["examples/counter-plugin", "examples/attention-plugin"]
 resolver = "3"
 
 [package]

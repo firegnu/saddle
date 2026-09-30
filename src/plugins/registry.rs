@@ -95,6 +95,10 @@ impl Manifest {
                 "overlay requires panel.overlay.v1"
             );
         }
+        ensure!(
+            !m.required_capabilities.iter().any(|c| c == "attention.v1") || m.action.is_some(),
+            "attention requires an open action"
+        );
         let exe = m.program(dir)?;
         use std::os::unix::fs::PermissionsExt;
         let meta = fs::metadata(exe)?;

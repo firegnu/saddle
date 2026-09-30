@@ -11,7 +11,7 @@ use std::{
     process::{Command, Stdio},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -31,10 +31,15 @@ pub struct Snapshot {
     pub picture: Option<Arc<Picture>>,
     pub interactive: bool,
     pub log: String,
+    pub session: u64,
+    pub attention: Option<(u64, wire::AttentionSnapshot)>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
+        static SESSION: AtomicU64 = AtomicU64::new(1);
         Self {
+            session: SESSION.fetch_add(1, Ordering::Relaxed),
+            attention: None,
             state: "Starting".into(),
             note: String::new(),
             pid: None,
@@ -151,6 +156,23 @@ impl Runtime {
         q.bytes += charge;
         q.items.push_back((message, charge));
         true
+    }
+    pub fn open_attention(&self, session: u64, revision: u64, item: &str) -> bool {
+        let s = self.shared.lock().unwrap();
+        if self.stop.load(Ordering::Relaxed) || s.state != "Running" || s.session != session {
+            return false;
+        }
+        let Some((current, snapshot)) = &s.attention else {
+            return false;
+        };
+        let Some(item) = snapshot
+            .items
+            .iter()
+            .find(|i| i.id == item && *current == revision)
+        else {
+            return false;
+        };
+        self.send(Message::event("attention.open", json!({"item_id":item.id,"action":item.action,"target":item.target,"revision":revision})))
     }
     pub fn wait_for(&self, state: &str, timeout: Duration) -> bool {
         let start = Instant::now();
@@ -471,6 +493,46 @@ fn run(
                                             "accepted"
                                         };
                                         Message::response(id, json!({"status":status}))
+                                    } else if method == "attention.replace"
+                                        && m.required_capabilities
+                                            .iter()
+                                            .any(|c| c == "attention.v1")
+                                    {
+                                        let parsed = (|| -> Result<wire::AttentionSnapshot> {
+                                            ensure!(
+                                                serde_json::to_vec(&params)?.len()
+                                                    <= wire::MAX_ATTENTION_BYTES,
+                                                "attention snapshot too large"
+                                            );
+                                            let snapshot: wire::AttentionSnapshot =
+                                                serde_json::from_value(params)?;
+                                            snapshot.validate()?;
+                                            ensure!(
+                                                snapshot.items.iter().all(|i| m
+                                                    .action
+                                                    .as_ref()
+                                                    .is_some_and(|a| a.id == i.action)),
+                                                "unknown attention action"
+                                            );
+                                            Ok(snapshot)
+                                        })();
+                                        match parsed {
+                                            Ok(snapshot) => {
+                                                let mut s = shared.lock().unwrap();
+                                                let revision =
+                                                    s.attention.as_ref().map_or(1, |(r, _)| r + 1);
+                                                s.attention = Some((revision, snapshot));
+                                                Message::response(
+                                                    id,
+                                                    json!({"status":"accepted","revision":revision}),
+                                                )
+                                            }
+                                            Err(e) => Message::error(
+                                                id,
+                                                "invalid_attention",
+                                                &e.to_string(),
+                                            ),
+                                        }
                                     } else {
                                         Message::error(id, "unsupported", "unknown request")
                                     };

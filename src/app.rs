@@ -411,7 +411,7 @@ impl App {
                 .filter(|pane| pane.viewer.session.is_some())
                 .filter_map(|pane| pane.viewer.showing.clone())
                 .collect();
-            let items = self.board.items(&self.panel, now());
+            let items = self.attention_items();
             let loading = self.board.loading();
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
@@ -1265,7 +1265,8 @@ impl App {
                     return Ok(false);
                 }
                 if let Some(popup) = &mut self.attention {
-                    let items = self.board.items(&self.panel, now());
+                    let mut items = self.board.items(&self.panel, now());
+                    items.extend(self.plugins.attention_items());
                     let outcome = popup.key(key, &items);
                     self.attention_outcome(outcome);
                     return Ok(false);
@@ -1528,7 +1529,8 @@ impl App {
                             }
                         }
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                            let items = self.board.items(&self.panel, now());
+                            let mut items = self.board.items(&self.panel, now());
+                            items.extend(self.plugins.attention_items());
                             popup.scroll(mouse.kind == MouseEventKind::ScrollDown, &items);
                         }
                         _ => {}
@@ -1923,8 +1925,12 @@ impl App {
             self.survey.refresh();
         }
     }
-    /// Opening only shows the target: an agent's terminal, or a task selected in its project's
-    /// Tasks. Nothing is answered, released or advanced.
+    fn attention_items(&self) -> Vec<crate::attention::Item> {
+        let mut items = self.board.items(&self.panel, now());
+        items.extend(self.plugins.attention_items());
+        items
+    }
+    /// Only navigate to a target; never answer, accept or advance its business state.
     fn attention_outcome(&mut self, outcome: crate::attention::Outcome) {
         use crate::attention::{Outcome, Target};
         match outcome {
@@ -1940,6 +1946,7 @@ impl App {
                 self.attention = None;
                 self.focus = Focus::Agents;
                 match target {
+                    target @ Target::Plugin { .. } => self.open_plugin_attention(&target),
                     Target::Agent(name) => {
                         self.panel.select(Some(name));
                         self.attach();

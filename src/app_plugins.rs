@@ -78,6 +78,21 @@ impl App {
             || self.panel.confirm.is_some()
             || self.new_agent.as_ref().is_some_and(|f| f.visible)
     }
+    pub(super) fn open_plugin_attention(&mut self, target: &crate::attention::Target) {
+        let crate::attention::Target::Plugin { plugin, .. } = target else {
+            return;
+        };
+        if self.plugin_ui_busy() || self.plugin_overlay.is_some() {
+            self.panel.message = "Close the current dialog before opening Attention".into();
+            return;
+        }
+        if !self.plugins.open_attention(target) {
+            self.panel.message =
+                "Attention item changed or its source is unavailable; reopen Attention".into();
+            return;
+        }
+        self.open_plugin_view(plugin);
+    }
     pub(super) fn open_plugin_view(&mut self, id: &str) {
         if self.plugin_overlay.is_some() || self.plugins.state(id) != "Running" {
             return;

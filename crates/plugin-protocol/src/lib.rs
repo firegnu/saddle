@@ -253,7 +253,7 @@ pub fn read(reader: &mut impl std::io::BufRead) -> Result<Option<Message>> {
     }
 }
 pub fn limits() -> serde_json::Value {
-    serde_json::json!({"message_bytes":MAX_LINE,"cells":MAX_CELLS,"paste_bytes":MAX_PASTE,"queue_messages":MAX_QUEUE,"queue_bytes":MAX_QUEUE_BYTES})
+    serde_json::json!({"message_bytes":MAX_LINE,"cells":MAX_CELLS,"paste_bytes":MAX_PASTE,"queue_messages":MAX_QUEUE,"queue_bytes":MAX_QUEUE_BYTES,"attention_items":MAX_ATTENTION_ITEMS,"attention_bytes":MAX_ATTENTION_BYTES})
 }
 
 fn present<'de, D, T>(deserializer: D) -> std::result::Result<Option<T>, D::Error>
@@ -265,7 +265,13 @@ where
 }
 
 /// Host and SDK features negotiated during initialize.
-pub const CAPABILITIES: &[&str] = &["panel.v1", "notify.v1", "ui.entry.v1", "panel.overlay.v1"];
+pub const CAPABILITIES: &[&str] = &[
+    "panel.v1",
+    "notify.v1",
+    "ui.entry.v1",
+    "panel.overlay.v1",
+    "attention.v1",
+];
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Placement {
@@ -284,4 +290,76 @@ pub struct OpenAction {
     pub id: String,
     pub title: String,
     pub view: String,
+}
+
+pub const MAX_ATTENTION_ITEMS: usize = 64;
+pub const MAX_ATTENTION_BYTES: usize = 65536;
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttentionItem {
+    pub id: String,
+    pub title: String,
+    pub note: String,
+    pub action: String,
+    pub target: serde_json::Value,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttentionSnapshot {
+    pub items: Vec<AttentionItem>,
+}
+impl AttentionSnapshot {
+    pub fn validate(&self) -> Result<()> {
+        fn id(s: &str) -> bool {
+            !s.is_empty()
+                && s.len() <= 128
+                && s.bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+        }
+        fn depth(v: &serde_json::Value) -> usize {
+            match v {
+                serde_json::Value::Array(a) => 1 + a.iter().map(depth).max().unwrap_or(0),
+                serde_json::Value::Object(o) => 1 + o.values().map(depth).max().unwrap_or(0),
+                _ => 0,
+            }
+        }
+        ensure!(
+            self.items.len() <= MAX_ATTENTION_ITEMS,
+            "too many attention items"
+        );
+        ensure!(
+            serde_json::to_vec(self)?.len() <= MAX_ATTENTION_BYTES,
+            "attention snapshot too large"
+        );
+        let mut ids = std::collections::HashSet::new();
+        for item in &self.items {
+            ensure!(
+                id(&item.id) && id(&item.action) && ids.insert(&item.id),
+                "invalid or duplicate attention identity"
+            );
+            ensure!(
+                !item.title.is_empty()
+                    && item.title.len() <= 128
+                    && item.note.len() <= 512
+                    && !item
+                        .title
+                        .chars()
+                        .chain(item.note.chars())
+                        .any(char::is_control),
+                "invalid attention text"
+            );
+            ensure!(
+                serde_json::to_vec(&item.target)?.len() <= 4096 && depth(&item.target) <= 16,
+                "attention target too large or deep"
+            );
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AttentionOpen {
+    pub item_id: String,
+    pub action: String,
+    pub target: serde_json::Value,
+    pub revision: u64,
 }

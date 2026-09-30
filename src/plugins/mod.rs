@@ -237,6 +237,80 @@ impl Manager {
         }
         self.notices.lock().unwrap().expire();
     }
+    pub fn attention_items(&self) -> Vec<crate::attention::Item> {
+        use crate::attention::{Item, Kind, Target};
+        let mut items = Vec::new();
+        for entry in &self.registry.entries {
+            let running = self.running.get(&entry.id);
+            let manifest = running
+                .map(|r| &r.manifest)
+                .or_else(|| self.catalog.get(&entry.id).map(|(m, _)| m));
+            let Some(m) =
+                manifest.filter(|m| m.required_capabilities.iter().any(|c| c == "attention.v1"))
+            else {
+                continue;
+            };
+            if !self.enabled_here(&entry.id) {
+                continue;
+            }
+            let snapshot = running.map(|r| r.runtime.snapshot());
+            if let Some(s) = snapshot
+                .as_ref()
+                .filter(|s| s.state == "Running" && !self.restart.contains(&entry.id))
+                && let Some((revision, snapshot)) = &s.attention
+            {
+                items.extend(snapshot.items.iter().map(|i| Item {
+                    target: Target::Plugin {
+                        plugin: entry.id.clone(),
+                        session: s.session,
+                        revision: *revision,
+                        item: i.id.clone(),
+                    },
+                    kind: Kind::Plugin,
+                    label: i.title.clone(),
+                    note: if i.note.is_empty() {
+                        m.name.clone()
+                    } else {
+                        format!("{} · {}", m.name, i.note)
+                    },
+                }));
+            } else {
+                items.push(Item {
+                    target: Target::Source(format!("plugin:{}", entry.id)),
+                    kind: Kind::Unavailable,
+                    label: m.name.clone(),
+                    note: if self.restart.contains(&entry.id) {
+                        "Restarting".into()
+                    } else if let Some(s) = snapshot {
+                        if s.state == "Running" {
+                            "Waiting for snapshot".into()
+                        } else {
+                            format!("{} · {}", s.state, s.note)
+                        }
+                    } else {
+                        "Unavailable".into()
+                    },
+                });
+            }
+        }
+        items
+    }
+    pub fn open_attention(&self, target: &crate::attention::Target) -> bool {
+        let crate::attention::Target::Plugin {
+            plugin,
+            session,
+            revision,
+            item,
+        } = target
+        else {
+            return false;
+        };
+        !self.restart.contains(plugin)
+            && self
+                .running
+                .get(plugin)
+                .is_some_and(|r| r.enabled && r.runtime.open_attention(*session, *revision, item))
+    }
     pub fn palette_items(&self, opened: &BTreeSet<String>) -> Vec<palette::Item> {
         let mut items: Vec<_> = self
             .registry
