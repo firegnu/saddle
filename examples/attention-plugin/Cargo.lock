@@ -1121,6 +1121,7 @@ dependencies = [
 [[package]]
 name = "saddle-plugin-protocol"
 version = "0.1.0"
+source = "git+https://github.com/firegnu/saddle?rev=6658cdc2d4f0534fba52b0360a109de46f60d895#6658cdc2d4f0534fba52b0360a109de46f60d895"
 dependencies = [
  "anyhow",
  "serde",
@@ -1132,6 +1133,7 @@ dependencies = [
 [[package]]
 name = "saddle-plugin-sdk"
 version = "0.1.0"
+source = "git+https://github.com/firegnu/saddle?rev=6658cdc2d4f0534fba52b0360a109de46f60d895#6658cdc2d4f0534fba52b0360a109de46f60d895"
 dependencies = [
  "anyhow",
  "libc",
