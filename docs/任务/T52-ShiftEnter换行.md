@@ -79,3 +79,13 @@
 - 验证涵盖真实 Saddle 二进制、Crossterm、Viewer、内层 PTY 和假公开 CLI；外层终端为协议模型，假客户端仅记录字节。因此没有宣称真实 Claude Code/Codex 多行提示框验收通过。
 - 未操作任何真实 agent、私人会话、真实队列/布局或运行中的 Saddle，也未替换用户二进制；未修改 Corral/Drover，不合并、不推送。
 - 主控审查时需保留上述全套原失败记录，并在后续获准的真实终端验收中确认用户所用外层终端及两个客户端的多行输入。当前范围未发现需要上游修改或改变已批准设计的接口缺口。
+
+## 主控审查（2026-09-30）
+
+结论：实现 3458e1e 可以合并。代码仅为 TerminalGuard 配对增加外层修饰键消歧的 push/pop，位置位于备用屏幕进入后、退出前；维持既有 Viewer 编码与路由。协议模型驱动真实二进制/PTY 的失败复现及修复前直送编码对照，支持外层协商缺失这一代码缺陷；不能据此宣称已捕获用户终端的真实根因。
+
+同意只启用 DISAMBIGUATE_ESCAPE_CODES、不扩大内层协议实现的取舍；同意不支持增强且只提供 CR 的外层终端仍无法区分 Shift。同意保留无关 picker 首轮失败并不扩展 T29。
+
+主控复核：cargo test --all-targets 一次通过（294 passed、0 failed、3 ignored），cargo clippy --all-targets -- -D warnings 一次通过，git diff --check main...t52-shift-enter 通过。使用共享编译目录；原始日志 /tmp/saddle-t52-controller-tests.log 和 /tmp/saddle-t52-controller-clippy.log。实现者全套为 293 passed、1 failed、3 ignored，picker 单独复跑通过，保留该历史结果，主控本次通过不证明 T29 根因已修复。
+
+真实 Claude Code/Codex 输入框尚未验收；编译交付后须用户重开 Saddle 验证当前终端下的 Shift+Enter。未操作真实用户 agent 或上游仓库。
