@@ -4,7 +4,10 @@
 
 ## 当前状态
 
-- 最新交付：Settings 顶部改用紧凑单行标签，正常宽度五项同排，窄窗口紧凑换行。实现 `52d6a81`，收尾 `259b861`；已合并推送、更新日常宿主、清理 `settings-compact-tabs` 分支/worktree。主控亲自做，没有委派；用户重启 Saddle 后观察，本轮未重启其窗口。任务/审查 `docs/任务/Settings紧凑标签栏.md`，Dispatch `1d77432fe0ce40978e99c4c5fc5a20fa`。
+- 最新交付：Agents标题右侧将Plugins/Settings合并为同排操作，统一清晰正文色并悬停提亮；Attention独占第二行，0时弱化，有条目时文字与计数用状态色。窄窗口入口自动换到状态下方。实现 `42da29d`，收尾 `e693894`；已合并推送、更新日常宿主并清理 `agents-header-actions` 分支/worktree。任务/审查 `docs/任务/Agents顶部入口与状态分层.md`，Dispatch `3ffa43dbf0a6486c9203bfa3ebc0b72c`。主控亲自做，未重启用户窗口；下一步由用户重启观察。
+- 顶部整理验证：标准 **356 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；独立release候选2项布局/配色和1项PTY设置保存/侧栏调整通过。日志 `/tmp/saddle-header-actions-{all,clippy,release-check}.log`。下述三处Diff演示文件hash前后一致，插件包、配置、队列、服务未改动。
+
+- 此前交付：Settings 顶部改用紧凑单行标签，正常宽度五项同排，窄窗口紧凑换行。实现 `52d6a81`，收尾 `259b861`；已合并推送、更新日常宿主、清理 `settings-compact-tabs` 分支/worktree。主控亲自做，没有委派；用户重启 Saddle 后观察，本轮未重启其窗口。任务/审查 `docs/任务/Settings紧凑标签栏.md`，Dispatch `1d77432fe0ce40978e99c4c5fc5a20fa`。
 - Settings 验证：标准 **354 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；独立release候选的设置保存/侧栏调整及标签布局2项通过。日志 `/tmp/saddle-settings-tabs-{all,clippy,release-check}.log`。插件包、配置、队列和服务未改动。
 - 用户已查看Diff演示并反馈“cool”。三处未提交临时演示继续保留：`examples/counter-plugin/src/main.rs`、`plugins/diff/README.md`、`docs/diff-preview-demo.json`；本轮前后逐文件hash一致，不将其纳入正式提交，也不自动撤回。
 
@@ -25,9 +28,11 @@
 
 ## 安装与退役
 
-- 最新宿主备份：`~/Library/Application Support/saddle-release-backups/settings-compact-tabs-20261001-002259/`，包含此前 `eebb3117…` 插件分屏版及安装hash记录。日常程序已原子替换并核对SHA；旧窗口继续运行，等待用户重启。
+- 最新宿主备份：`~/Library/Application Support/saddle-release-backups/agents-header-actions-20261001-003543/`，包含此前Settings紧凑标签版及安装hash记录。日常入口已原子替换并核对SHA，当前窗口未重启。
 
-- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。Settings紧凑标签版SHA-256：`1459a6b6d3631305056ae4ee8f3723d7effa1ed9fa9e2ab3b71a49e2e9996c16`。
+- 此前宿主备份：`~/Library/Application Support/saddle-release-backups/settings-compact-tabs-20261001-002259/`，包含此前 `eebb3117…` 插件分屏版及安装hash记录。日常程序已原子替换并核对SHA；旧窗口继续运行，等待用户重启。
+
+- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。Agents顶部整理版SHA-256：`44f99c74dbf639e87e12b076870af7cff235061c606ef87ad31e5837eb75cce8`。
 - 最新宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-split-20260930-231227/`，保存入口右对齐版 `5080dbb2…` 和安装hash记录。插件包、配置和真实任务数据均未改动。
 - 此前宿主备份：`~/Library/Application Support/saddle-release-backups/plugins-header-right-20260930-224044/`，包含此前 `a259aba2…` 程序和hash记录。
 - 当前宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-centered-overlay-20260930-223126/`，包含此前 `3db84341…` 宿主和hash记录。插件包与真实配置/任务数据不变。
