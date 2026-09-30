@@ -1,4 +1,4 @@
-use saddle::links::{self, Key, State, Target};
+use saddle_drover_plugin::links::{self, Key, State, Target};
 use std::{
     fs,
     path::Path,
@@ -233,39 +233,6 @@ fn recorded_range_is_listed_as_a_range_and_opens_real_commit_diffs() {
 }
 
 #[test]
-fn agent_status_requires_original_instance_and_exclusive_attachment() {
-    let dir = tempfile::tempdir().unwrap();
-    let request = links::AgentRequest {
-        key: key(dir.path(), ""),
-        name: "team/worker".into(),
-        instance: "012345abcdef".into(),
-        seq: 1,
-    };
-    let good = serde_json::json!({"instance":"012345abcdef", "state":"idle", "attached":0});
-    assert!(links::check_agent(&good, &request, false).is_ok());
-    for (field, value) in [
-        ("instance", serde_json::json!("fedcba543210")),
-        ("instance", serde_json::Value::Null),
-        ("attached", serde_json::json!(1)),
-        ("attached", serde_json::Value::Null),
-        ("state", serde_json::json!("exited")),
-        ("starting", serde_json::json!(true)),
-    ] {
-        let mut status = good.clone();
-        status[field] = value;
-        assert!(
-            links::check_agent(&status, &request, false).is_err(),
-            "{status}"
-        );
-    }
-    let mut local = good;
-    local["attached"] = serde_json::json!(1);
-    assert!(links::check_agent(&local, &request, true).is_ok());
-    local["instance"] = serde_json::json!("fedcba543210");
-    assert!(links::check_agent(&local, &request, true).is_err());
-}
-
-#[test]
 fn arriving_git_endpoints_preserve_an_open_file_and_link_selection() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("file"), "KEPT READING").unwrap();
@@ -287,7 +254,7 @@ fn arriving_git_endpoints_preserve_an_open_file_and_link_selection() {
 
 #[test]
 fn links_report_public_detail_read_failures_instead_of_only_an_empty_state() {
-    use saddle::{
+    use saddle_drover_plugin::{
         drover::{Snapshot, Task},
         queue::{Panel, View},
     };

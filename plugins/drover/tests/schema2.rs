@@ -1,5 +1,5 @@
 mod common;
-use saddle::drover::Client;
+use saddle_drover_plugin::drover::Client;
 use serde_json::json;
 use std::fs;
 
@@ -55,8 +55,8 @@ fn v2_show_reads_repository_reference_without_completion_gates() {
 #[test]
 fn retired_queue_shortcuts_cannot_write_or_advance_another_task() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let mut panel = saddle::queue::Panel::default();
-    panel.absorb(saddle::drover::Snapshot::default());
+    let mut panel = saddle_drover_plugin::queue::Panel::default();
+    panel.absorb(saddle_drover_plugin::drover::Snapshot::default());
     for key in ['g', 'n', 'l'] {
         assert!(
             panel
@@ -69,7 +69,7 @@ fn retired_queue_shortcuts_cannot_write_or_advance_another_task() {
 
 #[test]
 fn notification_identity_is_the_public_key_without_git_endpoints() {
-    use saddle::{
+    use saddle_drover_plugin::{
         drover::{Preference, Snapshot, Task},
         notify::Notifier,
     };
@@ -126,7 +126,7 @@ fn key(code: crossterm::event::KeyCode) -> crossterm::event::KeyEvent {
 #[test]
 fn selected_transitions_bind_run_token_and_reconfirm_after_failure() {
     use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
-    use saddle::{
+    use saddle_drover_plugin::{
         drover::{Operation, Request, Snapshot, Transition},
         queue::{Page, Panel},
     };
@@ -154,9 +154,9 @@ fn selected_transitions_bind_run_token_and_reconfirm_after_failure() {
             }
         });
         let click = if action == Transition::Return {
-            saddle::queue::return_click()
+            saddle_drover_plugin::queue::return_click()
         } else {
-            saddle::queue::transition_click()
+            saddle_drover_plugin::queue::transition_click()
         };
         assert!(panel.key(click).is_none());
         let target = panel.confirmation_key().unwrap();
@@ -197,7 +197,7 @@ fn selected_transitions_bind_run_token_and_reconfirm_after_failure() {
         assert!(panel.key(key(K::Esc)).is_none() && matches!(panel.page, Page::Confirm(_)));
         panel.complete(
             &op,
-            Err(saddle::drover::TransitionError {
+            Err(saddle_drover_plugin::drover::TransitionError {
                 code: "target_changed".into(),
                 why: "new run".into(),
             }
@@ -240,7 +240,7 @@ fn selected_transitions_bind_run_token_and_reconfirm_after_failure() {
 
 #[test]
 fn transitions_use_one_literal_command_and_require_the_same_recorded_run() {
-    use saddle::drover::{Operation, Transition};
+    use saddle_drover_plugin::drover::{Operation, Transition};
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let client = Client {
@@ -311,7 +311,7 @@ fn transitions_use_one_literal_command_and_require_the_same_recorded_run() {
 
 #[test]
 fn a_new_run_in_the_same_group_discards_old_detail_results() {
-    use saddle::{drover::Snapshot, queue::Panel};
+    use saddle_drover_plugin::{drover::Snapshot, queue::Panel};
     let mut panel = Panel::default();
     let snapshot = |run: &str| Snapshot {
         current: Some(
@@ -342,7 +342,7 @@ fn a_new_run_in_the_same_group_discards_old_detail_results() {
 
 #[test]
 fn inconsistent_dispatch_confirmation_does_not_claim_delivery() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     let temp = tempfile::tempdir().unwrap();
     let client = Client {
         program: common::script(temp.path(), "drover", "#!/bin/sh\ncat answer\n"),

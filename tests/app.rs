@@ -8,7 +8,7 @@ use std::{
 };
 
 #[test]
-fn three_pane_app_starts_and_restores_terminal_after_quit() {
+fn agent_workspace_starts_and_restores_terminal_after_quit() {
     let temp = tempfile::tempdir().unwrap();
     let corral = common::script(temp.path(), "corral", "#!/bin/sh\necho '{\"agents\":[]}'\n");
     let queue = common::script(temp.path(), "drover", include_str!("fixtures/drover.py"));
@@ -54,7 +54,7 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     let mut answered_cursor = false;
     let mut screen = vt100::Parser::new(30, 120, 0);
     // The first frame can arrive in several reads; wait for both panes, not just the header.
-    while !(screen.screen().contents().contains("Tasks · ")
+    while !(screen.screen().contents().contains("Plugins")
         && screen.screen().contents().contains("Viewer"))
         && Instant::now() < deadline
     {
@@ -86,7 +86,7 @@ fn three_pane_app_starts_and_restores_terminal_after_quit() {
     };
     output.extend(rx.try_iter().flatten());
     let text = String::from_utf8_lossy(&output);
-    assert!(snapshot.contains("Tasks · "), "{snapshot}");
+    assert!(snapshot.contains("Plugins"), "{snapshot}");
     assert!(
         snapshot.contains("Agents") && snapshot.contains("Viewer"),
         "{text}"

@@ -1,5 +1,54 @@
 use super::*;
 impl App {
+    pub(super) fn plugin_toast_event(&mut self, mouse: &crossterm::event::MouseEvent) -> bool {
+        let Some((area, close)) = self.plugin_toast else {
+            return false;
+        };
+        let point = (mouse.column, mouse.row).into();
+        if !area.contains(point) {
+            return false;
+        }
+        if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
+            return true;
+        }
+        let Some(toast) = self.plugin_toast_shown.clone() else {
+            return true;
+        };
+        let live = self.plugins.notices.lock().unwrap().items.iter().any(|n| {
+            n.plugin == toast.plugin
+                && n.session == toast.session
+                && n.notification_id == toast.notification_id
+                && n.expires > Instant::now()
+        });
+        if !live {
+            return true;
+        }
+        if close.contains(point) {
+            self.plugins.notices.lock().unwrap().items.retain(|n| {
+                !(n.plugin == toast.plugin
+                    && n.session == toast.session
+                    && n.notification_id == toast.notification_id)
+            });
+        } else if toast.target.is_some() {
+            if self.plugin_ui_busy()
+                || self
+                    .plugin_overlay
+                    .as_ref()
+                    .is_some_and(|o| o.id != toast.plugin)
+            {
+                self.panel.message =
+                    "Close the current dialog before opening this notification".into();
+            } else if self.plugins.open_notification(&toast) {
+                self.plugins.notices.lock().unwrap().items.retain(|n| {
+                    !(n.plugin == toast.plugin
+                        && n.session == toast.session
+                        && n.notification_id == toast.notification_id)
+                });
+                self.open_plugin_view_with_context(&toast.plugin, false);
+            }
+        }
+        true
+    }
     pub(super) fn plugin_input(&mut self, event: serde_json::Value) -> bool {
         if self.viewer.active_pane().plugin_id().is_none() {
             return false;
@@ -10,12 +59,13 @@ impl App {
         true
     }
     pub(super) fn draw_plugin_toast(
-        &self,
+        &mut self,
         frame: &mut ratatui::Frame,
         workspace: Rect,
     ) -> Option<(Rect, Rect)> {
         let notices = self.plugins.notices.lock().unwrap();
-        let toast = notices.items.front()?;
+        self.plugin_toast_shown = notices.items.front().cloned();
+        let toast = self.plugin_toast_shown.as_ref()?;
         if workspace.width < 12 || workspace.height < 4 {
             return None;
         }
@@ -68,8 +118,7 @@ fn overlay_area(workspace: Rect) -> Rect {
 }
 impl App {
     pub(super) fn plugin_ui_busy(&self) -> bool {
-        self.focus == Focus::Queue
-            || self.settings.is_some()
+        self.settings.is_some()
             || self.plugin_page.is_some()
             || self.closing.is_some()
             || self.placement.is_some()
@@ -91,11 +140,18 @@ impl App {
                 "Attention item changed or its source is unavailable; reopen Attention".into();
             return;
         }
-        self.open_plugin_view(plugin);
+        self.open_plugin_view_with_context(plugin, false);
     }
     pub(super) fn open_plugin_view(&mut self, id: &str) {
+        self.open_plugin_view_with_context(id, true);
+    }
+    fn open_plugin_view_with_context(&mut self, id: &str, context: bool) {
         if self.plugin_overlay.is_some() || self.plugins.state(id) != "Running" {
             return;
+        }
+        if context {
+            self.plugins
+                .view_context(id, self.focused_agent_cwd(self.focus));
         }
         self.pointer.cancel();
         let existing = self
@@ -135,6 +191,16 @@ impl App {
         self.native_mouse = false;
     }
     pub(super) fn sync_plugins(&mut self, panes: Panes, focused: bool) {
+        for id in self.plugins.take_view_closes() {
+            if self.plugin_overlay.as_ref().is_some_and(|o| o.id == id) {
+                self.close_plugin_overlay(false);
+            } else if self.viewer.active_pane().plugin_id() == Some(id.as_str()) {
+                let pane = self.viewer.active_pane().id;
+                if let Err(e) = self.viewer.close_pane(pane) {
+                    self.panel.message = e.to_string();
+                }
+            }
+        }
         let overlay = self.plugin_overlay.as_ref().map(|o| {
             (
                 o.id.as_str(),
@@ -157,23 +223,30 @@ impl App {
             return;
         };
         o.area = overlay_area(panes.viewer);
+        let escape = if o.panel.picture.as_ref().is_some_and(|p| p.escape_input) {
+            "Esc Back"
+        } else {
+            "Esc Close"
+        };
         frame.render_widget(ratatui::widgets::Clear, o.area);
         frame.render_widget(
             self.config
                 .colors
-                .block(format!(" {} · Esc Close ", o.panel.name), true),
+                .block(format!(" {} · {escape} ", o.panel.name), true),
             o.area,
         );
-        o.panel.draw(frame, ui::inner(o.area));
+        o.panel
+            .draw(frame, ui::inner(o.area), self.plugin_palette.is_none());
         if o.area.width >= 3 && o.area.height > 0 {
             frame.render_widget(
                 ratatui::widgets::Paragraph::new("×"),
                 Rect::new(o.area.right() - 2, o.area.y, 1, 1),
             );
         }
+        frame.render_widget(ratatui::widgets::Clear, panes.status);
         frame.render_widget(
             ratatui::widgets::Paragraph::new(format!(
-                " Input ▸ {} · Esc Close · Ctrl-] Agents {}",
+                " Input ▸ {} · {escape} · Ctrl-] Agents {}",
                 o.panel.name, o.notice
             ))
             .style(self.config.colors.base()),
@@ -190,50 +263,31 @@ impl App {
                     self.close_plugin_overlay(true);
                     return;
                 }
-                if k.code == KeyCode::Esc && k.modifiers.is_empty() {
+                let escape_input = self.plugin_overlay.as_ref().is_some_and(|o| {
+                    o.panel.interactive && o.panel.picture.as_ref().is_some_and(|p| p.escape_input)
+                });
+                if k.code == KeyCode::Esc && k.modifiers.is_empty() && !escape_input {
                     self.close_plugin_overlay(false);
                     return;
                 }
             }
-            if matches!(k.code, KeyCode::Esc)
-                || k.modifiers.contains(KeyModifiers::CONTROL)
-                    && matches!(k.code, KeyCode::Char(']' | '5'))
+            if k.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(k.code, KeyCode::Char(']' | '5'))
             {
                 return;
             }
         }
         // Keep notifications usable without forwarding their mouse events into the plugin.
         if let Event::Mouse(m) = event {
-            // A release over a toast also ends any close-button press underneath it.
             if matches!(m.kind, MouseEventKind::Up(_))
-                && (self
+                && self
                     .plugin_toast
                     .is_some_and(|(r, _)| r.contains((m.column, m.row).into()))
-                    || self
-                        .toast
-                        .is_some_and(|(r, _)| r.contains((m.column, m.row).into())))
                 && let Some(o) = &mut self.plugin_overlay
             {
                 o.pressed_close = false;
             }
-            if let Some((area, close)) = self.plugin_toast
-                && area.contains((m.column, m.row).into())
-            {
-                if m.kind == MouseEventKind::Down(MouseButton::Left)
-                    && close.contains((m.column, m.row).into())
-                {
-                    self.plugins.notices.lock().unwrap().items.pop_front();
-                }
-                return;
-            }
-            if let Some((area, close)) = self.toast
-                && area.contains((m.column, m.row).into())
-            {
-                if m.kind == MouseEventKind::Down(MouseButton::Left)
-                    && close.contains((m.column, m.row).into())
-                {
-                    self.notifier.dismiss();
-                }
+            if self.plugin_toast_event(m) {
                 return;
             }
         }

@@ -353,9 +353,7 @@ impl Form {
             KeyCode::Enter | KeyCode::Char(' ') if self.field == ADVANCED => {
                 self.advanced = !self.advanced;
             }
-            KeyCode::Left if self.field == 4 => {
-                self.place = (self.place + 5) % 6
-            }
+            KeyCode::Left if self.field == 4 => self.place = (self.place + 5) % 6,
             KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') if self.field == 4 => {
                 self.place = (self.place + 1) % 6
             }
@@ -456,7 +454,7 @@ impl Form {
         self.field_hits.clear();
         self.project_hits.clear();
         if !self.error.is_empty() && body.height > 0 {
-            let lines = crate::queue::wrap_text(&self.error, body.width);
+            let lines = crate::ui::wrap_text(&self.error, body.width);
             let height = (lines.len() as u16).min(3).min(body.height / 2);
             let offset = lines
                 .len()
@@ -722,7 +720,7 @@ impl Form {
                             )
                         })
                         .unwrap_or_else(|e| e.to_string());
-                    let lines = crate::queue::wrap_text(&preview, rect.width.saturating_sub(2));
+                    let lines = crate::ui::wrap_text(&preview, rect.width.saturating_sub(2));
                     let inner_height = rect.height.saturating_sub(2);
                     self.preview_top = self.preview_top.min(
                         lines
@@ -979,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    fn placement_new_and_queue_use_the_same_bottom_cancel() {
+    fn placement_and_new_use_the_same_bottom_cancel() {
         use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
         fn text(buffer: &Buffer, area: Rect) -> String {
             (area.y..area.bottom())
@@ -1019,41 +1017,19 @@ mod tests {
         let style: Vec<_> = (cancel.area.x..cancel.area.right())
             .map(|x| buffer[(x, cancel.area.y)].clone())
             .collect();
-        let tasks = |area| crate::layout::Panes::new(area, &Default::default()).tasks;
         let mut form = Form::new("/tmp/demo".into());
-        let mut queue = crate::queue::Panel::default();
-        queue.page = crate::queue::Page::Project("/tmp/demo".into());
-        for new in [true, false] {
-            terminal
-                .draw(|frame| {
-                    if new {
-                        hits = form.draw(&t, frame, "corral", &[]);
-                    } else {
-                        let area = frame.area();
-                        queue.draw(&t, frame, tasks(area));
-                        hits = queue.buttons.clone();
-                    }
-                })
-                .unwrap();
-            let cancel = hits.iter().find(|h| h.key.code == KeyCode::Esc).unwrap();
-            let buffer = terminal.backend().buffer();
-            println!(
-                "{} synthetic render:\n{}",
-                if new { "NEW" } else { "QUEUE Project path" },
-                text(buffer, buffer.area)
-            );
-            assert_eq!(cancel.area.height, 1);
-            let dialog = if new {
-                crate::theme::centered(buffer.area, 104, 28)
-            } else {
-                tasks(buffer.area)
-            };
-            assert_eq!(cancel.area.bottom(), dialog.bottom() - 1);
-            let cells: Vec<_> = (cancel.area.x..cancel.area.right())
-                .map(|x| buffer[(x, cancel.area.y)].clone())
-                .collect();
-            assert_eq!(cells, style, "same label, border, text and shortcut colors");
-        }
+        terminal
+            .draw(|frame| hits = form.draw(&t, frame, "corral", &[]))
+            .unwrap();
+        let cancel = hits.iter().find(|h| h.key.code == KeyCode::Esc).unwrap();
+        let buffer = terminal.backend().buffer();
+        assert_eq!(cancel.area.height, 1);
+        let dialog = crate::theme::centered(buffer.area, 104, 28);
+        assert_eq!(cancel.area.bottom(), dialog.bottom() - 1);
+        let cells: Vec<_> = (cancel.area.x..cancel.area.right())
+            .map(|x| buffer[(x, cancel.area.y)].clone())
+            .collect();
+        assert_eq!(cells, style, "same label, border, text and shortcut colors");
         form.key(
             KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             &[],

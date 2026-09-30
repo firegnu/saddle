@@ -2,23 +2,21 @@ use ratatui::layout::Rect;
 use saddle::{config::Config, layout::Panes};
 
 #[test]
-fn agents_own_the_left_column_and_tasks_open_centered_over_the_viewer() {
+fn agents_own_the_left_column_beside_the_viewer() {
     // left_split is still accepted for existing configs but no longer splits the column.
     let config = Config::parse("left_width = 40\nleft_split = 0.6").unwrap();
     let panes = Panes::new(Rect::new(0, 0, 120, 40), &config);
     assert_eq!(panes.agents, Rect::new(0, 0, 40, 39));
     assert_eq!(panes.viewer, Rect::new(40, 0, 80, 39));
-    assert_eq!(panes.tasks, Rect::new(9, 3, 102, 34));
     let small = Panes::new(Rect::new(3, 2, 80, 24), &Config::default());
     assert_eq!(small.agents, Rect::new(3, 2, 34, 23));
     assert_eq!(small.viewer, Rect::new(37, 2, 46, 23));
-    assert_eq!(small.tasks, Rect::new(9, 4, 68, 20));
 }
 
 #[test]
 fn defaults_and_invalid_configuration_are_explicit() {
     let default = Config::parse("").unwrap();
-    assert_eq!(default.queue.drover, "drover");
+    assert!(default.queue.is_none());
     assert_eq!(default.left_width, 52);
     for invalid in [
         "left_split = 0.0",
@@ -27,19 +25,18 @@ fn defaults_and_invalid_configuration_are_explicit() {
         "left_width = 0",
         "refresh_ms = 0",
         "corral = ''",
-        "[queue]\ndrover = ''",
     ] {
         assert!(Config::parse(invalid).is_err(), "accepted {invalid}");
     }
 }
 
 #[test]
-fn external_queue_ui_commands_are_rejected() {
-    assert!(Config::parse("[queue]\ncommand = ['drover', 'board']").is_err());
+fn legacy_queue_settings_are_inert() {
+    assert!(Config::parse("[queue]\ncommand = ['drover', 'board']").is_ok());
 }
 
 #[test]
-fn panes_and_status_cover_tiny_and_normal_windows_and_tasks_stay_inside() {
+fn panes_and_status_cover_tiny_and_normal_windows() {
     for (w, h) in
         (0..8)
             .flat_map(|w| (0..8).map(move |h| (w, h)))
@@ -55,10 +52,6 @@ fn panes_and_status_cover_tiny_and_normal_windows_and_tasks_stay_inside() {
                 assert!(r.intersection(*other).is_empty());
             }
         }
-        // The popup leaves the Agents top border (its entry) and the status row visible.
-        assert_eq!(p.tasks.intersection(area), p.tasks);
-        assert!(p.tasks.intersection(p.status).is_empty());
-        assert!(p.tasks.is_empty() || p.tasks.y > area.y);
     }
 }
 
@@ -112,8 +105,13 @@ fn default_example_missing_files_and_partial_colors_keep_current_defaults() {
     assert_eq!(example.left_width, defaults.left_width);
     assert_eq!(example.left_split, defaults.left_split);
     assert_eq!(example.refresh_ms, defaults.refresh_ms);
-    assert_eq!(example.queue.drover, defaults.queue.drover);
-    assert_eq!(example.queue.cwd, None);
+    assert!(example.queue.is_none());
+    assert!(
+        Config::parse("[queue]\ndrover='unused'\ncwd='/unused'")
+            .unwrap()
+            .queue
+            .is_some()
+    );
     assert_eq!(example.colors, defaults.colors);
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(

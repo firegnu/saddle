@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers as M};
-use saddle::{
+use saddle_drover_plugin::{
     drover::{Operation, Request, Snapshot},
     queue::{Page, Panel, View},
 };
@@ -102,7 +102,7 @@ fn edit_follows_the_selected_task_and_preserves_the_form_on_failure() {
 fn saving_an_unnumbered_edit_keeps_it_selected() {
     let mut panel = Panel::default();
     panel.absorb(Snapshot {
-        pending: vec![saddle::drover::Task {
+        pending: vec![saddle_drover_plugin::drover::Task {
             title: "Original".into(),
             ..Default::default()
         }],
@@ -195,7 +195,7 @@ fn selected_pending_moves_use_pending_positions_and_stop_at_the_ends() {
 #[test]
 fn moving_identical_unnumbered_tasks_keeps_the_destination_selected() {
     let mut panel = Panel::default();
-    let task = saddle::drover::Task {
+    let task = saddle_drover_plugin::drover::Task {
         title: "Unnumbered".into(),
         ..Default::default()
     };
@@ -335,7 +335,7 @@ fn edit_draft_survives_refresh_errors_and_busy_input_then_follows_renamed_task()
     panel.complete(&retry, Ok("saved".into()));
     fresh.pending[0].title = "Original revised".into();
     fresh.pending[0].body = "Body\nsecond line".into();
-    fresh.current = Some(saddle::drover::Task {
+    fresh.current = Some(saddle_drover_plugin::drover::Task {
         title: "Current".into(),
         ..Default::default()
     });
@@ -471,7 +471,7 @@ fn selected_pending_delete_confirms_a_fixed_target_and_can_be_cancelled() {
     );
 }
 
-fn show(id: &str, location: &str, status: &str) -> saddle::drover::Detail {
+fn show(id: &str, location: &str, status: &str) -> saddle_drover_plugin::drover::Detail {
     let mut value: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/show.json")).unwrap();
     value["task"]["id"] = id.into();
@@ -484,7 +484,7 @@ fn show(id: &str, location: &str, status: &str) -> saddle::drover::Detail {
     .into();
     serde_json::from_value(value).unwrap()
 }
-fn opened(panel: &Panel) -> &saddle::detail::TaskDetail {
+fn opened(panel: &Panel) -> &saddle_drover_plugin::detail::TaskDetail {
     panel.content.as_deref().expect("a task is selected")
 }
 
@@ -539,7 +539,7 @@ fn details_follow_the_task_id_through_completion_and_ignore_older_targets() {
     panel.absorb_detail(&first, Ok(show("T4", "awaiting", "done")));
     panel.absorb_detail(&first, Err(anyhow::anyhow!("old failure")));
     assert!(opened(&panel).data.is_none() && opened(&panel).error.is_none());
-    let other_project = saddle::queue::DetailKey {
+    let other_project = saddle_drover_plugin::queue::DetailKey {
         project: "/tmp/project-b".into(),
         ..second.clone()
     };
@@ -713,7 +713,8 @@ fn dispatch_selected_sends_the_selected_pending_target_not_the_first() {
     three_pending(&mut panel, serde_json::json!({}));
     panel.select(1);
     assert_eq!(panel.tasks()[panel.selected].1.title, "Second");
-    let Some(Request::Run(op)) = panel.key(saddle::queue::dispatch_selected_click()) else {
+    let Some(Request::Run(op)) = panel.key(saddle_drover_plugin::queue::dispatch_selected_click())
+    else {
         panic!("Dispatch selected sends one public write");
     };
     assert_eq!(
@@ -727,7 +728,7 @@ fn dispatch_selected_sends_the_selected_pending_target_not_the_first() {
     assert!(panel.busy);
     assert!(
         panel
-            .key(saddle::queue::dispatch_selected_click())
+            .key(saddle_drover_plugin::queue::dispatch_selected_click())
             .is_none(),
         "no second dispatch while busy"
     );
@@ -770,7 +771,7 @@ fn dispatch_selected_is_refused_without_a_usable_target_or_when_the_queue_cannot
         panel.select(second);
         assert!(
             panel
-                .key(saddle::queue::dispatch_selected_click())
+                .key(saddle_drover_plugin::queue::dispatch_selected_click())
                 .is_none(),
             "{state}"
         );
@@ -783,21 +784,21 @@ fn dispatch_selected_is_refused_without_a_usable_target_or_when_the_queue_cannot
     panel.select(history);
     assert!(
         panel
-            .key(saddle::queue::dispatch_selected_click())
+            .key(saddle_drover_plugin::queue::dispatch_selected_click())
             .is_none()
     );
     panel.select(1);
     panel.read_error = Some("list failed".into());
     assert!(
         panel
-            .key(saddle::queue::dispatch_selected_click())
+            .key(saddle_drover_plugin::queue::dispatch_selected_click())
             .is_none()
     );
     panel.read_error = None;
     panel.key(key(K::Char('?')));
     assert!(
         panel
-            .key(saddle::queue::dispatch_selected_click())
+            .key(saddle_drover_plugin::queue::dispatch_selected_click())
             .is_none()
     );
     assert!(!panel.busy);

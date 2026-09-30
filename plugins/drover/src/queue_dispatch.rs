@@ -82,7 +82,7 @@ impl Panel {
             (_, Status::Loading) => Some(("Reading dispatch records…".into(), t.agent_starting)),
             (_, Status::Missing(program)) => Some((
                 format!(
-                    "dispatch-log not found ({program}). Dispatch records are optional; the other views and task actions are unaffected. Set queue.dispatch_log in the config to the dlog command."
+                    "dispatch-log not found ({program}). Dispatch records are optional; the other views and task actions are unaffected. Set --dispatch-log in the plugin manifest args to the dlog command."
                 ),
                 t.agent_blocked,
             )),

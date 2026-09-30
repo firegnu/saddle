@@ -1,9 +1,7 @@
-//! Attention: what needs a person across agents and every registered project, from public
-//! snapshots only. Nothing here answers, releases or otherwise acts on a target.
+//! Agent Attention and generic plugin sources. Opening an item never changes its business state.
 use crate::{
     agents::{Panel, Status},
     buttons::{self, Button},
-    drover::{Snapshot, Survey, Task},
     theme::Theme,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -14,13 +12,12 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Clear, Paragraph},
 };
-use std::collections::HashSet;
 use unicode_width::UnicodeWidthStr;
 
 pub const TITLE: &str = " Attention ";
 const ROWS: usize = 14;
 
-/// What an entry opens; also its identity for selection and Mark seen.
+/// What an entry opens; also its identity for selection.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Target {
     Agent(String),
@@ -30,34 +27,13 @@ pub enum Target {
         revision: u64,
         item: String,
     },
-    /// A task by project and public identity: its id, or its text when unnumbered.
-    Task {
-        project: String,
-        id: Option<String>,
-        title: String,
-        body: String,
-    },
-    /// A project whose read failed; opening shows its Tasks.
-    Project(String),
     /// A failed source with nothing to open.
     Source(String),
-}
-impl Target {
-    pub(crate) fn task(project: &str, task: &Task) -> Self {
-        Self::Task {
-            project: project.into(),
-            id: task.id.clone(),
-            title: task.title.clone(),
-            body: task.body.clone(),
-        }
-    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Waiting,
     Error,
-    Awaiting,
-    Failed,
     ReadFailed,
     Reply,
     Plugin,
@@ -75,16 +51,10 @@ impl Item {
     pub fn needs(&self) -> bool {
         self.kind != Kind::Reply
     }
-    /// Only a historical failure can be marked seen; current states leave on their own.
-    pub fn seeable(&self) -> bool {
-        self.kind == Kind::Failed
-    }
     fn reason(&self) -> &'static str {
         match self.kind {
             Kind::Waiting => "Waiting for input",
             Kind::Error => "Error",
-            Kind::Awaiting => "Awaiting release",
-            Kind::Failed => "Failed",
             Kind::ReadFailed => "Read failed",
             Kind::Reply => "New reply",
             Kind::Plugin => "Needs attention",
@@ -94,60 +64,24 @@ impl Item {
     fn look(&self, t: &Theme) -> (&'static str, Color) {
         match self.kind {
             Kind::Waiting => ("?", t.agent_blocked),
-            Kind::Error | Kind::Failed | Kind::ReadFailed => ("!", t.agent_error),
-            Kind::Awaiting | Kind::Plugin => ("→", t.agent_blocked),
+            Kind::Error | Kind::ReadFailed => ("!", t.agent_error),
+            Kind::Plugin => ("→", t.agent_blocked),
             Kind::Unavailable => ("!", t.agent_error),
             Kind::Reply => ("•", t.unread),
         }
     }
 }
 
-/// A project's latest public snapshot, or why it could not be read.
-pub type ProjectState = Result<Box<Snapshot>, String>;
-/// Source state for Attention. Seen marks last for this run only.
+/// Source state for agent Attention. Plugin items are supplied separately by the host.
 #[derive(Default)]
 pub struct Board {
-    /// Registered projects and their latest snapshot: `None` until the first read returns.
-    pub projects: Vec<(String, Option<ProjectState>)>,
-    pub registry: Option<Result<(), String>>,
     pub agents_loaded: bool,
     pub corral_error: Option<String>,
-    pub seen: HashSet<Target>,
 }
 impl Board {
-    pub fn absorb(&mut self, update: Survey) {
-        match update {
-            Survey::Projects(Ok(list)) => {
-                let mut old = std::mem::take(&mut self.projects);
-                self.projects = list
-                    .into_iter()
-                    .map(|p| {
-                        let state = old
-                            .iter_mut()
-                            .find(|(o, _)| *o == p)
-                            .and_then(|(_, s)| s.take());
-                        (p, state)
-                    })
-                    .collect();
-                self.registry = Some(Ok(()));
-            }
-            Survey::Projects(Err(error)) => {
-                // Without the registry no project is read; old results would be stale.
-                self.projects.clear();
-                self.registry = Some(Err(error));
-            }
-            Survey::Snapshot(project, result) => {
-                if let Some((_, state)) = self.projects.iter_mut().find(|(p, _)| *p == project) {
-                    *state = Some(result);
-                }
-            }
-        }
-    }
     /// Some source has not answered yet.
     pub fn loading(&self) -> bool {
         !self.agents_loaded
-            || self.registry.is_none()
-            || self.projects.iter().any(|(_, s)| s.is_none())
     }
     /// Needs attention first, then new replies; one row per agent, its need before its reply.
     pub fn items(&self, panel: &Panel, now: f64) -> Vec<Item> {
@@ -172,46 +106,7 @@ impl Board {
                 });
             }
         }
-        for (project, state) in &self.projects {
-            let name = project_name(project);
-            match state {
-                Some(Ok(s)) => {
-                    let failed = s
-                        .history
-                        .iter()
-                        .rev()
-                        .filter(|t| t.status.as_deref() == Some("failed"))
-                        .map(|t| (Kind::Failed, t));
-                    for (kind, task) in s.awaiting.iter().map(|t| (Kind::Awaiting, t)).chain(failed)
-                    {
-                        let target = Target::task(project, task);
-                        if kind == Kind::Failed && self.seen.contains(&target) {
-                            continue;
-                        }
-                        items.push(Item {
-                            target,
-                            kind,
-                            label: format!("{name} · {}", task.id.as_deref().unwrap_or("—")),
-                            note: task.title.clone(),
-                        });
-                    }
-                }
-                Some(Err(error)) => items.push(Item {
-                    target: Target::Project(project.clone()),
-                    kind: Kind::ReadFailed,
-                    label: name.to_owned(),
-                    note: error.clone(),
-                }),
-                None => {}
-            }
-        }
-        let sources = [
-            ("corral", self.corral_error.as_ref()),
-            (
-                "~/.drover/projects",
-                self.registry.as_ref().and_then(|r| r.as_ref().err()),
-            ),
-        ];
+        let sources = [("corral", self.corral_error.as_ref())];
         for (source, error) in sources {
             if let Some(error) = error {
                 items.push(Item {
@@ -251,11 +146,6 @@ fn sep(text: &str) -> String {
         format!(" · {text}")
     }
 }
-pub(crate) fn project_name(path: &str) -> &str {
-    let path = path.trim_end_matches('/');
-    path.rsplit('/').next().unwrap_or(path)
-}
-
 /// The fixed Agents entry: the item count, faint at zero, with a mark while still loading.
 pub fn entry(t: &Theme, frame: &mut Frame, area: Rect, items: &[Item], loading: bool) -> Rect {
     if area.is_empty() {
@@ -312,7 +202,6 @@ pub enum Outcome {
     Stay,
     Cancel,
     Open(Target),
-    Seen(Target),
 }
 impl Popup {
     fn current(&mut self, items: &[Item]) -> Option<usize> {
@@ -361,13 +250,6 @@ impl Popup {
                     && !matches!(items[index].target, Target::Source(_))
                 {
                     return Outcome::Open(items[index].target.clone());
-                }
-            }
-            KeyCode::Char('m') => {
-                if let Some(index) = self.current(items)
-                    && items[index].seeable()
-                {
-                    return Outcome::Seen(items[index].target.clone());
                 }
             }
             _ => {}
@@ -457,15 +339,11 @@ impl Popup {
         let area = crate::theme::centered(frame.area(), width, height);
         frame.render_widget(Clear, area);
         frame.render_widget(t.block(TITLE, true).style(t.base().bg(t.overlay)), area);
-        let seeable = selected.is_some_and(|i| items[i].seeable());
         let (body, hits) = buttons::draw_compact(
             t,
             frame,
             crate::ui::inner(area),
-            &[
-                Button::new("Mark seen m", KeyCode::Char('m'), seeable),
-                Button::new("Cancel Esc", KeyCode::Esc, true),
-            ],
+            &[Button::new("Cancel Esc", KeyCode::Esc, true)],
         );
         // Keep one blank row above the buttons.
         let list = Rect {

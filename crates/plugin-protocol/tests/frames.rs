@@ -6,6 +6,8 @@ fn frame(text: &str, cols: u16) -> Frame {
         frame_id: 1,
         cols,
         rows_count: 1,
+        cursor: None,
+        escape_input: false,
         rows: vec![vec![Span {
             text: text.into(),
             fg: Color::default(),
@@ -111,5 +113,29 @@ fn attention_budgets_bound_count_payload_and_depth() {
         }
         .validate()
         .is_err()
+    );
+}
+
+#[test]
+fn cursor_is_optional_bounded_and_on_a_grapheme_start() {
+    let original = serde_json::to_value(frame("中A", 3)).unwrap();
+    let check = |cursor: serde_json::Value| {
+        let mut value = original.clone();
+        value["cursor"] = cursor;
+        serde_json::from_value::<Frame>(value).unwrap().validate()
+    };
+    assert!(check(serde_json::json!([0, 0])).is_ok());
+    assert!(check(serde_json::json!([2, 0])).is_ok());
+    assert!(check(serde_json::json!([3, 0])).is_err(), "outside width");
+    assert!(check(serde_json::json!([0, 1])).is_err(), "outside height");
+    assert!(
+        check(serde_json::json!([1, 0])).is_err(),
+        "wide glyph continuation"
+    );
+    assert!(
+        serde_json::from_value::<Frame>(original)
+            .unwrap()
+            .validate()
+            .is_ok()
     );
 }

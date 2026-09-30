@@ -3,14 +3,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 pub enum Focus {
     #[default]
     Agents,
-    Queue,
     Viewer,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
     Ignore,
     Panel,
-    Queue,
     Terminal,
     Quit,
 }
@@ -28,12 +26,9 @@ impl Focus {
         if *self == Self::Viewer {
             return Route::Terminal;
         }
-        if *self == Self::Queue {
-            return Route::Queue;
-        }
         match key.code {
             KeyCode::Tab if key.modifiers.is_empty() => {
-                *self = Self::Queue;
+                *self = Self::Viewer;
                 Route::Ignore
             }
             KeyCode::BackTab => {

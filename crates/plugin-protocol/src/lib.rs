@@ -2,7 +2,7 @@ use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Frame {
     pub panel: String,
     pub size_revision: u64,
@@ -10,6 +10,13 @@ pub struct Frame {
     pub cols: u16,
     pub rows_count: u16,
     pub rows: Vec<Vec<Span>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<[u16; 2]>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub escape_input: bool,
+}
+fn is_false(value: &bool) -> bool {
+    !value
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
@@ -61,7 +68,10 @@ impl Frame {
             self.rows.len() == usize::from(self.rows_count),
             "incorrect row count"
         );
-        for row in &self.rows {
+        if let Some([x, y]) = self.cursor {
+            ensure!(x < self.cols && y < self.rows_count, "cursor outside frame");
+        }
+        for (y, row) in self.rows.iter().enumerate() {
             let whole: String = row.iter().map(|s| s.text.as_str()).collect();
             let boundaries: std::collections::HashSet<_> = whole
                 .grapheme_indices(true)
@@ -90,6 +100,9 @@ impl Frame {
                 for g in span.text.graphemes(true) {
                     let w = g.width();
                     ensure!(g.len() <= 128 && (1..=2).contains(&w), "unsupported_glyph");
+                    if self.cursor == Some([(width + 1) as u16, y as u16]) {
+                        ensure!(w != 2, "cursor on glyph continuation");
+                    }
                     width += w;
                     ensure!(width <= usize::from(self.cols), "glyph crosses row edge");
                 }
@@ -271,6 +284,12 @@ pub const CAPABILITIES: &[&str] = &[
     "ui.entry.v1",
     "panel.overlay.v1",
     "attention.v1",
+    "panel.cursor.v1",
+    "view.context.v1",
+    "panel.escape.v1",
+    "agent.open.v1",
+    "notify.target.v1",
+    "view.close.v1",
 ];
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -362,4 +381,26 @@ pub struct AttentionOpen {
     pub action: String,
     pub target: serde_json::Value,
     pub revision: u64,
+}
+
+/// An opaque destination owned by the emitting plugin, never a host business operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenTarget {
+    pub action: String,
+    pub target: serde_json::Value,
+}
+impl OpenTarget {
+    pub fn validate(&self) -> Result<()> {
+        AttentionSnapshot {
+            items: vec![AttentionItem {
+                id: "target".into(),
+                title: "Target".into(),
+                note: String::new(),
+                action: self.action.clone(),
+                target: self.target.clone(),
+            }],
+        }
+        .validate()
+    }
 }

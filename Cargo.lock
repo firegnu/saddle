@@ -1452,6 +1452,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "saddle-drover-plugin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crossterm",
+ "libc",
+ "ratatui",
+ "saddle-plugin-sdk",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "unicode-width",
+]
+
+[[package]]
 name = "saddle-plugin-protocol"
 version = "0.1.0"
 dependencies = [
