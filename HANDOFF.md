@@ -4,7 +4,10 @@
 
 ## 当前状态
 
-- 最新交付：Clawd缩小至9列×3行，复用tab栏右侧实际空白；不再新增4行，不挤tab，终端pane恢复原高度。tab拥挤时隐藏。保留陶土橘/黑眼/四腿及原状态绑定，动作收敛至6帧/秒。实现 `c7ab8cd`，收尾 `5275420`，已合并推送、备份后原子更新日常宿主并清理 `clawd-compact` 分支/worktree。主控亲自完成，无委派；用户重启后观察，未重启其窗口。
+- 最新交付：按用户进一步反馈，Clawd缩为7列×2行，沿tab空白区底部对齐。走路上身不变，四短腿只在原位置交替抬起，停顿四脚落地，不向外甩腿。保留橘色/黑眼和既有状态、速度、布局与输入。实现 `71c1a71`，收尾 `da5c902`，已合并推送、备份更新日常宿主并清理 `clawd-tiny` 分支/worktree；用户重启后观察。主控亲自完成，没有委派或操作真实agent。
+- 本轮标准检查 **368 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；隔离release动画与点击不输入1项通过。任务/审查 `docs/任务/Clawd再缩小与短腿步态.md`，Dispatch `c2775ff6e5624f068ec6dfc106a37d65`；日志 `/tmp/saddle-clawd-tiny-{all,clippy,target,release}.log`。三处Diff演示hash不变；真实配置/插件/agent/队列/服务未操作，未重启用户窗口。
+
+- 此前交付：Clawd缩小至9列×3行，复用tab栏右侧实际空白；不再新增4行，不挤tab，终端pane恢复原高度。tab拥挤时隐藏。保留陶土橘/黑眼/四腿及原状态绑定，动作收敛至6帧/秒。实现 `c7ab8cd`，收尾 `5275420`，已合并推送、备份后原子更新日常宿主并清理 `clawd-compact` 分支/worktree。主控亲自完成，无委派；用户重启后观察，未重启其窗口。
 - 本轮验证：标准 **368 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；隔离release动画/状态/鼠标不输入1项通过。有效RED证明旧版多占4行。首轮移动workflow在回分屏阶段过早读取部分重画，补齐输入目标与原输出等待后目标及全套通过，未改移动实现。任务/审查 `docs/任务/Clawd小号与无占位布局.md`，Dispatch `502c463cff7340afb34d55c5bc322bd8`；日志 `/tmp/saddle-clawd-compact-{all-final,clippy-final,release}.log`。渲染预览 `/tmp/saddle-clawd-compact-layout.png`，不是用户窗口截图。三处Diff演示hash不变，配置/插件包/agent/队列/服务未操作。
 
 - 此前交付：Clawd状态吉祥物，按参考图11×8轮廓/陶土橘 `#D97757`/黑眼/短臂/四腿绘制；右侧tab下方4行动画带，只跟随当前焦点pane的agent。Idle慢走转向停顿，Working原地动手，Waiting挥手问号，错误/疑似停滞静止叹号。小窗口/普通终端/插件隐藏，原状态判据及输入/会话/任务/插件业务不变。实现 `5e6acb2`，收尾 `cdeb2d4`，已合并推送、备份后原子更新日常宿主并清理 `clawd-mascot` 分支/worktree。主控亲自完成，无委派或真实agent操作；用户重启后观察。
@@ -43,7 +46,8 @@
 
 ## 安装与退役
 
-- 当前小号Clawd宿主SHA-256 `8ad60e7a9eb6b27a0bd75a35712ccebacef6a882f10ec5c723686bb76edb7b14`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-compact-20261001-015841/` 含更新前程序与安装记录，入口symlink不变。只更新宿主，不需要重新安装插件；等待用户重启观察。
+- 当前7列×2行Clawd宿主SHA-256 `7bdb229ad9799814c6ec37a6c4d95173e0b7d176051aa9cbad4ff1aa68896642`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-tiny-20261001-020657/` 含旧版及安装记录。日常入口symlink不变，用户重启后加载，不需要重装插件。
+- 此前小号Clawd宿主SHA-256 `8ad60e7a9eb6b27a0bd75a35712ccebacef6a882f10ec5c723686bb76edb7b14`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-compact-20261001-015841/` 含更新前程序与安装记录，入口symlink不变。只更新宿主，不需要重新安装插件；等待用户重启观察。
 - 此前Clawd宿主SHA-256 `7983c23351ed092f64f3bd60af2b9b119167ba75f5f1b789d489df476ab8fd64`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-mascot-20261001-014512/` 含更新前程序与安装记录，入口symlink不变。只更新宿主，不需要重新安装插件。
 - 本轮日常宿主SHA-256 `296b5028b1bb3798e220a011f69139d1abf66b83d2b8d8aaa64f5643d850c42a`；备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/interface-polish-20261001-012020/` 含更新前程序及安装hash记录。仅更新宿主二进制，入口symlink不变，未重启用户窗口。
 - 最新宿主备份：`~/Library/Application Support/saddle-release-backups/settings-pages-20261001-010154/`，保存此前插件管理页修复版和安装hash记录。日常入口已更新并核对SHA；等待用户重启。
