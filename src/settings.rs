@@ -646,12 +646,7 @@ impl Settings {
             );
             return hits;
         }
-        // Page tabs, outlined when there is room.
-        let draw_tabs = if body.height >= 7 {
-            buttons::draw_outlined_top
-        } else {
-            buttons::draw_compact_top
-        };
+        // Compact tabs keep all five pages together at the normal dialog width.
         let tabs: Vec<_> = PAGES
             .iter()
             .map(|&(page, label, n)| {
@@ -663,7 +658,7 @@ impl Settings {
                 }
             })
             .collect();
-        let (rest, tab_hits) = draw_tabs(t, frame, body, &tabs);
+        let (rest, tab_hits) = buttons::draw_compact_top(t, frame, body, &tabs);
         for hit in &tab_hits {
             let current = PAGES
                 .iter()

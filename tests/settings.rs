@@ -293,3 +293,59 @@ fn a_dangling_config_link_is_kept_and_saving_reports_failure() {
     assert!(!missing.exists());
     assert_eq!(settings.value("left_width"), Some("61"));
 }
+
+#[test]
+fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let dir = tempfile::tempdir().unwrap();
+    for width in [76, 100, 40, 24] {
+        let mut settings = Settings::open(dir.path().join("config.toml"), true);
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).unwrap();
+        let mut tabs = Vec::new();
+        terminal
+            .draw(|frame| {
+                tabs = settings
+                    .draw(&saddle::theme::Theme::default(), frame)
+                    .into_iter()
+                    .filter(|h| matches!(h.key.code, KeyCode::F(1..=5)))
+                    .collect();
+            })
+            .unwrap();
+        assert_eq!(
+            tabs.len(),
+            5,
+            "width {width}: all pages must remain clickable"
+        );
+        for (i, hit) in tabs.iter().enumerate() {
+            assert_eq!(hit.area.height, 1, "width {width}: compact tabs");
+            assert!(hit.area.right() <= width);
+            assert!(
+                tabs[..i]
+                    .iter()
+                    .all(|other| !hit.area.intersects(other.area))
+            );
+        }
+        if width >= 76 {
+            assert!(
+                tabs.iter().all(|h| h.area.y == tabs[0].area.y),
+                "Plugins must share the same row as General"
+            );
+        }
+        let buffer = terminal.backend().buffer();
+        for (hit, label) in tabs.iter().zip([
+            "General F1",
+            "Colors F2",
+            "Advanced F3",
+            "Diagnostics F4",
+            "Plugins F5",
+        ]) {
+            let text: String = (hit.area.x..hit.area.right())
+                .map(|x| buffer[(x, hit.area.y)].symbol())
+                .collect();
+            assert!(
+                text.contains(label),
+                "{label} is clipped at width {width}: {text}"
+            );
+        }
+    }
+}
