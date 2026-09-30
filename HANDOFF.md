@@ -1,8 +1,17 @@
 # 会话交接
 
-更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。已更新日常 release，补齐一条命令打包与开发入门；用户随后明确“跑起来了”，确认日常版 Counter 可用。用户看过Counter后进一步确认：Saddle拥有外壳，插件不增加常驻UI；主控已亲自把侧栏逐插件按钮替换为统一插件命令面板。工作区/覆盖绘制与SDK保留，Attention 来源与 Drover 迁移仍未实施。
+更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。已更新日常 release，补齐一条命令打包与开发入门；用户随后明确“跑起来了”，确认日常版 Counter 可用。用户看过Counter后进一步确认：Saddle拥有外壳，插件不增加常驻UI；主控已亲自把侧栏逐插件按钮替换为统一插件命令面板。工作区/覆盖绘制保留。用户随后授权按步骤迁移：主控已亲自完成通用 Attention 来源接口和独立演示插件，Drover 迁移尚未开始。用户已确认统一插件面板感觉不错。
 
 ## 当前状态
+
+- 本轮通用 Attention：实现6658cdc、固定独立SDK/审查05efd12、合并8888bb2、空提交收尾62453ee；plugin-attention分支/worktree已清理。Dispatch 36bcaa6d63734a279bd34fdad66741b1，任务与审查见 docs/任务/插件Attention来源.md。主控亲自完成，无委派。
+- attention.v1：插件完整快照、来源隔离、更新/撤回、带目标打开；旧会话/旧修订点击拒绝，断连显示不可用、停用撤下，快照不自动发通知或变更业务状态。旧Counter无需升级；Agent Attention与内建Drover任务/提醒仍保留。
+- 最终标准套件323 passed / 1 failed / 8 ignored；失败为T20当前pane/picker在3239行等待Create agent，未改main33f4efe也在同一行复现，根因未确认。Clippy通过；插件/Attention模块22 passed / 1 ignored；协议容量检查通过。最终日常release全部9条插件PTY（包括真实独立SDK Attention demo和旧Counter）通过。详见任务记录，不能写全套全绿。
+- 日常入口~/.local/bin/saddle仍指向共享target/release/saddle；实际release检查完成后SHA-256为`d92ff67177a1d6143264ae57f50e1661694a87a20d6d4db6c228eda3ea9dfc8a`，源代码合并8888bb2。旧631d2fed程序备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-attention-20260930-191209`。只更新磁盘，没有强制重启用户窗口。
+- 独立演示SDK固定公开提交6658cdc2d4f0534fba52b0360a109de46f60d895，仓库外打包和真实PTY通过。正式包已生成 `/Users/firegnu/Developer/personal_projs/saddle/examples/attention-plugin/dist/attention-plugin`，尚未登记到真实Saddle。启用后出现两条合成Attention，点击显示sample-1/2；u更新/恢复，w撤回，Esc关闭。没有真实任务或后台服务操作。
+- 用户先前明确要求关闭原Claude讨论agent；已公开corral stop并核对not_found，`saddle/dev-plugin-design-1`已关闭。没有操作其他agent。后续主控仍亲自做，不委派。
+
+以下为前轮历史记录，当前发布以上述Attention版为准。
 
 - 本轮统一面板：实现63ae93b，合并baab2f2，空提交收尾0999dd5；plugin-palette分支/worktree已清理。主控亲自实现，原讨论agent及T38/T55工作树未操作。
 - 固定Plugins入口在Settings附近；面板约72列18行，搜索/选择/状态/Open或Switch，Manage plugins为次要入口。所有注册插件可见；没有新增快捷键。旧Counter侧栏按钮与F6逻辑已移除，SDK/能力清单/Counter二进制保持不变。
@@ -50,13 +59,11 @@
 
 ## 下一步
 
-T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计不操作队列，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
+本步已交付通用 Attention 和独立合成演示。用户正常重启 Saddle 后，在 Settings → Plugins 添加上述 attention-plugin 目录并启用，关闭设置，再从 Attention 点击 Demo item。没有替用户安装登记，也没有强制重启。插件开发方式仍为独立Rust项目+固定Git SDK+package.sh。Counter保持原目录与原程序。
 
-插件工作的下一步：用户自行重启日常Saddle，点击左侧固定Plugins，搜索Counter，Enter或行尾Open/Switch使用；无需重新添加插件。Counter不再有独立常驻按钮，旧F6逐插件入口已撤下，新全局快捷键尚未选定。面板显示本实例运行状态，停用/故障项保留但不可执行；启用仍立即启动，关闭视图保留进程。当前工作区/覆盖视图优先复用。SDK与Counter程序不需升级。
+下一步是 Drover 插件迁移：先列清现有 Tasks、项目选择、编辑/确认、任务关联跳转、通知偏好及基线规则；用现有公开 Drover CLI 搬入插件，按实际需求补视图输入缺口。随后切换来源、删除宿主旧Drover专用路径，避免两份轮询/通知。Attention自身以及Agent等待/错误/回复保留在Saddle。不要宣称本次已迁移Drover，不扩大到Corral/corral-dispatch，不新增任务推进后台。
 
-这轮只改统一入口，不继续迁移Drover或实现Attention来源。此前“Drover原位置常驻Tasks”已经被用户新的外壳原则替代：未来通过统一插件面板进入，真实内建Drover尚未迁移。待用户观察新面板后再讨论后续。现有Tasks/通知/任务队列未改；仍不自动推进。测试偶发失败如实保留，不顺带修T29。
-
-本轮后续由主控亲自做，不再委派。已有讨论/审阅 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle、attached=1）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
+用户要求主控亲自完成，原讨论agent已按用户要求关闭，不再委派。真实队列/服务不因插件开发而推进；T38/T55遗留worktree保留。已有T20/picker偶发失败如实保留，不顺带修T29。后续跨worktree使用共享target时，核对测试列表/构建源目录；缓存可能保留上一工作树测试程序，不能把零匹配或基线程序当成候选验证。
 
 ## 先读与记录
 
@@ -77,3 +84,5 @@ T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任
 插件直接入口实施记录：Dispatch a981890142784b43b5ece49b90f827d1，docs/任务/插件直接入口与覆盖界面实现.md；仅主控实施/审查，无代理派发。
 
 统一插件命令面板记录：Dispatch 7a3a7633047440acb3ef27635a2eb18e；docs/任务/插件命令面板.md，主控亲自实施/审查，无代理派发。
+
+通用Attention来源记录：Dispatch 36bcaa6d63734a279bd34fdad66741b1；docs/任务/插件Attention来源.md，主控亲自实施/审查/发布。最终日志 /tmp/saddle-attention-final-tests.log、/tmp/saddle-attention-release-pty.log。

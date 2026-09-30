@@ -27,3 +27,11 @@
 最终完整标准套件：323 passed / 1 failed / 8 ignored，`/tmp/saddle-attention-final-tests.log`。失败 `t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases` 在3239行等待 Create agent，画面仍停在 picker。候选单跑仍失败；未改 main（33f4efe）第一次单跑通过、第二次在同一行同一画面复现失败，证明确为基线也存在的问题，根因未查清。基线日志 `/tmp/saddle-attention-t20-baseline.log`、`/tmp/saddle-attention-t20-baseline-repeat.log`。随后的 change-repeat 因共享 target 重用基线测试程序（93 filtered），不作为候选新证据；候选以最终全套和基线之前的 targeted 检查为准。没有为了全绿改动无关 picker 测试。
 
 主控审查结论：本步可合并；已知标准套件失败如实保留。固定 SDK 的独立示例 Clippy 再通过，日志 `/tmp/saddle-attention-demo-pinned-clippy.log`。日常 release 将另行构建并以真实插件PTY核验，不使用上述共享debug程序推断发布有效。
+
+## 合并与日常发布
+
+05efd12 固定独立SDK并记录审查，8888bb2 合并，62453ee 空提交收尾；已清理本轮分支/worktree，没有创建或关闭新agent。日常旧程序备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-attention-20260930-191209`，旧SHA-256 631d2fed76b93b0d3f225b482d709daccaeb7c847b07d717ca61126eb8610324。
+
+main release 构建与正式 demo package.sh 成功。随后用实际release执行全部9条插件PTY（包含旧Counter和新独立Attention demo）全部通过：`/tmp/saddle-attention-release-pty.log`。测试结束后的日常release SHA-256 `d92ff67177a1d6143264ae57f50e1661694a87a20d6d4db6c228eda3ea9dfc8a`，入口仍为 ~/.local/bin/saddle → 共享target/release/saddle。未强制重启窗口。
+
+正式演示产物 `/Users/firegnu/Developer/personal_projs/saddle/examples/attention-plugin/dist/attention-plugin` 已生成，尚未登记到真实插件配置。用户重启新版后可以自行添加/启用，从Attention点两条合成数据；u更新/恢复，w撤回，Esc关闭。此次交付只完成迁移第一步，下一步是Drover插件，最后才删除宿主旧专用路径。
