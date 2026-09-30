@@ -18,7 +18,7 @@
 - SDK 在 crates/plugin-protocol、crates/plugin-sdk；独立 demo 在 examples/counter-plugin，当时依赖 Git revision 5191a782bb7671390c124485258d83e434104560 的公开 SDK（当前版本见本轮记录），有自己的 Cargo.lock。复制到 /tmp/saddle-plugin-external.h9LoWT/counter 独立构建并用其产物验证通过；没有将该目录登记到真实 Saddle。
 - 前轮实现验证：最终标准套件 305 passed / 1 failed / 6 ignored；失败为既有 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，在未修改基线2bfe1c4同一步再次复现。Clippy通过。两项本轮需外部构建的 ignored 检查已显式运行通过（SDK stdio probe、实际 Saddle PTY demo）。另新增极小管理页窗口检查单独通过。详情见 docs/任务/插件首个Demo实现.md，不写全绿。
 - 隔离 PTY 覆盖添加/启用/打开、Enter/鼠标、通知、Shift+Enter、关闭重开保留、重启归零、停用；假 Corral/Drover、临时 HOME/config/state/runtime。进程故障回收、宽字符和旧布局等检查通过。
-- 日常入口 `~/.local/bin/saddle` 仍指向共享 target/release/saddle，本轮已构建为 bf072b8 对应入口/覆盖版，SHA-256 `563afa78e57a9b92ce788526cef2b3265940377c981cb8ccf720c89dd8a43b36`；同一正式 Counter 目录的程序与清单已更新，登记无需重做。旧二进制与旧插件包备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-entry-20260930-175548`（旧二进制99695dbe）。实际 release 两条插件PTY检查通过，日志 /tmp/saddle-entry-release-pty.log。仅更新磁盘，未强制重启用户窗口；本轮新版尚待用户重启观察，不把上轮用户确认当成本轮已验收。
+- 日常入口 `~/.local/bin/saddle` 仍指向共享 target/release/saddle，本轮已构建为 bf072b8 对应入口/覆盖版，SHA-256 `e9bd34449a432265138334f8c43b2e41aab78c295ca05678bd6dbaa45b79f5d6`；同一正式 Counter 目录的程序与清单已更新，登记无需重做。旧二进制与旧插件包备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-entry-20260930-175548`（旧二进制99695dbe）。实际 release 两条插件PTY检查通过，日志 /tmp/saddle-entry-release-pty.log。仅更新磁盘，未强制重启用户窗口；本轮新版尚待用户重启观察，不把上轮用户确认当成本轮已验收。
 
 - 设计记录：docs/DESIGN.md §62、docs/插件系统设计.md、docs/插件协议.md、docs/插件Demo设计.md。本轮已增加侧栏入口与覆盖界面；其他挂载位置按实际需求补充，Drover 迁移尚未实施。
 
