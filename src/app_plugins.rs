@@ -98,15 +98,12 @@ pub(super) struct Overlay {
     pressed_close: bool,
     notice: String,
 }
-fn overlay_area(workspace: Rect) -> Rect {
-    let width = workspace
-        .width
-        .saturating_sub(4)
+fn overlay_area(panes: Panes) -> Rect {
+    let workspace = panes.agents.union(panes.viewer).union(panes.status);
+    let width = ((u32::from(workspace.width) * 4 / 5) as u16)
         .max(1)
         .min(workspace.width);
-    let height = workspace
-        .height
-        .saturating_sub(4)
+    let height = ((u32::from(workspace.height) * 4 / 5) as u16)
         .max(1)
         .min(workspace.height);
     Rect::new(
@@ -204,7 +201,7 @@ impl App {
         let overlay = self.plugin_overlay.as_ref().map(|o| {
             (
                 o.id.as_str(),
-                ui::inner(overlay_area(panes.viewer)),
+                ui::inner(overlay_area(panes)),
                 self.plugin_palette.is_none(),
             )
         });
@@ -222,22 +219,26 @@ impl App {
         let Some(o) = &mut self.plugin_overlay else {
             return;
         };
-        o.area = overlay_area(panes.viewer);
+        o.area = overlay_area(panes);
         let escape = if o.panel.picture.as_ref().is_some_and(|p| p.escape_input) {
             "Esc Back"
         } else {
             "Esc Close"
         };
-        // The host owns the overlay frame. Hide the underlying terminal chrome
-        // instead of leaving a second frame visible around every plugin.
-        frame.render_widget(ratatui::widgets::Clear, panes.viewer);
-        frame
-            .buffer_mut()
-            .set_style(panes.viewer, self.config.colors.base());
+        // Keep the workspace visible as a subdued backdrop to a screen-centered
+        // dialog, rather than replacing the agent's terminal region.
+        let backdrop = frame.area();
+        frame.buffer_mut().set_style(
+            backdrop,
+            ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
+        );
+        frame.render_widget(ratatui::widgets::Clear, o.area);
         frame.render_widget(
             self.config
                 .colors
-                .block(format!(" {} · {escape} ", o.panel.name), true),
+                .block(format!(" {} · {escape} ", o.panel.name), false)
+                .style(self.config.colors.base())
+                .title_style(self.config.colors.base()),
             o.area,
         );
         let mut content = o.panel.clone();
