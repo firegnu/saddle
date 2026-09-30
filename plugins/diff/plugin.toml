@@ -1,0 +1,15 @@
+manifest_version = 1
+id = "diff"
+name = "Diff"
+version = "0.1.0"
+protocol_major = 1
+executable = "bin/saddle-diff"
+required_capabilities = ["panel.v1", "ui.entry.v1", "panel.overlay.v1", "view.context.v1", "view.close.v1"]
+entry = "open"
+[view]
+id = "main"
+placement = "overlay"
+[action]
+id = "open"
+title = "Diff"
+view = "main"

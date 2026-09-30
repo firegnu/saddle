@@ -5256,3 +5256,87 @@ fn plugin_commands_reach_one_running_owner_and_replay_only_the_same_result() {
         "instance_unavailable"
     );
 }
+
+#[test]
+#[ignore = "requires packaged Diff plugin in SADDLE_TEST_DIFF_PLUGIN"]
+fn plugin_real_diff_continuous_live_overlay_split_and_tab() {
+    let binary = std::env::var("SADDLE_TEST_DIFF_PLUGIN").unwrap();
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |dir| {
+            let project = dir.join("diff-project");
+            std::fs::create_dir(&project).unwrap();
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&project)
+                    .args(["init", "-q"])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            std::fs::write(project.join("one.rs"), "fn first_change() {}\n").unwrap();
+            std::fs::write(project.join("two.md"), "second_change\n").unwrap();
+            std::fs::write(
+                dir.join("metadata.json"),
+                serde_json::json!({"p/a":{"cwd":project},"p/b":{"cwd":project}}).to_string(),
+            )
+            .unwrap();
+            let plugin = dir.join("diff");
+            std::fs::create_dir_all(plugin.join("bin")).unwrap();
+            std::fs::copy(&binary, plugin.join("bin/saddle-diff")).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                include_str!("../plugins/diff/plugin.toml"),
+            )
+            .unwrap();
+            std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"diff\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("p/b READY");
+    h.click("Plugins");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("first_change");
+    h.see("second_change");
+    h.see("Live");
+    h.click("two.md");
+    h.until(|h| !h.contents().contains("first_change"));
+    h.send(b"g");
+    h.see("first_change");
+    let original = h.ctl(&["inspect"])["tabs"].clone();
+    std::fs::write(h.dir.path().join("diff-project/two.md"), "live_updated\n").unwrap();
+    h.see("live_updated");
+    std::fs::write("/tmp/saddle-diff-overlay.txt", h.contents()).unwrap();
+    h.send(b"\x1b");
+    h.see("p/b READY");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "Plugin…");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("live_updated");
+    h.see("p/b READY");
+    let split = h.ctl(&["inspect"]);
+    assert!(split["overlay"].is_null());
+    assert_eq!(split["tabs"][0]["panes"].as_array().unwrap().len(), 2);
+    let pane = split["active_pane"].clone();
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Plugin…");
+    h.see("Move");
+    h.send(b"\r");
+    h.see("live_updated");
+    assert_eq!(h.ctl(&["inspect"])["active_pane"], pane);
+    assert_eq!(h.ctl(&["inspect"])["tabs"].as_array().unwrap().len(), 2);
+    h.send(b"3");
+    h.see("No changes in this mode.");
+    h.send(b"1");
+    h.see("first_change");
+    assert!(!h.log("events").contains("stop "));
+}
