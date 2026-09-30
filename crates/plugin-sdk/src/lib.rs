@@ -163,6 +163,11 @@ pub trait Plugin {
 }
 #[derive(Debug)]
 pub enum Event {
+    Command {
+        id: String,
+        method: String,
+        params: Value,
+    },
     Tick,
     Input(Value),
     Focus(bool),
@@ -186,6 +191,7 @@ pub enum Event {
     },
 }
 pub struct Context {
+    command_replies: Vec<(String, Value)>,
     requests: Vec<(u64, String, Option<protocol::OpenTarget>)>,
     input: Option<u64>,
     close: Option<u64>,
@@ -196,6 +202,20 @@ pub struct Context {
     attention: Option<(u64, protocol::AttentionSnapshot)>,
 }
 impl Context {
+    pub fn command_result(&mut self, id: String, result: Value) -> Result<()> {
+        ensure!(
+            id.len() <= 256 && self.command_replies.len() < 32,
+            "command response capacity exceeded"
+        );
+        let result = if serde_json::to_vec(&result)?.len() <= 48 * 1024 {
+            result
+        } else {
+            json!({"ok":false,"error":{"code":"result_too_large","message":"Result exceeds 48 KiB; request a narrower view"}})
+        };
+        self.command_replies.push((id, result));
+        Ok(())
+    }
+
     /// Keys owned by the host for this view; these never become plugin input.
     pub fn reserved_keys(&self) -> &[String] {
         &self.reserved_keys
@@ -287,6 +307,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
     let mut plugin = factory();
     let mut reader = BufReader::new(input);
     let mut context = Context {
+        command_replies: Vec::new(),
         requests: Vec::new(),
         input: None,
         close: None,
@@ -403,6 +424,25 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 Message::Event { name, data } => {
                     ensure!(ready, "event before handshake");
                     match name.as_str() {
+                        "command.invoke" => {
+                            let id = data["id"]
+                                .as_str()
+                                .filter(|s| !s.is_empty() && s.len() <= 256)
+                                .ok_or_else(|| anyhow::anyhow!("invalid command ID"))?;
+                            let method = data["method"]
+                                .as_str()
+                                .filter(|s| !s.is_empty() && s.len() <= 128)
+                                .ok_or_else(|| anyhow::anyhow!("invalid command method"))?;
+                            plugin.event(
+                                Event::Command {
+                                    id: id.into(),
+                                    method: method.into(),
+                                    params: data["params"].clone(),
+                                },
+                                &mut context,
+                            )?;
+                        }
+
                         "optional.view_context" => {
                             plugin.event(Event::Opened(data), &mut context)?;
                             redraw = true;
@@ -514,6 +554,12 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 }
             }
         }
+        for (id, result) in context.command_replies.drain(..) {
+            output.write_all(&protocol::encode(&Message::event(
+                "command.result",
+                json!({"id":id,"result":result}),
+            ))?)?;
+        }
         redraw |= std::mem::take(&mut context.dirty);
         for (id, text, target) in context.requests.drain(..) {
             if pending.len() >= 16 {
@@ -523,6 +569,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                         status: "limited".into(),
                     },
                     &mut Context {
+                        command_replies: vec![],
                         requests: vec![],
                         input: None,
                         close: None,

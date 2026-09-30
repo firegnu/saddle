@@ -882,3 +882,89 @@ for line in sys.stdin:
     runtime.stop();
     assert!(runtime.wait_for("Disabled", Duration::from_secs(4)));
 }
+
+#[test]
+fn plugin_command_session_loss_is_uncertain_and_never_replayed() {
+    use std::{os::unix::fs::PermissionsExt, time::Instant};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("plugin");
+    std::fs::write(&path,r#"#!/usr/bin/env python3
+import json,sys
+from pathlib import Path
+for line in sys.stdin:
+ m=json.loads(line)
+ if m.get('method')=='initialize':
+  print(json.dumps({'kind':'response','id':m['id'],'result':{'id':'test.commands','version':'1','protocol_major':1,'capabilities':['command.v1'],'width_profile':'saddle-grapheme-v1'}}),flush=True)
+ elif m.get('name')=='command.invoke':
+  with Path('calls').open('a') as f: f.write(m['data']['id']+'\n')
+  if m['data']['method']=='echo':
+   print(json.dumps({'kind':'event','name':'command.result','data':{'id':m['data']['id'],'result':{'ok':True,'value':m['data']['params']}}}),flush=True)
+ elif m.get('method')=='shutdown': break
+"#).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let manifest = Manifest {
+        manifest_version: 1,
+        id: "test.commands".into(),
+        name: "Commands".into(),
+        version: "1".into(),
+        protocol_major: 1,
+        executable: "plugin".into(),
+        args: vec![],
+        required_capabilities: vec!["command.v1".into()],
+        view: None,
+        action: None,
+        entry: None,
+    };
+    std::fs::write(
+        dir.path().join("plugin.toml"),
+        toml::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+    let runtime = Runtime::start(dir.path(), manifest.clone());
+    assert!(runtime.wait_for("Running", Duration::from_secs(3)));
+    let session = runtime
+        .invoke("one", "echo", serde_json::json!({"n":1}))
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let result = loop {
+        if let Some(r) = runtime.command_result(session, "one") {
+            break r;
+        }
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(result["value"]["n"], 1);
+    runtime
+        .invoke("two", "hang", serde_json::json!({}))
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !std::fs::read_to_string(dir.path().join("calls"))
+        .unwrap()
+        .contains("two")
+    {
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    runtime.stop();
+    assert!(runtime.wait_for("Disabled", Duration::from_secs(3)));
+    assert_eq!(
+        runtime.command_result(session, "two").unwrap()["error"]["code"],
+        "result_unknown"
+    );
+    assert!(
+        runtime
+            .invoke("three", "echo", serde_json::json!({}))
+            .is_err()
+    );
+    drop(runtime);
+    let next = Runtime::start(dir.path(), manifest);
+    assert!(next.wait_for("Running", Duration::from_secs(3)));
+    assert_ne!(next.snapshot().session, session);
+    assert!(next.command_result(session, "two").is_none());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("calls")).unwrap(),
+        "one\ntwo\n"
+    );
+    next.stop();
+    assert!(next.wait_for("Disabled", Duration::from_secs(3)));
+}

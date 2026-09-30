@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 const HELP: &str = "saddle ctl (JSON output)\n\
   instances\n\
+  plugin --plugin ID --method METHOD --params JSON [--instance ID] [--request-id ID]\n\
   inspect [--instance ID]\n\
   open [--instance ID] [--relative-to self|active|PANE] --place tab|left|right|up|down\n\
        (--shell [--cwd PATH] | --agent NAME | --name NAME [--cwd PATH] [--role ROLE] [--prompt TEXT] -- PROGRAM ARG...)\n\
@@ -42,6 +43,13 @@ fn execute(args: Vec<String>) -> Result<Value> {
         }
         let allowed = match verb.as_str() {
             "inspect" => &["--instance"][..],
+            "plugin" => &[
+                "--instance",
+                "--plugin",
+                "--method",
+                "--params",
+                "--request-id",
+            ][..],
             "open" => &[
                 "--instance",
                 "--relative-to",
@@ -90,6 +98,13 @@ fn execute(args: Vec<String>) -> Result<Value> {
     let request_id = values.remove("--request-id");
     let operation = match verb.as_str() {
         "inspect" => Operation::Inspect,
+        "plugin" => Operation::Plugin {
+            plugin: values.remove("--plugin").context("--plugin required")?,
+            method: values.remove("--method").context("--method required")?,
+            params: serde_json::from_str(
+                &values.remove("--params").unwrap_or_else(|| "{}".into()),
+            )?,
+        },
         "request" => {
             if instance.is_none() {
                 bail!("request requires --instance");
@@ -214,7 +229,7 @@ fn execute(args: Vec<String>) -> Result<Value> {
     };
     if matches!(
         message.operation,
-        Operation::Open { .. } | Operation::Close { .. }
+        Operation::Open { .. } | Operation::Close { .. } | Operation::Plugin { .. }
     ) && message.request_id.is_none()
     {
         message.request_id = Some(random_id()?);

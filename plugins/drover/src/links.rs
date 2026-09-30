@@ -406,7 +406,7 @@ impl State {
                 Link {
                     label: format!("Recorded range {start}..{end}"),
                     target: Target::Range(start, end),
-                    sources: vec!["drover show · recorded Git endpoints".into()],
+                    sources: vec!["Task record · recorded Git endpoints".into()],
                     note: None,
                 },
             );

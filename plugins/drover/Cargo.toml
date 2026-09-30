@@ -18,5 +18,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 unicode-width = "0.2"
 
-[dev-dependencies]
+regex = "1"
+sha2 = "0.10"
 tempfile = "3"

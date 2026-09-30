@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use std::{sync::atomic::AtomicBool, time::Duration};
 
-/// The only drover file saddle reads directly, explicitly authorized by the user.
+/// Plugin-owned project registry, retained at its existing data path.
 pub fn registered_projects(path: &std::path::Path) -> Result<Vec<String>> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -59,7 +59,7 @@ pub struct Snapshot {
 }
 #[derive(Clone)]
 pub struct Client {
-    pub program: String,
+    pub corral: String,
     pub cwd: PathBuf,
 }
 impl Client {
@@ -67,43 +67,13 @@ impl Client {
         self.read(&AtomicBool::new(false))
     }
     fn read(&self, cancel: &AtomicBool) -> Result<Snapshot> {
-        let output = crate::command::run(
-            &self.program,
-            &["list", "--json"],
-            Some(&self.cwd),
-            Duration::from_secs(15),
-            cancel,
-        )?;
-        if !output.status.success() {
-            bail!(
-                "drover list: {}{}",
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-        }
-        let value: serde_json::Value =
-            serde_json::from_slice(&output.stdout).context("drover list: invalid JSON")?;
-        validate_read(&value, "list")?;
-        serde_json::from_value(value)
-            .context("drover list: response does not match schema_version 2")
-    }
-}
-
-fn validate_read(value: &serde_json::Value, command: &str) -> Result<()> {
-    if value["schema_version"] != 2 {
-        bail!(
-            "drover {command}: unsupported schema_version {}",
-            value["schema_version"]
+        anyhow::ensure!(
+            !cancel.load(std::sync::atomic::Ordering::Relaxed),
+            "Read cancelled"
         );
+        serde_json::from_value(crate::core::list(&self.cwd)?)
+            .context("Invalid native task projection")
     }
-    if value["ok"] != true {
-        bail!(
-            "drover {command}: {}: {}",
-            value["error"]["code"].as_str().unwrap_or("unknown error"),
-            value["error"]["why"].as_str().unwrap_or_default()
-        );
-    }
-    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -172,129 +142,35 @@ impl Transition {
             Self::Return => matches!(state, "running" | "awaiting_release"),
         }
     }
-    fn result_state(self) -> &'static str {
-        match self {
-            Self::Submit => "awaiting_release",
-            Self::Accept => "done",
-            Self::Return => "pending",
-        }
-    }
-}
-impl Operation {
-    pub fn args(&self) -> Vec<String> {
-        match self {
-            Self::Pause(true) => vec!["pause".into()],
-            Self::Pause(false) => vec!["resume".into()],
-            Self::Add { title, body } => vec!["add".into(), title.clone(), body.clone()],
-            Self::Edit {
-                index, title, body, ..
-            } => {
-                vec![
-                    "edit".into(),
-                    (index + 1).to_string(),
-                    title.clone(),
-                    body.clone(),
-                ]
-            }
-            Self::Move { index, to, .. } => {
-                vec!["move".into(), (index + 1).to_string(), (to + 1).to_string()]
-            }
-            Self::Delete { index, .. } => vec![
-                "drop".into(),
-                "--pos".into(),
-                (index + 1).to_string(),
-                "Deleted in saddle".into(),
-            ],
-            Self::Transition {
-                id,
-                token,
-                action,
-                reason,
-                ..
-            } => {
-                let mut args = vec![
-                    action.command().into(),
-                    id.clone(),
-                    "--target-token".into(),
-                    token.clone(),
-                ];
-                if *action == Transition::Return {
-                    args.extend([
-                        "--reason".into(),
-                        reason.trim().into(),
-                        "--work-stopped".into(),
-                    ]);
-                }
-                args.push("--json".into());
-                args
-            }
-            Self::DispatchPending { pos, token, .. } => vec![
-                "dispatch-pending".into(),
-                "--pos".into(),
-                pos.to_string(),
-                "--target-token".into(),
-                token.clone(),
-                "--json".into(),
-            ],
-        }
-    }
 }
 impl Client {
     pub fn execute(&self, operation: &Operation, cancel: &AtomicBool) -> Result<String> {
+        let value = crate::core::execute(&self.cwd, operation, &self.corral, cancel)?;
+        if let Operation::DispatchPending { .. } = operation {
+            let (clean, report) = dispatch_report(&value, value["ok"] == true);
+            return if clean { Ok(report) } else { bail!(report) };
+        }
         if let Operation::Transition {
-            project,
             id,
             run_id,
             action,
+            reason,
             ..
         } = operation
         {
-            return self.transition(project, id, run_id, *action, &operation.args(), cancel);
+            return Ok(match action {
+                Transition::Submit => format!(
+                    "{id} submitted for review · Awaiting release\nRecord: recorded · Run: {run_id}"
+                ),
+                Transition::Accept => {
+                    format!("{id} accepted · Done\nRecord: recorded · Run: {run_id}")
+                }
+                Transition::Return => format!(
+                    "{id} returned to Pending\nRecord: recorded · Run: {run_id}\nReason: {reason}\nDispatch pause setting is unchanged. Work stopped was confirmed by the user."
+                ),
+            });
         }
-        if let Operation::DispatchPending { project, .. } = operation {
-            return self.dispatch_pending(project, &operation.args(), cancel);
-        }
-        if let Operation::Edit { pending, index, .. }
-        | Operation::Move { pending, index, .. }
-        | Operation::Delete { pending, index } = operation
-        {
-            let fresh = self.read(cancel)?;
-            if *index >= pending.len()
-                || !fresh
-                    .pending
-                    .iter()
-                    .map(|t| (&t.id, &t.title, &t.body))
-                    .eq(pending.iter().map(|t| (&t.id, &t.title, &t.body)))
-            {
-                bail!(
-                    "Pending tasks changed; action not sent. Reopen Edit or Delete, or retry Move, using the refreshed queue."
-                );
-            }
-        }
-        let args = operation.args();
-        let output = crate::command::run(
-            &self.program,
-            &args.iter().map(String::as_str).collect::<Vec<_>>(),
-            Some(&self.cwd),
-            Duration::from_secs(120),
-            cancel,
-        )?;
-        let text = format!(
-            "{}{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .trim()
-        .to_string();
-        if !output.status.success() {
-            bail!(
-                "drover {} ({}): {}",
-                operation.args()[0],
-                output.status,
-                text
-            );
-        }
-        Ok(if text.is_empty() { "Done".into() } else { text })
+        Ok(value["message"].as_str().unwrap_or("Done").into())
     }
 }
 
@@ -373,7 +249,7 @@ pub struct PendingLoad {
     threads: Vec<std::thread::JoinHandle<()>>,
 }
 impl PendingLoad {
-    pub fn start(program: &str, projects: &[String]) -> Self {
+    pub fn start(corral: &str, projects: &[String]) -> Self {
         let (send, updates) = std::sync::mpsc::channel();
         let cancel = std::sync::Arc::new(AtomicBool::new(false));
         let threads = projects
@@ -381,7 +257,7 @@ impl PendingLoad {
             .enumerate()
             .map(|(index, project)| {
                 let client = Client {
-                    program: program.into(),
+                    corral: corral.into(),
                     cwd: project.into(),
                 };
                 let (send, cancel) = (send.clone(), cancel.clone());
@@ -416,7 +292,7 @@ pub struct RepoTasks {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl RepoTasks {
-    pub fn start(program: String, cwd: String, projects: Vec<String>) -> Self {
+    pub fn start(corral: String, cwd: String, projects: Vec<String>) -> Self {
         let (send, result) = std::sync::mpsc::channel();
         let cancel = std::sync::Arc::new(AtomicBool::new(false));
         let quitting = cancel.clone();
@@ -436,7 +312,7 @@ impl RepoTasks {
                     .find(|(_, same_top)| *same_top)
                     .or(matching.first())?;
                 let snapshot = Client {
-                    program,
+                    corral,
                     cwd: project.into(),
                 }
                 .read(&quitting)
@@ -487,42 +363,10 @@ pub struct Reference {
     #[serde(flatten)]
     pub fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
-/// Budget for one `drover show`: its Git subcommands may each take 30 s and the optional agent
-/// status 10 s. A slower answer counts as a failure and is retried on the next refresh.
-const SHOW_TIMEOUT: Duration = Duration::from_secs(60);
 impl Client {
-    /// Read-only details of a numbered task; never runs the check command.
     pub fn show(&self, id: &str, cancel: &AtomicBool) -> Result<Detail> {
-        let output = crate::command::run(
-            &self.program,
-            &["show", id, "--json", "--with-agent-status"],
-            Some(&self.cwd),
-            SHOW_TIMEOUT,
-            cancel,
-        )?;
-        let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).trim().to_owned();
-        let value: serde_json::Value =
-            serde_json::from_slice(&output.stdout).with_context(|| {
-                format!(
-                    "drover show ({}): {}{}",
-                    output.status,
-                    text(&output.stdout),
-                    text(&output.stderr)
-                )
-            })?;
-        validate_read(&value, "show")?;
-        if value["task"]["id"] != id {
-            bail!("drover show: answered for a different task than {id}");
-        }
-        if !output.status.success() {
-            bail!("drover show ({}): {}", output.status, text(&output.stderr));
-        }
-        let detail: Detail = serde_json::from_value(value)
-            .context("drover show: response does not match schema_version 2")?;
-        if detail.evidence.scope != "repository_reference" || detail.evidence.controls_transition {
-            bail!("drover show: unsupported evidence scope or transition control");
-        }
-        Ok(detail)
+        serde_json::from_value(crate::core::show(&self.cwd, id, &self.corral, cancel)?)
+            .context("Invalid native task detail")
     }
 }
 /// A public transition rejection; its code is not inferred from prose.
@@ -541,114 +385,6 @@ impl std::fmt::Display for TransitionError {
     }
 }
 impl std::error::Error for TransitionError {}
-impl Client {
-    fn transition(
-        &self,
-        project: &str,
-        id: &str,
-        run_id: &str,
-        action: Transition,
-        args: &[String],
-        cancel: &AtomicBool,
-    ) -> Result<String> {
-        let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
-        if real(&self.cwd) != real(std::path::Path::new(project)) {
-            bail!("The project changed; task action not sent.");
-        }
-        let output = crate::command::run(&self.program,
-            &args.iter().map(String::as_str).collect::<Vec<_>>(), Some(&self.cwd),
-            Duration::from_secs(120), cancel)
-            .context("Task action result unknown; refresh and check the task before confirming again. Saddle has not retried")?;
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .context("Task action returned no valid JSON; result unknown. Refresh and check the task. Saddle has not retried")?;
-        if value["schema_version"] != 2 {
-            bail!(
-                "drover {}: unsupported schema_version {}; check the task before confirming again",
-                action.command(),
-                value["schema_version"]
-            );
-        }
-        if value["ok"] == false {
-            return Err(TransitionError {
-                code: value["error"]["code"]
-                    .as_str()
-                    .unwrap_or("unknown_error")
-                    .into(),
-                why: value["error"]["why"].as_str().unwrap_or_default().into(),
-            }
-            .into());
-        }
-        if !output.status.success()
-            || value["ok"] != true
-            || value["task_id"] != id
-            || value["run_id"] != run_id
-            || value["state"] != action.result_state()
-            || value["record"]["status"] != "recorded"
-        {
-            bail!(
-                "drover {}: unexpected result for {id} / {run_id}; check the task before confirming again: {}",
-                action.command(),
-                crate::ui::clip(&value.to_string(), 300)
-            );
-        }
-        Ok(match action {
-            Transition::Submit => format!(
-                "{id} submitted for review · Awaiting release\nRecord: recorded · Run: {run_id}"
-            ),
-            Transition::Accept => format!("{id} accepted · Done\nRecord: recorded · Run: {run_id}"),
-            Transition::Return => format!(
-                "{id} returned to Pending\nRecord: recorded · Run: {run_id}\nReason: {}\nDispatch pause setting is unchanged. Work stopped was confirmed by the user.",
-                args[5]
-            ),
-        })
-    }
-}
-impl Client {
-    /// Runs `dispatch-pending` once in this project. Only a confirmed delivery that was recorded,
-    /// or manual mode's recorded start with its text, is a success; every other answer is
-    /// reported from its structured fields and never retried.
-    fn dispatch_pending(
-        &self,
-        project: &str,
-        args: &[String],
-        cancel: &AtomicBool,
-    ) -> Result<String> {
-        let real = |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.into());
-        if real(&self.cwd) != real(std::path::Path::new(project)) {
-            bail!("The project changed; the selected task was not dispatched.");
-        }
-        let output = crate::command::run(
-            &self.program,
-            &args.iter().map(String::as_str).collect::<Vec<_>>(),
-            Some(&self.cwd),
-            Duration::from_secs(120),
-            cancel,
-        )
-        .map_err(|error| {
-            // The run may have ended after drover already delivered; its answer is lost.
-            anyhow::anyhow!(
-                "Saddle cannot confirm the dispatch result ({error:#}); the task may or may not have been sent. Saddle has not retried. The queue refreshes now; check it and the main agent before dispatching again."
-            )
-        })?;
-        let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 300);
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
-            bail!(
-                "This drover does not support dispatching a selected task, or its answer was lost ({}). Saddle has not retried; refresh and check the queue and main agent: {}{}",
-                output.status,
-                text(&output.stdout),
-                text(&output.stderr)
-            );
-        };
-        if value["schema_version"] != 2 {
-            bail!(
-                "drover dispatch-pending: unsupported schema_version {}. Saddle has not retried; check the queue and main agent.",
-                value["schema_version"]
-            );
-        }
-        let (clean, report) = dispatch_report(&value, output.status.success());
-        if clean { Ok(report) } else { bail!(report) }
-    }
-}
 /// Words `dispatch-pending`'s answer for the user, delivery and record apart, and whether it is
 /// a success: exit 0, `ok`, and either a confirmed delivery without a draft or manual mode, each
 /// recorded.
@@ -824,7 +560,7 @@ pub struct Surveyor {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Surveyor {
-    pub fn start(program: String, registry: PathBuf, every: Duration) -> Self {
+    pub fn start(corral: String, registry: PathBuf, every: Duration) -> Self {
         use std::sync::{Arc, atomic::Ordering, mpsc};
         let (send, updates) = mpsc::channel();
         let (wake, wait) = mpsc::channel::<()>();
@@ -840,7 +576,7 @@ impl Surveyor {
                 std::thread::scope(|scope| {
                     for project in &list {
                         let client = Client {
-                            program: program.clone(),
+                            corral: corral.clone(),
                             cwd: project.into(),
                         };
                         let (send, quitting) = (send.clone(), &quitting);
@@ -881,7 +617,7 @@ impl Drop for Surveyor {
     }
 }
 
-/// The user's Drover system-notification preference (`drover notifications`, schema_version 1).
+/// The plugin's persisted notification preference, compatible with existing settings.
 /// Saving it means only that it is saved; Drover applies it at its next notification check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Preference {
@@ -889,65 +625,12 @@ pub struct Preference {
     pub revision: u64,
 }
 impl Client {
-    /// Reads the preference (`None`), or turns system notifications on or off. The command does
-    /// not depend on the project, so it runs without one.
     pub fn notifications(&self, set: Option<bool>, cancel: &AtomicBool) -> Result<Preference> {
-        let action = match set {
-            None => "status",
-            Some(true) => "on",
-            Some(false) => "off",
-        };
-        let output = crate::command::run(
-            &self.program,
-            &["notifications", action, "--json"],
-            None,
-            Duration::from_secs(15),
-            cancel,
-        )?;
-        let text = |bytes: &[u8]| crate::ui::clip(String::from_utf8_lossy(bytes).trim(), 200);
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
-            bail!(
-                "this drover does not support task notifications ({}): {}{}",
-                output.status,
-                text(&output.stdout),
-                text(&output.stderr)
-            );
-        };
-        if value["schema_version"] != 1 {
-            bail!(
-                "drover notifications: unsupported schema_version {}",
-                value["schema_version"]
-            );
-        }
-        if value["ok"] == false {
-            let code = value["error"]["code"].as_str().unwrap_or("unknown_error");
-            let meaning = match code {
-                "invalid_arguments" => "drover rejected the request",
-                "preferences_invalid" => "Drover's notification preference is invalid",
-                "preferences_unreadable" => "Drover's notification preference cannot be read",
-                "preferences_write_failed" => "Drover could not save the notification preference",
-                _ => "drover notifications failed",
-            };
-            bail!(
-                "{meaning} ({code}): {}",
-                value["error"]["message"].as_str().unwrap_or_default()
-            );
-        }
-        match (
-            output.status.success() && value["ok"] == true && value["scope"] == "user",
-            value["system_enabled"].as_bool(),
-            value["revision"].as_u64(),
-        ) {
-            (true, Some(system_enabled), Some(revision)) => Ok(Preference {
-                system_enabled,
-                revision,
-            }),
-            _ => bail!(
-                "drover notifications ({}): unexpected answer {}",
-                output.status,
-                crate::ui::clip(&value.to_string(), 200)
-            ),
-        }
+        anyhow::ensure!(
+            !cancel.load(std::sync::atomic::Ordering::Relaxed),
+            "Preference operation cancelled"
+        );
+        crate::core::preference(set)
     }
 }
 /// Who asked for a preference reading: the periodic check, or the Settings popup with this
@@ -962,7 +645,7 @@ pub struct ChannelUpdate {
     pub asker: Asker,
     pub result: Result<Preference, String>,
 }
-/// Runs `drover notifications` one call at a time: a periodic status read, and the requests of
+/// Serializes native notification preference reads and writes from
 /// Settings. Serial calls keep answers in order, so the latest answer is the latest preference.
 pub struct ChannelWorker {
     pub updates: std::sync::mpsc::Receiver<ChannelUpdate>,

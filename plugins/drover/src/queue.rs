@@ -37,7 +37,7 @@ pub enum Page {
     /// Confirming one explicit task transition.
     Confirm(Box<Confirmation>),
 }
-/// The selected transition confirmation, bound to the run its own `drover show` read.
+/// The selected transition confirmation, bound to the run its own task detail read read.
 pub struct Confirmation {
     pub action: Transition,
     pub run_id: String,
@@ -139,7 +139,7 @@ pub struct Panel {
     pub scroll: usize,
     pub page: Page,
     /// The selected task as shown beside the list; replaced when the selection moves to
-    /// another task, so each selection gets its own `drover show` target.
+    /// another task, so each selection gets its own task detail read target.
     pub content: Option<Box<crate::detail::TaskDetail>>,
     pub view: View,
     pub links: crate::links::State,
@@ -377,7 +377,7 @@ impl Panel {
             .into_iter()
             .find(|(_, t)| same_task(t, &detail.task))
     }
-    /// The `drover show` target while Run details or Links is chosen; only numbered tasks are covered.
+    /// The task detail read target while Run details or Links is chosen; only numbered tasks are covered.
     pub fn detail_key(&self) -> Option<DetailKey> {
         if !matches!(self.view, View::Details | View::Links) {
             return None;

@@ -1,4 +1,4 @@
-//! Drover owns its CLI workers and task UI. The host receives only frames and Attention items.
+//! Drover owns task storage, workers and UI. The host provides generic plugin capabilities.
 use crate::{
     attention::{Target, project_name},
     config::expand_home,
@@ -18,8 +18,11 @@ use std::{
 const REFRESH: Duration = Duration::from_secs(2);
 type ProjectState = Option<Result<Box<drover::Snapshot>, String>>;
 pub struct Drover {
+    commands: crate::api::Worker,
+    system_notifier: notify::Notifier,
+    system_notify: crate::system_notify::Worker,
     pub panel: queue::Panel,
-    program: String,
+    corral: String,
     refresh: Duration,
     dispatch_log: String,
     worker: drover::Worker,
@@ -49,6 +52,8 @@ pub struct Drover {
     preference_choice: Option<bool>,
     preference_saving: bool,
     preference_message: String,
+    // Release ownership only after all worker threads have stopped.
+    lease: Result<crate::core::PluginLease>,
 }
 impl Default for Drover {
     fn default() -> Self {
@@ -68,29 +73,33 @@ impl Drover {
         } else {
             projects.first().cloned().unwrap_or(cwd)
         };
-        Self::with_commands("drover".into(), "dlog".into(), cwd)
+        Self::with_commands("corral".into(), "dlog".into(), cwd)
     }
-    pub fn with_commands(program: String, dispatch_log: String, cwd: String) -> Self {
-        Self::with_refresh(program, dispatch_log, cwd, REFRESH)
+    pub fn with_commands(corral: String, dispatch_log: String, cwd: String) -> Self {
+        Self::with_refresh(corral, dispatch_log, cwd, REFRESH)
     }
     pub fn with_refresh(
-        program: String,
+        corral: String,
         dispatch_log: String,
         cwd: String,
         refresh: Duration,
     ) -> Self {
         let client = drover::Client {
-            program: program.clone(),
+            corral: corral.clone(),
             cwd: cwd.clone().into(),
         };
         let mut this = Self {
+            lease: crate::core::PluginLease::acquire(),
+            commands: crate::api::Worker::start(corral.clone()),
+            system_notifier: Default::default(),
+            system_notify: Default::default(),
             panel: queue::Panel {
                 project: cwd,
                 ..Default::default()
             },
             worker: drover::Worker::start(client.clone(), refresh),
             survey: drover::Surveyor::start(
-                program.clone(),
+                corral.clone(),
                 expand_home("~/.drover/projects"),
                 refresh.saturating_mul(5),
             ),
@@ -106,7 +115,7 @@ impl Drover {
             attention_dirty: false,
             lookup: None,
             input_revision: 0,
-            program,
+            corral,
             refresh,
             dispatch_log,
             detail: None,
@@ -128,7 +137,7 @@ impl Drover {
     }
     fn client(&self, project: &str) -> drover::Client {
         drover::Client {
-            program: self.program.clone(),
+            corral: self.corral.clone(),
             cwd: project.into(),
         }
     }
@@ -162,7 +171,7 @@ impl Drover {
                 } else {
                     vec![]
                 };
-                self.pending = Some(drover::PendingLoad::start(&self.program, &projects));
+                self.pending = Some(drover::PendingLoad::start(&self.corral, &projects));
                 self.panel.all_pending = projects.into_iter().map(|p| (p, None)).collect();
             }
             drover::Request::Project(path) => {
@@ -201,13 +210,19 @@ impl Drover {
                 changed = true;
                 continue;
             }
-            self.notifier
-                .preference(update.result.as_ref().ok().copied());
+            let preference = update.result.as_ref().ok().copied();
+            self.notifier.preference(preference);
+            self.system_notifier.preference(preference.map(|mut p| {
+                p.system_enabled = !p.system_enabled;
+                p
+            }));
             if matches!(update.asker, drover::Asker::Save(_)) {
                 self.preference_saving = false;
                 self.preference_message = match &update.result {
-                    Ok(_) => "Saved. Drover applies the preference at its next notification check."
-                        .into(),
+                    Ok(_) => {
+                        "Saved. The plugin applies this preference at its next notification check."
+                            .into()
+                    }
                     Err(e) => format!("Not saved: {e}"),
                 };
             }
@@ -222,6 +237,7 @@ impl Drover {
             match update {
                 drover::Survey::Projects(Ok(list)) => {
                     self.notifier.registry(&list);
+                    self.system_notifier.registry(&list);
                     let mut old = std::mem::take(&mut self.projects);
                     self.projects = list
                         .into_iter()
@@ -242,6 +258,8 @@ impl Drover {
                 drover::Survey::Snapshot(project, result) => {
                     if let Ok(snapshot) = &result {
                         self.notifier.snapshot(&project, snapshot, Instant::now());
+                        self.system_notifier
+                            .snapshot(&project, snapshot, Instant::now());
                     }
                     if let Some((_, state)) = self.projects.iter_mut().find(|(p, _)| p == &project)
                     {
@@ -252,6 +270,9 @@ impl Drover {
         }
         if changed {
             self.publish(context)?;
+        }
+        if let Some(toast) = self.system_notifier.dismiss() {
+            self.system_notify.send(toast.text());
         }
         if let Some(toast) = self.notifier.dismiss() {
             let item = toast.targets.first().and_then(|(target, _)| {
@@ -405,6 +426,12 @@ impl Drover {
         }
     }
     fn tick(&mut self, context: &mut Context) -> Result<()> {
+        for (id, result) in self.commands.results.try_iter() {
+            context.command_result(id, result)?;
+            self.worker.request(drover::Request::Refresh);
+            self.survey.refresh();
+        }
+
         let mut changed = self.observe(context)?;
         if let Some(project) = self
             .lookup
@@ -646,7 +673,18 @@ impl Plugin for Drover {
         env!("CARGO_PKG_VERSION")
     }
     fn event(&mut self, event: Event, context: &mut Context) -> Result<()> {
+        if let Err(e) = &self.lease {
+            anyhow::bail!(
+                "Drover is already owned by another Saddle, or its data is unavailable: {e:#}"
+            );
+        }
         match event {
+            Event::Command { id, method, params } => {
+                if let Err(e) = self.commands.request(id.clone(), method, params) {
+                    context.command_result(id,serde_json::json!({"ok":false,"error":{"code":"busy","message":e.to_string()}}))?;
+                }
+            }
+
             Event::Tick => self.tick(context)?,
             Event::Input(value) => {
                 self.input(&value);
@@ -716,7 +754,7 @@ impl Plugin for Drover {
                     self.lookup = Some((
                         self.input_revision,
                         drover::RepoTasks::start(
-                            self.program.clone(),
+                            self.corral.clone(),
                             cwd.into(),
                             self.panel.projects.clone(),
                         ),

@@ -95,12 +95,19 @@ struct Queue {
     items: VecDeque<(Message, usize)>,
     bytes: usize,
 }
+pub struct CommandReply {
+    pub session: u64,
+    pub id: String,
+    pub result: Option<serde_json::Value>,
+    pub sent: Instant,
+}
 pub struct Runtime {
     shared: Arc<Mutex<Snapshot>>,
     queue: Arc<Mutex<Queue>>,
     stop: Arc<AtomicBool>,
     overflow: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    commands: Arc<Mutex<Vec<CommandReply>>>,
 }
 impl Runtime {
     pub fn take_close(&self) -> Option<u64> {
@@ -124,8 +131,10 @@ impl Runtime {
             overflow.clone(),
         );
         let dir = dir.to_owned();
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let replies = commands.clone();
         let worker = thread::spawn(move || {
-            let result = run(&dir, &manifest, &s, &q, &c, &o, &notices);
+            let result = run(&dir, &manifest, &s, &q, (&c, &o), &notices, &replies);
             if let Err(e) = result {
                 let mut state = s.lock().unwrap();
                 state.state = if state.pid.is_some() {
@@ -149,7 +158,66 @@ impl Runtime {
             stop,
             overflow,
             worker: Some(worker),
+            commands,
         }
+    }
+    pub fn invoke(&self, id: &str, method: &str, params: serde_json::Value) -> Result<u64> {
+        ensure!(
+            !id.is_empty()
+                && id.len() <= 256
+                && !method.is_empty()
+                && method.len() <= 128
+                && !method.chars().any(char::is_control),
+            "invalid plugin command identity"
+        );
+        ensure!(
+            serde_json::to_vec(&params)?.len() <= 48 * 1024,
+            "plugin command too large"
+        );
+        let s = self.snapshot();
+        ensure!(
+            s.state == "Running" && !self.stop.load(Ordering::Relaxed),
+            "plugin is not running"
+        );
+        let mut calls = self.commands.lock().unwrap();
+        ensure!(
+            calls.len() < 32 && !calls.iter().any(|c| c.id == id),
+            "plugin command busy"
+        );
+        calls.push(CommandReply {
+            session: s.session,
+            id: id.into(),
+            result: None,
+            sent: Instant::now(),
+        });
+        if !self.send(Message::event(
+            "command.invoke",
+            json!({"id":id,"method":method,"params":params}),
+        )) {
+            calls.retain(|c| c.id != id);
+            anyhow::bail!("plugin command could not be queued");
+        }
+        Ok(s.session)
+    }
+    pub fn command_result(&self, session: u64, id: &str) -> Option<serde_json::Value> {
+        let s = self.snapshot();
+        let mut calls = self.commands.lock().unwrap();
+        let index = calls
+            .iter()
+            .position(|c| c.id == id && c.session == session)?;
+        if calls[index].result.is_some() {
+            return calls.remove(index).result;
+        }
+        if s.session != session
+            || s.state != "Running"
+            || calls[index].sent.elapsed() > Duration::from_secs(120)
+        {
+            calls.remove(index);
+            return Some(
+                json!({"ok":false,"error":{"code":"result_unknown","message":"Plugin stopped or timed out; inspect task state before retrying"}}),
+            );
+        }
+        None
     }
     pub fn snapshot(&self) -> Snapshot {
         self.shared.lock().unwrap().clone()
@@ -244,10 +312,11 @@ fn run(
     m: &Manifest,
     shared: &Mutex<Snapshot>,
     queue: &Mutex<Queue>,
-    cancel: &AtomicBool,
-    overflow: &AtomicBool,
+    signals: (&AtomicBool, &AtomicBool),
     notices: &Mutex<Notifications>,
+    commands: &Arc<Mutex<Vec<CommandReply>>>,
 ) -> Result<()> {
+    let (cancel, overflow) = signals;
     // Validate again at launch; a registration is not permission to run a changed identity.
     ensure!(
         Manifest::read(dir)? == *m,
@@ -657,6 +726,37 @@ fn run(
                                 Message::Event { name, data } => {
                                     ensure!(ready, "event before handshake");
                                     match name.as_str() {
+                                        "command.result" => {
+                                            ensure!(
+                                                m.required_capabilities
+                                                    .iter()
+                                                    .any(|c| c == "command.v1"),
+                                                "undeclared command result"
+                                            );
+                                            let id = data["id"]
+                                                .as_str()
+                                                .context("missing command ID")?;
+                                            let result = data
+                                                .get("result")
+                                                .context("missing command result")?
+                                                .clone();
+                                            ensure!(
+                                                serde_json::to_vec(&result)?.len() <= 48 * 1024,
+                                                "command result too large"
+                                            );
+                                            let mut calls = commands.lock().unwrap();
+                                            // A late reply after timeout is discarded; never replayed into another call.
+                                            if let Some(call) =
+                                                calls.iter_mut().find(|c| c.id == id)
+                                            {
+                                                ensure!(
+                                                    call.result.is_none(),
+                                                    "duplicate command result"
+                                                );
+                                                call.result = Some(result);
+                                            }
+                                        }
+
                                         "panel.close_request" => {
                                             ensure!(
                                                 m.required_capabilities

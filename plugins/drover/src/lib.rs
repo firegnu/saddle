@@ -14,3 +14,8 @@ pub mod plugin;
 pub mod queue;
 pub mod theme;
 pub mod ui;
+
+pub mod core;
+
+pub mod api;
+mod system_notify;

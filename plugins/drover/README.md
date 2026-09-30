@@ -1,6 +1,8 @@
 # Drover 插件
 
-Saddle 的可选任务界面和后台观察器。源码暂放本仓库，通过公开 Rust SDK 接入；任务读写只调用 Drover CLI，Dispatch 详情只调用 dlog。Saddle 宿主无需安装 Drover 也能管理终端和 agent。
+Drover 是一个完整的可选 Saddle 进程插件：同一进程提供任务界面、任务数据读写、状态流转和通知。无需安装旧 Drover CLI、Python 程序或独立 watch。Corral 仍负责 agent，dispatch-log 仍负责派发记录；插件只通过它们的公开命令访问。
+
+## 安装与生命周期
 
 在仓库根目录打包：
 
@@ -8,20 +10,59 @@ Saddle 的可选任务界面和后台观察器。源码暂放本仓库，通过�
 CARGO_TARGET_DIR="$HOME/Developer/personal_projs/saddle-worktrees/.target" ./plugins/drover/package.sh
 ```
 
-在 Saddle → Plugins → Manage plugins 添加生成的完整目录 `plugins/drover/dist/drover-plugin`，启用后关闭管理页，再从 Plugins 选择 Drover。目录中同时需要 `plugin.toml` 和 `bin/saddle-drover`。已登记目录更新前先停用插件，更新后重新启用。
+Saddle → Plugins → Manage plugins 添加生成的完整目录 `plugins/drover/dist/drover-plugin`，启用后从 Plugins 选择 Drover。目录须同时包含 `plugin.toml` 和 `bin/saddle-drover`。更新前停用，更新后重新启用。
 
-关闭任务面板只关闭视图，进程继续观察已登记项目；停用才停止后台并撤下该来源的 Attention。宿主不会再保留另一份内建 Tasks 或通知来源。插件不启动通知 watch，不自动派发、提交或接受任务。
+关闭面板只关闭视图，后台继续观察；停用插件或退出 Saddle 停止观察与通知。重开恢复数据、建立通知基线，不补弹此前已等待的任务。每个用户的数据只允许一个 Drover 插件进程持有，第二个实例会明确失败，避免重复通知和并行所有者。插件不自动派发、提交、接受或执行检查命令。
 
-默认调用 PATH 中的 `drover` 和 `dlog`，读取 `~/.drover/projects` 项目目录。初始项目选启动目录（如已登记），否则第一项；打开时可跟随当前 agent 所在仓库。没有登记项则尝试启动目录，项目选择页可以输入路径。
+保留 `~/.drover/projects` 登记目录、各项目 `.drover.conf` 的 `HANDOFF_DIR`、`queue.md`、`tasks.state` 和通知偏好。旧事件只解码，不重写或补造接受记录。所有写操作持有任务锁，提交/接受/退回校验运行身份与令牌；Git 分支和检查记录只作参考，不阻挡状态流转。
 
-需要覆盖命令或初始目录时，在打包目录的 `plugin.toml` 顶层（`[view]` 之前）填写：
+需要覆盖命令或初始目录时，在包中 `plugin.toml` 的 `[view]` 之前填写：
 
 ```toml
-args = ["--drover", "~/bin/drover", "--dispatch-log", "dlog", "--cwd", "~/projects/example", "--refresh-ms", "2000"]
+args = ["--corral", "corral", "--dispatch-log", "/absolute/path/to/dlog", "--cwd", "/absolute/project", "--refresh-ms", "2000"]
 ```
 
-旧 Saddle `[queue]` 配置保留可读取，但已不生效。自定义值需转到上述插件参数；不自动启用或登记插件。普通用户使用默认值无需填写参数。
+默认从 PATH 查找 corral/dlog。初始项目选择已登记的启动目录，否则第一项；打开时可跟随当前 agent 仓库。旧 Saddle `[queue]` 配置已不生效，旧 `--drover` 参数移除。重新打包会覆盖包清单，应保留本机自定义 args。
 
-任务页面保留添加/编辑/排序/删除、项目与 All pending、详情、Links/Dispatch，以及显式派发和带确认的提交/接受/退回。`N` 打开通知偏好，选择 System/In Saddle 后 `Ctrl-S` 保存；这仍是 Drover 的用户偏好。首次观察和偏好变化建立基线，不为已经等待的任务补弹通知。失败历史的 `Mark seen m` 在插件任务操作中，本次进程内隐藏该条 Attention，不改变任务历史。
+## 界面操作
 
-Esc 返回当前子页面；列表中 Esc/q 关闭视图。Ctrl-] 总是回到 Agents。关联 agent 通过宿主验证原始 instance 后打开或定位；不会启动新 agent 或覆盖现有终端。
+保留添加/编辑/排序/删除、项目选择、All pending、任务详情、Links/Dispatch。显式派发将所选 Pending 交给配置的 `MAIN_AGENT`；未配置时登记 Running 并提供手动发送文本。没有自动发送下一项。
+
+Running → Submit for review → Awaiting release → Accept → Done。退回 Pending 需要原因和确认工作已停止。各任务的提交不要求其他任务分支合并。删除仅作用于 Pending，保留 Dropped 历史。派发送达与运行登记分开报告，无法确认时不自动重发。
+
+`N` 打开通知偏好，System/In Saddle 互斥，`Ctrl-S` 保存。系统通知由插件内的工作线程调用 macOS osascript；内部通知通过 Saddle 的通用通知接口显示。首次观察和偏好切换只建基线。Esc 返回子页面，列表 Esc/q 关闭视图，Ctrl-] 回 Agents。关联 agent 仍由宿主核实原始 instance 后打开。
+
+## 主控命令
+
+主控通过运行中的 Saddle 转交命令；Saddle 只处理通用插件请求，不解释任务业务。先 `saddle ctl instances` 选择承载 Drover 的实例。调用示例：
+
+```sh
+saddle ctl plugin --instance INSTANCE --plugin drover --method list \
+  --params '{"project":"/absolute/project"}' --request-id UNIQUE_READ_ID
+saddle ctl request UNIQUE_READ_ID --instance INSTANCE
+```
+
+首次返回 `state: plugin_pending`，用同一实例查询到 `complete`，业务结果在 `result`。同一请求 ID 和相同参数只返回原回执，不重复执行；参数变化返回冲突。刷新使用新的请求 ID。不能把首次 accepted 当业务成功。断连/停止/超时是 uncertain/result_unknown，先读取实际状态，不能自动重发。没有运行中的 Saddle 或未启用插件时调用失败。回执沿用宿主每实例最多256条限制，不静默淘汰；容量满时拒绝新命令，旧回执仍可查询。
+
+| method | params（除全局项外均需绝对 project） |
+|---|---|
+| projects | 无，读取登记项目 |
+| register | project、name（小写字母/数字/短横线）、可选 main_agent；创建配置并登记，不派发 |
+| notifications | 无为读取；system_enabled 为保存用户偏好 |
+| list | 可选 pending_offset/history_offset（从0开始）；两组各最多20条摘要，并返回 total/offset、queue_token |
+| show | id；读取完整任务和仓库参考信息 |
+| add | title、可选 body |
+| edit | pos（从1开始）、title、body、读取时的 queue_token |
+| move | pos、to（均从1开始）、queue_token |
+| drop | pos、queue_token |
+| pause / resume | 禁止/允许显式派发；不会自动派发 |
+| dispatch | pos、所选任务 actions.dispatch-pending.target_token |
+| submit | id、所选 Running 的 actions.done.target_token |
+| accept | id、所选 Awaiting 的 actions.go.target_token |
+| return | id、actions.return-to-pending.target_token、reason、work_stopped:true |
+
+命令参数/结果最多48 KiB；列表只给摘要，正文按 show 获取。过大的单任务结果明确返回 result_too_large，任务数据不会被截断或改写。令牌过期要重新读取并确认；禁止默默替换令牌重试。初次切换后应重新读取令牌。
+
+## 从独立 Drover 切换
+
+先备份原程序入口、launchd 配置、Saddle 配置和任务数据，完成新旧投影只读对比。然后停用指定的 `dev.drover.loop`，移走其自启动入口及旧 drover/drover-board 命令链接，更新 Saddle 和插件包，登记启用插件，重启 Saddle。不要同时保留两个观察/写入入口。旧仓库与数据保留；回退须先停用新插件，再恢复旧程序与服务。切换本身不派发、提交或接受真实任务。
