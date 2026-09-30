@@ -1,10 +1,14 @@
 # 会话交接
 
-更新：2026-09-30。**Drover 已完整替换为一个 Saddle 插件**，包括任务核心、数据读写、界面、状态流转、内部/系统通知。旧 CLI 和 launchd watch 已退役。主控亲自完成，没有委派、没有操作其他 agent。
+更新：2026-10-01。**Drover 已完整替换为一个 Saddle 插件**，包括任务核心、数据读写、界面、状态流转、内部/系统通知。旧 CLI 和 launchd watch 已退役。主控亲自完成，没有委派、没有操作其他 agent。
 
 ## 当前状态
 
-- 最新交付：实现 `510d907`，`Split → 方向 → Plugin…` 可在分屏打开插件，标签条 `+ → Plugin…` 在新 tab 打开；已有视图显示 Move，移动原窗格且保持单进程和状态。已合并推送、更新日常宿主、清理 `plugin-split` 分支/worktree。用户重启 Saddle 后观察，不需要重新安装插件。记录见 `docs/任务/插件在分屏中打开.md`，Dispatch `ab988a2e99c24f2d8421cddb8bb5233e`。主控亲自做，未改变真实队列/配置/插件包，也未重启用户窗口。
+- 最新交付：实时只读 **Diff 插件**，实现 `7eb8c7d`，收尾 `c7c0b74`。主控亲自实现；已合并推送并清理 `diff-plugin` 分支/worktree，没有创建或操作其他 agent。打开即连续展示来源 worktree 全部改动，自动刷新；文件列表只用于跳转，支持现有居中/tab/split。任务与审查 `docs/任务/实时Diff插件.md`，Dispatch `ec99fea90a2248bfa0ff7ac31bae5ad3`。
+- Diff 包已放在 `/Users/firegnu/Developer/personal_projs/saddle/plugins/diff/dist/diff-plugin`，SHA-256 `21db815d69db57be88b12fe2c16187aeb69e6b307681586d88abbd1737326f9f`。**尚未登记/启用**，用户在 Settings → Plugins → Add local 添加这个目录并启用，从 Plugins 选 Diff；无需重启 Saddle。日常宿主二进制仍为下述插件分屏版，真实配置、队列和服务未动。
+- Diff 验证：标准 **353 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；真实打包插件与隔离 Saddle 的连续多文件、自动刷新、点击定位、居中/split/tab 移动和模式切换额外1项通过。日志 `/tmp/saddle-diff-all-complete.log`、`/tmp/saddle-diff-clippy-complete.log`、`/tmp/saddle-diff-host-final.log`。用户窗口的实际观察尚待添加插件后确认。
+
+- 此前交付：实现 `510d907`，`Split → 方向 → Plugin…` 可在分屏打开插件，标签条 `+ → Plugin…` 在新 tab 打开；已有视图显示 Move，移动原窗格且保持单进程和状态。已合并推送、更新日常宿主、清理 `plugin-split` 分支/worktree。用户重启 Saddle 后观察，不需要重新安装插件。记录见 `docs/任务/插件在分屏中打开.md`，Dispatch `ab988a2e99c24f2d8421cddb8bb5233e`。主控亲自做，未改变真实队列/配置/插件包，也未重启用户窗口。
 - 此前入口整理：实现 `460935d`，Plugins移到Agents标题右侧，与下一行Settings右对齐；左侧只保留Agents/Attention。窄窗口放不下时右侧换行。记录见 `docs/任务/Plugins入口右对齐.md`；Dispatch `8b9c4cebd9da493eae61b3018c0509f1`。
 - 插件居中：实现 `1b8af30`，插件弹层按全窗口宽高80%居中，保留调暗背景，用主题灰色细线外框；用户已反馈可以。记录见 `docs/任务/插件全窗口居中与灰色外框.md`，Dispatch `3781a843710a41c687a641acfde2dce7`。
 - 此前单层外框：实现 `0618693`，Drover不再画整页框，临时运行提示移到底部；用户已确认更安静。此次全窗口居中替代了上一轮隐藏整个右侧工作区的做法。记录见 `docs/任务/插件单层外框整理.md`，Dispatch `ab034c84cd5740c7a364161fde44119b`。
