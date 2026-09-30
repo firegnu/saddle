@@ -4,9 +4,10 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, 
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     widgets::{Clear, Paragraph, Wrap},
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Item {
@@ -38,10 +39,7 @@ impl Item {
         }
     }
     pub fn explanation(&self) -> String {
-        if !self.note.is_empty() && self.state != "Running" {
-            return self.note.clone();
-        }
-        match self.state.as_str() {
+        let guidance: String = match self.state.as_str() {
             "Running" if !self.has_view => "Background-only plugin; no view to open.".into(),
             "Running" => String::new(),
             "Starting" => "Waiting for plugin startup.".into(),
@@ -51,7 +49,13 @@ impl Item {
             "Unresponsive" => {
                 "Plugin is not responding. Open Manage plugins to restart or disable.".into()
             }
+            "Failed" => "Open Manage plugins to restart or disable.".into(),
             _ => "Plugin unavailable. Open Manage plugins for details.".into(),
+        };
+        if !self.note.is_empty() && self.state != "Running" {
+            format!("{guidance}\n{}", self.note)
+        } else {
+            guidance
         }
     }
 }
@@ -273,7 +277,11 @@ impl Palette {
         Outcome::Stay
     }
     pub fn draw(&mut self, frame: &mut Frame, theme: &Theme) {
-        let area = crate::theme::centered(frame.area(), 72, 18);
+        let rows: Vec<_> = self.matches().into_iter().cloned().collect();
+        let explanation = self.selected().map(|i| i.explanation()).unwrap_or_default();
+        let height =
+            6 + rows.len().clamp(1, 12) as u16 + if explanation.is_empty() { 0 } else { 3 };
+        let area = crate::theme::centered(frame.area(), 72, height);
         self.hits.clear();
         self.activation_changed = false;
         frame.render_widget(Clear, area);
@@ -291,7 +299,6 @@ impl Palette {
         self.field = Rect::new(inside.x, inside.y, inside.width, inside.height.min(1));
         self.input
             .draw(frame, self.field, self.focus == 0, "Search plugins", theme);
-        let explanation = self.selected().map(|i| i.explanation()).unwrap_or_default();
         let detail_rows = if explanation.is_empty() {
             0
         } else {
@@ -305,7 +312,6 @@ impl Palette {
             inside.height.saturating_sub(2 + footer_rows + detail_rows),
         )
         .intersection(inside);
-        let rows: Vec<_> = self.matches().into_iter().cloned().collect();
         if let Some(at) = rows
             .iter()
             .position(|i| Some(&i.id) == self.selected.as_ref())
@@ -314,6 +320,20 @@ impl Palette {
                 .top
                 .min(at)
                 .max((at + 1).saturating_sub(self.list.height as usize));
+        }
+        if inside.height > 1 {
+            let end = (self.top + self.list.height as usize).min(rows.len());
+            let position = if rows.is_empty() {
+                "0 / 0".to_owned()
+            } else {
+                format!("{}–{} / {}", (self.top + 1).min(end), end, rows.len())
+            };
+            frame.render_widget(
+                Paragraph::new(position)
+                    .alignment(ratatui::layout::Alignment::Right)
+                    .style(theme.base().fg(theme.muted)),
+                Rect::new(inside.x, inside.y + 1, inside.width, 1),
+            );
         }
         if rows.is_empty() {
             frame.render_widget(
@@ -338,24 +358,25 @@ impl Palette {
         {
             let rect = Rect::new(self.list.x, self.list.y + n as u16, self.list.width, 1);
             let selected = Some(&item.id) == self.selected.as_ref();
-            let style = theme.base().bg(if selected {
-                theme.selected
-            } else {
-                theme.overlay
-            });
+            let style = theme.base().bg(theme.overlay);
             frame.render_widget(
                 Paragraph::new(" ".repeat(rect.width as usize)).style(style),
                 rect,
             );
             let action_width = if rect.width >= 30 { 7 } else { 0 };
-            let status_width = 15.min(rect.width.saturating_sub(action_width + 4));
-            let name_width = rect.width.saturating_sub(action_width + status_width);
+            let gap = u16::from(rect.width > 0);
+            let status_width = 12.min(rect.width.saturating_sub(action_width + 6));
+            let name_width = rect.width.saturating_sub(action_width + status_width + gap);
             let title = format!("{} {}", if selected { "›" } else { " " }, item.title);
             frame.render_widget(
-                Paragraph::new(crate::ui::clip(&title, name_width as usize)).style(style),
+                Paragraph::new(crate::ui::clip(&title, name_width as usize)).style(if selected {
+                    style.add_modifier(Modifier::BOLD)
+                } else {
+                    style
+                }),
                 Rect::new(rect.x, rect.y, name_width, 1),
             );
-            let status = Rect::new(rect.x + name_width, rect.y, status_width, 1);
+            let status = Rect::new(rect.x + name_width + gap, rect.y, status_width, 1);
             frame.render_widget(
                 Paragraph::new(item.status()).style(style.fg(
                     if matches!(
@@ -430,18 +451,27 @@ impl Palette {
         }
         if footer_rows == 2 {
             let action = match self.focus {
-                1 => "Manage",
-                2 => "Close",
-                _ => self
-                    .selected()
-                    .and_then(|item| self.action(item))
-                    .unwrap_or("Unavailable"),
+                1 => Some("Manage"),
+                2 => Some("Close"),
+                _ => self.selected().and_then(|item| self.action(item)),
             };
+            let hints = if let Some(action) = action {
+                vec![
+                    format!("↑↓ Select · Enter {action} · Tab Controls · Esc Close"),
+                    format!("↑↓ · Enter {action} · Esc"),
+                    "Tab · Esc".into(),
+                ]
+            } else {
+                vec![
+                    "↑↓ Select · Tab Controls · Esc Close".into(),
+                    "↑↓ · Tab Controls · Esc".into(),
+                    "Tab · Esc".into(),
+                ]
+            };
+            let hint = hints.iter().find(|h| h.width() <= inside.width as usize);
             frame.render_widget(
-                Paragraph::new(format!(
-                    "↑↓ Select · Enter {action} · Tab Controls · Esc Close"
-                ))
-                .style(Style::default().fg(theme.muted)),
+                Paragraph::new(hint.map(String::as_str).unwrap_or("Esc"))
+                    .style(Style::default().fg(theme.muted)),
                 Rect::new(inside.x, inside.bottom() - 1, inside.width, 1),
             );
         }

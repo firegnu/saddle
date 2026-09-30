@@ -1050,3 +1050,97 @@ for line in sys.stdin:
     next.stop();
     assert!(next.wait_for("Disabled", Duration::from_secs(3)));
 }
+
+#[test]
+fn palette_readability_compact_layout_and_scroll_position() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use saddle::plugins::palette::{Item, Palette};
+    let item = |n| Item {
+        id: format!("p.{n}"),
+        title: format!("Plugin {n:02}"),
+        state: "Running".into(),
+        note: String::new(),
+        has_view: true,
+        opened: false,
+        pid: None,
+    };
+    let mut p = Palette::default();
+    let draw = |p: &mut Palette, width| {
+        let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 24)).unwrap();
+        t.draw(|f| p.draw(f, &Default::default())).unwrap();
+        let b = t.backend().buffer().clone();
+        let rows: Vec<String> = (0..24)
+            .map(|y| (0..width).map(|x| b[(x, y)].symbol()).collect())
+            .collect();
+        (b, rows)
+    };
+    p.update((0..20).map(item).collect());
+    let (_, rows) = draw(&mut p, 72);
+    assert!(
+        rows.iter().any(|r| r.contains("1–12 / 20")),
+        "{}",
+        rows.join("\n")
+    );
+    for _ in 0..19 {
+        p.event(&Event::Key(KeyEvent::new(
+            KeyCode::Down,
+            KeyModifiers::NONE,
+        )));
+    }
+    let (_, rows) = draw(&mut p, 72);
+    assert!(rows.iter().any(|r| r.contains("9–20 / 20")));
+    assert_eq!(p.selected_id(), Some("p.19"));
+    let mut p = Palette::default();
+    p.update((0..4).map(item).collect());
+    let (b, rows) = draw(&mut p, 28);
+    let row = rows.iter().position(|r| r.contains("Plugin 00")).unwrap();
+    let name_end = rows[row].find("Plugin 00").unwrap() + "Plugin 00".len();
+    assert!(
+        rows[row].find("Background").unwrap() > name_end,
+        "{}",
+        rows[row]
+    );
+    assert_eq!(b[(1, row as u16)].bg, saddle::theme::OVERLAY);
+    assert!(
+        rows.iter()
+            .any(|r| r.contains("Enter Open") && r.contains("Esc"))
+    );
+    let first = rows.iter().position(|r| r.contains("┏")).unwrap();
+    let last = rows.iter().position(|r| r.contains("┗")).unwrap();
+    assert!(last - first < 12, "palette should fit its four entries");
+}
+
+#[test]
+fn palette_failure_guidance_preserves_cause_and_disabled_action() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use saddle::plugins::palette::{Item, Outcome, Palette};
+    let failed = Item {
+        id: "broken".into(),
+        title: "Broken".into(),
+        state: "Failed".into(),
+        note: "output queue full".into(),
+        has_view: true,
+        opened: false,
+        pid: None,
+    };
+    assert!(failed.explanation().contains("output queue full"));
+    assert!(failed.explanation().contains("Manage plugins"));
+    assert!(failed.action().is_none());
+    let mut p = Palette::default();
+    p.update(vec![failed]);
+    let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(72, 24)).unwrap();
+    t.draw(|f| p.draw(f, &Default::default())).unwrap();
+    let b = t.backend().buffer();
+    let text: String = (0..24)
+        .flat_map(|y| (0..72).map(move |x| b[(x, y)].symbol()))
+        .collect();
+    assert!(!text.contains("Enter Unavailable"));
+    assert!(text.contains("Tab Controls"));
+    assert_eq!(
+        p.event(&Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE
+        ))),
+        Outcome::Stay
+    );
+}

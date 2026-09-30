@@ -532,7 +532,7 @@ impl Settings {
         } else if self.page == Page::Colors {
             34
         } else if self.page == Page::General {
-            18
+            12
         } else {
             16
         };
@@ -747,7 +747,8 @@ impl Settings {
         } else {
             ""
         };
-        let width = room.saturating_sub(note.width()).min(40) as u16;
+        let max_width = if self.page == Page::General { 8 } else { 40 };
+        let width = room.saturating_sub(note.width()).min(max_width) as u16;
         let height = usize::from(area.height);
         let at = rows
             .iter()

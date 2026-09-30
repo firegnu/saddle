@@ -1000,13 +1000,18 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
                 Style::default().fg(t.agents_dim),
             )]));
             // R6: instance, connections and source.
-            let dimmer = Style::default().fg(t.agents_dimmer);
+            let metadata_color = if selected {
+                t.agents_text
+            } else {
+                t.agents_dim
+            };
+            let metadata = Style::default().fg(metadata_color);
             let mut identity = Vec::new();
             // Narrow panels keep only marks; a type without one is named here instead.
             if brand_width < 8 && a.kind.as_deref().is_some_and(|kind| brand == kind) {
                 identity.push(Span::styled(
                     format!("{} · ", a.kind.as_deref().unwrap_or("—")),
-                    dimmer,
+                    metadata,
                 ));
             }
             identity.extend([
@@ -1020,19 +1025,19 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
                             .take(6)
                             .collect::<String>()
                     ),
-                    dimmer,
+                    metadata,
                 ),
                 Span::styled(
                     format!("ATT {}", a.attached),
                     Style::default().fg(if a.attached > 0 {
                         t.agents_green
                     } else {
-                        t.agents_dimmer
+                        metadata_color
                     }),
                 ),
                 Span::styled(
                     format!(" · VIA {}", a.last_input_source.as_deref().unwrap_or("—")),
-                    dimmer,
+                    metadata,
                 ),
             ]);
             lines.push(indent(identity));

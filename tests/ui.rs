@@ -1280,7 +1280,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
     use saddle::theme as t;
     assert_label_color(&buffer, "⦿ 11s", t::AGENTS_GREEN);
     assert_label_color(&buffer, "ATT 1", t::AGENTS_GREEN);
-    assert_label_color(&buffer, "ATT 0", t::AGENTS_DIMMER);
+    assert_label_color(&buffer, "ATT 0", t::AGENTS_DIM);
     assert_label_color(&buffer, "↑3", t::AGENTS_YELLOW);
     // Group heading: accent name, faint line, dim count.
     assert_eq!(buffer[(2, 4)].fg, t::AGENTS_ACCENT);
