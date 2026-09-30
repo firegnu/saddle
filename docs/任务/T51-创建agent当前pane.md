@@ -65,3 +65,13 @@ RED／GREEN／回归：
 未验证边界：
 - 未在真实终端和真实 corral 下手测；只用假公开 CLI 与临时 HOME 的自动化测试验证。
 - 发起窗格是已接入 agent（非 shell）时选 Current，会沿用 Agents New 选 Current 的既有替换行为（断开显示、不停止 agent），本轮未另加集成测试。
+
+## 主控审查（2026-09-30）
+
+结论：实现 3081ce2 可以合并。差异仅移除位置选择被 anchor 禁用的条件及失去用途的静态文案，沿用原选择器；anchor、提交目标校验、草稿恢复与 shell 替换确认未改。目标流程检查通过，验证 + Tab 创建改选 Current 后仍在原 pane，tab 数不变且不调用 agent stop。
+
+取舍：同意不追加入口来源文案，选择器已有当前位置说明；保留既有 agent 显示替换语义；不扩大 T29，不增加额外真实 agent 测试。真实终端手动验收仍待用户重新打开新版 Saddle。
+
+主控标准检查一次：cargo test --all-targets 为 294 passed、1 failed、3 ignored，T51 检查通过。失败 t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell 于 tests/workflow.rs:3153 读取已有 close confirmation 字段时 unwrap(None)；该处不在本次 diff 内，也未在本例修改 Open in。按预算单独复跑一次通过（1.23 秒），未确认该偶发失败根因，不把全套写成全绿。实现者原始两条 workflow 失败及单独复跑通过保留。cargo clippy --all-targets -- -D warnings 与 git diff --check main...t51-current-pane 通过。全部使用隔离输入与共享编译目录。
+
+本次日志：/tmp/saddle-t51-controller-tests.log、/tmp/saddle-t51-controller-rerun.log、/tmp/saddle-t51-controller-clippy.log。没有证据表明原有失败由这次选择器改动引入；本轮接受目标检查及相关回归结果，不宣称 T29 修复。
