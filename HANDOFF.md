@@ -1,15 +1,16 @@
 # 会话交接
 
-更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构；插件系统及首个 demo 设计草案已由主控独立落文档，未实现。
+更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo，合入 main，未切换用户运行中的 release。
 
 ## 当前状态
 
-- 最新工作（65924c8，合并8ded529）：用户同意继续，主控亲自完成 `docs/插件协议.md` 和 `docs/插件Demo设计.md` 的具体线框，更新 DESIGN §62。选按行样式片段完整帧，固定宽度 profile 与初始预算；合成 JSON 字节测量、文档链接/锚点/JSON/空白检查通过。只做设计与数据编码比较，未实现/编译/运行插件或重启 Saddle；分支/worktree 已清理。等待用户确认具体 UI 后再实施。
-
-- 最新设计审阅：原 Claude 按用户要求只读审阅 28c8d1c，提出3项必须改、6项建议。主控已亲自修订全部必须项、采纳5项建议并部分采纳1项；记录 `docs/任务/插件系统设计-审阅处理.md`。结构不变，尚未实现或由 Claude 复审。修订分支/worktree 已清理。
-
-- 最新工作：用户确认独立进程＋版本化协议＋Rust SDK，并要求接下来主控自己做、不再委派。已写 `docs/插件系统设计.md`、`docs/插件Demo设计.md`，更新 `docs/DESIGN.md` §62；设计提交 83c0350。只是草案，不表示插件系统、SDK、管理入口或 demo 已实现。
-- 文档检查：diff 空白检查通过；TOML/JSON 示例可解析、本地链接有效、代码围栏配对。未运行功能测试、编译、重启、安装，不改真实任务/通知服务。设计分支/worktree 已正常合并清理，无新增 agent。
+- 最新交付：插件实现 5191a78，demo 固定公开 SDK revision 与审查记录 13f2e47，合并 d05f7a4，空提交收尾 5977f49。分支 plugin-demo 与独立基线 worktree 均已清理，没有创建/关闭/发送任何 agent；主控遵照用户要求自己做。
+- 已有功能：Settings → Plugins F5；登记本地目录（默认停用）、启停/重启/移除、新 tab 面板、结构化输入、内部通知；插件进程独立 session/无 PTY，SDK 处理 stdio；layout v2 保留旧备份，ctl inspect 支持 plugin。
+- SDK 在 crates/plugin-protocol、crates/plugin-sdk；独立 demo 在 examples/counter-plugin，只依赖 Git revision 5191a782bb7671390c124485258d83e434104560 的公开 SDK，有自己的 Cargo.lock。复制到 /tmp/saddle-plugin-external.h9LoWT/counter 独立构建并用其产物验证通过；没有将该目录登记到真实 Saddle。
+- 验证：最终标准套件 305 passed / 1 failed / 6 ignored；失败为既有 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，在未修改基线2bfe1c4同一步再次复现。Clippy通过。两项本轮需外部构建的 ignored 检查已显式运行通过（SDK stdio probe、实际 Saddle PTY demo）。另新增极小管理页窗口检查单独通过。详情见 docs/任务/插件首个Demo实现.md，不写全绿。
+- 隔离 PTY 覆盖添加/启用/打开、Enter/鼠标、通知、Shift+Enter、关闭重开保留、重启归零、停用；假 Corral/Drover、临时 HOME/config/state/runtime。进程故障回收、宽字符和旧布局等检查通过。
+- 合并后重建了共享 target/debug/saddle，避免最后一次基线编译留下旧开发二进制。**没有构建 release、安装真实插件、修改用户配置/队列/服务或重启用户 Saddle**；当前 release 仍是前次联合发布。首次实机切换是后续步骤。
+- 设计记录：docs/DESIGN.md §62、docs/插件系统设计.md、docs/插件协议.md、docs/插件Demo设计.md。侧栏/状态栏等挂载位置以后按实际需求补充，当前支持右侧工作区面板；Drover 第二阶段尚未实施。
 
 - Saddle main 已合并：2a6862c；主控审查 c97270a；空提交收尾 c939fd1。本交接与发布记录随最终文档提交推送，确切 SHA 见 git log 和 Dispatch 05458465051541c4a9c2cc908dc9fe3e 收尾 note。无遗留本轮实现改动。
 - Drover main 已发布 e0d8118（合并 b02f142，收尾16ef806），origin/main 已核对一致。Drover 无关未跟踪 T27 文档保留。
@@ -36,7 +37,7 @@
 
 T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计不操作队列，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
 
-插件工作的下一步：请用户确认 Demo 文档中的管理入口、添加目录和面板线框，随后由主控亲自实现最小宿主＋公开 Rust SDK＋独立 demo。协议字段、Unicode 宽度约定与运行预算已收敛成实施基线，但尚无运行验证，不是稳定协议发布。Demo 先验证插件通路，Drover 为第二个插件；未迁移前不声称 Saddle 已无 Drover 依赖。不自行安装或发布插件。
+插件工作的下一步：向用户交付首个 demo 的实现及验证情况；后续实机切换、登记 demo 与观察体验单独进行，不能把源码合入当作已经切换。当前是已验证的开发协议，不是稳定1.0或多插件长稳性能承诺。Demo 通路已验证，Drover 为第二个插件；先讨论迁移清单和必要挂载位置，未授权前不迁移或重写 Drover。T29既有picker失败保留，不自动开启新任务。
 
 本轮后续由主控亲自做，不再委派。已有讨论/审阅 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle、attached=1）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
 
@@ -49,3 +50,5 @@ Dispatch：Drover 0ec134ce246c420aabb6654254ddcf97；Saddle 05458465051541c4a9c2
 T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任务/T58-任务流转文档测试.md。
 
 插件讨论与设计记录：Dispatch 7c3ecbc86ee14ec8bf887e78a55ef9d1。两轮讨论与首次文档审阅已结束；审阅回复 at=1790753355.926681 已处理。旧回调不重复处理或自动委派，需求与决定以 §62 及最新用户指示为准。
+
+插件实现记录：Dispatch d2cd3a7e030b4a619cc707241f33aedd，仅记录主控实施和审查，无代理派发、无队列变更。测试日志 /tmp/saddle-plugin-demo-final-tests.log，基线 /tmp/saddle-plugin-baseline-t20-repeat.log，审查说明 docs/任务/插件首个Demo实现.md。
