@@ -511,3 +511,221 @@ fn overlay_resize_rejects_the_previously_displayed_frame() {
     ));
     manager.disable("test.entry").unwrap();
 }
+
+fn attention_peer() -> (tempfile::TempDir, Manifest) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("peer");
+    std::fs::write(&path, include_str!("fixtures/attention.py")).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let m = Manifest {
+        manifest_version: 1,
+        id: "test.attention".into(),
+        name: "Attention demo".into(),
+        version: "1".into(),
+        protocol_major: 1,
+        executable: "peer".into(),
+        args: vec![],
+        required_capabilities: vec![
+            "panel.v1".into(),
+            "ui.entry.v1".into(),
+            "attention.v1".into(),
+        ],
+        view: Some(saddle_plugin_protocol::ViewDeclaration {
+            id: "main".into(),
+            placement: saddle_plugin_protocol::Placement::Workspace,
+        }),
+        action: Some(saddle_plugin_protocol::OpenAction {
+            id: "open".into(),
+            title: "Attention demo".into(),
+            view: "main".into(),
+        }),
+        entry: Some("open".into()),
+    };
+    std::fs::write(dir.path().join("plugin.toml"), toml::to_string(&m).unwrap()).unwrap();
+    (dir, m)
+}
+fn wait_until(mut check: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !check() {
+        assert!(start.elapsed() < Duration::from_secs(4), "timed out");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+#[test]
+fn attention_capability_accepts_a_snapshot_without_sending_a_notification() {
+    let (dir, m) = attention_peer();
+    assert!(
+        Manifest::read(dir.path()).is_ok(),
+        "attention.v1 must be supported"
+    );
+    let r = Runtime::start(dir.path(), m);
+    wait_until(|| dir.path().join("response.json").exists());
+    let response: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("response.json")).unwrap()).unwrap();
+    assert_eq!(response["result"]["status"], "accepted");
+    r.stop();
+}
+
+#[test]
+fn attention_replacement_is_atomic_bounded_and_rejects_stale_targets() {
+    use saddle_plugin_protocol::Message;
+    use serde_json::json;
+    let (dir, m) = attention_peer();
+    let notices = saddle::plugins::runtime::Notices::default();
+    let r = Runtime::with_notices(dir.path(), m, notices.clone());
+    wait_until(|| r.snapshot().attention.is_some());
+    let old = r.snapshot();
+    assert!(notices.lock().unwrap().items.is_empty());
+    assert!(r.open_attention(old.session, 1, "one"));
+    wait_until(|| dir.path().join("opened.json").exists());
+    let opened: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("opened.json")).unwrap()).unwrap();
+    assert_eq!(opened["target"], json!({"document":"one"}));
+    let valid = json!({"items":[{"id":"two","title":"Changed","note":"","action":"open","target":{"document":"two"}}]});
+    let mut duplicate = valid.clone();
+    duplicate["items"]
+        .as_array_mut()
+        .unwrap()
+        .push(valid["items"][0].clone());
+    let mut bad_action = valid.clone();
+    bad_action["items"][0]["action"] = json!("missing");
+    let mut huge = valid.clone();
+    huge["items"][0]["target"] = json!("x".repeat(4097));
+    let mut control = valid.clone();
+    control["items"][0]["note"] = json!("oops\n");
+    let mut id = 2;
+    for bad in [duplicate, bad_action, huge, control] {
+        r.send(Message::event(
+            "test.replace",
+            json!({"id":id,"snapshot":bad}),
+        ));
+        wait_until(|| {
+            std::fs::read(dir.path().join("response.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+                .is_some_and(|v| v["id"] == id && v["error"]["code"] == "invalid_attention")
+        });
+        assert_eq!(
+            r.snapshot().attention.unwrap().0,
+            1,
+            "invalid update must preserve previous snapshot"
+        );
+        id += 1;
+    }
+    r.send(Message::event(
+        "test.replace",
+        json!({"id":id,"snapshot":valid}),
+    ));
+    wait_until(|| r.snapshot().attention.is_some_and(|(r, _)| r == 2));
+    assert!(!r.open_attention(old.session, 1, "one"));
+    assert!(!r.open_attention(old.session + 1000, 2, "two"));
+    assert!(r.open_attention(old.session, 2, "two"));
+    r.send(Message::event(
+        "test.replace",
+        json!({"id":id+1,"snapshot":{"items":[]}}),
+    ));
+    wait_until(|| {
+        r.snapshot()
+            .attention
+            .is_some_and(|(r, s)| r == 3 && s.items.is_empty())
+    });
+    assert!(!r.open_attention(old.session, 2, "two"));
+    r.stop();
+}
+
+#[test]
+fn attention_sources_are_isolated_and_lifecycle_invalidates_open() {
+    use saddle::attention::{Kind, Target};
+    let (dir, m) = attention_peer();
+    let (other, mut n) = attention_peer();
+    n.id = "test.other".into();
+    std::fs::write(
+        other.path().join("peer"),
+        include_str!("fixtures/attention.py").replace("test.attention", "test.other"),
+    )
+    .unwrap();
+    std::fs::write(
+        other.path().join("plugin.toml"),
+        toml::to_string(&n).unwrap(),
+    )
+    .unwrap();
+    let mut manager = saddle::plugins::Manager::open(dir.path().join("plugins.toml"));
+    for (path, manifest) in [(dir.path(), &m), (other.path(), &n)] {
+        manager.add(path, manifest).unwrap();
+        manager.enable(&manifest.id).unwrap();
+    }
+    wait_until(|| {
+        manager
+            .attention_items()
+            .iter()
+            .filter(|i| i.kind == Kind::Plugin)
+            .count()
+            == 2
+    });
+    let target = manager
+        .attention_items()
+        .into_iter()
+        .find(|i| matches!(&i.target, Target::Plugin {plugin, ..} if plugin == &m.id))
+        .unwrap()
+        .target;
+    assert!(manager.open_attention(&target));
+    manager.restart(&m.id).unwrap();
+    assert!(!manager.open_attention(&target));
+    assert_eq!(
+        manager
+            .attention_items()
+            .iter()
+            .filter(|i| i.kind == Kind::Unavailable)
+            .count(),
+        1
+    );
+    wait_until(|| {
+        manager.tick();
+        manager
+            .attention_items()
+            .iter()
+            .filter(|i| i.kind == Kind::Plugin)
+            .count()
+            == 2
+    });
+    assert!(
+        !manager.open_attention(&target),
+        "old session must not become valid after restart"
+    );
+    let pid = manager.snapshot(&m.id).unwrap().pid.unwrap();
+    // This is our isolated test child, never a real agent.
+    assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGKILL) }, 0);
+    wait_until(|| manager.state(&m.id) == "Failed");
+    assert!(
+        manager
+            .attention_items()
+            .iter()
+            .any(|i| i.kind == Kind::Unavailable && matches!(i.target, Target::Source(_)))
+    );
+    manager.disable(&m.id).unwrap();
+    assert_eq!(manager.attention_items().len(), 1);
+    assert!(
+        matches!(&manager.attention_items()[0].target, Target::Plugin {plugin, ..} if plugin == &n.id)
+    );
+    wait_until(|| manager.stopped(&m.id));
+    manager.remove(&m.id).unwrap();
+    assert_eq!(manager.attention_items().len(), 1);
+    manager.disable(&n.id).unwrap();
+    assert!(manager.attention_items().is_empty());
+    assert!(!manager.open_attention(&target));
+}
+
+#[test]
+fn attention_requests_require_the_declared_capability() {
+    let (dir, mut m) = attention_peer();
+    m.required_capabilities.retain(|c| c != "attention.v1");
+    std::fs::write(dir.path().join("plugin.toml"), toml::to_string(&m).unwrap()).unwrap();
+    let r = Runtime::start(dir.path(), m);
+    wait_until(|| dir.path().join("response.json").exists());
+    let response: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("response.json")).unwrap()).unwrap();
+    assert_eq!(response["error"]["code"], "unsupported");
+    assert!(r.snapshot().attention.is_none());
+    r.stop();
+}

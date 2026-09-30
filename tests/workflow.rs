@@ -5373,3 +5373,75 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
         before.matches("input ").count()
     );
 }
+
+/// Uses the real SDK demo; no real Corral/Drover state and no notification service.
+#[test]
+#[ignore = "build examples/attention-plugin and set SADDLE_TEST_ATTENTION_PLUGIN"]
+fn plugin_real_attention_updates_withdraws_and_opens_the_selected_target() {
+    fn settle(h: &mut Harness) {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(300) {
+            h.pump();
+        }
+    }
+    let binary = std::env::var("SADDLE_TEST_ATTENTION_PLUGIN").expect("demo binary required");
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |dir| {
+            let plugin = dir.join("attention-demo");
+            std::fs::create_dir_all(plugin.join("bin")).unwrap();
+            std::fs::copy(&binary, plugin.join("bin/saddle-attention-demo")).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                include_str!("../examples/attention-plugin/plugin.toml"),
+            )
+            .unwrap();
+            std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"demo.attention\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
+        },
+    );
+    h.see("Plugins");
+    let original = h.ctl(&["inspect"])["tabs"].clone();
+    h.send(b"a");
+    h.see("Demo item 2");
+    settle(&mut h);
+    h.click("Demo item 2");
+    h.see("Opened: sample-2");
+    h.see("Snapshot: accepted");
+    settle(&mut h);
+    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
+    h.send(b"u");
+    h.see("Revision: 2");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"a");
+    h.see("Synthetic revision 2");
+    settle(&mut h);
+    h.click("Demo item 1");
+    h.see("Opened: sample-1");
+    settle(&mut h);
+    h.send(b"w");
+    h.see("Items: 0");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"a");
+    h.see("Nothing needs attention.");
+    h.send(b"\x1b");
+    h.click("Plugins");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("Items: 0"); // Same running process, no duplicate source or implicit restart.
+    settle(&mut h); // A cached picture can precede the reopened view's interactive frame.
+    h.send(b"u");
+    h.see("Items: 2");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"a");
+    h.see("Synthetic revision 3");
+    h.send(b"\x1b");
+    h.quit();
+    assert!(!h.log("queue-events").contains("\"go\""));
+    assert!(!h.log("queue-events").contains("\"done\""));
+}

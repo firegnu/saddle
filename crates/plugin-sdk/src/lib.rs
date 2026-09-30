@@ -158,12 +158,15 @@ pub enum Event {
     Focus(bool),
     Closed,
     Notification { id: u64, status: String },
+    AttentionOpen(protocol::AttentionOpen),
+    AttentionPublished { id: u64, status: String },
 }
 pub struct Context {
     requests: Vec<(u64, String)>,
     next: u64,
     dirty: bool,
     reserved_keys: Vec<String>,
+    attention: Option<(u64, protocol::AttentionSnapshot)>,
 }
 impl Context {
     /// Keys owned by the host for this view; these never become plugin input.
@@ -173,6 +176,15 @@ impl Context {
 
     pub fn redraw(&mut self) {
         self.dirty = true;
+    }
+
+    /// Replace this plugin's current Attention items. Empty explicitly withdraws them.
+    pub fn attention(&mut self, items: Vec<protocol::AttentionItem>) -> Result<u64> {
+        let snapshot = protocol::AttentionSnapshot { items };
+        snapshot.validate()?;
+        self.next += 1;
+        self.attention = Some((self.next, snapshot));
+        Ok(self.next)
     }
 
     pub fn notify(&mut self, text: impl Into<String>) -> Result<u64> {
@@ -216,11 +228,13 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
         next: 0,
         dirty: false,
         reserved_keys: Vec::new(),
+        attention: None,
     };
     let mut ready = false;
     let mut highest = 0;
     let mut request_id = 0;
     let mut pending = std::collections::BTreeMap::new();
+    let mut attention_pending: Option<(u64, u64, std::time::Instant)> = None;
     let mut size = None;
     let mut frame_id = 0;
     let mut focused = false;
@@ -279,7 +293,18 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 }
                 Message::Response { id, result, error } => {
                     ensure!(id <= request_id, "unknown response");
-                    if let Some((notification, _)) = pending.remove(&id) {
+                    if attention_pending.is_some_and(|(request, _, _)| request == id) {
+                        let (_, published, _) = attention_pending.take().unwrap();
+                        plugin.event(
+                            Event::AttentionPublished {
+                                id: published,
+                                status: result
+                                    .and_then(|v| v["status"].as_str().map(str::to_owned))
+                                    .unwrap_or_else(|| error.map_or("unknown".into(), |e| e.code)),
+                            },
+                            &mut context,
+                        )?;
+                    } else if let Some((notification, _)) = pending.remove(&id) {
                         plugin.event(
                             Event::Notification {
                                 id: notification,
@@ -294,6 +319,13 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 Message::Event { name, data } => {
                     ensure!(ready, "event before handshake");
                     match name.as_str() {
+                        "attention.open" => {
+                            plugin.event(
+                                Event::AttentionOpen(serde_json::from_value(data)?),
+                                &mut context,
+                            )?;
+                            redraw = true;
+                        }
                         "panel.open" | "panel.resize" => {
                             if let Some(keys) = data["reserved_keys"].as_array() {
                                 context.reserved_keys = keys
@@ -364,6 +396,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                         next: context.next,
                         dirty: false,
                         reserved_keys: context.reserved_keys.clone(),
+                        attention: None,
                     },
                 )?;
                 continue;
@@ -375,6 +408,28 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 "notify",
                 json!({"notification_id":id,"text":text,"level":"info"}),
             ))?)?;
+        }
+        if attention_pending.is_some_and(|(_, _, sent)| sent.elapsed().as_secs() >= 5) {
+            let (_, id, _) = attention_pending.take().unwrap();
+            plugin.event(
+                Event::AttentionPublished {
+                    id,
+                    status: "unknown".into(),
+                },
+                &mut context,
+            )?;
+        }
+        if ready
+            && attention_pending.is_none()
+            && let Some((id, snapshot)) = context.attention.take()
+        {
+            request_id += 1;
+            output.write_all(&protocol::encode(&Message::request(
+                request_id,
+                "attention.replace",
+                serde_json::to_value(snapshot)?,
+            ))?)?;
+            attention_pending = Some((request_id, id, std::time::Instant::now()));
         }
         let expired: Vec<_> = pending
             .iter()

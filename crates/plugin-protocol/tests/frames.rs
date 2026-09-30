@@ -55,3 +55,61 @@ fn null_result_is_still_a_present_success_field() {
         }
     ));
 }
+
+#[test]
+fn attention_budgets_bound_count_payload_and_depth() {
+    use saddle_plugin_protocol::{AttentionItem, AttentionSnapshot};
+    let item = AttentionItem {
+        id: "one".into(),
+        title: "One".into(),
+        note: String::new(),
+        action: "open".into(),
+        target: serde_json::json!({"id":1}),
+    };
+    assert!(
+        AttentionSnapshot {
+            items: vec![item.clone()]
+        }
+        .validate()
+        .is_ok()
+    );
+    assert!(
+        AttentionSnapshot {
+            items: (0..65)
+                .map(|n| AttentionItem {
+                    id: n.to_string(),
+                    ..item.clone()
+                })
+                .collect()
+        }
+        .validate()
+        .is_err()
+    );
+    assert!(
+        AttentionSnapshot {
+            items: (0..64)
+                .map(|n| AttentionItem {
+                    id: n.to_string(),
+                    target: serde_json::json!("x".repeat(2000)),
+                    ..item.clone()
+                })
+                .collect()
+        }
+        .validate()
+        .is_err()
+    );
+    let mut deep = serde_json::Value::Null;
+    for _ in 0..17 {
+        deep = serde_json::json!([deep]);
+    }
+    assert!(
+        AttentionSnapshot {
+            items: vec![AttentionItem {
+                target: deep,
+                ..item
+            }]
+        }
+        .validate()
+        .is_err()
+    );
+}
