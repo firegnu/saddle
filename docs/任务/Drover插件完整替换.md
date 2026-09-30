@@ -40,3 +40,12 @@ Dispatch：7785984ca0bc4ff186b50014fc89263b。分支/worktree：drover-native-co
 新增“对端关闭后读取完整响应”测试先稳定RED，改用poll等待可读并保留原两秒总截止时间后GREEN；不完整响应仍拒绝。相关ctl集成4 passed。日志 `/tmp/saddle-control-closed-peer-{red,green}.log`、`/tmp/saddle-control-regression.log`。未更改任务状态、重试策略或其他控制操作。
 
 修复候选通过真实三项目只读入口复验，调用正式安装的插件包、使用隔离宿主和假Corral，没有打开或操作真实agent。任务状态/数量与备份一致，队列/事件/配置/暂停文件字节均未变；隔离宿主已正常退出。日志 `/tmp/saddle-native-probe-fixed.log`。
+
+## 最终发布与收尾
+
+- ctl修复后标准套件 **332 passed / 0 failed / 4 ignored**，Clippy/fmt/diff通过；`/tmp/saddle-native-complete-{all,clippy}.log`。
+- 实现/合并：`a024ad2` / `826a5e0`；ctl修复/合并：`4187aa3` / `e0caa64`；worktree与分支清理后空提交 `5bc3231`。未新建agent，保留T38/T55工作树。
+- 已安装的日常宿主SHA：`d722aff41c9786b30d9fd1054a9a759438d698056368b27ea561390541fb0fdb`；正式插件SHA：`72b47ccf071e9cd4f6f73b8ab31ddfaaaa3495d3a0f6d4671fe60f833b4ac19b`。
+- 已停止并卸载 `dev.drover.loop`，撤下其LaunchAgents链接、原plist和旧drover/drover-board两个命令链接。原仓库、任务数据保留。
+- 已在用户plugins.toml登记启用正式Drover包，原Counter/Attention设置不变。包保留本机dlog路径。当前用户窗口未强制重启，需重启Saddle加载新宿主；无需再手动登记插件。
+- 备份目录：`/Users/firegnu/Library/Application Support/saddle-release-backups/drover-native-20260930-213348`。安装后的实际入口→正式插件只读三项目验证通过、隔离宿主正常退出；任务数据逐字节未变。日志 `/tmp/saddle-native-installed-final.log`。
