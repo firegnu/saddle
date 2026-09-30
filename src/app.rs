@@ -38,6 +38,8 @@ use std::{
 mod control_impl;
 #[path = "app_links.rs"]
 mod links_impl;
+#[path = "app_plugins.rs"]
+mod plugins_impl;
 use control_impl::{Closing, Record, Replacement};
 
 #[derive(Clone)]
@@ -157,6 +159,11 @@ fn truecolor() -> bool {
     crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref())
 }
 struct App {
+    plugins: crate::plugins::Manager,
+    plugin_page: Option<crate::plugins::ui::Page>,
+    parked_settings: Option<crate::settings::Settings>,
+    plugin_toast: Option<(Rect, Rect)>,
+
     control: crate::control::Server,
     records: Vec<Record>,
     closing: Option<Closing>,
@@ -307,7 +314,17 @@ impl App {
             };
             actions.start(Action::Attach(name, ticket, None));
         }
+        let plugins = crate::plugins::Manager::open(
+            config_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("plugins.toml"),
+        );
         Ok(Self {
+            plugins,
+            plugin_page: None,
+            parked_settings: None,
+            plugin_toast: None,
             layout_store,
             control: crate::control::Server::start()?,
             records: Vec::new(),
@@ -423,6 +440,24 @@ impl App {
                     }),
                 );
                 self.draw_closing(frame);
+                if let Some(page) = &mut self.plugin_page {
+                    page.draw(&self.config.colors, frame, &self.plugins);
+                }
+                self.plugin_toast = if self.plugin_page.is_none() {
+                    self.draw_plugin_toast(
+                        frame,
+                        if self.notifier.visible(Instant::now()).is_some() {
+                            Rect {
+                                height: panes.viewer.height.saturating_sub(5),
+                                ..panes.viewer
+                            }
+                        } else {
+                            panes.viewer
+                        },
+                    )
+                } else {
+                    None
+                };
                 self.toast = self.notifier.visible(Instant::now()).and_then(|toast| {
                     crate::notify::draw(&self.config.colors, frame, panes.viewer, toast)
                 });
@@ -443,6 +478,16 @@ impl App {
     }
     fn tick(&mut self, panes: Panes) -> Result<()> {
         self.viewer_area = panes.viewer;
+        let focused = self.focus == Focus::Viewer
+            && self.settings.is_none()
+            && self.plugin_page.is_none()
+            && self.closing.is_none()
+            && self.search.is_none()
+            && self.placement.is_none()
+            && self.attention.is_none()
+            && self.new_agent.as_ref().is_none_or(|f| !f.visible);
+        self.plugins.theme(&self.config.colors);
+        self.plugins.sync(&mut self.viewer, panes.viewer, focused);
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
@@ -922,6 +967,21 @@ impl App {
     }
     fn terminal_control(&mut self, control: Control) -> Result<()> {
         match control {
+            Control::Plugins => {
+                self.open_settings(self.focus);
+                self.plugin_page = Some(Default::default());
+            }
+            Control::RestartPlugin(pane) => {
+                if let Some(id) = self
+                    .viewer
+                    .get(pane)
+                    .and_then(|p| p.plugin_id())
+                    .map(str::to_owned)
+                    && let Err(e) = self.plugins.restart(&id)
+                {
+                    self.panel.message = e.to_string();
+                }
+            }
             // Choosing a place first; the layout changes only when an agent is picked.
             Control::NewTab => {
                 self.placement = Some(Placement {
@@ -1048,10 +1108,34 @@ impl App {
         {
             self.input_revision += 1;
         }
+        if let Some(page) = &mut self.plugin_page {
+            let outcome = page.event(event, &mut self.plugins);
+            match outcome {
+                crate::plugins::ui::Outcome::Stay => {}
+                crate::plugins::ui::Outcome::Back => self.plugin_page = None,
+                crate::plugins::ui::Outcome::Open(id) => {
+                    self.viewer.open_plugin(&id);
+                    self.plugin_page = None;
+                    self.parked_settings = self.settings.take();
+                    self.focus = Focus::Viewer;
+                }
+            }
+            return Ok(false);
+        }
         match event {
             Event::Key(key) => {
                 self.pointer.cancel();
                 if key.kind == KeyEventKind::Release {
+                    if self.focus == Focus::Viewer
+                        && self.settings.is_none()
+                        && self.closing.is_none()
+                        && self.search.is_none()
+                        && self.placement.is_none()
+                        && self.attention.is_none()
+                        && self.new_agent.as_ref().is_none_or(|f| !f.visible)
+                    {
+                        self.plugin_input(crate::plugins::key(key));
+                    }
                     return Ok(false);
                 }
                 if self.closing.is_some() {
@@ -1200,6 +1284,9 @@ impl App {
                         }
                     }
                     Route::Terminal => {
+                        if self.plugin_input(crate::plugins::key(key)) {
+                            return Ok(false);
+                        }
                         if let Some(screen) = self.history_screen() {
                             screen.lock().unwrap().history_key(key);
                         } else if let Some(session) = self.focused_session() {
@@ -1239,6 +1326,14 @@ impl App {
                 }
                 if self.focus == Focus::Queue {
                     self.queue.paste(&text);
+                } else if self.viewer.active_pane().plugin_id().is_some()
+                    && self.focus == Focus::Viewer
+                {
+                    if text.len() > saddle_plugin_protocol::MAX_PASTE {
+                        self.panel.message = "Paste too large for plugin".into();
+                    } else {
+                        self.plugin_input(serde_json::json!({"type":"paste","text":text}));
+                    }
                 } else if let Some(screen) = self.history_screen() {
                     screen.lock().unwrap().history_paste(&text);
                 } else if let Some(session) = self.focused_session() {
@@ -1256,6 +1351,16 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
+                if let Some((area, close)) = self.plugin_toast
+                    && area.contains(point)
+                {
+                    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                        && close.contains(point)
+                    {
+                        self.plugins.notices.lock().unwrap().items.pop_front();
+                    }
+                    return Ok(false);
+                }
                 // The task prompt takes every mouse action over it; none reaches a terminal.
                 if let Some((area, close)) = self.toast
                     && area.contains(point)
@@ -1556,6 +1661,13 @@ impl App {
                         self.panel.top = self.panel.top.saturating_add_signed(delta);
                         self.panel.follow = false;
                     }
+                } else if self.viewer.active_pane().plugin_id().is_some()
+                    && self.focus == Focus::Viewer
+                {
+                    let area = self.active_inner(panes.viewer);
+                    if area.contains(point) {
+                        self.plugin_input(crate::plugins::mouse(mouse, area));
+                    }
                 } else if let Some(screen) = self.history_screen() {
                     // History takes the pane's mouse: the wheel scrolls, a drag selects.
                     let area = self.active_inner(panes.viewer);
@@ -1612,6 +1724,11 @@ impl App {
         }
     }
     fn open_settings(&mut self, back: Focus) {
+        if let Some(parked) = self.parked_settings.take() {
+            self.settings = Some(parked);
+            self.settings_return = back;
+            return;
+        }
         self.settings = Some(crate::settings::Settings::open(
             self.config_path.clone(),
             truecolor(),
@@ -1657,6 +1774,10 @@ impl App {
     fn settings_outcome(&mut self, outcome: crate::settings::Outcome) {
         use crate::settings::Outcome;
         match outcome {
+            Outcome::Plugins => {
+                self.plugin_page = Some(Default::default());
+                return;
+            }
             Outcome::Stay => return,
             Outcome::Cancel => {}
             Outcome::SetChannel(saved, system) => {

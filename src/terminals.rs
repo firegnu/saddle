@@ -45,6 +45,7 @@ pub struct Ticket {
 pub struct Pane {
     pub id: u64,
     pub viewer: Viewer,
+    pub plugin: Option<crate::plugins::Panel>,
     revision: u64,
     requested: Option<String>,
     reserved: bool,
@@ -54,9 +55,18 @@ pub struct Pane {
     pub pending_agent: AgentMetadata,
 }
 impl Pane {
+    pub fn plugin_id(&self) -> Option<&str> {
+        match &self.viewer.remembered {
+            crate::layout_state::Content::Plugin { id } => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn placeholder(&self) -> bool {
-        !matches!(self.viewer.remembered, crate::layout_state::Content::Empty)
-            && !self.replacing()
+        !matches!(
+            self.viewer.remembered,
+            crate::layout_state::Content::Empty | crate::layout_state::Content::Plugin { .. }
+        ) && !self.replacing()
             && !self.viewer.shell_live()
             && self.viewer.closed()
     }
@@ -255,6 +265,7 @@ pub struct Terminals {
     next_id: u64,
     corral: String,
     retiring: Vec<Viewer>,
+    layout_version: u32,
 }
 impl Terminals {
     pub fn restore(corral: String, layout: crate::layout_state::Layout) -> Result<Self> {
@@ -262,6 +273,7 @@ impl Terminals {
         let mut this = Self::new(corral);
         this.tabs.clear();
         this.active = layout.active;
+        this.layout_version = layout.version;
         let next_id = layout
             .tabs
             .iter()
@@ -282,6 +294,7 @@ impl Terminals {
                     crate::layout_state::Content::Shell { .. } => {
                         "Open a new terminal here. Previous commands are not replayed.".into()
                     }
+                    crate::layout_state::Content::Plugin { .. } => "Plugin loading".into(),
                     crate::layout_state::Content::Empty => pane.viewer.note.clone(),
                 };
                 panes.push(pane);
@@ -301,7 +314,7 @@ impl Terminals {
     pub fn snapshot(&self) -> crate::layout_state::Layout {
         use crate::layout_state::{Layout, SavedPane, SavedTab};
         Layout {
-            version: 1,
+            version: self.layout_version,
             active: self.active,
             tabs: self
                 .tabs
@@ -330,6 +343,7 @@ impl Terminals {
             next_id: 0,
             corral,
             retiring: Vec::new(),
+            layout_version: 1,
         };
         this.new_tab();
         this
@@ -339,6 +353,7 @@ impl Terminals {
         Pane {
             id: self.next_id,
             viewer: Viewer::new(self.corral.clone()),
+            plugin: None,
             revision: 0,
             requested: None,
             reserved: false,
@@ -346,6 +361,24 @@ impl Terminals {
             observed: false,
             pending_agent: AgentMetadata::default(),
         }
+    }
+    pub fn open_plugin(&mut self, id: &str) -> u64 {
+        self.layout_version = 2;
+        if let Some(pane) = self
+            .tabs
+            .iter()
+            .flat_map(|t| &t.panes)
+            .find(|p| p.plugin_id() == Some(id))
+            .map(|p| p.id)
+        {
+            self.focus(pane);
+            return pane;
+        }
+        let pane = self.new_tab();
+        let p = self.get_mut(pane).unwrap();
+        p.viewer.remembered = crate::layout_state::Content::Plugin { id: id.into() };
+        p.plugin = Some(crate::plugins::Panel::unavailable(id));
+        pane
     }
     pub fn new_tab(&mut self) -> u64 {
         let pane = self.pane();
@@ -680,6 +713,8 @@ impl Terminals {
 pub const STRIP: u16 = 3;
 #[derive(Clone, Copy)]
 pub enum Control {
+    Plugins,
+    RestartPlugin(u64),
     NewTab,
     Tab(u64),
     CloseTab(u64),
@@ -783,7 +818,13 @@ pub fn draw(
                             "Empty"
                         },
                     );
-                crate::ui::clip(name, available.saturating_sub(4).min(20))
+                crate::ui::clip(
+                    pane.plugin
+                        .as_ref()
+                        .filter(|_| pane.plugin_id().is_some())
+                        .map_or(name, |p| p.name.as_str()),
+                    available.saturating_sub(4).min(20),
+                )
             })
             .collect();
         let active = terminals
@@ -856,28 +897,33 @@ pub fn draw(
         }
         let pane = terminals.get(id).unwrap();
         let active = id == terminals.tab().active;
-        let title = if let Some(shell) = &pane.viewer.shell {
-            format!(
-                " Terminal · {} · {} ",
-                if shell.state == "exited" {
-                    format!("exited {}", shell.exit_code.unwrap_or(0))
-                } else {
-                    shell.state.into()
-                },
-                shell.cwd
-            )
-        } else {
-            crate::ui::pane_title(
-                pane.viewer
-                    .showing
-                    .as_deref()
-                    .or(pane.viewer.remembered.name()),
-                agents,
-            )
-        };
+        let title =
+            if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some()) {
+                format!(" {} ", plugin.name)
+            } else if let Some(shell) = &pane.viewer.shell {
+                format!(
+                    " Terminal · {} · {} ",
+                    if shell.state == "exited" {
+                        format!("exited {}", shell.exit_code.unwrap_or(0))
+                    } else {
+                        shell.state.into()
+                    },
+                    shell.cwd
+                )
+            } else {
+                crate::ui::pane_title(
+                    pane.viewer
+                        .showing
+                        .as_deref()
+                        .or(pane.viewer.remembered.name()),
+                    agents,
+                )
+            };
         frame.render_widget(t.block(title.clone(), focused && active), rect);
         let inside = crate::ui::inner(rect);
-        if let Some(session) = &pane.viewer.session {
+        if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some()) {
+            plugin.draw(frame, inside);
+        } else if let Some(session) = &pane.viewer.session {
             let cursor = session
                 .screen
                 .lock()
@@ -922,6 +968,34 @@ pub fn draw(
                 inside,
             );
         }
+        if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some())
+            && !plugin.interactive
+        {
+            let choices = match plugin.state.as_str() {
+                "Disabled" | "Starting" | "Stopping" => vec![("Open Plugins", Control::Plugins)],
+                "Failed" | "Unresponsive" => vec![
+                    ("Restart", Control::RestartPlugin(id)),
+                    ("Open Plugins", Control::Plugins),
+                ],
+                "Unavailable" if plugin.note != "Plugin unavailable · Close" => {
+                    vec![("Open Plugins", Control::Plugins)]
+                }
+                _ => vec![],
+            };
+            let first = inside
+                .bottom()
+                .saturating_sub(choices.len() as u16)
+                .max(inside.y);
+            for ((label, control), y) in choices.into_iter().zip(first..inside.bottom()) {
+                button(
+                    frame,
+                    Rect::new(inside.x, y, inside.width.min(label.len() as u16), 1),
+                    label,
+                    control,
+                    true,
+                );
+            }
+        }
         if pane.placeholder() {
             let choices = match pane.viewer.remembered {
                 crate::layout_state::Content::Agent { .. } => vec![
@@ -931,7 +1005,8 @@ pub fn draw(
                 crate::layout_state::Content::Shell { .. } => {
                     vec![("Open terminal", Control::OpenTerminal(id))]
                 }
-                crate::layout_state::Content::Empty => vec![],
+                crate::layout_state::Content::Empty
+                | crate::layout_state::Content::Plugin { .. } => vec![],
             };
             // Reserve the last body rows for actions, even in a short split.
             let first = inside

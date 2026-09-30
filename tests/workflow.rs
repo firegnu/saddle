@@ -4964,3 +4964,80 @@ sys.exit(result.returncode)
         env!("CARGO_BIN_EXE_saddle")
     );
 }
+
+/// Build examples/counter-plugin first and provide SADDLE_TEST_PLUGIN. All data stays in the
+/// harness temporary HOME; no running Saddle instance or real registry is used.
+#[test]
+#[ignore = "requires the separately built SDK demo in SADDLE_TEST_PLUGIN"]
+fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
+    let binary = std::env::var("SADDLE_TEST_PLUGIN").expect("build the independent demo first");
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |dir| {
+            let plugin = dir.join("counter");
+            std::fs::create_dir_all(plugin.join("bin")).unwrap();
+            std::fs::copy(&binary, plugin.join("bin/saddle-counter")).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                include_str!("../examples/counter-plugin/plugin.toml"),
+            )
+            .unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.send(b",");
+    h.see("Settings");
+    h.send(b"\x1b[15~");
+    h.see("No plugins registered");
+    h.send(b"\t\t\t\t\r");
+    h.see("Add local plugin");
+    let directory = h.dir.path().join("counter").display().to_string();
+    h.send(directory.as_bytes());
+    h.send(b"\t\r");
+    h.see("Runs with your user permissions");
+    h.send(b"\t\r");
+    h.see("Added disabled");
+    // Add returned to the management page with the original button focus (Add).
+    h.send(b"\x1b[Z\x1b[Z\r");
+    h.see("Running");
+    h.send(b"\x1b[Z\r");
+    h.see("Clicks: 0");
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    h.see("Count: 1");
+    h.click("Increment");
+    h.see("Clicks: 2");
+    h.see("Count: 2");
+    h.send(b"\x1b[13;2u"); // Shift+Enter must not activate the demo button.
+    for _ in 0..5 {
+        h.pump();
+    }
+    assert!(h.screen.screen().contents().contains("Clicks: 2"));
+    h.click("Close tab");
+    h.send(b"\x1d,");
+    h.see("Settings");
+    h.send(b"\x1b[15~");
+    h.see("Running");
+    h.click("Open panel");
+    h.see("Clicks: 2");
+    h.send(b"\x1d,");
+    h.see("Settings");
+    h.send(b"\x1b[15~");
+    h.see("Running");
+    h.click("Restart");
+    h.see("Running");
+    h.click("Open panel");
+    h.see("Clicks: 0");
+    h.send(b"\x1d,");
+    h.see("Settings");
+    h.send(b"\x1b[15~");
+    h.see("Running");
+    h.click("Disable");
+    h.see("Disabled");
+    h.send(b"\x1b");
+    h.send(b"\x1b");
+    h.see("Plugin disabled");
+}
