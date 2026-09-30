@@ -1,8 +1,11 @@
 # 会话交接
 
-更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。插件设计未开始。
+更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构；插件系统及首个 demo 设计草案已由主控独立落文档，未实现。
 
 ## 当前状态
+
+- 最新工作：用户确认独立进程＋版本化协议＋Rust SDK，并要求接下来主控自己做、不再委派。已写 `docs/插件系统设计.md`、`docs/插件Demo设计.md`，更新 `docs/DESIGN.md` §62；设计提交 83c0350。只是草案，不表示插件系统、SDK、管理入口或 demo 已实现。
+- 文档检查：diff 空白检查通过；TOML/JSON 示例可解析、本地链接有效、代码围栏配对。未运行功能测试、编译、重启、安装，不改真实任务/通知服务。设计分支/worktree 已正常合并清理，无新增 agent。
 
 - Saddle main 已合并：2a6862c；主控审查 c97270a；空提交收尾 c939fd1。本交接与发布记录随最终文档提交推送，确切 SHA 见 git log 和 Dispatch 05458465051541c4a9c2cc908dc9fe3e 收尾 note。无遗留本轮实现改动。
 - Drover main 已发布 e0d8118（合并 b02f142，收尾16ef806），origin/main 已核对一致。Drover 无关未跟踪 T27 文档保留。
@@ -27,14 +30,18 @@
 
 ## 下一步
 
-T58 已 Done，当前没有 Running 或 Awaiting 任务。等待用户决定下一项；主控只调用了 done，没有调用 go，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
+T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计不操作队列，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
 
-Drover可选插件、Corral独立组合的设计等用户后续讨论；本轮没有改 Corral或corral-dispatch。开发、审查、worktree方式保持。
+插件工作的下一步：用户审阅设计草案与管理入口/demo 线框，确认后再安排实现；不把架构认可扩大为已经批准具体 UI 或稳定协议。具体帧字段、Unicode 宽度约定与运行预算需在 demo 实现前定稿。Demo 先验证插件通路，Drover 为第二个插件；未迁移前不声称 Saddle 已无 Drover 依赖。只按现有授权继续设计，不自行安装或发布插件。
+
+本轮后续由主控亲自做，不再委派。已有讨论 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
 
 ## 先读与记录
 
-AGENTS.md、dispatch-log/USAGE.md；docs/DESIGN.md §61；docs/任务/Saddle-Drover联合发布.md及对应主控审查/隔离联调记录；Drover主仓库docs/任务流转JSON接口.md。真实操作仅走公开CLI。
+AGENTS.md、dispatch-log/USAGE.md；docs/DESIGN.md §62 与两份插件设计文档；任务流转参考 §61；docs/任务/Saddle-Drover联合发布.md及对应主控审查/隔离联调记录；Drover主仓库docs/任务流转JSON接口.md。真实操作仅走公开CLI。
 
 Dispatch：Drover 0ec134ce246c420aabb6654254ddcf97；Saddle 05458465051541c4a9c2cc908dc9fe3e。Drover第一阶段回调若晚到，先核对已处理，不重复安装或启动服务。
 
 T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任务/T58-任务流转文档测试.md。
+
+插件讨论与设计记录：Dispatch 7c3ecbc86ee14ec8bf887e78a55ef9d1。两轮讨论已结束；旧回调不自动再委派，需求与决定以 §62 及最新用户指示为准。
