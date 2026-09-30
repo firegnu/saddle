@@ -5021,6 +5021,29 @@ fn drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli() {
 }
 
 #[test]
+fn drover_plugin_accepts_bursts_of_typed_text_without_failing_or_losing_input() {
+    let mut h = Harness::start_tasks();
+    h.open_tasks();
+    h.see("Native queue task");
+    h.send(b"a");
+    h.see("Save ^s");
+    h.settle();
+    for _ in 0..20 {
+        h.send(b"abcdefgh");
+        let until = Instant::now() + Duration::from_millis(100);
+        while Instant::now() < until {
+            h.pump();
+        }
+    }
+    h.settle();
+    h.send(b"\x13");
+    let title = "abcdefgh".repeat(20);
+    h.until(|h| h.native_queue().contains(&title));
+    assert_eq!(h.native_queue().matches(&title).count(), 1);
+    h.quit();
+}
+
+#[test]
 fn plugin_commands_reach_one_running_owner_and_replay_only_the_same_result() {
     let mut h = Harness::start_tasks();
     h.open_tasks();

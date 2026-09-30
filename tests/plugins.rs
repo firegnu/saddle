@@ -134,6 +134,85 @@ fn peer(mode: &str) -> (tempfile::TempDir, Manifest) {
     (dir, m)
 }
 #[test]
+fn responsive_plugin_drains_input_bursts_without_output_queue_failure() {
+    use saddle_plugin_protocol::Message;
+    let (dir, m) = peer("drain");
+    let r = Runtime::start(dir.path(), m);
+    assert!(r.wait_for("Running", Duration::from_secs(3)));
+    // Small input bursts are accepted by the bounded public queue. A responsive
+    // reader must receive every event, in order, without an internal overflow.
+    for batch in 0..20 {
+        for offset in 0..8 {
+            let id = batch * 8 + offset + 1;
+            assert!(r.send(Message::event("input", serde_json::json!({"input_id":id}))));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+        if r.state() != "Running" {
+            r.wait_for("Failed", Duration::from_secs(3));
+        }
+        let s = r.snapshot();
+        assert_eq!(s.state, "Running", "{}", s.note);
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let s = r.snapshot();
+        assert_eq!(s.state, "Running", "{}", s.note);
+        if s.log.lines().last() == Some("input:160") {
+            assert_eq!(
+                s.log.lines().collect::<Vec<_>>(),
+                (1..=160).map(|i| format!("input:{i}")).collect::<Vec<_>>()
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "input not drained: {}",
+            s.log
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    r.stop();
+    assert!(r.wait_for("Disabled", Duration::from_secs(3)));
+}
+
+#[test]
+fn plugin_pipe_backpressure_preserves_partial_messages_and_shutdown() {
+    use saddle_plugin_protocol::Message;
+    let (dir, m) = peer("delayed-drain");
+    let r = Runtime::start(dir.path(), m);
+    assert!(r.wait_for("Running", Duration::from_secs(3)));
+    // The peer pauses reading; each message exceeds the pipe capacity on macOS.
+    // Stay below the public byte/message limits and check full, ordered delivery.
+    for id in 1..=9 {
+        assert!(r.send(Message::event(
+            "input",
+            serde_json::json!({"input_id":id,"payload":id.to_string().repeat(20000)})
+        )));
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        let s = r.snapshot();
+        assert_eq!(s.state, "Running", "{}", s.note);
+        if s.log.lines().last() == Some("input:9") {
+            assert_eq!(
+                s.log.lines().collect::<Vec<_>>(),
+                (1..=9).map(|i| format!("input:{i}")).collect::<Vec<_>>()
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "input not drained: {}",
+            s.log
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    r.stop();
+    assert!(r.wait_for("Disabled", Duration::from_secs(3)));
+    assert!(r.snapshot().pid.is_none());
+}
+
+#[test]
 fn invalid_handshake_and_unterminated_oversized_line_fail_and_reap() {
     for mode in ["wrong", "partial"] {
         let (dir, m) = peer(mode);
