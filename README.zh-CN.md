@@ -106,6 +106,12 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 布局文件默认是 `~/.local/state/saddle/layout.json`；绝对路径的 `XDG_STATE_HOME` 改为 `$XDG_STATE_HOME/saddle/layout.json`，与 `config.toml` 分开。首次启动或文件不存在时打开默认布局，首次保存自动建目录。文件损坏或版本不支持时提示并回退默认布局，保留原文件，本次运行禁止覆盖；如需重新保存，可先移走原文件再重启。保存失败只提示，不阻止使用；后续布局变化和正常退出时会再次尝试保存。
 
+## 本地插件
+
+打开 **Settings → Plugins（F5）**，添加可信的本地插件目录，再启用并打开 Saddle 内的面板。添加后默认停用；关闭面板保留进程，Disable 停止进程。登记保存的是目录路径，请保留该目录。
+
+开发者运行 `./examples/counter-plugin/package.sh`，即可构建并打包独立 Counter 示例；在设置中添加产物 `examples/counter-plugin/dist/counter-plugin`。使用者只需拿到这个目录，不需要 Rust 或开发环境变量。SDK 目前是开发接口，详见 [Counter 说明](examples/counter-plugin/README.md) 和 [插件开发入门](docs/插件开发入门.md)。Drover 插件迁移另行进行。
+
 ## 任务关联跳转
 
 在 Tasks 右侧的 **Task text**、**Run details** 旁选择 **Links**；**Tab / Shift-Tab** 在三个页签间切换。Files、Commits、Agents 按明确引用分组并显示来源，点击条目或用上下方向键选择后 Enter 打开。文件和提交在 Tasks 内只读查看，方向键、滚轮、PgUp/PgDn 滚动；**Back / Esc** 回到原 Links 位置，再 Esc 关闭 Tasks。
@@ -204,7 +210,7 @@ agent_selected = "#2b2621"
 | Agents | n / New | 创建新 agent |
 | Agents | / / Search | 按项目名或 agent 名称过滤；Enter 或点击进入对应终端（已打开时跳到现有位置），Esc 取消 |
 | Agents | a / Attention · N | 打开 Attention；↑↓ 选择，Enter 或点击打开对应 agent 或任务，m 把历史失败标为已看，Esc 取消 |
-| Agents | , / Settings | 打开 Settings；Tab/↑↓ 选择设置项，F1–F3 或点击切换页签，Ctrl-U 清空，Ctrl-D 恢复默认值，Ctrl-S 保存，Esc 取消 |
+| Agents | , / Settings | 打开 Settings；Tab/↑↓ 选择设置项，F1–F5 或点击切换页签，Ctrl-U 清空，Ctrl-D 恢复默认值，Ctrl-S 保存，Esc 取消 |
 | Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
 | Viewer 边框 | Zoom / Restore | 多窗格时让当前窗格临时占满右侧终端区域（保留 Agents 和 tab 条）；Restore 回到原分屏和比例，焦点仍在该窗格。其他窗格继续运行；切到其他窗格、关闭该窗格或新建分屏都会结束放大 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |

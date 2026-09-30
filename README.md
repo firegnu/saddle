@@ -97,6 +97,12 @@ Layout state lives in `~/.local/state/saddle/layout.json`, or `$XDG_STATE_HOME/s
 
 If another terminal is attached to an agent, detach there before attaching through saddle. Stopping an agent is a separate, confirmed action.
 
+## Local plugins
+
+Open **Settings → Plugins (F5)** to add a trusted local plugin directory, enable it, and open its panel inside Saddle. Adding a plugin leaves it disabled; closing a panel keeps its process running, while Disable stops it. Registration stores the directory path, so keep the files in place.
+
+To build and package the standalone Counter example, run `./examples/counter-plugin/package.sh`. Add the resulting `examples/counter-plugin/dist/counter-plugin` directory in Settings. End users need only that directory, not Rust or development environment variables. The SDK is a development API; see the [Counter README](examples/counter-plugin/README.md) and [plugin author guide (Chinese)](docs/插件开发入门.md). Drover migration is a separate future step.
+
 ## Task dispatch records
 
 **Dispatch** (after **Run details**) shows how the selected task was handed out, when the controller recorded it with the separate [dispatch-log](https://github.com/firegnu/dispatch-log) recorder: each dispatch, rework and review in recorded order, one row per step with its time, target, model/effort and short result — the JEV route (its input, request, full parsed response and suggestion), the controller's decision and budget, the start with its task file snapshot, sends, the implementer's reply and review notes. Up/Down and Enter (or a click) open a step's full text inside Tasks; **Back / Esc** returns to the same row. Records are read only through the public `dlog ls --project <project> --task <id>`, `dlog show <id>` and `dlog cat <sha256>`, once per task opening (**Refresh r** reads them again); saddle never records, routes or sends through dispatch-log. Records are matched by the project root and explicit task number only; unnumbered tasks have none. Snapshots are copies saved at dispatch time, not the current files (those are in Links). The recorder is optional: when `queue.dispatch_log` is not found, there are no records, a record is missing a part, or a read fails or is in an unknown format, Dispatch says which, and the other views and task actions work as before.
@@ -201,7 +207,7 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Agents | n / New | Open the new-agent form |
 | Agents | / / Search | Filter agents by project or name; Enter or a click opens the agent (jumping to its pane if already open), Esc cancels |
 | Agents | a / Attention · N | Open Attention; ↑↓ select, Enter or a click opens the agent or task, m marks a failed task seen, Esc cancels |
-| Agents | , / Settings | Open Settings; Tab/↑↓ select a value, F1–F3 or a click switch page, Ctrl-U clears, Ctrl-D restores the default, Ctrl-S saves, Esc cancels |
+| Agents | , / Settings | Open Settings; Tab/↑↓ select a value, F1–F5 or a click switch page, Ctrl-U clears, Ctrl-D restores the default, Ctrl-S saves, Esc cancels |
 | New-agent form | Tab / Shift-Tab, Ctrl-U | Switch field, clear field |
 | New-agent form | Ctrl-P / Project, Ctrl-E / Edit path | Choose a registered project or edit its path |
 | New-agent form | Left/Right in Open in | Choose current pane (default), new tab, or a split direction; content-picker placement stays fixed and is shown as text |

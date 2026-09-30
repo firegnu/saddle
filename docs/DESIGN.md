@@ -1101,3 +1101,11 @@ Saddle 的插件面板复用 Pane 的位置和外框，但没有 PTY、agent 身
 SDK 的 event/render 回调在插件自己的事件线程运行；Context::redraw 显式请求绘制，避免无变化回执推进 frame_id 干扰点击。Event::Tick 每轮约50ms用于消费插件自有后台结果，SDK 的5秒请求超时不依赖下一次宿主输入。耗时工作由插件自己放到后台并在 Drop 时取消。局部界面暂不提供输入光标控制，也不提供通用业务控件框架。
 
 本轮仅交付源码、公开 SDK 与 demo 构建方式；验证走临时 HOME、假 Corral/Drover 和自建插件子进程。未安装到用户插件登记、未构建 release/切换二进制/重启正在使用的 Saddle，也未迁移 Drover。实施与审查记录见 [插件首个Demo实现](任务/插件首个Demo实现.md)。
+
+### §62 Demo 交付与日常发布
+
+用户已在独立开发版中确认 Counter 效果，随后同意发布日常 Saddle、提供一条打包命令并补齐开发说明。主控亲自收尾，不委派、不迁移 Drover。
+
+Counter 独立项目提供 `package.sh [输出目录]`，通过 Cargo 构建本机 release 程序，输出 `plugin.toml` 与 `bin/saddle-counter`；默认目录为项目内 `dist/counter-plugin`。脚本随示例一起复制，不依赖 Saddle 源码路径、私有模块或 Python/jq，不修改 Saddle 的插件登记。重复打包覆盖该示例的程序和清单；更新已经登记的目录前先停用插件。发布物复制真实二进制，不依赖编译目录符号链接；本轮不增加压缩包安装器、市场、更新服务或通用打包框架。
+
+使用者仍在 Settings → Plugins 中添加本地目录、启用并打开面板。开发入门说明以 Counter 为可复制示例，解释 Plugin 的绘制与事件回调、Context 的重绘与通知，以及宿主和插件的职责边界。日常 release 更新前备份旧二进制，正在运行的实例不强制退出；下一次正常启动加载新版。发布记录区分磁盘产物与运行中实例，不把更新二进制写成已重启。
