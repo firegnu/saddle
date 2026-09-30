@@ -15,13 +15,7 @@
 
 ## 3. 待完成与未提交状态
 
-**保留的三处未提交变更是用户要求的 Diff 演示，不是迁移代码，不要提交、还原或清理：**
-
-- `examples/counter-plugin/src/main.rs`（修改）
-- `plugins/diff/README.md`（修改）
-- `docs/diff-preview-demo.json`（未跟踪）
-
-三份文件与 `/tmp/saddle-settings-pages-demo-hashes.json` 对照一致。除本次交接提交外，调研已提交推送；迁移尚未开始。
+用户已在交接后要求清掉三处 Diff 演示：`examples/counter-plugin/src/main.rs` 和 `plugins/diff/README.md` 已恢复到已提交版本，`docs/diff-preview-demo.json` 已删除。清理前核对原演示 hash 一致，没有其他改动混入；不再保留演示变更。调研已提交推送，迁移尚未开始。
 
 仍需设计：内置插件调用/运行方式、是否支持脱离 TUI 调用、dispatch-log 历史记录兼容、模块间接口、skill 资源安装与更新。用户已经确定产品边界和外围优先顺序，不要再把这些重新列成待批准问题。具体工程接口尚未定稿。
 
