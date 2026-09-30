@@ -517,6 +517,42 @@ impl Manager {
         self.input += 1;
         r.runtime.send(Message::event("input",json!({"panel":"main","input_id":self.input,"frame_id":pic.frame_id,"size_revision":pic.revision,"event":event})))
     }
+    pub fn invoke_command(
+        &self,
+        id: &str,
+        request: &str,
+        method: &str,
+        params: serde_json::Value,
+    ) -> anyhow::Result<u64> {
+        let r = self
+            .running
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("plugin is not enabled"))?;
+        anyhow::ensure!(
+            r.enabled
+                && r.manifest
+                    .required_capabilities
+                    .iter()
+                    .any(|c| c == "command.v1"),
+            "plugin does not provide commands"
+        );
+        r.runtime.invoke(request, method, params)
+    }
+    pub fn command_result(
+        &self,
+        id: &str,
+        session: u64,
+        request: &str,
+    ) -> Option<serde_json::Value> {
+        match self.running.get(id) {
+            Some(r) if r.enabled && r.runtime.snapshot().session == session => {
+                r.runtime.command_result(session, request)
+            }
+            _ => Some(
+                json!({"ok":false,"error":{"code":"result_unknown","message":"Plugin was disabled or restarted; check state before retrying"}}),
+            ),
+        }
+    }
     pub fn take_view_closes(&self) -> Vec<String> {
         self.running
             .iter()

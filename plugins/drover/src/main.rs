@@ -1,5 +1,5 @@
 fn main() -> anyhow::Result<()> {
-    let mut program = "drover".to_owned();
+    let mut corral = "corral".to_owned();
     let mut dispatch_log = "dlog".to_owned();
     let mut cwd = None;
     let mut refresh = 2000;
@@ -9,8 +9,8 @@ fn main() -> anyhow::Result<()> {
             .next()
             .ok_or_else(|| anyhow::anyhow!("missing value for {flag}"))?;
         match flag.as_str() {
-            "--drover" => {
-                program = saddle_drover_plugin::config::expand_home(&value)
+            "--corral" => {
+                corral = saddle_drover_plugin::config::expand_home(&value)
                     .display()
                     .to_string()
             }
@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
             }
         });
         Box::new(saddle_drover_plugin::plugin::Drover::with_refresh(
-            program,
+            corral,
             dispatch_log,
             cwd,
             std::time::Duration::from_millis(refresh),

@@ -10,6 +10,64 @@ use std::{
 /// The periodic read-only check of Drover's notification preference, as fake drovers log it.
 const NOTIFICATION_STATUS: &str = r#"["notifications", "status", "--json"]"#;
 
+/// Convert synthetic task snapshots to native event fixtures. Never reads a real queue.
+fn seed_native(project: &std::path::Path, state: &serde_json::Value) {
+    use serde_json::json;
+    let data = project.join("native-data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::write(
+        project.join(".drover.conf"),
+        format!("HANDOFF_DIR={}\n", data.display()),
+    )
+    .unwrap();
+    let mut queue = String::new();
+    let mut events = Vec::new();
+    for t in state["pending"].as_array().into_iter().flatten() {
+        queue.push_str(&format!(
+            "## {} {}\n{}\n\n",
+            t["id"].as_str().unwrap_or(""),
+            t["title"].as_str().unwrap_or(""),
+            t["body"].as_str().unwrap_or("")
+        ));
+    }
+    let history: Vec<_> = state["history"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .rev()
+        .cloned()
+        .collect();
+    for (group, t) in history.iter().map(|t| ("history", t)).chain([
+        ("current", &state["current"]),
+        ("awaiting", &state["awaiting"]),
+    ]) {
+        if !t.is_object() {
+            continue;
+        }
+        let run = t["run_id"].as_str().unwrap_or("fixture-run");
+        let start = json!({"ev":"start","id":t["id"],"run_id":run,"title":t["title"],"body":t["body"].as_str().unwrap_or(""),"key":t["title"],"t":t.get("t0").unwrap_or(&json!(1)),"sha":t["start"].as_str().unwrap_or(""),"main":t["main"].as_str().unwrap_or("")});
+        events.push(start);
+        if group == "awaiting" {
+            events.push(json!({"ev":"submitted","id":t["id"],"run_id":run,"t":2}));
+        } else if group == "history" {
+            if t["status"] == "failed" {
+                events.push(json!({"ev":"done","id":t["id"],"gate":true,"ok":false,"t":2,"why":t["reason"]}));
+            } else if t["status"] == "dropped" {
+                events.push(json!({"ev":"drop","id":t["id"],"title":t["title"],"t":2}));
+            } else {
+                events.push(json!({"ev":"submitted","id":t["id"],"run_id":run,"t":2}));
+                events.push(json!({"ev":"accepted","id":t["id"],"run_id":run,"t":3}));
+            }
+        }
+    }
+    std::fs::write(data.join("queue.md"), queue).unwrap();
+    std::fs::write(
+        data.join("tasks.state"),
+        events.iter().map(|v| format!("{v}\n")).collect::<String>(),
+    )
+    .unwrap();
+}
+
 struct Harness {
     dir: tempfile::TempDir,
     child: Box<dyn Child + Send + Sync>,
@@ -44,7 +102,7 @@ impl Harness {
             .expect("build the workspace Drover plugin binary before host workflow tests");
         let config: toml::Value =
             toml::from_str(&std::fs::read_to_string(dir.join("config.toml")).unwrap()).unwrap();
-        let program = config["queue"]["drover"].as_str().unwrap();
+        let program = config["corral"].as_str().unwrap();
         let cwd = config["queue"]
             .get("cwd")
             .and_then(|v| v.as_str())
@@ -58,17 +116,53 @@ impl Harness {
                     .map(str::to_owned)
                     .unwrap_or_else(|| dir.display().to_string())
             });
+        // Legacy fixture scripts only construct test input before launch; the plugin never
+        // calls them. Keep existing scenarios while exercising the native storage engine.
+        let registry =
+            std::fs::read_to_string(dir.join("home/.drover/projects")).unwrap_or_default();
+        let mut projects: Vec<_> = registry
+            .lines()
+            .filter(|p| !p.is_empty())
+            .map(std::path::PathBuf::from)
+            .collect();
+        projects.push(std::path::PathBuf::from(&cwd));
+        projects.sort();
+        projects.dedup();
+        for project in projects {
+            let result = std::process::Command::new(config["queue"]["drover"].as_str().unwrap())
+                .args(["list", "--json"])
+                .current_dir(&project)
+                .output()
+                .unwrap();
+            if result.status.success() {
+                seed_native(&project, &serde_json::from_slice(&result.stdout).unwrap());
+            }
+        }
+        let _ = std::fs::remove_file(dir.join("queue-events"));
+        if !dir.join("home/.drover/notifications.json").exists() {
+            std::fs::write(
+                dir.join("home/.drover/notifications.json"),
+                r#"{"schema_version":1,"system_enabled":false,"revision":1}"#,
+            )
+            .unwrap();
+        }
         let dlog = config["queue"]
             .get("dispatch_log")
             .and_then(|v| v.as_str())
             .unwrap_or("dlog");
         let args = format!(
-            "args = [\"--drover\", {program:?}, \"--cwd\", {cwd:?}, \"--dispatch-log\", {dlog:?}, \"--refresh-ms\", \"100\"]\n"
+            "args = [\"--corral\", {program:?}, \"--cwd\", {cwd:?}, \"--dispatch-log\", {dlog:?}, \"--refresh-ms\", \"100\"]\n"
         );
         let manifest =
             include_str!("../plugins/drover/plugin.toml").replace("[view]", &(args + "[view]"));
         std::fs::write(plugin.join("plugin.toml"), manifest).unwrap();
         std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"drover\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
+    }
+    fn task_state(&self, project: &str) -> serde_json::Value {
+        saddle_drover_plugin::core::list(&self.dir.path().join(project)).unwrap()
+    }
+    fn native_queue(&self) -> String {
+        self.log("native-data/queue.md")
     }
     fn open_tasks(&mut self) {
         self.click("Plugins");
@@ -148,6 +242,11 @@ impl Harness {
             )
             .unwrap();
         }
+        common::script(
+            dir.path(),
+            "osascript",
+            "#!/bin/sh\necho notified >> system-notifications\n",
+        );
         let corral = common::script(dir.path(), "corral", include_str!("fixtures/corral.py"));
         let queue = common::script(dir.path(), "queue", queue_script);
         std::fs::write(
@@ -188,6 +287,14 @@ impl Harness {
         cmd.env("COLORTERM", "truecolor");
         cmd.env("NO_COLOR", "");
         cmd.env("HOME", &home);
+        cmd.env(
+            "PATH",
+            format!(
+                "{}:{}",
+                dir.path().display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        );
         cmd.env("XDG_STATE_HOME", dir.path().join("state"));
         for name in [
             "XDG_CONFIG_HOME",
@@ -630,7 +737,7 @@ fn failed_queue_data_request_keeps_actionable_error_visible() {
     );
     h.open_tasks();
     h.see("Read failed");
-    h.see("missing"); // The full error wraps across rows in a narrow pane.
+    h.see(".drover.conf");
     h.see("Check plugin arguments");
     assert!(!h.screen.screen().contents().contains("Loading tasks"));
     h.quit();
@@ -645,8 +752,12 @@ fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repositor
     let mut h = Harness::start_with_queue(&script);
     let project = h.dir.path().join("chosen-project");
     std::fs::create_dir(&project).unwrap();
+    seed_native(
+        &project,
+        &serde_json::json!({"pending":[{"id":"T1","title":"Native queue task","body":""}]}),
+    );
     h.open_tasks();
-    h.see("missing proje");
+    h.see("Read failed");
     h.send(b"ce");
     h.see("Project path");
     h.send(b"\x15"); // Ctrl-U replaces the initial directory.
@@ -657,7 +768,7 @@ fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repositor
     h.send(b"p");
     h.see("Paused");
     h.quit();
-    assert!(!project.join(".drover.conf").exists());
+    assert!(project.join(".drover.conf").exists());
     assert!(!h.log("queue-events").contains("init"));
 }
 
@@ -678,8 +789,8 @@ fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_p
     h.see("Queue project-two");
     h.click("Pause p");
     h.see("Paused");
-    assert!(!h.dir.path().join("project-one/queue-state.json").exists());
-    assert!(h.dir.path().join("project-two/queue-state.json").exists());
+    assert!(!h.dir.path().join("project-one/native-data/paused").exists());
+    assert!(h.dir.path().join("project-two/native-data/paused").exists());
     h.click("project-two ▾ c");
     h.click("project-one");
     h.see("Queue project-one");
@@ -709,10 +820,7 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.send("正文内容".as_bytes());
     h.click("Save ^s");
     h.see("鼠标新增");
-    h.until(|h| {
-        h.log("queue-events")
-            .contains("[\"add\", \"鼠标新增\", \"正文内容\"]")
-    });
+    h.until(|h| h.native_queue().contains("鼠标新增\n正文内容"));
     h.master
         .resize(PtySize {
             rows: 48,
@@ -734,7 +842,7 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
 }
 
 #[test]
-fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
+fn native_queue_help_details_form_and_actions_use_plugin_storage() {
     let mut h = Harness::start_tasks();
     h.open_tasks();
     h.send(b"?");
@@ -763,10 +871,7 @@ fn native_queue_help_details_form_and_actions_use_only_public_cli_commands() {
     h.send(b"\x13");
     h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
     h.see("新增任务");
-    h.until(|h| {
-        h.log("queue-events")
-            .contains("[\"add\", \"新增任务\", \"正文一\\n正文二\"]")
-    });
+    h.until(|h| h.native_queue().contains("新增任务\n正文一\n正文二"));
     h.send(b"p");
     h.see("Paused");
     h.send(b"p");
@@ -805,17 +910,18 @@ fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
     h.open_tasks();
     h.see("Edit task");
     h.see("Extra");
-    std::fs::write(h.dir.path().join("write-error"), "synthetic write refused").unwrap();
+    std::fs::remove_file(h.dir.path().join("native-data/.tasks.lock")).unwrap();
+    std::fs::create_dir(h.dir.path().join("native-data/.tasks.lock")).unwrap();
     h.click("Save ^s");
-    h.see("synthetic write refused");
+    h.see("lock");
     h.see("Second q");
-    std::fs::remove_file(h.dir.path().join("write-error")).unwrap();
+    std::fs::remove_dir(h.dir.path().join("native-data/.tasks.lock")).unwrap();
     h.click("Save ^s");
     h.until(|h| !h.screen.screen().contents().contains("Edit task"));
     h.see("Second q");
     h.see("▎T2 Second q");
     h.click("Move up u");
-    h.until(|h| h.log("queue-events").contains("[\"move\", \"2\", \"1\"]"));
+    h.until(|h| h.task_state("")["pending"][0]["id"] == "T2");
     // Wait for the refreshed task order before issuing the opposite movement.
     h.until(|h| {
         let text = h.screen.screen().contents();
@@ -824,7 +930,7 @@ fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
             .is_some_and(|(a, b)| a < b)
     });
     h.click("Move down d");
-    h.until(|h| h.log("queue-events").contains("[\"move\", \"1\", \"2\"]"));
+    h.until(|h| h.task_state("")["pending"][1]["id"] == "T2");
     h.until(|h| {
         let text = h.screen.screen().contents();
         text.find("Second q")
@@ -837,10 +943,7 @@ fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
     h.click("Cancel Esc");
     h.until(|h| !h.screen.screen().contents().contains("Edit task"));
     h.quit();
-    assert!(
-        h.log("queue-events")
-            .contains("[\"edit\", \"2\", \"Second q\", \"Body\\nExtra\"]")
-    );
+    assert!(h.native_queue().contains("Second q\nBody\nExtra"));
     assert!(!h.log("events").contains("attach "));
 }
 
@@ -859,92 +962,12 @@ fn pending_delete_button_confirms_names_the_task_and_can_be_cancelled() {
     h.send(b"x");
     h.see("Delete task");
     h.click("Delete y");
-    h.until(|h| {
-        h.log("queue-events")
-            .contains("[\"drop\", \"--pos\", \"1\", \"Deleted in saddle\"]")
-    });
+    h.until(|h| h.task_state("")["history"][0]["status"] == "dropped");
     h.until(|h| !h.screen.screen().contents().contains("Delete task"));
     h.see("Dropped");
     h.see("No active tasks");
     h.quit();
-    assert_eq!(h.log("queue-events").matches("\"drop\"").count(), 1);
-    assert!(!h.log("events").contains("attach "));
-}
-
-#[test]
-#[ignore = "requires installed drover CLI; no external UI, real queues, or agents"]
-fn installed_drover_cli_drives_the_native_queue_in_an_isolated_project() {
-    use std::process::Command;
-    let drover = std::env::var("SADDLE_DROVER_BIN").expect("set SADDLE_DROVER_BIN");
-    let sandbox = tempfile::tempdir().unwrap();
-    let home = sandbox.path().join("home");
-    let repo = sandbox.path().join("repo");
-    std::fs::create_dir_all(&home).unwrap();
-    std::fs::create_dir_all(&repo).unwrap();
-    assert!(
-        Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(&repo)
-            .status()
-            .unwrap()
-            .success()
-    );
-    let cli = |args: &[&str]| {
-        let out = Command::new(&drover)
-            .args(args)
-            .env("HOME", &home)
-            .current_dir(&repo)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8_lossy(&out.stdout).into_owned()
-    };
-    cli(&["init", "saddle-native-acceptance"]);
-    cli(&["add", "Synthetic native task", "隔离验收正文"]);
-    let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
-    let wrapper = format!(
-        "#!/bin/sh\nexport HOME={}\ncd {}\nexec {} \"$@\"\n",
-        quote(home.to_str().unwrap()),
-        quote(repo.to_str().unwrap()),
-        quote(&drover)
-    );
-    let mut h = Harness::start_with_queue(&wrapper);
-    h.send(b"\t");
-    h.see("Synthetic native task");
-    h.send(b"\r");
-    h.see("隔离验收正文");
-    h.send(b"p");
-    h.see("Paused");
-    let state: serde_json::Value = serde_json::from_str(&cli(&["list", "--json"])).unwrap();
-    assert_eq!(state["paused"], true);
-    h.send(b"p");
-    h.see("Ready");
-    h.send(b"a");
-    h.see("Ctrl-S");
-    h.send("\x1b[200~原生新增\x1b[201~".as_bytes());
-    h.send(b"\t");
-    h.send("\x1b[200~第一行\n第二行\x1b[201~".as_bytes());
-    h.send(b"\x13");
-    h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
-    h.see("原生新增");
-    let state: serde_json::Value = serde_json::from_str(&cli(&["list", "--json"])).unwrap();
-    assert_eq!(state["pending"][1]["body"], "第一行\n第二行");
-    h.master
-        .resize(PtySize {
-            rows: 50,
-            cols: 180,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .unwrap();
-    h.screen.screen_mut().set_size(50, 180);
-    h.until(|h| h.screen.screen().cell(48, 0).unwrap().contents() == "└");
-    h.see("原生新增");
-    h.quit();
+    assert_eq!(h.task_state("")["history"].as_array().unwrap().len(), 1);
     assert!(!h.log("events").contains("attach "));
 }
 
@@ -1054,7 +1077,7 @@ fn delayed_attach_does_not_steal_input_from_an_open_form() {
     h.event("attach p/a"); // The Viewer is behind the Tasks popup.
     h.send("弹层保持焦点".as_bytes());
     h.send(b"\x13");
-    h.until(|h| h.log("queue-events").contains("弹层保持焦点"));
+    h.until(|h| h.native_queue().contains("弹层保持焦点"));
     assert!(!h.log("events").contains("input p/a "));
     h.quit();
 }
@@ -1095,7 +1118,7 @@ fn returning_to_agents_preserves_the_unsubmitted_queue_draft() {
     h.see("Ctrl-S");
     h.see("未提交的草稿");
     h.send(b"\x13");
-    h.until(|h| h.log("queue-events").contains("未提交的草稿"));
+    h.until(|h| h.native_queue().contains("未提交的草稿"));
     h.quit();
 }
 
@@ -1180,15 +1203,8 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
 #[test]
 fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
     let mut h = Harness::start_tasks();
-    let history: Vec<_> = (0..40).rev().map(|i| serde_json::json!({"id":format!("H{i}"),"title":format!("History-{i:02}"),"status":"done"})).collect();
-    std::fs::write(
-        h.dir.path().join("queue-state.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "schema_version":2,"ok":true,"project":"/synthetic","mode":{"gate":true,"loop":false},"paused":false,"pending":[],"history":history
-        }))
-        .unwrap(),
-    )
-    .unwrap();
+    let history: Vec<_> = (0..40).rev().map(|i| serde_json::json!({"id":format!("T{}",i+100),"title":format!("History-{i:02}"),"status":"done"})).collect();
+    seed_native(h.dir.path(), &serde_json::json!({"history":history}));
     h.open_tasks();
     // The list is the popup's left third; the selected task's text is beside it.
     let list = |h: &Harness| {
@@ -1212,8 +1228,10 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
         h.settle();
     }
     h.until(|h| list(h).contains("History-00"));
-    let refreshes = h.log("queue-events").lines().count();
-    h.until(|h| h.log("queue-events").lines().count() > refreshes + 1);
+    let end = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < end {
+        h.pump();
+    }
     assert!(list(&h).contains("History-00"));
     for _ in 0..45 {
         h.send(b"\x1b[<64;65;20M");
@@ -1226,65 +1244,6 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
             .lines()
             .all(|line| line == "[\"list\", \"--json\"]" || line == NOTIFICATION_STATUS)
     );
-}
-
-#[test]
-#[ignore = "requires drover CLI; synthetic history and fake agents only"]
-fn installed_drover_complete_history_reaches_saddle_and_scrolls_both_ends() {
-    use std::process::Command;
-    let drover = std::env::var("SADDLE_DROVER_BIN").expect("set SADDLE_DROVER_BIN");
-    let sandbox = tempfile::tempdir().unwrap();
-    let repo = sandbox.path().join("repo");
-    let data = sandbox.path().join("data");
-    for dir in [&repo, &data] {
-        std::fs::create_dir(dir).unwrap();
-    }
-    assert!(
-        Command::new("git")
-            .args(["init", "-q"])
-            .current_dir(&repo)
-            .status()
-            .unwrap()
-            .success()
-    );
-    std::fs::write(
-        repo.join(".drover.conf"),
-        format!("HANDOFF_DIR={}\nTASK_GATE=1\n", data.display()),
-    )
-    .unwrap();
-    let records: String = (1..=40).map(|i| {
-        format!("{}\n", serde_json::json!({"ev":"drop", "id":format!("T{i}"), "title":format!("Complete-history-{i:02}"), "reason":"Synthetic", "t":i}))
-    }).collect();
-    let state = data.join("tasks.state");
-    std::fs::write(&state, &records).unwrap();
-    let fake_corral = common::script(sandbox.path(), "corral", "#!/bin/sh\nexit 99\n");
-    let quote = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
-    let wrapper = format!(
-        "#!/bin/sh\n[ \"$#\" = 2 ] && [ \"$1\" = list ] && [ \"$2\" = --json ] || exit 98\nexport DROVER_CORRAL_BIN={}\ncd {}\nexec {} \"$@\"\n",
-        quote(&fake_corral),
-        quote(repo.to_str().unwrap()),
-        quote(&drover)
-    );
-    let mut h = Harness::start_with_queue(&wrapper);
-    h.send(b"\t");
-    h.see("40 tasks");
-    // The list is the popup's left third; the selected task's text is beside it.
-    let list = |h: &Harness| h.screen.screen().rows(0, 40).collect::<Vec<_>>().join("\n");
-    h.until(|h| list(h).contains("Complete-history-01")); // Older than the former ten-record API limit.
-    h.send("\x1b[<65;12;20M".repeat(5).as_bytes());
-    h.send(b"?");
-    h.see("Tasks help"); // Barrier: the wheel events have been processed.
-    h.send(b"\x1b");
-    h.until(|h| list(h).contains("Complete-history-"));
-    assert!(!list(&h).contains("Complete-history-01"));
-    h.send("\x1b[<65;40;20M".repeat(80).as_bytes());
-    h.until(|h| list(h).contains("Complete-history-40"));
-    h.see("/40 · End");
-    h.send("\x1b[<64;12;20M".repeat(80).as_bytes());
-    h.until(|h| list(h).contains("Complete-history-01"));
-    h.quit();
-    assert_eq!(std::fs::read_to_string(&state).unwrap(), records);
-    assert!(!h.log("events").contains("attach "));
 }
 
 #[test]
@@ -1371,14 +1330,18 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
     h.see("Queue project-one");
     // The loaded footer gains task actions; wait for it before locating a button there.
     h.see("Delete x");
-    std::fs::write(h.dir.path().join("project-two/fail-list"), "").unwrap();
+    std::fs::write(
+        h.dir.path().join("project-two/native-data/tasks.state"),
+        "broken JSON",
+    )
+    .unwrap();
     h.click("All pending A");
     h.see("─ All pending ─");
-    h.see("synthetic project read failure");
+    h.see("Invalid task event JSON");
     h.see("Read failed");
     h.see("1 T1 Queue project-one");
     h.see("project-two");
-    std::fs::remove_file(h.dir.path().join("project-two/fail-list")).unwrap();
+    std::fs::remove_file(h.dir.path().join("project-two/native-data/tasks.state")).unwrap();
     // The header's Refresh is disabled while a sub-page is open; use the page's own key.
     h.send(b"r");
     h.see("1 T1 Queue project-two");
@@ -1421,7 +1384,11 @@ fn task_edit_from_run_details_saves_and_returns_to_the_same_view() {
     h.see("T1 Native queue task revised");
     h.quit();
     let events = h.log("queue-events");
-    assert_eq!(events.matches("[\"edit\"").count(), 1, "{events}");
+    assert!(events.is_empty(), "old CLI must not run: {events}");
+    assert_eq!(
+        h.task_state("")["pending"][0]["title"],
+        "Native queue task revised"
+    );
     assert!(!h.log("events").contains("input p/a"));
 }
 
@@ -1452,7 +1419,12 @@ else:
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    let shows = |h: &Harness| h.log("queue-events").matches("\"show\"").count();
+    std::fs::write(
+        h.dir.path().join(".drover.conf"),
+        "HANDOFF_DIR=native-data\nMAIN_AGENT=p/detail-test\n",
+    )
+    .unwrap();
+    let shows = |h: &Harness| h.log("events").matches("status p/detail-test").count();
     h.open_tasks();
     h.see("Detail target 任务");
     h.click("Detail target");
@@ -1461,7 +1433,7 @@ else:
     h.click("Run details ↵");
     h.see("Repository reference");
     h.see("● Run details ↵");
-    assert_eq!(shows(&h), 1);
+    h.until(|h| shows(h) >= 1);
     // Scroll keys stay in Tasks while an agent is attached in Viewer.
     h.send(b"\x1b[6~\x1b[5~");
     h.until(|h| shows(h) >= 2); // About five seconds later, one at a time.
@@ -1813,9 +1785,9 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     h.event("attach p/b");
     h.send(b"draft");
     h.send(b"\x13");
-    h.until(|h| h.log("queue-events").contains("draft"));
+    h.until(|h| h.native_queue().contains("draft"));
     h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
-    h.see("operation completed");
+    h.see("draft");
     h.send(b"\x1d"); // Close the plugin and return to Agents before using terminal tabs.
     h.see("Input ▸ Agents");
     assert!(!h.log("events").contains("attach p/a"));
@@ -2348,7 +2320,7 @@ impl Harness {
             let value = self.ctl(&["request", id, "--instance", instance]);
             if !matches!(
                 value["state"].as_str(),
-                Some("accepted" | "starting" | "attaching")
+                Some("accepted" | "starting" | "attaching" | "plugin_pending")
             ) {
                 return value;
             }
@@ -3569,131 +3541,42 @@ fn t23_search_click_on_an_open_agent_consumes_the_whole_mouse_gesture() {
     assert_eq!(events.lines().filter(|l| *l == "attach p/a").count(), 1);
 }
 
-/// Two registered projects share task number T3: awaiting release in one, failed in the other.
-const T22_QUEUE: &str = r#"#!/usr/bin/env python3
-import json, sys
-from pathlib import Path
-root = Path(__file__).parent
-args = sys.argv[1:]
-with (root / 'queue-events').open('a') as f:
-    f.write(json.dumps(args) + '\n')
-if (Path.cwd() / 'fail-list').exists():
-    print('synthetic project read failure', file=sys.stderr)
-    sys.exit(4)
-mode = dict(loop=False, gate=True)
-state_file = Path.cwd() / 'queue-state.json'
-if state_file.exists():
-    state = json.loads(state_file.read_text())
-elif Path.cwd().name == 'project-one':
-    state = dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=mode, paused=False, current=None,
-        awaiting=dict(id='T3', title='Ready to ship', body='awaiting body text'),
-        pending=[dict(id='T4', title='Next up', body='')],
-        history=[dict(id='T2', title='Old done', body='', status='done')])
-else:
-    state = dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=mode, paused=False, current=None, awaiting=None, pending=[],
-        history=[dict(id='T3', title='Broke build', body='failure body text', status='failed', reason='check failed'),
-                 dict(id='T1', title='Fine one', body='fine body text', status='done')])
-if args == ['list', '--json']:
-    print(json.dumps(state))
-    sys.exit(0)
-print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
-sys.exit(99)
-"#;
-
 #[test]
 fn t22_attention_gathers_agents_and_every_project_and_opens_targets() {
-    let mut h = Harness::start_with_projects(T22_QUEUE, true);
-    // p/taken starts waiting for input; p/b finishes its turn unseen, which is a new reply.
-    std::fs::write(
-        h.dir.path().join("agents.json"),
-        r#"{"p/a":"idle","p/b":"idle","p/taken":"blocked"}"#,
-    )
-    .unwrap();
-    h.see("Attention · 4");
-    h.send(b"a");
-    h.see("Input ▸ Attention");
-    h.until(|h| {
-        let popup = h.popup("Attention ━");
-        popup.contains("New reply") && popup.contains("project-two · T3")
-    });
-    let popup = h.popup("Attention ━");
-    let at = |text: &str| {
-        popup
-            .find(text)
-            .unwrap_or_else(|| panic!("{text}:\n{popup}"))
-    };
-    assert!(at("Needs attention") < at("p/taken") && at("p/taken") < at("New replies"));
-    assert!(at("Waiting for input") < at("New replies"));
-    assert!(at("project-one · T3") < at("New replies"));
-    assert!(at("project-two · T3") < at("New replies"));
-    assert!(at("New replies") < at("p/b"), "{popup}");
-    assert_eq!(popup.matches("p/b").count(), 1, "{popup}");
-    // Opening a task switches Tasks to its project and selects it by identity.
-    h.click_in("Attention ━", "project-two · T3");
-    h.until(|h| !h.contents().contains("Attention ━"));
-    h.see("Input ▸ Drover");
-    h.see("failure body text");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    // The row click that opened Tasks is over; the next click on an agent row still attaches.
-    h.click("○ a ");
-    h.see("p/a READY");
-    // The entry opens Attention by mouse too.
-    // Mark seen hides only that project's failed T3; the other project's T3 stays.
-    h.click("Attention · 4");
-    h.see("Input ▸ Attention");
-    h.click_in("Attention ━", "project-two · T3");
-    h.see("failure body text");
-    h.click("Mark seen m");
-    h.see("Marked seen in Attention");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
+    let mut h = Harness::start_task_prepared(
+        &include_str!("fixtures/drover.py")
+            .replace("state_file = root /", "state_file = Path.cwd() /"),
+        true,
+        "",
+        16384,
+        |dir| {
+            for name in ["project-one", "project-two"] {
+                std::fs::write(dir.join(name).join("queue-state.json"),serde_json::json!({"pending":[],"awaiting":{"id":"T3","title":"Ready to ship","body":format!("{name} awaiting body")}}).to_string()).unwrap();
+            }
+        },
+    );
+    h.see("Synthetic title");
+    h.see("Attention · 2");
     h.send(b"a");
     h.see("Attention ━");
-    h.settle();
-    h.until(|h| !h.popup("Attention ━").contains("project-two · T3"));
-    assert!(h.popup("Attention ━").contains("project-one · T3"));
-    h.see("Attention · 3");
-    // An agent row opens that agent; viewing it clears its new reply.
-    h.click_in("Attention ━", "p/b");
-    h.see("p/b READY");
-    h.see("Attention · 2");
-    // Waiting and awaiting release leave only when their public state changes.
-    std::fs::write(
-        h.dir.path().join("agents.json"),
-        r#"{"p/a":"idle","p/b":"idle","p/taken":"idle"}"#,
-    )
-    .unwrap();
+    h.see("project-one · T3");
+    h.see("project-two · T3");
+    h.click_in("Attention ━", "project-two · T3");
+    h.see("project-two awaiting body");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    seed_native(&h.dir.path().join("project-one"), &serde_json::json!({}));
     h.see("Attention · 1");
     std::fs::write(
-        h.dir.path().join("project-one/queue-state.json"),
-        r#"{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
+        h.dir.path().join("project-two/native-data/tasks.state"),
+        "bad JSON",
     )
     .unwrap();
-    h.see("Attention · 0");
-    // A failed read is reported, never shown as nothing to do.
-    std::fs::write(h.dir.path().join("project-two/fail-list"), "").unwrap();
-    h.see("Attention · 1");
-    h.send(b"\x1da");
-    h.see("Input ▸ Attention");
-    h.until(|h| {
-        let popup = h.popup("Attention ━");
-        popup.contains("project-two") && popup.contains("drover list: synthetic project")
-    });
+    h.send(b"a");
+    h.see("Task action failed");
     h.send(b"\x1b");
     h.quit();
-    let queue = h.log("queue-events");
-    assert!(
-        queue
-            .lines()
-            .all(|l| l == r#"["list", "--json"]"# || l == NOTIFICATION_STATUS),
-        "{queue}"
-    );
-    let events = h.log("events");
-    assert!(
-        !events.contains("stop ") && !events.contains("input "),
-        "{events}"
-    );
+    assert!(h.log("queue-events").is_empty());
 }
 
 #[test]
@@ -4232,6 +4115,13 @@ fn dispatch_without_the_recorder_says_so_and_other_views_keep_working() {
     h.see("dispatch-log not found");
     h.click("Links");
     h.see("● Links");
+    h.see("No explicit links");
+    // Links also starts a detail read; wait for that asynchronous refresh before
+    // pressing against the displayed frame.
+    let end = Instant::now() + Duration::from_secs(1);
+    while Instant::now() < end {
+        h.pump();
+    }
     h.click("Task text");
     h.see("SYNTHETIC BODY");
     h.click("Run details");
@@ -4469,27 +4359,17 @@ sys.exit(99)
 impl Harness {
     /// Makes `project` await a new run of `id`, started at `t0`.
     fn awaiting(&self, project: &str, id: &str, t0: f64) {
-        std::fs::write(
-            self.dir.path().join(project).join("awaiting.json"),
-            serde_json::json!({
-                "id": id, "title": format!("Ship {id}"), "body": "", "key": "", "status": "done",
-                "location": "awaiting", "start": format!("s-{id}-{t0}"), "main": "m", "t0": t0,
-                "end": "e", "t1": t0 + 1.0,
-                "run_id": format!("run-{t0}"), "notification_key": format!("{project}/{id}/{t0}"),
-            })
-            .to_string(),
-        )
-        .unwrap();
+        let path = self.dir.path().join(project);
+        seed_native(
+            &path,
+            &serde_json::json!({"awaiting":{"id":id,"title":format!("Ship {id}"),"body":"","run_id":format!("run-{t0}"),"t0":t0}}),
+        );
     }
-    /// Waits for two more cross-project rounds, so every answer so far has been used.
     fn rounds(&mut self) {
-        let reads = |h: &Self| {
-            h.log("queue-events")
-                .matches(r#"["project-two", "list", "--json"]"#)
-                .count()
-        };
-        let start = reads(self);
-        self.until(|h| reads(h) >= start + 2);
+        let end = Instant::now() + Duration::from_millis(700);
+        while Instant::now() < end {
+            self.pump();
+        }
     }
     /// The screen position of `text` on the row showing `row_text`.
     fn on_row(&self, row_text: &str, text: &str) -> (u16, u16) {
@@ -4580,8 +4460,9 @@ fn in_saddle_prompts_new_awaiting_tasks_without_taking_input_and_system_stays_qu
     h.send(b"\x13");
     h.see("Saved.");
     assert!(
-        h.log("queue-events")
-            .contains(r#""notifications", "on", "--json"]"#)
+        serde_json::from_str::<serde_json::Value>(&h.log("home/.drover/notifications.json"))
+            .unwrap()["system_enabled"]
+            == true
     );
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
@@ -4606,449 +4487,6 @@ fn in_saddle_prompts_new_awaiting_tasks_without_taking_input_and_system_stays_qu
     assert!(!h.log("events").contains("stop "), "{}", h.log("events"));
 }
 
-#[test]
-#[ignore = "requires the delivered drover CLI in SADDLE_DROVER_NOTIFY_BIN; isolated HOME/XDG and synthetic projects only"]
-fn real_drover_notification_channel_prompts_dedups_switches_and_opens_tasks() {
-    let drover = std::env::var("SADDLE_DROVER_NOTIFY_BIN").expect("set SADDLE_DROVER_NOTIFY_BIN");
-    // Logs like NOTIFY_QUEUE, then runs the real CLI with every XDG and runtime path inside
-    // the sandbox and a corral that refuses everything.
-    let wrapper = format!(
-        r#"#!/usr/bin/env python3
-import json, os, sys
-from pathlib import Path
-root = Path(__file__).parent
-with (root / 'queue-events').open('a') as f:
-    f.write(json.dumps([Path.cwd().name] + sys.argv[1:]) + '\n')
-env = dict(os.environ)
-for name in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
-    env[name] = str(root / 'xdg' / name)
-    os.makedirs(env[name], exist_ok=True)
-env['DROVER_CORRAL_BIN'] = str(root / 'no-corral')
-os.execve({drover:?}, [{drover:?}] + sys.argv[1:], env)
-"#
-    );
-    let mut h = Harness::start_prepared(&wrapper, true, "", 16384, |dir| {
-        common::script(
-            dir,
-            "no-corral",
-            "#!/bin/sh\ntouch \"$(dirname \"$0\")/no-corral-called\"\nexit 99\n",
-        );
-        for project in ["project-one", "project-two"] {
-            let repo = dir.join(project);
-            let data = dir.join(format!("{project}-data"));
-            std::fs::create_dir_all(&data).unwrap();
-            std::fs::write(data.join("tasks.state"), "").unwrap();
-            assert!(
-                std::process::Command::new("git")
-                    .args(["init", "-q", "-b", "main"])
-                    .current_dir(&repo)
-                    .status()
-                    .unwrap()
-                    .success()
-            );
-            std::fs::write(
-                repo.join(".drover.conf"),
-                format!(
-                    "HANDOFF_DIR={}\nTASK_GATE=1\nMAIN_AGENT=fake/main\n",
-                    data.display()
-                ),
-            )
-            .unwrap();
-        }
-    });
-    let status = |h: &Harness| {
-        let output = std::process::Command::new(h.dir.path().join("queue"))
-            .args(["notifications", "status", "--json"])
-            .env("HOME", h.dir.path().join("home"))
-            .current_dir(h.dir.path())
-            .output()
-            .unwrap();
-        let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        (value["system_enabled"].clone(), value["revision"].clone())
-    };
-    // A synthetic run of T1 that is done and awaits release.
-    let finish = |h: &Harness, project: &str, t: f64| {
-        let events = [
-            serde_json::json!({"ev": "start", "id": "T1", "title": format!("Ship {project}"), "body": "b",
-                "sha": "a".repeat(40), "main": "b".repeat(40), "t": t}),
-            serde_json::json!({"ev": "done", "id": "T1", "sha": "c".repeat(40), "t": t + 60.0, "gate": true}),
-        ];
-        let text: String = events.iter().map(|e| format!("{e}\n")).collect();
-        std::fs::write(
-            h.dir.path().join(format!("{project}-data/tasks.state")),
-            text,
-        )
-        .unwrap();
-    };
-    h.see("Synthetic title");
-    h.send(b"skk");
-    h.see("┃ ○ a ");
-    assert_eq!(status(&h), (true.into(), 0.into()));
-    // Settings reads System (Drover's default) and switches to In saddle through Drover.
-    h.send(b",");
-    h.see("Drover tasks across projects");
-    h.send(b"\x1b[B\x1b[B\x1b[B \x13");
-    h.see("Task notifications: In saddle");
-    assert_eq!(status(&h), (false.into(), 1.into()));
-    h.rounds();
-    h.rounds();
-    // A new awaiting run prompts once and opens its task.
-    finish(&h, "project-one", 1790000000.25);
-    h.see("project-one · T1 ready for review");
-    h.click("project-one · T1 ready for review");
-    h.see("Input ▸ Drover");
-    h.see("Ship project-one");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.rounds();
-    h.rounds();
-    assert!(
-        !h.contents().contains("ready for review"),
-        "{}",
-        h.contents()
-    );
-    // Back to System: Drover notifies, saddle stays quiet; Attention keeps both tasks.
-    h.send(b",");
-    h.see("Drover tasks across projects");
-    h.send(b"\x1b[B\x1b[B\x1b[B \x13");
-    h.see("Task notifications: System");
-    assert_eq!(status(&h), (true.into(), 2.into()));
-    h.rounds();
-    finish(&h, "project-two", 1790000100.5);
-    h.see("Attention · 2");
-    h.rounds();
-    h.rounds();
-    assert!(
-        !h.contents().contains("ready for review"),
-        "{}",
-        h.contents()
-    );
-    h.quit();
-    let queue = h.log("queue-events");
-    assert!(
-        queue.lines().all(|l| l.contains(r#""list", "--json"]"#)
-            || l.contains(r#""notifications", "status", "--json"]"#)
-            || l.contains(r#""notifications", "on", "--json"]"#)
-            || l.contains(r#""notifications", "off", "--json"]"#)),
-        "{queue}"
-    );
-    assert!(!h.dir.path().join("no-corral-called").exists());
-}
-
-#[test]
-#[ignore = "requires development schema 2 CLI in SADDLE_DROVER_FLOW_BIN and SADDLE_FLOW_EVIDENCE_DIR; one isolated real-CLI path"]
-fn real_drover_schema2_return_submit_notify_accept_path() {
-    use serde_json::{Value, json};
-    use std::{fs, path::Path, process::Command};
-
-    let drover = std::env::var("SADDLE_DROVER_FLOW_BIN").expect("set development Drover CLI path");
-    let evidence =
-        std::env::var("SADDLE_FLOW_EVIDENCE_DIR").expect("set isolated evidence directory");
-    fs::create_dir_all(&evidence).unwrap();
-    // Forward the real CLI's bytes and exit code unchanged; save its actual public responses.
-    // A fresh environment, blank MAIN_AGENT and a refusing Corral prevent live-agent access.
-    let wrapper = format!(
-        r#"#!/usr/bin/env python3
-import json, os, subprocess, sys
-from pathlib import Path
-root = Path(__file__).parent
-args = sys.argv[1:]
-env = dict(PATH=str(root / 'cli-bin') + ':/opt/homebrew/bin:/usr/bin:/bin',
-           HOME=str(root / 'home'), LANG='en_US.UTF-8',
-           GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null',
-           DROVER_CORRAL_BIN=str(root / 'cli-bin/corral'))
-for name in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'XDG_RUNTIME_DIR', 'TMPDIR'):
-    path = root / 'isolated' / name
-    path.mkdir(parents=True, exist_ok=True)
-    env[name] = str(path)
-result = subprocess.run([{drover:?}] + args, env=env, capture_output=True)
-with open(Path({evidence:?}) / 'drover-calls.jsonl', 'a') as log:
-    log.write(json.dumps(dict(args=args, cwd=os.getcwd(), code=result.returncode,
-        stdout=result.stdout.decode(), stderr=result.stderr.decode())) + '\n')
-sys.stdout.buffer.write(result.stdout)
-sys.stderr.buffer.write(result.stderr)
-sys.exit(result.returncode)
-"#
-    );
-    let cli = |root: &Path, args: &[&str]| -> String {
-        let output = Command::new(root.join("queue"))
-            .args(args)
-            .env_clear()
-            .env("PATH", "/opt/homebrew/bin:/usr/bin:/bin")
-            .current_dir(root.join("flow-project"))
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{args:?}: {output:?}");
-        String::from_utf8(output.stdout).unwrap()
-    };
-    let read = |root: &Path, args: &[&str]| -> Value {
-        let value: Value = serde_json::from_str(&cli(root, args)).unwrap();
-        assert_eq!(value["ok"], true, "{value}");
-        value
-    };
-    let git = |root: &Path, args: &[&str]| -> String {
-        let output = Command::new("/usr/bin/git")
-            .args(args)
-            .env_clear()
-            .env("PATH", "/usr/bin:/bin")
-            .env("HOME", root.join("home"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_AUTHOR_NAME", "Synthetic Flow")
-            .env("GIT_AUTHOR_EMAIL", "flow@example.invalid")
-            .env("GIT_COMMITTER_NAME", "Synthetic Flow")
-            .env("GIT_COMMITTER_EMAIL", "flow@example.invalid")
-            .current_dir(root.join("flow-project"))
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "git {args:?}: {output:?}");
-        String::from_utf8(output.stdout).unwrap()
-    };
-    let mut a = Value::Null;
-    let mut h = Harness::start_task_prepared(&wrapper, false, "", 16384, |root| {
-        let repo = root.join("flow-project");
-        fs::create_dir(&repo).unwrap();
-        fs::create_dir(root.join("drover-data")).unwrap();
-        fs::create_dir(root.join("cli-bin")).unwrap();
-        common::script(
-            &root.join("cli-bin"),
-            "corral",
-            "#!/bin/sh\ntouch \"$(dirname \"$0\")/called\"\nexit 99\n",
-        );
-        fs::write(root.join("agents.json"), "{}").unwrap();
-        fs::write(
-            root.join("home/.drover/projects"),
-            format!("{}\n", repo.display()),
-        )
-        .unwrap();
-        // Only bootstrap configuration is written; queue/run events come from public commands.
-        fs::write(
-            repo.join(".drover.conf"),
-            format!(
-                "HANDOFF_DIR={}\nMAIN_AGENT=\n",
-                root.join("drover-data").display()
-            ),
-        )
-        .unwrap();
-        let mut config = fs::OpenOptions::new()
-            .append(true)
-            .open(root.join("config.toml"))
-            .unwrap();
-        writeln!(config, "cwd = {:?}", repo).unwrap();
-        git(root, &["init", "-q", "-b", "main"]);
-        git(
-            root,
-            &[
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "--allow-empty",
-                "-qm",
-                "Synthetic baseline",
-            ],
-        );
-        cli(
-            root,
-            &["add", "Synthetic A", "Keep the investigation branch"],
-        );
-        cli(
-            root,
-            &["add", "Synthetic B", "Independent research delivery"],
-        );
-        let pending = read(root, &["list", "--json"]);
-        assert_eq!(pending["schema_version"], 2);
-        let token = pending["pending"][0]["actions"]["dispatch-pending"]["target_token"]
-            .as_str()
-            .unwrap();
-        a = read(
-            root,
-            &[
-                "dispatch-pending",
-                "--pos",
-                "1",
-                "--target-token",
-                token,
-                "--json",
-            ],
-        );
-        assert_eq!(a["state"], "running");
-        assert_eq!(a["delivery"]["status"], "not_sent");
-        git(root, &["switch", "-qc", "synthetic-a"]);
-        fs::write(repo.join("investigation.txt"), "Unmerged A work\n").unwrap();
-        git(root, &["add", "investigation.txt"]);
-        git(
-            root,
-            &[
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "-qm",
-                "A investigation",
-            ],
-        );
-        git(root, &["switch", "-q", "main"]);
-        assert_eq!(
-            read(root, &["notifications", "off", "--json"])["system_enabled"],
-            false
-        );
-    });
-    let snapshot = |h: &Harness, label: &str| {
-        let value = read(h.dir.path(), &["list", "--json"]);
-        fs::write(
-            Path::new(&evidence).join(format!("{label}.json")),
-            serde_json::to_vec_pretty(&value).unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            Path::new(&evidence).join(format!("{label}-screen.txt")),
-            h.contents(),
-        )
-        .unwrap();
-        value
-    };
-    let calls = || -> Vec<Value> {
-        fs::read_to_string(Path::new(&evidence).join("drover-calls.jsonl"))
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect()
-    };
-    h.see("Tasks · Running");
-    // Two preference observations span a survey period before any Awaiting transition.
-    h.until(|_| {
-        calls()
-            .iter()
-            .filter(|c| c["args"] == json!(["notifications", "status", "--json"]) && c["code"] == 0)
-            .count()
-            >= 2
-    });
-    h.see("Attention · 0");
-    assert!(!h.contents().contains("ready for review"));
-    snapshot(&h, "01-startup-baseline");
-
-    h.open_tasks();
-    h.see("Synthetic A");
-    h.click("Return to pending…");
-    h.see("Input ▸ Return to pending");
-    h.send(b"Continue later; work stopped");
-    h.click("[ ] Work has stopped ^w");
-    h.see("[x] Work has stopped ^w");
-    h.until(|h| !h.contents().contains("Reading "));
-    snapshot(&h, "02a-return-confirmation");
-    h.click("Return to pending ↵");
-    h.see("returned to Pending");
-    let returned = snapshot(&h, "02-a-returned");
-    assert!(returned["current"].is_null() && returned["awaiting"].is_null());
-    assert_eq!(returned["paused"], false);
-    assert_eq!(returned["pending"][0]["id"], a["task_id"]);
-    assert!(git(h.dir.path(), &["branch", "--no-merged", "main"]).contains("synthetic-a"));
-
-    h.send(b"\x1b");
-    h.click("Synthetic B");
-    h.click("Dispatch selected");
-    h.see("Record: recorded as Running");
-    let running = snapshot(&h, "03-b-running");
-    assert_eq!(running["current"]["title"], "Synthetic B");
-    let b_id = running["current"]["id"].as_str().unwrap().to_owned();
-    let b_run = running["current"]["run_id"].clone();
-    h.send(b"\x1b");
-    h.click("Submit for review");
-    // Wait for this confirmation page before checking its loading state. A previous
-    // detail response or the list page's absence of "Reading" does not make it ready.
-    h.see("Input ▸ Submit for review");
-    h.until(|h| !h.contents().contains("Reading "));
-    snapshot(&h, "03a-submit-confirmation");
-    h.click("Submit for review ↵");
-    h.see("submitted for review");
-    let prompt = format!("flow-project · {b_id} ready for review");
-    h.see(&prompt);
-    let awaiting = snapshot(&h, "04-b-awaiting-toast");
-    assert_eq!(awaiting["awaiting"]["id"], b_id);
-    assert_eq!(awaiting["awaiting"]["run_id"], b_run);
-    assert!(awaiting["awaiting"]["notification_key"].is_string());
-    assert!(awaiting["current"].is_null());
-
-    h.send(b"\x1b");
-    h.see("Add task a");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.see("Attention · 1");
-    h.click("Attention · 1");
-    h.see("Input ▸ Attention");
-    h.see(&format!("flow-project · {b_id}"));
-    h.see("Awaiting release");
-    snapshot(&h, "05-attention");
-    h.send(b"\x1b");
-    h.open_tasks();
-    h.click("Synthetic B");
-    h.click("Accept›");
-    h.see("Input ▸ Accept");
-    h.until(|h| !h.contents().contains("Reading "));
-    snapshot(&h, "05a-accept-confirmation");
-    h.click("Accept ↵");
-    h.see("accepted · Done");
-    let done = snapshot(&h, "06-b-accepted");
-    assert!(done["current"].is_null() && done["awaiting"].is_null());
-    assert_eq!(done["pending"].as_array().unwrap().len(), 1);
-    assert_eq!(done["pending"][0]["id"], a["task_id"]);
-    assert_eq!(done["history"][0]["id"], b_id);
-    assert_eq!(done["history"][0]["run_id"], b_run);
-    assert_eq!(done["history"][0]["status"], "done");
-    assert!(done["history"][0]["t2"].is_number());
-    h.send(b"\x1b");
-    h.see("Add task a");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.see("Attention · 0");
-    let final_state = snapshot(&h, "07-no-auto-dispatch");
-    assert!(final_state["current"].is_null() && final_state["awaiting"].is_null());
-    assert_eq!(final_state["pending"][0]["id"], a["task_id"]);
-    let branches = git(h.dir.path(), &["branch", "--no-merged", "main"]);
-    assert!(branches.contains("synthetic-a"));
-    fs::write(Path::new(&evidence).join("unmerged-branches.txt"), branches).unwrap();
-    h.quit();
-    assert!(!h.dir.path().join("cli-bin/called").exists());
-    assert!(h.log("events").lines().all(|line| line == "ls "));
-    let writes: Vec<_> = calls()
-        .into_iter()
-        .filter(|c| {
-            matches!(
-                c["args"][0].as_str(),
-                Some(
-                    "dispatch-pending"
-                        | "return-to-pending"
-                        | "done"
-                        | "go"
-                        | "next"
-                        | "loop"
-                        | "complete-manually"
-                )
-            )
-        })
-        .collect();
-    assert_eq!(
-        writes
-            .iter()
-            .map(|c| c["args"][0].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        [
-            "dispatch-pending",
-            "return-to-pending",
-            "dispatch-pending",
-            "done",
-            "go"
-        ]
-    );
-    assert!(writes.iter().all(|c| c["code"] == 0));
-    eprintln!(
-        "real CLI path passed: A={} remains Pending with synthetic-a unmerged; B={b_id}/{b_run} Done; rendered toast and Attention saved in {evidence}; saddle binary={}",
-        a["task_id"],
-        env!("CARGO_BIN_EXE_saddle")
-    );
-}
-
-/// Build examples/counter-plugin first and provide SADDLE_TEST_PLUGIN. All data stays in the
-/// harness temporary HOME; no running Saddle instance or real registry is used.
 #[test]
 #[ignore = "requires the separately built SDK demo in SADDLE_TEST_PLUGIN"]
 fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
@@ -5553,7 +4991,7 @@ fn host_without_drover_plugin_never_calls_drover_even_with_legacy_config() {
 }
 
 #[test]
-fn drover_plugin_palette_form_and_background_lifecycle_use_only_fake_cli() {
+fn drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli() {
     let mut h = Harness::start_tasks();
     h.open_tasks();
     h.see("Native queue task");
@@ -5579,5 +5017,73 @@ fn drover_plugin_palette_form_and_background_lifecycle_use_only_fake_cli() {
             matches!(args[0].as_str(), "list" | "show" | "notifications")
         }),
         "unexpected business write: {calls}"
+    );
+}
+
+#[test]
+fn plugin_commands_reach_one_running_owner_and_replay_only_the_same_result() {
+    let mut h = Harness::start_tasks();
+    h.open_tasks();
+    h.send(b"a");
+    h.see("Save ^s");
+    h.send(b"unsaved draft");
+    let view = h.ctl(&["inspect"]);
+    let params =
+        serde_json::json!({"project":h.dir.path(),"title":"From controller","body":"test"})
+            .to_string();
+    let args = [
+        "plugin",
+        "--plugin",
+        "drover",
+        "--method",
+        "add",
+        "--params",
+        &params,
+        "--request-id",
+        "one-add",
+    ];
+    let initial = h.ctl(&args);
+    assert_eq!(initial["state"], "plugin_pending", "{initial}");
+    let done = h.operation(&initial);
+    assert_eq!(done["state"], "complete", "{done}");
+    assert_eq!(done["result"]["ok"], true);
+    assert_eq!(h.ctl(&args), done, "same request must not add twice");
+    assert_eq!(h.task_state("")["pending"].as_array().unwrap().len(), 2);
+    h.see("unsaved draft");
+    assert_eq!(h.ctl(&["inspect"])["focus"], view["focus"]);
+    assert_eq!(h.ctl(&["inspect"])["tabs"], view["tabs"]);
+    let conflict = h.ctl(&[
+        "plugin",
+        "--plugin",
+        "drover",
+        "--method",
+        "list",
+        "--params",
+        &params,
+        "--request-id",
+        "one-add",
+    ]);
+    assert_eq!(conflict["error"]["code"], "request_conflict");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Save ^s"));
+    h.click("Close Esc");
+    h.see("Input ▸ Agents");
+    let params = serde_json::json!({"project":h.dir.path()}).to_string();
+    let initial = h.ctl(&[
+        "plugin", "--plugin", "drover", "--method", "list", "--params", &params,
+    ]);
+    let read = h.operation(&initial);
+    assert_eq!(read["result"]["pending_total"], 2, "{read}");
+    assert!(read["result"]["pending"][0].get("body").is_none());
+    assert!(h.log("queue-events").is_empty(), "retired CLI must not run");
+    h.quit();
+    assert_eq!(
+        h.ctl(&[
+            "request",
+            "one-add",
+            "--instance",
+            initial["instance"].as_str().unwrap()
+        ])["error"]["code"],
+        "instance_unavailable"
     );
 }

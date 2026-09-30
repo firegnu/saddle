@@ -22,7 +22,7 @@ pub struct TaskDetail {
     /// Where the list had the task, and its list copy, when the page opened.
     pub(crate) group: &'static str,
     pub(crate) task: Task,
-    /// The last successful `drover show`; kept, and labelled stale, when a refresh fails.
+    /// The last successful task detail read; kept, and labelled stale, when a refresh fails.
     pub data: Option<Box<Detail>>,
     pub error: Option<String>,
     pub(crate) scroll: usize,
@@ -48,7 +48,7 @@ impl TaskDetail {
     pub(crate) fn page(&self) -> isize {
         self.view.0.saturating_sub(1).max(1) as isize
     }
-    /// `live` is where the list has the task now; `queried` whether `drover show` covers it.
+    /// `live` is where the list has the task now; `queried` whether task detail read covers it.
     pub(crate) fn lines(
         &self,
         t: &Theme,

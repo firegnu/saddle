@@ -4,7 +4,7 @@ name = "Drover"
 version = "0.1.0"
 protocol_major = 1
 executable = "bin/saddle-drover"
-required_capabilities = ["panel.v1", "ui.entry.v1", "panel.overlay.v1", "attention.v1", "panel.cursor.v1", "view.context.v1", "panel.escape.v1", "agent.open.v1", "notify.v1", "notify.target.v1", "view.close.v1"]
+required_capabilities = ["panel.v1", "command.v1", "ui.entry.v1", "panel.overlay.v1", "attention.v1", "panel.cursor.v1", "view.context.v1", "panel.escape.v1", "agent.open.v1", "notify.v1", "notify.target.v1", "view.close.v1"]
 entry = "open"
 [view]
 id = "main"

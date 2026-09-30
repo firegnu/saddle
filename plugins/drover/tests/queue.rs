@@ -40,7 +40,9 @@ fn selected_pending_shows_beside_the_list_and_edits_return_to_the_same_view() {
     let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
         panic!("Edit must submit a public operation");
     };
-    assert_eq!(op.args(), ["edit", "1", "Second revised", "second body"]);
+    assert!(
+        matches!(&op, Operation::Edit { index:0, title, body, .. } if title=="Second revised" && body=="second body")
+    );
     panel.complete(&op, Ok("saved".into()));
     let mut fresh = panel.snapshot.clone().unwrap();
     fresh.pending[0].title = "Second revised".into();
@@ -73,7 +75,9 @@ fn edit_follows_the_selected_task_and_preserves_the_form_on_failure() {
     let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
         panic!("missing edit");
     };
-    assert_eq!(op.args(), ["edit", "1", "Second changed", ""]);
+    assert!(
+        matches!(&op, Operation::Edit { index:0, title, body, .. } if title=="Second changed" && body.is_empty())
+    );
     panel.key(key(K::Esc));
     assert!(
         matches!(panel.page, Page::Edit { .. }),
@@ -150,9 +154,8 @@ fn selected_pending_edit_prefills_and_saves_the_native_form() {
     let Some(Request::Run(op)) = panel.key(KeyEvent::new(K::Char('s'), M::CONTROL)) else {
         panic!("Edit must submit a public operation");
     };
-    assert_eq!(
-        op.args(),
-        ["edit", "2", "Second revised", "second body\nextra line"]
+    assert!(
+        matches!(&op, Operation::Edit { index:1, title, body, .. } if title=="Second revised" && body=="second body\nextra line")
     );
 }
 
@@ -176,7 +179,14 @@ fn selected_pending_moves_use_pending_positions_and_stop_at_the_ends() {
     let Some(Request::Run(op)) = panel.key(key(K::Char('u'))) else {
         panic!("Move up must submit a public operation for the selected pending task");
     };
-    assert_eq!(op.args(), ["move", "2", "1"]);
+    assert!(matches!(
+        &op,
+        Operation::Move {
+            index: 1,
+            to: 0,
+            ..
+        }
+    ));
     assert!(panel.key(key(K::Char('u'))).is_none());
     let mut fresh = panel.snapshot.clone().unwrap();
     fresh.pending.swap(0, 1);
@@ -189,7 +199,14 @@ fn selected_pending_moves_use_pending_positions_and_stop_at_the_ends() {
     let Some(Request::Run(op)) = panel.key(key(K::Char('d'))) else {
         panic!("Move down must submit a public operation");
     };
-    assert_eq!(op.args(), ["move", "1", "2"]);
+    assert!(matches!(
+        &op,
+        Operation::Move {
+            index: 0,
+            to: 1,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -444,7 +461,7 @@ fn selected_pending_delete_confirms_a_fixed_target_and_can_be_cancelled() {
     let Some(Request::Run(op)) = panel.key(key(K::Char('y'))) else {
         panic!("y must confirm the delete through a public operation");
     };
-    assert_eq!(op.args(), ["drop", "--pos", "2", "Deleted in saddle"]);
+    assert!(matches!(&op, Operation::Delete { index: 1, .. }));
     let Operation::Delete { pending, index } = &op else {
         panic!("unexpected operation {op:?}");
     };

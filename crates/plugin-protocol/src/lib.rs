@@ -280,6 +280,7 @@ where
 /// Host and SDK features negotiated during initialize.
 pub const CAPABILITIES: &[&str] = &[
     "panel.v1",
+    "command.v1",
     "notify.v1",
     "ui.entry.v1",
     "panel.overlay.v1",

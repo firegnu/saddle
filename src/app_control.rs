@@ -92,6 +92,25 @@ impl App {
     }
     pub(super) fn control_tick(&mut self) {
         for record in &mut self.records {
+            if record.value["state"] == "plugin_pending" {
+                if let Operation::Plugin { plugin, .. } = &record.message.operation
+                    && let Some(result) = self.plugins.command_result(
+                        plugin,
+                        record.value["plugin_session"].as_u64().unwrap_or(0),
+                        record.message.request_id.as_deref().unwrap_or_default(),
+                    )
+                {
+                    record.value["ok"] = json!(result["ok"] != false);
+                    record.value["state"] = json!(if result["error"]["code"] == "result_unknown" {
+                        "uncertain"
+                    } else {
+                        "complete"
+                    });
+                    record.value["result"] = result;
+                }
+                continue;
+            }
+
             if !matches!(
                 record.value["state"].as_str(),
                 Some("accepted" | "starting" | "attaching" | "complete")
@@ -184,15 +203,16 @@ impl App {
                 )
             };
         }
-        if self.plugin_palette.is_some()
-            || self.plugin_overlay.is_some()
-            || self.plugin_page.is_some()
-            || self.placement.is_some()
-            || self.search.is_some()
-            || self.settings.is_some()
-            || self.new_agent.as_ref().is_some_and(|f| f.visible)
-            || self.closing.is_some()
-            || self.panel.confirm.is_some()
+        if !matches!(message.operation, Operation::Plugin { .. })
+            && (self.plugin_palette.is_some()
+                || self.plugin_overlay.is_some()
+                || self.plugin_page.is_some()
+                || self.placement.is_some()
+                || self.search.is_some()
+                || self.settings.is_some()
+                || self.new_agent.as_ref().is_some_and(|f| f.visible)
+                || self.closing.is_some()
+                || self.panel.confirm.is_some())
         {
             return control::error("busy", "finish the current layout/form/confirmation first");
         }
@@ -204,6 +224,20 @@ impl App {
         }
         let mut value = json!({"ok":true,"instance":self.control.id,"request_id":id,"accepted":true,"state":"accepted","agent_created":null,"pty":"not_started"});
         let result: Result<Option<Ticket>> = (|| match &message.operation {
+            Operation::Plugin {
+                plugin,
+                method,
+                params,
+            } => {
+                let session = self
+                    .plugins
+                    .invoke_command(plugin, id, method, params.clone())?;
+                value["plugin"] = json!(plugin);
+                value["plugin_session"] = json!(session);
+                value["state"] = json!("plugin_pending");
+                Ok(None)
+            }
+
             Operation::Open {
                 relative_to,
                 place,

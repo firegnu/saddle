@@ -36,7 +36,7 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It hosts [corral]
   **Dispatch selected:** select a Pending task and click **Dispatch selected** to send that task now; there is no need to move it to the top first. The button is unavailable while the queue is paused, a task is running or awaiting release, the queue is busy or could not be read, or the selected task is not Pending (Current, Awaiting and History tasks have no such button). It has no shortcut and asks for no confirmation.
 - **Attention:** waiting/error agents, new replies and items from enabled plugins. Click a row to open its source; nothing is answered or advanced. Drover publishes awaiting tasks and failed history through this same generic interface.
 - **Settings:** the `Settings` entry at the right of the Attention line (or **,** in Agents) edits the config file saddle started with, shown at the top. **General** holds the sidebar width, refresh interval; **Colors** holds every `[colors]` value, grouped, with swatches and a small preview; **Advanced** holds the corral command. Edits stay a draft until **Save / Ctrl-S**; **Cancel / Esc** leaves the file unchanged, and **Default / Ctrl-D** resets the selected value (Save still writes it). Save writes only the edited keys, keeping comments and the rest of the file, and creates the file and its folders if needed. Invalid values are reported and keep the draft. If the file changed on disk after Settings read it, nothing is saved: **Keep my edits** rereads the file under your draft, **Discard my edits** takes the file as it is. Saved colors and sidebar width apply at once (agent output keeps its own colors); settings marked `Restart required` apply on the next start.
-- **Task notifications (Drover plugin):** press **N** in Drover to choose System/In Saddle, then **Ctrl-S** to save through the public Drover CLI. The independent system notification watch is unchanged. First observation and preference changes establish a baseline; existing awaiting tasks are not announced again. In-Saddle prompts keep terminal focus and can open their plugin target.
+- **Task notifications (Drover plugin):** press **N** in Drover to choose System/In Saddle, then **Ctrl-S** to save. The plugin owns both task state and notification channels; there is no independent watch. First observation and preference changes establish a baseline; existing awaiting tasks are not announced again. In-Saddle prompts keep terminal focus and can open their plugin target.
 - **New agents:** choose a project and Codex or Claude, then create an agent with an editable suggested name. Advanced settings hold the full command, first message, opening location, and exact call preview.
 - **Viewer tabs and splits:** each tab holds a group of terminals, with left/right/up/down splits. Each pane runs an owned interactive shell or a live `corral attach`, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
@@ -50,7 +50,7 @@ Agents are native Rust widgets; Drover renders its own Ratatui view through the 
 ### Requirements
 
 - Rust stable **1.96 or later**.
-- `corral` on PATH or configured by path; `drover` is required only when its optional plugin is enabled.
+- `corral` on PATH or configured by path; the optional Drover plugin owns its task engine and requires no old Drover CLI or Python.
 - Git 2.45 or later on `PATH` for the Agents Git summary (it needs `--no-lazy-fetch`); older or missing Git shows `git unavailable`.
 - A terminal with Unicode and mouse support; true color is recommended.
 
@@ -73,7 +73,7 @@ saddle
 
 Use `saddle --help` to see the command-line options.
 
-Use **New** in Agents to start an agent, or attach an existing corral session. Register queue projects with drover separately; saddle does not initialize queue projects.
+Use **New** in Agents to start an agent, or attach an existing corral session. Register task projects through the Drover plugin command API; the Saddle host does not interpret task data.
 
 ### First session
 
@@ -103,7 +103,7 @@ Open **Settings → Plugins (F5)** to add a trusted local plugin directory, enab
 
 The fixed Plugins entry opens a searchable launcher showing runtime status. Select a plugin and press Enter to open it or switch to its existing view; disabled or unavailable plugins remain visible with an explanation. Manage plugins opens lifecycle settings. Counter opens a centered overlay: Esc closes it and restores focus, while Ctrl-] returns to Agents. Closing keeps the plugin running. Existing workspace panels are focused rather than duplicated.
 
-To build and package the standalone Counter example, run `./examples/counter-plugin/package.sh`. Add the resulting `examples/counter-plugin/dist/counter-plugin` directory in Settings. End users need only that directory, not Rust or development environment variables. The SDK is a development API; see the [Counter README](examples/counter-plugin/README.md) and [plugin author guide (Chinese)](docs/插件开发入门.md). Drover migration is a separate future step.
+To build and package the standalone Counter example, run `./examples/counter-plugin/package.sh`. Add the resulting `examples/counter-plugin/dist/counter-plugin` directory in Settings. End users need only that directory, not Rust or development environment variables. The SDK is a development API; see the [Counter README](examples/counter-plugin/README.md) and [plugin author guide (Chinese)](docs/插件开发入门.md). The complete Drover plugin uses the same SDK.
 
 ## Task dispatch records
 
@@ -179,7 +179,7 @@ refresh_ms = 1000
 
 | `colors` | Optional flat table for interface and agent-type colors |
 
-Command paths support `~/`. Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom Drover command/cwd/dlog values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). The plugin uses public schema 2 list/show/action APIs; the host does not read Drover projects or task state.
+Command paths support `~/`. Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom corral/cwd/dlog values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). The plugin owns schema 2 task data and explicit actions; the host does not read Drover projects or task state.
 
 [config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above. Its defaults preserve the current appearance. For a small override, add:
 
@@ -241,22 +241,13 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 
 Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies the current input target. Open dialogs capture their own input; background controls stay inactive. While Tasks is open, keys and the mouse act only on it; the terminals keep running underneath and are not resized. Closing and reopening Tasks keeps the project, the selected task, the text/details view, scroll positions, and any unsubmitted add/edit draft.
 
-**Task text and run details.** The selected task shows beside the list, first as its full title and body (**Task text t**). **Run details ↵** switches to its status and progress; the chosen view stays as you move between tasks. For current, awaiting, and history tasks, run details come from the read-only `drover show <id> --json --with-agent-status`, run in the project when the view shows and about every 5 seconds while it stays open, one query at a time; choosing Task text, another task, switching projects, closing Tasks, or quitting stops it. The details follow the task id, so a task that finishes or is released keeps showing the same task. They show:
+**Task text and run details.** The plugin reads task data directly. Run details refresh while visible, showing recorded run/submission/acceptance/return history and repository references. Git state and old check results never gate task submission or acceptance. The page never executes check commands. Missing values stay unknown; a failed refresh marks earlier details stale.
 
-- the status, elapsed time, and any attention hint or inconsistent-snapshot warning;
-- the completion checks recomputed now, with each reason; for history tasks the completion-time checks were not saved, and today's are not applied;
-- the last check-command record, which is only a previous result and is never run by the page;
-- Git progress: the start..HEAD (or start..end) range count, which is not a per-task count, main's progress, and recorded and current commits;
-- routing from the current task file, hold, and the attention hint (an inference, not proof that work stopped);
-- start, finish, and release times, and the body.
+Select a pending task to use **Edit**, **Move up**, or **Move down** at the bottom of Tasks; other task states cannot be edited or reordered. Edit opens a full-size form in the same popup and prefills the title and multiline body; saving or cancelling returns to the same task and view. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. The plugin checks the displayed pending content and order under the task write lock; command clients also supply the displayed queue token.
 
-Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their details show the list's title, body, and status; a pending task switches to full details once it starts.
+**Delete x** opens a confirmation showing the selected pending task's position, id, title, and body; press **y** or click **Delete** to confirm, or **Esc** / **Cancel** to keep it. The confirmed target is fixed when the dialog opens, so refreshes do not change it. The Drover plugin records the deletion under the same lock and pending recheck: the task leaves the pending queue and drover keeps it in History as **Dropped** (with that reason); it is not erased. Only pending tasks can be deleted here; running tasks use the separate Return to pending confirmation.
 
-Select a pending task to use **Edit**, **Move up**, or **Move down** at the bottom of Tasks; other task states cannot be edited or reordered. Edit opens a full-size form in the same popup and prefills the title and multiline body; saving or cancelling returns to the same task and view. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, the Drover plugin rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
-
-**Delete x** opens a confirmation showing the selected pending task's position, id, title, and body; press **y** or click **Delete** to confirm, or **Esc** / **Cancel** to keep it. The confirmed target is fixed when the dialog opens, so refreshes do not change it. The Drover plugin runs `drover drop --pos <position> "Deleted in saddle"` after the same pending recheck: the task leaves the pending queue and drover keeps it in History as **Dropped** (with that reason); it is not erased. Only pending tasks can be deleted here; running tasks use the separate Return to pending confirmation.
-
-**All pending A** opens a read-only page in the Tasks popup listing the pending tasks of every project in `~/.drover/projects`, grouped by project with each task's queue position, id, and full title. Each project is read in the background with its own `drover list --json`; a project that is still loading or failed to read is labeled as such, with the full error, while the other projects still show their tasks. Press **r** to reload. The page does not edit or reorder tasks; switch to a project to act on its queue.
+**All pending A** opens a read-only page in the Tasks popup listing the pending tasks of every project in `~/.drover/projects`, grouped by project with each task's queue position, id, and full title. Each project is read in the background by the plugin core; a project that is still loading or failed to read is labeled as such, with the full error, while the other projects still show their tasks. Press **r** to reload. The page does not edit or reorder tasks; switch to a project to act on its queue.
 
 **Pause applies to the open project; Dispatch selected, Submit for acceptance, Accept, and Return to pending apply to their explicitly selected task.** A failed refresh disables actions on stale queue data. No active work is shown as `No active tasks`; history remains available, with a range indicator at the bottom.
 
