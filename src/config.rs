@@ -9,6 +9,7 @@ pub struct Config {
     pub left_width: u16,
     pub left_split: f64,
     pub refresh_ms: u64,
+    pub mascot_enabled: bool,
     /// Preserved for old config files; all task settings now belong to the Drover plugin.
     pub queue: Option<toml::Value>,
     pub colors: crate::theme::Theme,
@@ -21,6 +22,7 @@ impl Default for Config {
             left_width: 52,
             left_split: 0.5,
             refresh_ms: 1000,
+            mascot_enabled: true,
             queue: None,
             colors: crate::theme::Theme::default(),
         }

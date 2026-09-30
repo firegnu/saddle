@@ -5471,3 +5471,62 @@ fn clawd_animates_in_its_own_band_and_never_sends_input() {
     h.quit();
     assert!(!h.log("events").contains("stop "));
 }
+
+#[test]
+fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            let path = root.join("config.toml");
+            let text = std::fs::read_to_string(&path).unwrap();
+            std::fs::write(path, format!("mascot_enabled = false\n{text}")).unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.send(b"skk");
+    h.see("┃ ○ a ");
+    h.send(b"\r");
+    h.see("p/a READY");
+    let visible = |h: &Harness| {
+        (0..3).any(|y| {
+            (52..140).any(|x| {
+                h.screen.screen().cell(y, x).unwrap().fgcolor() == vt100::Color::Rgb(217, 119, 87)
+            })
+        })
+    };
+    assert!(!visible(&h), "startup config disables the mascot");
+    let original = h.ctl(&["inspect"])["tabs"].clone();
+    h.click("Settings");
+    h.see("Clawd mascot");
+    h.see("Disabled");
+    h.click("Clawd mascot");
+    h.see("Enabled");
+    h.until(|h| h.screen.screen().hide_cursor());
+    assert!(!visible(&h), "the draft must not apply before Save");
+    h.send(b"\x13");
+    h.until(|h| !h.contents().contains("General F1") && visible(h));
+    assert_eq!(
+        toml::from_str::<toml::Value>(&h.log("config.toml")).unwrap()["mascot_enabled"].as_bool(),
+        Some(true)
+    );
+    h.click("Settings");
+    h.click("Clawd mascot");
+    h.see("Disabled");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("General F1") && visible(h));
+    h.click("Settings");
+    h.send(b"\x1b[B\x1b[B \x13");
+    h.until(|h| !h.contents().contains("General F1") && !visible(h));
+    assert_eq!(
+        toml::from_str::<toml::Value>(&h.log("config.toml")).unwrap()["mascot_enabled"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
+    assert_eq!(h.locate_from("Agent · p/a", 0, 52).unwrap().1, 3);
+    assert!(h.input_hex("p/a").is_empty());
+    h.quit();
+    assert!(!h.log("events").contains("stop "));
+}

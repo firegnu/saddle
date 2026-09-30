@@ -378,3 +378,48 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
         }
     }
 }
+
+#[test]
+fn mascot_toggle_defaults_on_saves_a_boolean_and_can_be_cancelled_or_reset() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "# keep this comment\nleft_width = 52\n").unwrap();
+    let original = read(&path);
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot_enabled"), Some("true"));
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Char(' '));
+    assert_eq!(settings.value("mascot_enabled"), Some("false"));
+    settings.paste("invalid");
+    ctrl(&mut settings, 'u');
+    assert_eq!(settings.value("mascot_enabled"), Some("false"));
+    assert_eq!(read(&path), original);
+    assert!(matches!(
+        press(&mut settings, KeyCode::Esc),
+        Outcome::Cancel
+    ));
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot_enabled"), Some("true"));
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Enter);
+    let Outcome::Saved(_, restart) = ctrl(&mut settings, 's') else {
+        panic!("{}", settings.message())
+    };
+    assert!(restart.is_empty());
+    let saved: toml::Value = toml::from_str(&read(&path)).unwrap();
+    assert_eq!(saved["mascot_enabled"].as_bool(), Some(false));
+    assert!(read(&path).starts_with(&original));
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot_enabled"), Some("false"));
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Down);
+    ctrl(&mut settings, 'd');
+    assert_eq!(settings.value("mascot_enabled"), Some("true"));
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Saved(_, _)));
+    assert_eq!(
+        toml::from_str::<toml::Value>(&read(&path)).unwrap()["mascot_enabled"].as_bool(),
+        Some(true)
+    );
+}

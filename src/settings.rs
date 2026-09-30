@@ -44,6 +44,7 @@ const PAGES: [(Page, &str, u8); 5] = [
 enum Kind {
     Columns,
     Millis,
+    Bool,
     Command,
     Color,
 }
@@ -94,6 +95,13 @@ fn fields() -> Vec<Field> {
             Kind::Millis,
             true,
         ),
+        field(
+            "mascot_enabled",
+            "Clawd mascot",
+            Page::General,
+            Kind::Bool,
+            false,
+        ),
     ];
     let mut colors: Vec<_> = Theme::default()
         .named_mut()
@@ -124,6 +132,7 @@ fn value(config: &Config, field: &Field) -> String {
     match field.key.as_str() {
         "left_width" => config.left_width.to_string(),
         "refresh_ms" => config.refresh_ms.to_string(),
+        "mascot_enabled" => config.mascot_enabled.to_string(),
         "corral" => config.corral.clone(),
         key => color(&config.colors, &key["colors.".len()..]).map_or_else(String::new, color_name),
     }
@@ -357,7 +366,9 @@ impl Settings {
                 KeyCode::Char('d') => {
                     self.inputs[self.selected] = Input::new(self.defaults[self.selected].clone())
                 }
-                KeyCode::Char('u') => self.inputs[self.selected].clear(),
+                KeyCode::Char('u') if self.fields[self.selected].kind != Kind::Bool => {
+                    self.inputs[self.selected].clear()
+                }
                 _ => {}
             }
             return Outcome::Stay;
@@ -371,7 +382,15 @@ impl Settings {
         match key.code {
             KeyCode::Up | KeyCode::BackTab => self.step(-1),
             KeyCode::Down | KeyCode::Tab => self.step(1),
-            code => self.inputs[self.selected].key(code, false),
+            KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Left | KeyCode::Right
+                if self.fields[self.selected].kind == Kind::Bool =>
+            {
+                self.toggle()
+            }
+            code if self.fields[self.selected].kind != Kind::Bool => {
+                self.inputs[self.selected].key(code, false)
+            }
+            _ => {}
         }
         Outcome::Stay
     }
@@ -401,8 +420,16 @@ impl Settings {
         }
         Outcome::Stay
     }
+    fn toggle(&mut self) {
+        self.inputs[self.selected] =
+            Input::new((self.inputs[self.selected].text != "true").to_string());
+    }
     pub fn paste(&mut self, text: &str) {
-        if self.page != Page::Diagnostics && !self.conflict && self.broken.is_none() {
+        if self.page != Page::Diagnostics
+            && !self.conflict
+            && self.broken.is_none()
+            && self.fields[self.selected].kind != Kind::Bool
+        {
             self.inputs[self.selected].insert(text, false);
         }
     }
@@ -412,7 +439,9 @@ impl Settings {
         }
         if let Some(&(_, input, i)) = self.rows.iter().find(|(row, _, _)| row.contains(point)) {
             self.selected = i;
-            if input.contains(point) {
+            if self.fields[i].kind == Kind::Bool {
+                self.toggle();
+            } else if input.contains(point) {
                 self.inputs[i].click(point);
             }
         }
@@ -458,7 +487,7 @@ impl Settings {
                 Kind::Color => parse_color(text)
                     .err()
                     .map(|e| format!("{}: {e}", field.label)),
-                Kind::Command => None,
+                Kind::Bool | Kind::Command => None,
             };
             if let Some(problem) = problem {
                 self.select(i);
@@ -891,7 +920,23 @@ impl Settings {
         spans.push(Span::styled("[", bracket));
         frame.render_widget(Paragraph::new(Line::from(spans)), row);
         let input = Rect::new(row.x + used + 1, row.y, width, 1).intersection(row);
-        self.inputs[i].draw(frame, input, selected, "", t);
+        if field.kind == Kind::Bool {
+            let label = if self.inputs[i].text == "true" {
+                "Enabled"
+            } else {
+                "Disabled"
+            };
+            frame.render_widget(
+                Paragraph::new(label).style(Style::default().fg(if selected {
+                    t.focus
+                } else {
+                    t.text
+                })),
+                input,
+            );
+        } else {
+            self.inputs[i].draw(frame, input, selected, "", t);
+        }
         let after = Rect::new(
             input.right(),
             row.y,
@@ -911,7 +956,11 @@ impl Settings {
 }
 
 fn unit(kind: Kind) -> &'static str {
-    if kind == Kind::Millis { " ms" } else { "" }
+    match kind {
+        Kind::Millis => " ms",
+        Kind::Bool => " Space/Enter toggle",
+        _ => "",
+    }
 }
 
 fn shrink_top(area: &mut Rect, rows: u16) {
@@ -970,6 +1019,7 @@ fn apply(document: &mut toml_edit::DocumentMut, field: &Field, text: &str) -> an
     use toml_edit::{Item, Value};
     let value = match field.kind {
         Kind::Columns | Kind::Millis => Some(Value::from(text.trim().parse::<i64>()?)),
+        Kind::Bool => Some(Value::from(text.parse::<bool>()?)),
         Kind::Color => Some(Value::from(text.trim())),
         Kind::Command => Some(Value::from(text)),
     };

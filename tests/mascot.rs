@@ -36,6 +36,7 @@ fn render(
             Some(ui::Workspace {
                 terminals,
                 mascot: m,
+                mascot_enabled: true,
                 placement: None,
                 search: None,
                 form: None,

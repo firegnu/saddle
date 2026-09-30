@@ -48,6 +48,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
 pub struct Workspace<'a> {
     pub terminals: &'a crate::terminals::Terminals,
     pub mascot: &'a mut crate::mascot::Mascot,
+    pub mascot_enabled: bool,
     pub placement: Option<&'a crate::placement::Placement>,
     pub search: Option<&'a mut crate::search::Search>,
     pub form: Option<&'a mut crate::launch::Form>,
@@ -81,7 +82,12 @@ pub fn draw_workspace(
     ) = match workspace {
         Some(w) => (
             Some(w.terminals),
-            Some(w.mascot),
+            if w.mascot_enabled {
+                Some(w.mascot)
+            } else {
+                w.mascot.hide();
+                None
+            },
             w.placement,
             w.search,
             w.form,

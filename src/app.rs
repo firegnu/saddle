@@ -355,6 +355,7 @@ impl App {
                     Some(ui::Workspace {
                         terminals: &self.viewer,
                         mascot: &mut self.mascot,
+                        mascot_enabled: self.config.mascot_enabled,
                         placement: self.placement.as_ref(),
                         search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
@@ -1508,6 +1509,7 @@ impl App {
             Outcome::Saved(saved, restart) => {
                 self.config.colors = saved.colors.for_terminal(truecolor());
                 self.config.left_width = saved.left_width;
+                self.config.mascot_enabled = saved.mascot_enabled;
                 self.panel.message = if restart.is_empty() {
                     "Settings saved.".into()
                 } else {

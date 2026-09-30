@@ -176,6 +176,7 @@ refresh_ms = 1000
 | `left_width` | Preferred width of the left column, in terminal cells |
 | `left_split` | No longer used: Agents take the whole left column with optional plugin views. Still accepted (between 0 and 1) so existing configs keep loading |
 | `refresh_ms` | Background refresh interval in milliseconds |
+| `mascot_enabled` | Show the animated Clawd mascot (default `true`); toggle in Settings → General → Clawd mascot and save with Ctrl-S to apply immediately |
 
 
 

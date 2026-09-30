@@ -951,6 +951,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                     Some(ui::Workspace {
                         terminals: &terminals,
                         mascot: &mut Default::default(),
+                        mascot_enabled: true,
                         placement: None,
                         search: None,
                         form: None,
@@ -1640,6 +1641,7 @@ fn render_header_actions(
                 Some(ui::Workspace {
                     terminals: &terminals,
                     mascot: &mut Default::default(),
+                    mascot_enabled: true,
                     placement: None,
                     search: None,
                     form: None,

@@ -230,3 +230,27 @@ fn agents_palette_takes_nearest_256_colors_unless_the_terminal_announces_truecol
         .for_terminal(false);
     assert_eq!(ansi.agents_text, Color::White);
 }
+
+#[test]
+fn mascot_option_defaults_on_and_accepts_only_toml_booleans() {
+    assert!(Config::default().mascot_enabled);
+    assert!(Config::parse("").unwrap().mascot_enabled);
+    assert!(
+        Config::parse(include_str!("../config.toml"))
+            .unwrap()
+            .mascot_enabled
+    );
+    assert!(
+        Config::parse("mascot_enabled = true")
+            .unwrap()
+            .mascot_enabled
+    );
+    assert!(
+        !Config::parse("mascot_enabled = false")
+            .unwrap()
+            .mascot_enabled
+    );
+    for invalid in ["mascot_enabled = 'false'", "mascot_enabled = 0"] {
+        assert!(Config::parse(invalid).is_err());
+    }
+}
