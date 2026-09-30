@@ -47,6 +47,7 @@ pub fn draw(frame: &mut Frame, panel: &mut Panel, view: View<'_>) -> Hits {
 
 pub struct Workspace<'a> {
     pub terminals: &'a crate::terminals::Terminals,
+    pub mascot: &'a mut crate::mascot::Mascot,
     pub placement: Option<&'a crate::placement::Placement>,
     pub search: Option<&'a mut crate::search::Search>,
     pub form: Option<&'a mut crate::launch::Form>,
@@ -67,33 +68,44 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (terminals, placement, mut search, mut form, program, modal, attention, mut settings) =
-        match workspace {
-            Some(w) => (
-                Some(w.terminals),
-                w.placement,
-                w.search,
-                w.form,
-                w.program,
-                w.modal,
-                w.attention,
-                w.settings,
-            ),
-            None => (
-                None,
-                None,
-                None,
-                None,
-                "corral",
-                false,
-                Attention {
-                    items: &[],
-                    loading: false,
-                    popup: None,
-                },
-                None,
-            ),
-        };
+    let (
+        terminals,
+        mascot,
+        placement,
+        mut search,
+        mut form,
+        program,
+        modal,
+        attention,
+        mut settings,
+    ) = match workspace {
+        Some(w) => (
+            Some(w.terminals),
+            Some(w.mascot),
+            w.placement,
+            w.search,
+            w.form,
+            w.program,
+            w.modal,
+            w.attention,
+            w.settings,
+        ),
+        None => (
+            None,
+            None,
+            None,
+            None,
+            None,
+            "corral",
+            false,
+            Attention {
+                items: &[],
+                loading: false,
+                popup: None,
+            },
+            None,
+        ),
+    };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
@@ -192,6 +204,24 @@ pub fn draw_workspace(
             view.focus == Focus::Viewer && form.is_none() && placement.is_none() && !modal,
             &panel.agents,
         );
+        if let Some(mascot) = mascot {
+            if let (Some(area), Some(name)) = (
+                terminals.mascot_area(view.panes.viewer),
+                terminals.mascot_target(),
+            ) {
+                let agent = panel.agents.iter().find(|a| a.name == name);
+                let status = agent.map_or(Status::Unknown, |a| panel.status(a, view.now));
+                mascot.draw(
+                    frame,
+                    area,
+                    (name, agent.and_then(|a| a.instance.as_deref())),
+                    status,
+                    view.now,
+                );
+            } else {
+                mascot.hide();
+            }
+        }
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
     }

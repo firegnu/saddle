@@ -690,14 +690,27 @@ impl Terminals {
         }
         Ok(())
     }
+    /// Decoration uses only the displayed agent, never the Agents-list selection.
+    pub fn mascot_target(&self) -> Option<&str> {
+        let pane = self.active_pane();
+        if pane.plugin_id().is_some() || pane.viewer.shell.is_some() {
+            return None;
+        }
+        pane.viewer.showing.as_deref().or(pane.viewer.target())
+    }
+    pub fn mascot_area(&self, area: Rect) -> Option<Rect> {
+        (self.mascot_target().is_some() && area.width >= 24 && area.height >= 18)
+            .then(|| Rect::new(area.x, area.y + STRIP, area.width, crate::mascot::HEIGHT))
+    }
     pub fn rects(&self, area: Rect) -> Vec<(u64, Rect)> {
         let mut result = Vec::new();
-        // The tab strip; everything below belongs to the split tree.
+        // Drawing, PTY sizing and hit testing share the same decoration inset.
+        let inset = STRIP + self.mascot_area(area).map_or(0, |r| r.height);
         let area = Rect::new(
             area.x,
-            area.y + area.height.min(STRIP),
+            area.y + area.height.min(inset),
             area.width,
-            area.height.saturating_sub(STRIP),
+            area.height.saturating_sub(inset),
         );
         match self.tab().zoomed() {
             Some(id) => result.push((id, area)),

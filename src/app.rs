@@ -178,6 +178,7 @@ struct App {
     git: git::Poller,
     actions: Actions,
     viewer: Terminals,
+    mascot: crate::mascot::Mascot,
     layout_store: crate::layout_state::Store,
     cwd: String,
     projects: Vec<String>,
@@ -274,6 +275,7 @@ impl App {
             git: git::Poller::start("git".into(), Duration::from_secs(5)),
             actions,
             viewer,
+            mascot: crate::mascot::Mascot::new(truecolor()),
             config,
             panel: Panel {
                 follow: true,
@@ -352,6 +354,7 @@ impl App {
                     },
                     Some(ui::Workspace {
                         terminals: &self.viewer,
+                        mascot: &mut self.mascot,
                         placement: self.placement.as_ref(),
                         search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),

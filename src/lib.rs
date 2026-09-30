@@ -13,6 +13,7 @@ pub mod input;
 mod launch;
 pub mod layout;
 pub mod layout_state;
+pub mod mascot;
 pub mod placement;
 pub mod pty;
 pub mod search;

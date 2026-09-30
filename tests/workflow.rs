@@ -650,7 +650,8 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     h.event("input p/a 71");
     h.send("\x1b[200~中文\nhello\x1b[201~".as_bytes());
     h.event("1b5b3230307ee4b8ade696870a68656c6c6f1b5b3230317e");
-    h.send(b"\x1b[<0;56;6M");
+    let (col, row) = h.locate("p/a READY", 0).unwrap();
+    h.send(format!("\x1b[<0;{};{}M", col + 3, row + 2).as_bytes());
     h.event("input p/a 1b5b3c303b333b324d");
     h.send(b"\x1dj\r");
     h.see("p/b READY");
@@ -674,7 +675,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(44, 160);
-    h.event("size p/b 106x38");
+    h.event("size p/b 106x34"); // Four rows belong to the mascot, outside the PTY.
     // Agent disappearance returns to the prompt, without selecting another viewer.
     std::fs::write(
         h.dir.path().join("agents.json"),
@@ -1924,7 +1925,7 @@ fn reselecting_a_pending_agent_never_sends_input_to_the_old_session() {
     h.send(b"\x1dj\r");
     h.see("attaching p/b");
     h.send(b"\rZ\x1b[200~pending-b\x1b[201~");
-    h.send(b"\x1b[<0;56;4M\x1b[<0;56;4m");
+    h.click("Agent · p/a");
     // A visible native page acknowledges that all preceding input was handled.
     h.send(b"\x1d,");
     h.see("Settings");
@@ -2046,8 +2047,11 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     h.click_in("Open content in a new tab", "p/a");
     h.until(|h| h.contents().matches(" ×│").count() == 2);
     h.see("Agent · p/a");
+    // A tab title arrives before the PTY's remaining redraw bytes.
+    h.see("Input ▸ p/a");
+    h.see("INPUT RECEIVED");
     // The moved pane keeps its session and output; p/b stays behind in Tab 1.
-    assert!(h.contents().contains("INPUT RECEIVED"));
+    assert!(h.contents().contains("INPUT RECEIVED"), "{}", h.contents());
     assert!(!h.contents().contains("Agent · p/b"));
     h.send(b"Z");
     h.event("input p/a 5a");
@@ -2070,7 +2074,7 @@ fn choosing_an_open_agent_moves_its_session_without_attaching_again() {
     let a = h.locate("Agent · p/a", 0).unwrap();
     let b = h.locate("Agent · p/b", 0).unwrap();
     assert!(a.0 == b.0 && a.1 > b.1, "p/a must move below p/b");
-    assert!(h.contents().contains("INPUT RECEIVED"));
+    assert!(h.contents().contains("INPUT RECEIVED"), "{}", h.contents());
     h.send(b"Y");
     h.event("input p/a 59");
     let events = h.log("events");
@@ -5432,5 +5436,35 @@ fn plugin_real_diff_continuous_live_overlay_split_and_tab() {
     h.see("No changes in this mode.");
     h.send(b"1");
     h.see("first_change");
+    assert!(!h.log("events").contains("stop "));
+}
+
+#[test]
+fn clawd_animates_in_its_own_band_and_never_sends_input() {
+    let mut h = Harness::start();
+    h.send(b"\r");
+    h.see("p/a READY");
+    let left = |h: &Harness| {
+        (52..140).find(|&x| {
+            let c = h.screen.screen().cell(3, x).unwrap();
+            c.fgcolor() == vt100::Color::Rgb(217, 119, 87) && c.contents() == "▀"
+        })
+    };
+    h.until(|h| left(h).is_some());
+    let start = left(&h).unwrap();
+    h.until(|h| left(h).is_some_and(|x| x != start));
+    assert!(h.input_hex("p/a").is_empty());
+    // Click the decoration, then use a real key as an acknowledgement barrier.
+    h.send(b"\x1b[<0;56;5M\x1b[<0;56;5mZ");
+    h.event("input p/a 5a");
+    assert_eq!(h.input_hex("p/a"), "5a");
+    let mut agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
+    agents["p/a"] = serde_json::json!("blocked");
+    std::fs::write(h.dir.path().join("agents.json"), agents.to_string()).unwrap();
+    h.until(|h| (52..140).any(|x| h.screen.screen().cell(3, x).unwrap().contents() == "?"));
+    let (_, title_y) = h.locate_from("Agent · p/a", 0, 52).unwrap();
+    assert_eq!(title_y, 7, "tab strip + four mascot rows");
+    assert!(left(&h).is_some(), "waiting keeps Clawd orange");
+    h.quit();
     assert!(!h.log("events").contains("stop "));
 }
