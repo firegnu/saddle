@@ -1,10 +1,13 @@
 # 会话交接
 
-更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。现已更新日常 release，补齐一条命令打包与开发入门；没有退出用户窗口，重开后使用新版。
+更新：2026-09-30。Drover + Saddle 简化流程已联合发布。用户已用真实 T57 验证待验收通知并接受，T57 为 Done。新文档测试 T58 已完成委派、审查、合并、推送和清理，done 返回 awaiting_release；随后公开状态出现接受记录，现为 Done。主控未执行 go，不自动派发。用户随后确认进程式插件长期架构及在 Saddle 内绘制界面；主控已亲自完成首个插件宿主、Rust SDK 与独立 demo；用户在临时开发版确认效果后授权日常发布。已更新日常 release，补齐一条命令打包与开发入门；用户随后明确“跑起来了”，确认日常版 Counter 可用。现按用户要求参考 Herdr，已整理插件日常入口接入设计，尚未实现。
 
 ## 当前状态
 
-- 最新交付：6d39a06（示例 package.sh、开发入门及 README），合并 27f3279，收尾 fc2c060；plugin-delivery 分支/worktree 已清理，main 已推送。主控亲自完成，没有委派、队列或上游变更。
+- 最新设计：89a4709，合并 92a70c7，收尾 7239cfb；plugin-entry-design 分支/worktree 已清理。文档 docs/插件入口与界面接入设计.md：入口、界面位置、提醒分开；先 Counter 直接入口和展示位置，再通用 Attention 来源，最后 Drover 迁移。具体接口与线框是主控建议，尚未实施。
+- 本轮只改设计与交接，新增链接、围栏及 diff 检查通过；未跑功能测试、编译或重启，未改协议/配置/队列/服务。原 release 保持不变；用户已通过管理页添加正式 Counter 并确认运行。
+
+- 上轮实现交付：6d39a06（示例 package.sh、开发入门及 README），合并 27f3279，收尾 fc2c060；plugin-delivery 分支/worktree 已清理，main 已推送。主控亲自完成，没有委派、队列或上游变更。
 - 用户一条打包命令：`./examples/counter-plugin/package.sh`；正式产物已生成在主仓库 `examples/counter-plugin/dist/counter-plugin`。在日常新版 Settings → Plugins 中添加该完整目录、Enable、Open panel；本轮没有替用户登记。
 - 最新标准检查：306 passed / 1 failed / 6 ignored，Clippy通过；失败为已记录的 `terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal`（workflow.rs:2508）。独立仓库外打包通过；debug 和实际 release 的插件 PTY 主路径各 1 passed。详见 docs/任务/插件Demo交付与发布.md，不写全绿。
 
@@ -13,7 +16,7 @@
 - SDK 在 crates/plugin-protocol、crates/plugin-sdk；独立 demo 在 examples/counter-plugin，只依赖 Git revision 5191a782bb7671390c124485258d83e434104560 的公开 SDK，有自己的 Cargo.lock。复制到 /tmp/saddle-plugin-external.h9LoWT/counter 独立构建并用其产物验证通过；没有将该目录登记到真实 Saddle。
 - 前轮实现验证：最终标准套件 305 passed / 1 failed / 6 ignored；失败为既有 t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases，在未修改基线2bfe1c4同一步再次复现。Clippy通过。两项本轮需外部构建的 ignored 检查已显式运行通过（SDK stdio probe、实际 Saddle PTY demo）。另新增极小管理页窗口检查单独通过。详情见 docs/任务/插件首个Demo实现.md，不写全绿。
 - 隔离 PTY 覆盖添加/启用/打开、Enter/鼠标、通知、Shift+Enter、关闭重开保留、重启归零、停用；假 Corral/Drover、临时 HOME/config/state/runtime。进程故障回收、宽字符和旧布局等检查通过。
-- 日常入口 `~/.local/bin/saddle` 仍指向共享 target/release/saddle，现已构建为插件版，SHA-256 `99695dbeb72724160443418be64809e61b33995badfa7d7515d2a17ed29961da`。备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-20260930-170510`。**已更新磁盘二进制，没有强制退出/重启现有窗口，也未改日常配置/插件登记/队列/服务**；下一次正常启动生效。
+- 日常入口 `~/.local/bin/saddle` 仍指向共享 target/release/saddle，现已构建为插件版，SHA-256 `99695dbeb72724160443418be64809e61b33995badfa7d7515d2a17ed29961da`。备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-20260930-170510`。发布时只更新磁盘二进制，主控没有强制退出窗口或修改日常登记/队列/服务；随后用户自己添加正式 Counter 并确认可运行。
 - 设计记录：docs/DESIGN.md §62、docs/插件系统设计.md、docs/插件协议.md、docs/插件Demo设计.md。侧栏/状态栏等挂载位置以后按实际需求补充，当前支持右侧工作区面板；Drover 第二阶段尚未实施。
 
 - 前轮联合发布 Saddle main：2a6862c；主控审查 c97270a；空提交收尾 c939fd1。本交接与发布记录随最终文档提交推送，确切 SHA 见 git log 和 Dispatch 05458465051541c4a9c2cc908dc9fe3e 收尾 note。无遗留本轮实现改动。
@@ -41,7 +44,7 @@
 
 T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计不操作队列，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
 
-插件工作的下一步：用户重开日常 Saddle，按需从正式产物目录添加 demo。磁盘 release 已更新，当前窗口未强制重启，重启后的现场验收尚未发生。开发说明见 docs/插件开发入门.md；不要再要求用户执行那串临时测试环境命令。当前是已验证的开发协议，不是稳定1.0或多插件长稳性能承诺。Demo 通路已验证，Drover 为第二个插件；先讨论迁移清单和必要挂载位置，未授权前不迁移或重写 Drover。T29既有picker失败保留，不自动开启新任务。
+插件工作的下一步：按 docs/插件入口与界面接入设计.md，从 Counter 的日常直接入口与工作区/居中覆盖展示位置开始实施。该层目前只有设计文档，未写功能代码。用户已确认正式 Counter 运行，不重复要求重开或添加，不再使用那串临时测试环境命令。开发说明见 docs/插件开发入门.md。当前是已验证的开发协议，不是稳定1.0或多插件长稳性能承诺。Demo 通路已验证，Drover 为第二个插件；先讨论迁移清单和必要挂载位置，未授权前不迁移或重写 Drover。T29既有picker失败保留，不自动开启新任务。
 
 本轮后续由主控亲自做，不再委派。已有讨论/审阅 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle、attached=1）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
 
@@ -58,3 +61,5 @@ T58 Dispatch：a11dd4a152ae454c9eb1e6b69ddfda94；任务与审查记录 docs/任
 插件实现记录：Dispatch d2cd3a7e030b4a619cc707241f33aedd，仅记录主控实施和审查，无代理派发、无队列变更。测试日志 /tmp/saddle-plugin-demo-final-tests.log，基线 /tmp/saddle-plugin-baseline-t20-repeat.log，审查说明 docs/任务/插件首个Demo实现.md。
 
 插件交付/发布记录：Dispatch a54eebf9f78f4544a969aa1487288e9c，docs/任务/插件Demo交付与发布.md；只记录主控工作，不是代理派发。
+
+插件日常入口设计记录：Dispatch 6f1022252d304e12899e8d72264bffc8，docs/任务/插件日常入口接入设计.md；主控文档工作，无代理派发。
