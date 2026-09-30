@@ -1207,24 +1207,29 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
     seed_native(h.dir.path(), &serde_json::json!({"history":history}));
     h.open_tasks();
     // The list is the popup's left third; the selected task's text is beside it.
+    h.see("History 40");
+    let (list_x, list_y) = h.locate("History 40", 0).unwrap();
+    let right = ((list_x + 1)..h.screen.screen().size().1)
+        .find(|&x| h.screen.screen().cell(list_y, x).unwrap().contents() == "│")
+        .expect("list divider");
     let list = |h: &Harness| {
         h.screen
             .screen()
-            .rows(56, 26)
+            .rows(list_x, right - list_x)
             .collect::<Vec<_>>()
             .join("\n")
     };
     h.until(|h| list(h).contains("History-39"));
     for _ in 0..4 {
-        h.send(b"\x1b[<65;65;20M");
+        h.send(format!("\x1b[<65;{};{}M", list_x + 3, list_y + 3).as_bytes());
         h.settle();
     }
     h.send(b"\r");
     h.see("● Run details ↵"); // Barrier: all four wheel events have been processed.
     assert!(!list(&h).contains("History-39"), "{}", list(&h));
-    // Column 40 is the list's scrollbar.
+    // Keep scrolling over the actual list after the overlay has moved.
     for _ in 0..45 {
-        h.send(b"\x1b[<65;65;20M");
+        h.send(format!("\x1b[<65;{};{}M", list_x + 3, list_y + 3).as_bytes());
         h.settle();
     }
     h.until(|h| list(h).contains("History-00"));
@@ -1234,7 +1239,7 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
     }
     assert!(list(&h).contains("History-00"));
     for _ in 0..45 {
-        h.send(b"\x1b[<64;65;20M");
+        h.send(format!("\x1b[<64;{};{}M", list_x + 3, list_y + 3).as_bytes());
         h.settle();
     }
     h.until(|h| list(h).contains("History-39"));
@@ -4662,9 +4667,24 @@ fn plugin_entry_opens_overlay_without_changing_layout_and_keeps_process() {
     open_fixture_palette(&mut h);
     h.send(b"\r");
     h.see("Clicks: 0");
+    h.settle();
+    let (rows, cols) = h.screen.screen().size();
+    let left = (cols - cols * 4 / 5) / 2;
+    let top = (rows - rows * 4 / 5) / 2;
+    let corner = h.screen.screen().cell(top, left).unwrap();
+    assert_eq!(
+        corner.contents(),
+        "┌",
+        "overlay must be centered on the entire window"
+    );
+    assert_eq!(
+        corner.fgcolor(),
+        vt100::Color::Idx(8),
+        "overlay border uses the neutral theme border"
+    );
     assert!(
-        !h.contents().contains("Close pane"),
-        "underlying pane chrome must be covered"
+        h.contents().contains("Close pane"),
+        "workspace remains visible around the dialog"
     );
     let inspect = h.ctl(&["inspect"]);
     assert_eq!(inspect["focus"], "plugin_overlay");
