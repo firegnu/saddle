@@ -1728,7 +1728,6 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                         pointer,
                     },
                     Some(ui::Workspace {
-                        plugin_entries: None,
                         terminals: &terminals,
                         placement: None,
                         search: None,

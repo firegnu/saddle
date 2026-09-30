@@ -33,6 +33,14 @@ pub enum Outcome {
     Open(String),
 }
 impl Page {
+    pub fn select_plugin(&mut self, id: &str, m: &Manager) {
+        self.selected = m
+            .registry
+            .entries
+            .iter()
+            .position(|e| e.id == id)
+            .unwrap_or(0);
+    }
     fn actions(&self, m: &Manager) -> Vec<(&'static str, bool)> {
         let id = m.registry.entries.get(self.selected).map(|e| e.id.as_str());
         let state = id.map(|id| m.state(id)).unwrap_or_default();

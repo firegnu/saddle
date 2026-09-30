@@ -1,4 +1,4 @@
-pub mod entry;
+pub mod palette;
 pub mod registry;
 pub mod runtime;
 pub mod ui;
@@ -237,21 +237,64 @@ impl Manager {
         }
         self.notices.lock().unwrap().expire();
     }
-    pub fn entries(&self) -> Vec<entry::Entry> {
-        self.running
+    pub fn palette_items(&self, opened: &BTreeSet<String>) -> Vec<palette::Item> {
+        let mut items: Vec<_> = self
+            .registry
+            .entries
             .iter()
-            .filter(|(_, r)| r.enabled)
-            .filter_map(|(id, r)| {
-                let action = r.manifest.action.as_ref()?;
-                Some(entry::Entry {
-                    plugin: id.clone(),
-                    action: action.id.clone(),
-                    title: action.title.clone(),
-                    placement: r.manifest.view.as_ref()?.placement,
-                    state: r.runtime.state(),
-                })
+            .map(|e| {
+                let running = self.running.get(&e.id);
+                let manifest = running
+                    .map(|r| &r.manifest)
+                    .or_else(|| self.catalog.get(&e.id).map(|(m, _)| m));
+                let snapshot = running.map(|r| r.runtime.snapshot());
+                let state = if self.restart.contains(&e.id) {
+                    "Restarting".into()
+                } else if running.is_some_and(|r| !r.enabled) {
+                    if self.stopped(&e.id) {
+                        "Disabled".into()
+                    } else {
+                        "Stopping".into()
+                    }
+                } else if manifest.is_none() {
+                    "Unavailable".into()
+                } else {
+                    snapshot
+                        .as_ref()
+                        .map(|s| s.state.clone())
+                        .unwrap_or_else(|| self.state(&e.id))
+                };
+                palette::Item {
+                    id: e.id.clone(),
+                    title: manifest
+                        .map(|m| {
+                            m.action
+                                .as_ref()
+                                .map(|a| a.title.clone())
+                                .unwrap_or_else(|| m.name.clone())
+                        })
+                        .unwrap_or_else(|| e.id.clone()),
+                    state,
+                    note: snapshot
+                        .as_ref()
+                        .map(|s| s.note.clone())
+                        .or_else(|| self.errors.get(&e.id).cloned())
+                        .unwrap_or_else(|| {
+                            if manifest.is_none() {
+                                "Plugin files or manifest are unavailable.".into()
+                            } else {
+                                String::new()
+                            }
+                        }),
+                    has_view: manifest
+                        .is_some_and(|m| m.required_capabilities.iter().any(|c| c == "panel.v1")),
+                    opened: opened.contains(&e.id),
+                    pid: snapshot.and_then(|s| s.pid),
+                }
             })
-            .collect()
+            .collect();
+        items.sort_by(|a, b| a.id.cmp(&b.id));
+        items
     }
     pub fn placement(&self, id: &str) -> saddle_plugin_protocol::Placement {
         self.running
@@ -274,7 +317,7 @@ impl Manager {
         terminals: &mut crate::terminals::Terminals,
         area: ratatui::layout::Rect,
         focused: bool,
-        overlay: Option<(&str, ratatui::layout::Rect)>,
+        overlay: Option<(&str, ratatui::layout::Rect, bool)>,
     ) -> Option<Panel> {
         self.tick();
         let visible = terminals.rects(area);
@@ -286,7 +329,7 @@ impl Manager {
             .filter_map(|p| p.plugin_id().map(|id| (p.id, id.to_owned())))
             .collect();
         let mut open: BTreeSet<_> = panes.iter().map(|(_, id)| id.as_str()).collect();
-        if let Some((id, _)) = overlay {
+        if let Some((id, _, _)) = overlay {
             open.insert(id);
         }
         for (id, r) in &mut self.running {
@@ -310,7 +353,7 @@ impl Manager {
             );
             terminals.get_mut(pane).unwrap().plugin = Some(view);
         }
-        overlay.map(|(id, rect)| self.sync_panel(id, Some(rect), true, true))
+        overlay.map(|(id, rect, focus)| self.sync_panel(id, Some(rect), focus, true))
     }
     fn sync_panel(
         &mut self,

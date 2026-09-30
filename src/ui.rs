@@ -23,6 +23,7 @@ pub struct Hits {
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
+    pub plugins: Rect,
     pub queue_rows: Vec<(u16, usize)>,
 }
 
@@ -54,7 +55,6 @@ pub struct Workspace<'a> {
     pub modal: bool,
     pub attention: Attention<'a>,
     pub settings: Option<&'a mut crate::settings::Settings>,
-    pub plugin_entries: Option<&'a mut crate::plugins::entry::Bar>,
 }
 /// The Attention entry's items and, while open, its popup.
 pub struct Attention<'a> {
@@ -68,53 +68,37 @@ pub fn draw_workspace(
     view: View<'_>,
     workspace: Option<Workspace<'_>>,
 ) -> Hits {
-    let (
-        terminals,
-        placement,
-        mut search,
-        mut form,
-        program,
-        modal,
-        attention,
-        mut settings,
-        mut plugin_entries,
-    ) = match workspace {
-        Some(w) => (
-            Some(w.terminals),
-            w.placement,
-            w.search,
-            w.form,
-            w.program,
-            w.modal,
-            w.attention,
-            w.settings,
-            w.plugin_entries,
-        ),
-        None => (
-            None,
-            None,
-            None,
-            None,
-            "corral",
-            false,
-            Attention {
-                items: &[],
-                loading: false,
-                popup: None,
-            },
-            None,
-            None,
-        ),
-    };
+    let (terminals, placement, mut search, mut form, program, modal, attention, mut settings) =
+        match workspace {
+            Some(w) => (
+                Some(w.terminals),
+                w.placement,
+                w.search,
+                w.form,
+                w.program,
+                w.modal,
+                w.attention,
+                w.settings,
+            ),
+            None => (
+                None,
+                None,
+                None,
+                None,
+                "corral",
+                false,
+                Attention {
+                    items: &[],
+                    loading: false,
+                    popup: None,
+                },
+                None,
+            ),
+        };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
-    let plugin_rows = plugin_entries.as_ref().map_or(0, |bar| {
-        bar.height(
-            inner(view.panes.agents).height,
-            agents_header(view.panes.agents).width,
-        )
-    });
+    let plugin_rows = u16::from(terminals.is_some() && inner(view.panes.agents).height >= 6);
     let mut hits = draw_agents(frame, panel, &view, plugin_rows);
     let header = agents_header(view.panes.agents);
     let row = Rect {
@@ -122,13 +106,14 @@ pub fn draw_workspace(
         ..header
     }
     .intersection(inner(view.panes.agents));
-    if let Some(bar) = plugin_entries.as_mut() {
-        bar.draw(
-            frame,
-            Rect::new(header.x, header.y + 1, header.width, plugin_rows)
-                .intersection(inner(view.panes.agents)),
-            t,
+    if plugin_rows > 0 {
+        let rect = Rect::new(header.x, header.y + 1, header.width.min(7), 1)
+            .intersection(inner(view.panes.agents));
+        frame.render_widget(
+            Paragraph::new("Plugins").style(Style::default().fg(t.agents_text)),
+            rect,
         );
+        hits.plugins = rect;
     }
     let wraps = settings_wraps(header);
     let settings_row = if wraps {

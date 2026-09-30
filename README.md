@@ -101,7 +101,7 @@ If another terminal is attached to an agent, detach there before attaching throu
 
 Open **Settings → Plugins (F5)** to add a trusted local plugin directory, enable it, and open its panel inside Saddle. Adding a plugin leaves it disabled; closing a panel keeps its process running, while Disable stops it. Registration stores the directory path, so keep the files in place.
 
-Plugins with a declared entry appear directly above Attention; click the entry, or use F6 in Agents then Up/Down and Enter. Counter opens a centered overlay: Esc closes it and restores focus, while Ctrl-] returns to Agents. Closing keeps the plugin running. Existing workspace panels are focused rather than duplicated.
+The fixed Plugins entry opens a searchable launcher showing runtime status. Select a plugin and press Enter to open it or switch to its existing view; disabled or unavailable plugins remain visible with an explanation. Manage plugins opens lifecycle settings. Counter opens a centered overlay: Esc closes it and restores focus, while Ctrl-] returns to Agents. Closing keeps the plugin running. Existing workspace panels are focused rather than duplicated.
 
 To build and package the standalone Counter example, run `./examples/counter-plugin/package.sh`. Add the resulting `examples/counter-plugin/dist/counter-plugin` directory in Settings. End users need only that directory, not Rust or development environment variables. The SDK is a development API; see the [Counter README](examples/counter-plugin/README.md) and [plugin author guide (Chinese)](docs/插件开发入门.md). Drover migration is a separate future step.
 
