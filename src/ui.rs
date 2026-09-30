@@ -97,19 +97,29 @@ pub fn draw_workspace(
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
-    let plugin_rows = u16::from(terminals.is_some() && inner(view.panes.agents).height >= 6);
-    let mut hits = draw_agents(frame, panel, &view, plugin_rows);
     let header = agents_header(view.panes.agents);
+    let show_plugins = terminals.is_some() && inner(view.panes.agents).height >= 6;
+    let plugin_rows = u16::from(
+        show_plugins
+            && usize::from(header.width)
+                < format!("Agents · {}", panel.agents.len()).width() + 2 + "Plugins".width(),
+    );
+    let mut hits = draw_agents(frame, panel, &view, plugin_rows);
     let row = Rect {
         y: header.y + 1 + plugin_rows,
         ..header
     }
     .intersection(inner(view.panes.agents));
-    if plugin_rows > 0 {
-        let rect = Rect::new(header.x, header.y + 1, header.width.min(7), 1)
+    if show_plugins {
+        let width = header.width.min(7);
+        let rect = Rect::new(header.right() - width, header.y + plugin_rows, width, 1)
             .intersection(inner(view.panes.agents));
         frame.render_widget(
-            Paragraph::new("Plugins").style(Style::default().fg(t.agents_text)),
+            Paragraph::new("Plugins").style(
+                Style::default()
+                    .fg(t.agents_text)
+                    .remove_modifier(Modifier::BOLD),
+            ),
             rect,
         );
         hits.plugins = rect;
