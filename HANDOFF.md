@@ -4,9 +4,13 @@
 
 ## 当前状态
 
-- 最新交付：实时只读 **Diff 插件**，实现 `7eb8c7d`，收尾 `c7c0b74`。主控亲自实现；已合并推送并清理 `diff-plugin` 分支/worktree，没有创建或操作其他 agent。打开即连续展示来源 worktree 全部改动，自动刷新；文件列表只用于跳转，支持现有居中/tab/split。任务与审查 `docs/任务/实时Diff插件.md`，Dispatch `ec99fea90a2248bfa0ff7ac31bae5ad3`。
-- Diff 包已放在 `/Users/firegnu/Developer/personal_projs/saddle/plugins/diff/dist/diff-plugin`，SHA-256 `21db815d69db57be88b12fe2c16187aeb69e6b307681586d88abbd1737326f9f`。**尚未登记/启用**，用户在 Settings → Plugins → Add local 添加这个目录并启用，从 Plugins 选 Diff；无需重启 Saddle。日常宿主二进制仍为下述插件分屏版，真实配置、队列和服务未动。
-- Diff 验证：标准 **353 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；真实打包插件与隔离 Saddle 的连续多文件、自动刷新、点击定位、居中/split/tab 移动和模式切换额外1项通过。日志 `/tmp/saddle-diff-all-complete.log`、`/tmp/saddle-diff-clippy-complete.log`、`/tmp/saddle-diff-host-final.log`。用户窗口的实际观察尚待添加插件后确认。
+- 最新交付：Settings 顶部改用紧凑单行标签，正常宽度五项同排，窄窗口紧凑换行。实现 `52d6a81`，收尾 `259b861`；已合并推送、更新日常宿主、清理 `settings-compact-tabs` 分支/worktree。主控亲自做，没有委派；用户重启 Saddle 后观察，本轮未重启其窗口。任务/审查 `docs/任务/Settings紧凑标签栏.md`，Dispatch `1d77432fe0ce40978e99c4c5fc5a20fa`。
+- Settings 验证：标准 **354 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；独立release候选的设置保存/侧栏调整及标签布局2项通过。日志 `/tmp/saddle-settings-tabs-{all,clippy,release-check}.log`。插件包、配置、队列和服务未改动。
+- 用户已查看Diff演示并反馈“cool”。三处未提交临时演示继续保留：`examples/counter-plugin/src/main.rs`、`plugins/diff/README.md`、`docs/diff-preview-demo.json`；本轮前后逐文件hash一致，不将其纳入正式提交，也不自动撤回。
+
+- 此前交付：实时只读 **Diff 插件**，实现 `7eb8c7d`，收尾 `c7c0b74`。主控亲自实现；已合并推送并清理 `diff-plugin` 分支/worktree，没有创建或操作其他 agent。打开即连续展示来源 worktree 全部改动，自动刷新；文件列表只用于跳转，支持现有居中/tab/split。任务与审查 `docs/任务/实时Diff插件.md`，Dispatch `ec99fea90a2248bfa0ff7ac31bae5ad3`。
+- Diff 包已放在 `/Users/firegnu/Developer/personal_projs/saddle/plugins/diff/dist/diff-plugin`，SHA-256 `21db815d69db57be88b12fe2c16187aeb69e6b307681586d88abbd1737326f9f`。此前交付时由用户自行添加启用，用户现已试用反馈。插件更新与宿主重启独立；本轮没有改插件登记、真实配置、队列或服务。
+- Diff 验证：标准 **353 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；真实打包插件与隔离 Saddle 的连续多文件、自动刷新、点击定位、居中/split/tab 移动和模式切换额外1项通过。日志 `/tmp/saddle-diff-all-complete.log`、`/tmp/saddle-diff-clippy-complete.log`、`/tmp/saddle-diff-host-final.log`。用户已试用反馈“cool”。
 
 - 此前交付：实现 `510d907`，`Split → 方向 → Plugin…` 可在分屏打开插件，标签条 `+ → Plugin…` 在新 tab 打开；已有视图显示 Move，移动原窗格且保持单进程和状态。已合并推送、更新日常宿主、清理 `plugin-split` 分支/worktree。用户重启 Saddle 后观察，不需要重新安装插件。记录见 `docs/任务/插件在分屏中打开.md`，Dispatch `ab988a2e99c24f2d8421cddb8bb5233e`。主控亲自做，未改变真实队列/配置/插件包，也未重启用户窗口。
 - 此前入口整理：实现 `460935d`，Plugins移到Agents标题右侧，与下一行Settings右对齐；左侧只保留Agents/Attention。窄窗口放不下时右侧换行。记录见 `docs/任务/Plugins入口右对齐.md`；Dispatch `8b9c4cebd9da493eae61b3018c0509f1`。
@@ -21,7 +25,9 @@
 
 ## 安装与退役
 
-- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。插件分屏版SHA-256：`eebb3117dae8cb078a7d58f892f61100d65246a95b49eb81508c75aa1904b2e3`。
+- 最新宿主备份：`~/Library/Application Support/saddle-release-backups/settings-compact-tabs-20261001-002259/`，包含此前 `eebb3117…` 插件分屏版及安装hash记录。日常程序已原子替换并核对SHA；旧窗口继续运行，等待用户重启。
+
+- `~/.local/bin/saddle` 仍链接共享 `.target/release/saddle`。Settings紧凑标签版SHA-256：`1459a6b6d3631305056ae4ee8f3723d7effa1ed9fa9e2ab3b71a49e2e9996c16`。
 - 最新宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-split-20260930-231227/`，保存入口右对齐版 `5080dbb2…` 和安装hash记录。插件包、配置和真实任务数据均未改动。
 - 此前宿主备份：`~/Library/Application Support/saddle-release-backups/plugins-header-right-20260930-224044/`，包含此前 `a259aba2…` 程序和hash记录。
 - 当前宿主备份：`~/Library/Application Support/saddle-release-backups/plugin-centered-overlay-20260930-223126/`，包含此前 `3db84341…` 宿主和hash记录。插件包与真实配置/任务数据不变。
