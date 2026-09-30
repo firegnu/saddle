@@ -4,7 +4,7 @@ use crate::theme::Theme;
 mod dispatch_impl;
 #[path = "queue_links.rs"]
 mod links_impl;
-pub use crate::launch::edit::Input;
+pub use crate::launch_edit::Input;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// What the Tasks popup shows. `List` is the list with the selected task beside it; every
@@ -1204,33 +1204,6 @@ impl Panel {
     pub fn overlay_open(&self) -> bool {
         !matches!(self.page, Page::List)
     }
-    /// The project's state for the closed Tasks entry, long and short, in its semantic color:
-    /// what needs attention first, and never an old snapshot after a failed read.
-    pub fn entry_status(&self, t: &Theme) -> (String, String, ratatui::style::Color) {
-        let same = |text: &str, color| (text.to_owned(), text.to_owned(), color);
-        if self.read_error.is_some() {
-            return ("Read failed".into(), "Failed".into(), t.agent_error);
-        }
-        let Some(s) = &self.snapshot else {
-            return same("Loading…", t.agent_starting);
-        };
-        if s.awaiting.is_some() {
-            (
-                "Awaiting release".into(),
-                "Awaiting".into(),
-                t.agent_blocked,
-            )
-        } else if s.current.is_some() {
-            same("Running", t.agent_working)
-        } else if s.paused {
-            same("Paused", t.agent_blocked)
-        } else if !s.pending.is_empty() {
-            let n = s.pending.len();
-            (format!("{n} pending"), n.to_string(), t.agent_starting)
-        } else {
-            same("Idle", t.agent_idle)
-        }
-    }
     fn mode_line(&self, t: &Theme) -> ratatui::text::Line<'static> {
         use ratatui::{
             style::{Modifier, Style},
@@ -1464,7 +1437,17 @@ impl Panel {
             &[B::new(close, K::Esc, true)],
         );
         self.buttons.extend(hits);
-        let mut controls = vec![B::new("Add task a", K::Char('a'), ready)];
+        let mut controls = vec![
+            B::new("Add task a", K::Char('a'), ready),
+            B::new("Notifications N", K::Char('N'), !self.busy),
+        ];
+        if self
+            .tasks()
+            .get(self.selected)
+            .is_some_and(|(_, task)| task.status.as_deref() == Some("failed"))
+        {
+            controls.push(B::new("Mark seen m", K::Char('m'), !self.busy));
+        }
         let active = self
             .tasks()
             .get(self.selected)
@@ -1796,7 +1779,7 @@ impl Panel {
                 self.list_area = body;
                 if let Some(error) = &self.read_error {
                     let text = format!(
-                        "{error}\n\nCheck queue.cwd or choose Project.\nScroll to read the full error.\n\nDirectory: {}",
+                        "{error}\n\nCheck plugin arguments or choose Project.\nScroll to read the full error.\n\nDirectory: {}",
                         self.project
                     );
                     let lines = wrap_text(&text, body.width);

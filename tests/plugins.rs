@@ -729,3 +729,156 @@ fn attention_requests_require_the_declared_capability() {
     assert!(r.snapshot().attention.is_none());
     r.stop();
 }
+
+#[test]
+fn plugin_cursor_only_appears_on_a_focused_live_matching_frame() {
+    use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect};
+    use saddle::plugins::{Panel, runtime::Picture};
+    use std::sync::Arc;
+    let mut panel = Panel {
+        id: "cursor".into(),
+        name: "Cursor".into(),
+        state: "Running".into(),
+        note: String::new(),
+        interactive: true,
+        picture: Some(Arc::new(Picture {
+            frame_id: 1,
+            revision: 1,
+            cursor: Some([2, 1]),
+            escape_input: false,
+            buffer: Buffer::empty(Rect::new(0, 0, 6, 3)),
+        })),
+    };
+    let mut terminal = Terminal::new(TestBackend::new(10, 5)).unwrap();
+    terminal
+        .draw(|f| panel.draw(f, Rect::new(1, 1, 6, 3), true))
+        .unwrap();
+    assert!(terminal.backend().cursor_visible());
+    assert_eq!(terminal.backend().cursor_position(), (3, 2).into());
+    terminal
+        .draw(|f| panel.draw(f, Rect::new(1, 1, 6, 3), false))
+        .unwrap();
+    assert!(!terminal.backend().cursor_visible());
+    terminal
+        .draw(|f| panel.draw(f, Rect::new(1, 1, 7, 3), true))
+        .unwrap();
+    assert!(!terminal.backend().cursor_visible());
+    panel.interactive = false;
+    terminal
+        .draw(|f| panel.draw(f, Rect::new(1, 1, 6, 3), true))
+        .unwrap();
+    assert!(!terminal.backend().cursor_visible());
+}
+
+#[test]
+fn plugin_agent_navigation_keeps_public_identity_and_attachment_checks() {
+    use saddle::plugins::{navigation::check_agent, runtime::Navigation};
+    use serde_json::json;
+    let request = Navigation {
+        plugin: "test".into(),
+        session: 1,
+        request_id: 1,
+        input_id: 1,
+        name: "p/a".into(),
+        instance: "original".into(),
+    };
+    let status = json!({"instance":"original","state":"idle","attached":0});
+    assert!(check_agent(&status, &request, false).is_ok());
+    assert!(check_agent(&status, &request, true).is_err());
+    for (key, value) in [
+        ("instance", json!("replacement")),
+        ("state", json!("exited")),
+        ("starting", json!(true)),
+        ("incompatible", json!(true)),
+        ("error", json!("unavailable")),
+        ("attached", json!(1)),
+    ] {
+        let mut invalid = status.clone();
+        invalid[key] = value;
+        assert!(
+            check_agent(&invalid, &request, false).is_err(),
+            "accepted {invalid}"
+        );
+    }
+    let mut local = status;
+    local["attached"] = json!(1);
+    assert!(check_agent(&local, &request, true).is_ok());
+}
+
+#[test]
+fn plugin_navigation_and_close_require_current_input_and_are_invalidated_by_blur() {
+    use saddle_plugin_protocol::Message;
+    use serde_json::json;
+    let (dir, mut manifest) = attention_peer();
+    manifest
+        .required_capabilities
+        .extend(["agent.open.v1".into(), "view.close.v1".into()]);
+    std::fs::write(dir.path().join("peer"), r#"#!/usr/bin/env python3
+import sys,json
+from pathlib import Path
+root=Path(__file__).parent
+for line in sys.stdin:
+ m=json.loads(line)
+ if m.get('method')=='initialize':
+  print(json.dumps(dict(kind='response',id=m['id'],result=dict(id='test.attention',version='1',protocol_major=1,capabilities=m['params']['capabilities'],width_profile='saddle-grapheme-v1'))),flush=True)
+ elif m.get('method')=='shutdown':break
+ elif m.get('kind')=='response':
+  (root/'result.json').write_text(json.dumps(m))
+ elif m.get('name')=='panel.open':
+  print(json.dumps(dict(kind='event',name='panel.frame',data=dict(panel='main',size_revision=1,frame_id=1,cols=1,rows_count=1,rows=[[dict(text=' ',fg='default',bg='default',modifiers=[])]]))),flush=True)
+ elif m.get('name')=='test.navigate':
+  print(json.dumps(dict(kind='request',id=m['data']['id'],method='agent.open',params=dict(input_id=m['data']['input_id'],name='p/a',instance='original'))),flush=True)
+ elif m.get('name')=='test.close':
+  print(json.dumps(dict(kind='event',name='panel.close_request',data=m['data'])),flush=True)
+"#).unwrap();
+    std::fs::write(
+        dir.path().join("plugin.toml"),
+        toml::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+    let runtime = Runtime::start(dir.path(), manifest);
+    assert!(
+        runtime.wait_for("Running", Duration::from_secs(4)),
+        "{}",
+        runtime.snapshot().note
+    );
+    runtime.send(Message::event(
+        "panel.open",
+        json!({"cols":1,"rows_count":1,"size_revision":1}),
+    ));
+    wait_until(|| runtime.snapshot().interactive);
+    runtime.send(Message::event(
+        "test.navigate",
+        json!({"id":1,"input_id":0}),
+    ));
+    wait_until(|| dir.path().join("result.json").exists());
+    let result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("result.json")).unwrap()).unwrap();
+    assert!(result["error"].is_object());
+    assert!(runtime.take_navigation().is_none());
+    runtime.send(Message::event("input", json!({"input_id":7})));
+    runtime.send(Message::event(
+        "test.navigate",
+        json!({"id":2,"input_id":7}),
+    ));
+    wait_until(|| runtime.snapshot().navigation.is_some());
+    let accepted = runtime.take_navigation().unwrap();
+    assert_eq!(accepted.input_id, 7);
+    runtime.send(Message::event("panel.focus", json!({"focused":false})));
+    runtime.send(Message::event("test.close", json!({"input_id":7})));
+    runtime.send(Message::event(
+        "test.navigate",
+        json!({"id":3,"input_id":7}),
+    ));
+    wait_until(|| {
+        std::fs::read(dir.path().join("result.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            .is_some_and(|v| v["id"] == 3)
+    });
+    assert_eq!(runtime.snapshot().input_id, 0);
+    assert!(runtime.take_navigation().is_none());
+    assert!(runtime.take_close().is_none());
+    runtime.stop();
+    assert!(runtime.wait_for("Disabled", Duration::from_secs(4)));
+}

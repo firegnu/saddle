@@ -24,7 +24,6 @@ pub struct Hits {
     pub list: Rect,
     pub reply: Rect,
     pub plugins: Rect,
-    pub queue_rows: Vec<(u16, usize)>,
 }
 
 pub struct View<'a> {
@@ -35,7 +34,7 @@ pub struct View<'a> {
     /// Agents this saddle is displaying in any pane, in every tab.
     pub local: &'a [String],
     pub viewer: Option<&'a Session>,
-    pub queue: &'a mut crate::queue::Panel,
+    pub projects: &'a [String],
     pub viewer_note: &'a str,
     pub reply: &'a str,
     pub now: f64,
@@ -185,25 +184,6 @@ pub fn draw_workspace(
     } else {
         draw_terminal(frame, view.panes.viewer, &title, &view);
     }
-    // Tasks is open exactly while it has the input; the popup then takes every hit.
-    let queue_modal = view.focus == Focus::Queue;
-    let title_width = format!("Agents · {}", panel.agents.len()).width() as u16;
-    let entry = tasks_entry(
-        t,
-        frame,
-        agents_header(view.panes.agents),
-        title_width,
-        view.queue,
-        queue_modal,
-    );
-    if queue_modal {
-        hits.queue_rows = view.queue.draw(t, frame, view.panes.tasks);
-        hits.buttons.clear();
-        hits.agents.clear();
-    } else {
-        view.queue.draw(t, frame, Rect::default());
-        view.queue.buttons.extend(entry);
-    }
     if let Some(name) = &panel.confirm {
         let modal = crate::theme::centered(frame.area(), 64, 12);
         frame.render_widget(ratatui::widgets::Clear, modal);
@@ -235,20 +215,12 @@ pub fn draw_workspace(
         frame.render_widget(Paragraph::new(text).wrap(Default::default()), body);
         hits.buttons = buttons;
         hits.agents.clear();
-        hits.queue_rows.clear();
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
     }
     if let Some(form) = form.as_mut() {
-        hits.buttons = form.draw(t, frame, program, &view.queue.projects);
+        hits.buttons = form.draw(t, frame, program, view.projects);
         hits.agents.clear();
-        hits.queue_rows.clear();
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
     }
-    if queue_modal || panel.confirm.is_some() || form.is_some() {
+    if panel.confirm.is_some() || form.is_some() {
         hits.terminal.clear();
     }
     if let (Some(terminals), Some(placement)) = (terminals, placement) {
@@ -263,10 +235,6 @@ pub fn draw_workspace(
         );
         hits.buttons.clear();
         hits.agents.clear();
-        hits.queue_rows.clear();
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
     }
     if let Some(search) = search.as_mut() {
         // Only the popup stays clickable; its rows are kept by the search itself.
@@ -275,43 +243,24 @@ pub fn draw_workspace(
         });
         hits.terminal.clear();
         hits.agents.clear();
-        hits.queue_rows.clear();
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
     }
     if let Some((popup, items, loading)) = attention_popup.as_mut() {
         // Only the popup stays clickable; its rows are kept by the popup itself.
         hits.buttons = popup.draw(t, frame, items, *loading);
         hits.terminal.clear();
         hits.agents.clear();
-        hits.queue_rows.clear();
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
     }
     if let Some(settings) = settings.as_mut() {
         // Only the popup stays clickable; its field rows are kept by the settings itself.
         hits.buttons = settings.draw(t, frame);
         hits.terminal.clear();
         hits.agents.clear();
-        hits.queue_rows.clear();
-        view.queue.buttons.clear();
-        view.queue.fields.clear();
-        view.queue.project_rows.clear();
     }
     let controls: Vec<_> = hits
         .buttons
         .iter()
         .cloned()
         .map(|h| (Focus::Agents, h))
-        .chain(
-            view.queue
-                .buttons
-                .iter()
-                .cloned()
-                .map(|h| (Focus::Queue, h)),
-        )
         .chain(
             hits.terminal
                 .iter()
@@ -343,24 +292,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  Tab Tasks  q Quit",
-        ),
-        Focus::Queue => (
-            match view.queue.view {
-                crate::queue::View::Text => "Tasks",
-                crate::queue::View::Details => "Tasks · Run details",
-                crate::queue::View::Dispatch => "Tasks · Dispatch",
-                crate::queue::View::Links => "Tasks · Links",
-            }
-            .to_string(),
-            if matches!(
-                view.queue.view,
-                crate::queue::View::Links | crate::queue::View::Dispatch
-            ) {
-                " ↑↓ Select / Scroll  ↵ Open  Tab View  PgUp/PgDn Scroll  c Projects  Esc Back / Close"
-            } else {
-                " ↑↓ Select  t Text  ↵ Run details  Tab View  PgUp/PgDn Scroll  a Add  c Projects  ? Help  Esc Close"
-            },
+            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  Tab Viewer  q Quit",
         ),
         Focus::Viewer => (
             view.showing
@@ -374,51 +306,6 @@ pub fn draw_workspace(
             " Keys go to terminal  Ctrl-] Agents",
         ),
     };
-    if queue_modal && view.queue.overlay_open() {
-        match &view.queue.page {
-            crate::queue::Page::Add { body_focus, .. }
-            | crate::queue::Page::Edit { body_focus, .. } => {
-                target = format!(
-                    "{} · {}",
-                    if matches!(view.queue.page, crate::queue::Page::Edit { .. }) {
-                        "Edit"
-                    } else {
-                        "Add"
-                    },
-                    if *body_focus { "Body" } else { "Title" }
-                );
-                help = " Tab Switch  Ctrl-S Save  Esc Cancel";
-            }
-            crate::queue::Page::Projects => {
-                target = "Projects".into();
-                help = " ↑↓ Select  Enter Open  e Path  Esc Cancel";
-            }
-            crate::queue::Page::Project(_) => {
-                target = "Project path".into();
-                help = " Enter Apply  Ctrl-U Clear  Esc Cancel";
-            }
-            crate::queue::Page::Delete { .. } => {
-                target = "Confirm delete".into();
-                help = " y Delete  Esc Cancel  PgUp/PgDn Scroll";
-            }
-            crate::queue::Page::Confirm(confirmation) => {
-                target = confirmation.action.label().into();
-                help = if confirmation.action == crate::drover::Transition::Return {
-                    " Enter Confirm  Ctrl-W Work stopped  Ctrl-R Refresh  Esc Cancel"
-                } else {
-                    " Enter Confirm  Ctrl-R Refresh  Esc Cancel"
-                };
-            }
-            crate::queue::Page::AllPending => {
-                target = "All pending".into();
-                help = " Wheel / PgUp/PgDn Scroll  r Refresh  Esc Back  q Close";
-            }
-            _ => {
-                target = "Tasks · Help / Result".into();
-                help = " ↑↓ / PgUp/PgDn Scroll  Esc Back  q Close";
-            }
-        }
-    }
     if let Some(form) = &form {
         target = format!("New agent · {}", form.label());
         help = " Tab/Shift-Tab Field  ←→ Home/End Move  Backspace/Delete Erase  Ctrl-U Clear";
@@ -441,7 +328,7 @@ pub fn draw_workspace(
     }
     if attention_popup.is_some() {
         target = "Attention".into();
-        help = " ↑↓ Select  Enter Open  m Mark seen  Esc Cancel";
+        help = " ↑↓ Select  Enter Open  Esc Cancel";
     }
     if let Some(settings) = &settings {
         target = "Settings".into();
@@ -463,17 +350,13 @@ pub fn draw_workspace(
             ),
             Span::styled(
                 if panel.confirm.is_some()
-                    || view.queue.overlay_open() && queue_modal
                     || form.is_some()
                     || placement.is_some()
                     || search.is_some()
                     || attention_popup.is_some()
                     || settings.is_some()
+                    || panel.message.is_empty()
                 {
-                    help
-                } else if queue_modal && !view.queue.message.is_empty() {
-                    &view.queue.message
-                } else if panel.message.is_empty() {
                     help
                 } else {
                     &panel.message
@@ -486,69 +369,6 @@ pub fn draw_workspace(
     hits
 }
 
-/// The fixed Tasks entry at the right of the Agents header, carrying the project's short task
-/// state; highlighted, and not clickable, while open. Narrow columns drop the key hint, then
-/// shorten.
-fn tasks_entry(
-    t: &Theme,
-    frame: &mut Frame,
-    header: Rect,
-    title_width: u16,
-    queue: &crate::queue::Panel,
-    open: bool,
-) -> Vec<crate::buttons::Hit> {
-    let (long, short, color) = queue.entry_status(t);
-    let room = header.width.saturating_sub(title_width + 2);
-    let Some((status, key)) = [
-        (long.as_str(), " Tab"),
-        (long.as_str(), ""),
-        (short.as_str(), ""),
-        ("", ""),
-    ]
-    .into_iter()
-    .find(|(status, key)| {
-        let width = if status.is_empty() {
-            5
-        } else {
-            8 + status.width() + key.width()
-        };
-        width as u16 <= room
-    }) else {
-        return Vec::new();
-    };
-    if header.height == 0 {
-        return Vec::new();
-    }
-    let mut spans = vec![Span::styled(
-        "Tasks",
-        if open {
-            Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(t.agents_dim)
-        },
-    )];
-    if !status.is_empty() {
-        spans.push(Span::styled(" · ", Style::default().fg(t.agents_dim)));
-        spans.push(Span::styled(
-            format!("{status}{key}"),
-            Style::default().fg(color),
-        ));
-    }
-    let width = width_of(&spans) as u16;
-    let area = Rect::new(header.right() - width, header.y, width, 1);
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
-    if open {
-        return Vec::new();
-    }
-    vec![crate::buttons::Hit {
-        area,
-        danger: false,
-        key: crossterm::event::KeyEvent::new(
-            crossterm::event::KeyCode::Tab,
-            crossterm::event::KeyModifiers::NONE,
-        ),
-    }]
-}
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
 }
@@ -1526,4 +1346,36 @@ fn reply_lines(t: &Theme, text: &str, width: usize) -> Vec<Line<'static>> {
         result.push(Line::styled(line, style));
     }
     result
+}
+
+pub(crate) fn clean(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
+}
+
+pub(crate) fn wrap_text(text: &str, width: u16) -> Vec<ratatui::text::Line<'static>> {
+    use unicode_width::UnicodeWidthChar;
+    if width == 0 {
+        return Vec::new();
+    }
+    let mut rows = Vec::new();
+    let mut line = String::new();
+    let mut used = 0;
+    for c in clean(text).replace('\t', "    ").chars() {
+        if c == '\n' {
+            rows.push(ratatui::text::Line::raw(std::mem::take(&mut line)));
+            used = 0;
+            continue;
+        }
+        let w = c.width().unwrap_or(0);
+        if used + w > usize::from(width) && !line.is_empty() {
+            rows.push(ratatui::text::Line::raw(std::mem::take(&mut line)));
+            used = 0;
+        }
+        line.push(c);
+        used += w;
+    }
+    rows.push(ratatui::text::Line::raw(line));
+    rows
 }

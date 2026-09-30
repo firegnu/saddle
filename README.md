@@ -4,20 +4,20 @@
 
 English · [简体中文](README.zh-CN.md)
 
-See your agents, manage the task queue, and work in an agent's live terminal—all in one window.
+See your agents and work in their live terminals. Add optional process plugins for task workflows and other tools.
 
 ```text
-┌ Agents · 2  Tasks ──┬─ Viewer ──────────────────────────┐
+┌ Agents · 2        ──┬─ Viewer ──────────────────────────┐
 │ project/ ─────── (2)│                                   │
 │ │ ◐ main   working  │  The selected agent's terminal     │
 │ │ ○ review idle     │                                   │
 │                     │  Type, paste, and interact here.    │
 │                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
-  Tasks opens as a large popup centered on the screen, over the Viewer.
+  Plugins opens a searchable palette; each plugin owns its local view.
 ```
 
-saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings together [corral](https://github.com/firegnu/corral) agent sessions and the [drover](https://github.com/firegnu/drover) task queue. It does not require tmux or Zellij.
+saddle is written in Rust with [Ratatui](https://ratatui.rs/). It hosts [corral](https://github.com/firegnu/corral) agent sessions and optional process plugins, including [Drover](plugins/drover/README.md). It does not require tmux or Zellij.
 
 ## Features
 
@@ -31,26 +31,26 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It brings togethe
 
   Unlit bars keep only baseline dots, and selection does not change the icon. Agents without a valid label show no icon and keep the column aligned; when no agent has one, the column is not reserved. The icon reflects the delegation label only, not the runtime's actual effort.
 - **Git summary per agent:** above each agent's directory, a line such as `⎇ dev-t12 ↑2 main     +18 -4 ?1` describes the worktree at the agent's public corral `cwd`: the current branch (just `⎇` when it matches the agent's name); `↑n base`, the commits ahead of the local `main` (on `main` itself, ahead of its configured upstream, i.e. not yet pushed); uncommitted added/deleted lines against HEAD, staged and unstaged together, after Git's built-in text/eol attributes (so a committed CRLF file whose timestamp changed is not counted), per path with no rename detection (a pure rename counts as all lines deleted and added); and untracked files. The numbers belong to the directory, not the agent: agents sharing a worktree show the same line, and they do not say which agent or task made a commit. Values that cannot be determined show `—` (no local `main`, no upstream, detached HEAD, no commits yet); binary files have no line counts and are listed as `N binary`; when the changes do not fit beside the branch, they move as a whole to the next row, right-aligned; a directory that is not a Git worktree, is gone, or times out shows `git unavailable`. The line refreshes about every 5 seconds from local data only; a slow repository delays the round for every directory. It never fetches or lazily fetches missing objects, and it runs no external diff, textconv, fsmonitor hook or clean/smudge/process filter from any attributes source. When a changed file would need such a filter, the line counts show `+— -—` instead. A parent repository's line does not look inside submodule worktrees: uncommitted changes inside a submodule are not counted, while a submodule whose commit moved counts as a changed gitlink (`+1 -1`). It also skips optional index writes and ignores inherited `GIT_*` variables such as `GIT_DIR`. It does not follow an agent that later `cd`s elsewhere.
-- **Tasks:** a large popup opened from the **Tasks** entry at the top of Agents (or **Tab**). While closed, the entry keeps the project's short state in its status color — `Awaiting release`, `Running`, `Paused`, the pending count, or `Idle` (`Loading…` / `Read failed` until the queue is read) — so you can tell whether anything needs attention. Project and queue actions sit on top; current, awaiting, pending, and historical tasks are listed on the left with the selected task's text or run details beside them. Add tasks, edit, reorder, and delete pending tasks, view pending tasks across all registered projects, switch projects, release work, and control pause and loop settings through native controls.
+- **Drover plugin (optional):** task lists, project selection, task text/details, Links/Dispatch, editing and explicit dispatch/submit/accept/return actions. Open it from **Plugins → Drover**. Closing its view keeps background observation running; disabling it stops that source. It never automatically advances tasks. See [setup and controls](plugins/drover/README.md).
 
   **Dispatch selected:** select a Pending task and click **Dispatch selected** to send that task now; there is no need to move it to the top first. The button is unavailable while the queue is paused, a task is running or awaiting release, the queue is busy or could not be read, or the selected task is not Pending (Current, Awaiting and History tasks have no such button). It has no shortcut and asks for no confirmation.
-- **Attention:** the `Attention · N` line under the Agents header counts what needs you across agents and every project in `~/.drover/projects`; click it or press **a** in Agents. **Needs attention** lists agents waiting for input or in error, tasks awaiting release, and failed tasks from the queue history; **New replies** lists agents with an unseen finished turn from this run. Each agent takes one row, its need first. Rows leave only when the public state changes (answered, released) or, for new replies, when you view the agent. **Mark seen / m** hides a failed history task for this run only; the queue history is unchanged, and a restart shows it again. A source that cannot be read (corral, the project list, or a project) is shown as a failed row, never as nothing to do; `…` / `loading…` marks sources not read yet. Projects are reread about every five refresh periods and whenever Attention opens. Opening a row shows the agent's terminal, or opens Tasks on that project with the task selected by its id; nothing is answered, released or advanced.
-- **Settings:** the `Settings` entry at the right of the Attention line (or **,** in Agents) edits the config file saddle started with, shown at the top. **General** holds the sidebar width, refresh interval and initial Tasks project (empty means Automatic); **Colors** holds every `[colors]` value, grouped, with swatches and a small preview; **Advanced** holds the corral and drover commands. Edits stay a draft until **Save / Ctrl-S**; **Cancel / Esc** leaves the file unchanged, and **Default / Ctrl-D** resets the selected value (Save still writes it). Save writes only the edited keys, keeping comments and the rest of the file, and creates the file and its folders if needed. Invalid values are reported and keep the draft. If the file changed on disk after Settings read it, nothing is saved: **Keep my edits** rereads the file under your draft, **Discard my edits** takes the file as it is. Saved colors and sidebar width apply at once (agent output keeps its own colors); settings marked `Restart required` apply on the next start.
-- **Task notifications:** Settings **General** also chooses where Drover's "task done, awaiting release" notices appear, for your user across all registered projects: **System** (Drover's system notifications) or **In saddle** (Drover's system notifications off; saddle shows a short prompt at the bottom right, such as `saddle · T34 ready for review`, for about five seconds). The choice is Drover's own preference, read and saved with `drover notifications`, never in saddle's config; Space/←→ or a click chooses, and Save hands it to Drover, which applies it at its next notification check. A prompt never takes focus or keyboard input; clicking it opens that task in Tasks (several at once open Attention), × closes it. Closing or opening a prompt does not release anything; the task stays in Attention. Tasks already awaiting at start or when the choice changes are not prompted, and a run is prompted at most once per saddle run. If Drover cannot report the choice, Settings says so and saddle shows no prompts.
+- **Attention:** waiting/error agents, new replies and items from enabled plugins. Click a row to open its source; nothing is answered or advanced. Drover publishes awaiting tasks and failed history through this same generic interface.
+- **Settings:** the `Settings` entry at the right of the Attention line (or **,** in Agents) edits the config file saddle started with, shown at the top. **General** holds the sidebar width, refresh interval; **Colors** holds every `[colors]` value, grouped, with swatches and a small preview; **Advanced** holds the corral command. Edits stay a draft until **Save / Ctrl-S**; **Cancel / Esc** leaves the file unchanged, and **Default / Ctrl-D** resets the selected value (Save still writes it). Save writes only the edited keys, keeping comments and the rest of the file, and creates the file and its folders if needed. Invalid values are reported and keep the draft. If the file changed on disk after Settings read it, nothing is saved: **Keep my edits** rereads the file under your draft, **Discard my edits** takes the file as it is. Saved colors and sidebar width apply at once (agent output keeps its own colors); settings marked `Restart required` apply on the next start.
+- **Task notifications (Drover plugin):** press **N** in Drover to choose System/In Saddle, then **Ctrl-S** to save through the public Drover CLI. The independent system notification watch is unchanged. First observation and preference changes establish a baseline; existing awaiting tasks are not announced again. In-Saddle prompts keep terminal focus and can open their plugin target.
 - **New agents:** choose a project and Codex or Claude, then create an agent with an editable suggested name. Advanced settings hold the full command, first message, opening location, and exact call preview.
 - **Viewer tabs and splits:** each tab holds a group of terminals, with left/right/up/down splits. Each pane runs an owned interactive shell or a live `corral attach`, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
 - **Mouse and keyboard:** compact clickable buttons, mouse-wheel and trackpad scrolling, and shortcuts. Scrolling lists keeps the selection and survives normal refreshes.
-- **Responsive layout:** Agents keep the whole left column at every width; the Tasks popup takes about 85% of the window and stacks its list above the content when narrow.
+- **Responsive layout:** Agents keep the left column; plugin overlays and workspace panels adapt to their assigned area.
 - **Terminal-native appearance:** transparent panel backgrounds (Agents has its own warm dark palette), semantic state colors, and English interface labels. Task text and agent output keep their original language.
 
-Agents and Tasks are native Rust widgets. Only Viewer panes run child PTYs; saddle does not embed external board interfaces.
+Agents are native Rust widgets; Drover renders its own Ratatui view through the public SDK. Only Viewer panes run child PTYs; saddle does not embed external board interfaces.
 
 ## Getting started
 
 ### Requirements
 
 - Rust stable **1.96 or later**.
-- `corral` and `drover` available on `PATH`, or configured by path.
+- `corral` on PATH or configured by path; `drover` is required only when its optional plugin is enabled.
 - Git 2.45 or later on `PATH` for the Agents Git summary (it needs `--no-lazy-fetch`); older or missing Git shows `git unavailable`.
 - A terminal with Unicode and mouse support; true color is recommended.
 
@@ -80,10 +80,10 @@ Use **New** in Agents to start an agent, or attach an existing corral session. R
 1. Select an agent on the left and press **Enter**, or click its row, to attach.
 2. Type directly in Viewer to work with that agent.
 3. Press **Ctrl-]** to return to Agents. Viewer stays connected.
-4. Press **Tab**, or click **Tasks** at the top of Agents, to open the task popup. Use the project selector at its top to choose a registered project; **Esc** closes it and returns input where it was.
+4. For task workflows, install and enable the [Drover plugin](plugins/drover/README.md), then open **Plugins → Drover**. Esc returns within a plugin page or closes its view.
 5. To exit from anywhere, press **Ctrl-]**, then **q**. Exiting confirms all running shells before ending them and disconnecting the agent displays; corral agents keep running.
 
-**New / n** opens a form ready to create an agent: choose a **Project**, choose **Codex** (default) or **Claude**, then click **Create agent** or press **Ctrl-S**. The project defaults to the current Tasks directory; selecting a different project only affects this new agent. Click the project selector (or Ctrl-P) to choose a registered directory with the mouse or Up/Down and Enter; **Edit path / Ctrl-E** allows any directory. **Role** defaults to **Controller**, with the name locked to `main`. Choose **Regular** to edit the name; its first value is `main`, and switching roles preserves the Regular draft. **Prefix**, before the name, defaults to `agents` and is editable in both roles (for example `saddle`); it must be non-empty, without spaces, `/` or a leading `-`. The full name is `Prefix/Name`, e.g. `agents/main`, in both the preview and the call. Changing the project, Codex/Claude or the role preserves the prefix, name and role drafts. Both roles pass the exact full name to `corral start`, without `--unique`; the role is also recorded as the public label `role=controller` / `role=regular`, and terminal pane titles show `Controller · name` or `Regular · name`. Agents created elsewhere with the public label `role=implementer` / `role=reviewer` show `Implementer · name` / `Reviewer · name` (`Agent · name` for agents without a valid role label; an empty pane stays `Viewer`). The role does not configure the queue or start task dispatch. Duplicate names show the normal CLI error and keep the draft, without automatic numbering. The actual created name always comes from corral's reply.
+**New / n** opens a form ready to create an agent: choose a **Project**, choose **Codex** (default) or **Claude**, then click **Create agent** or press **Ctrl-S**. The project defaults to Saddle’s startup directory; candidates come from public Corral cwd values and the startup directory. Click the project selector (or Ctrl-P) to choose a known directory with the mouse or Up/Down and Enter; **Edit path / Ctrl-E** allows any directory. **Role** defaults to **Controller**, with the name locked to `main`. Choose **Regular** to edit the name; its first value is `main`, and switching roles preserves the Regular draft. **Prefix**, before the name, defaults to `agents` and is editable in both roles (for example `saddle`); it must be non-empty, without spaces, `/` or a leading `-`. The full name is `Prefix/Name`, e.g. `agents/main`, in both the preview and the call. Changing the project, Codex/Claude or the role preserves the prefix, name and role drafts. Both roles pass the exact full name to `corral start`, without `--unique`; the role is also recorded as the public label `role=controller` / `role=regular`, and terminal pane titles show `Controller · name` or `Regular · name`. Agents created elsewhere with the public label `role=implementer` / `role=reviewer` show `Implementer · name` / `Reviewer · name` (`Agent · name` for agents without a valid role label; an empty pane stays `Viewer`). The role does not configure the queue or start task dispatch. Duplicate names show the normal CLI error and keep the draft, without automatic numbering. The actual created name always comes from corral's reply.
 
 Text inputs have labeled borders, placeholders, a highlighted focus, and a visible insertion cursor. Click inside an input to position the cursor; Tab/Shift-Tab changes focus. Left/Right, Home/End, Backspace/Delete, Ctrl-U (clear), and paste edit at the cursor, including Chinese wide characters. Long lines scroll horizontally; multiline messages also scroll vertically and support Up/Down and Enter. In short windows, focus navigation or the wheel brings fields into view while Create and Cancel stay at the bottom.
 
@@ -107,9 +107,9 @@ To build and package the standalone Counter example, run `./examples/counter-plu
 
 ## Task dispatch records
 
-**Dispatch** (after **Run details**) shows how the selected task was handed out, when the controller recorded it with the separate [dispatch-log](https://github.com/firegnu/dispatch-log) recorder: each dispatch, rework and review in recorded order, one row per step with its time, target, model/effort and short result — the JEV route (its input, request, full parsed response and suggestion), the controller's decision and budget, the start with its task file snapshot, sends, the implementer's reply and review notes. Up/Down and Enter (or a click) open a step's full text inside Tasks; **Back / Esc** returns to the same row. Records are read only through the public `dlog ls --project <project> --task <id>`, `dlog show <id>` and `dlog cat <sha256>`, once per task opening (**Refresh r** reads them again); saddle never records, routes or sends through dispatch-log. Records are matched by the project root and explicit task number only; unnumbered tasks have none. Snapshots are copies saved at dispatch time, not the current files (those are in Links). The recorder is optional: when `queue.dispatch_log` is not found, there are no records, a record is missing a part, or a read fails or is in an unknown format, Dispatch says which, and the other views and task actions work as before.
+**Dispatch** (after **Run details**) shows how the selected task was handed out, when the controller recorded it with the separate [dispatch-log](https://github.com/firegnu/dispatch-log) recorder: each dispatch, rework and review in recorded order, one row per step with its time, target, model/effort and short result — the JEV route (its input, request, full parsed response and suggestion), the controller's decision and budget, the start with its task file snapshot, sends, the implementer's reply and review notes. Up/Down and Enter (or a click) open a step's full text inside Tasks; **Back / Esc** returns to the same row. Records are read only through the public `dlog ls --project <project> --task <id>`, `dlog show <id>` and `dlog cat <sha256>`, once per task opening (**Refresh r** reads them again); saddle never records, routes or sends through dispatch-log. Records are matched by the project root and explicit task number only; unnumbered tasks have none. Snapshots are copies saved at dispatch time, not the current files (those are in Links). The recorder is optional: when the configured `dlog` executable is not found, there are no records, a record is missing a part, or a read fails or is in an unknown format, Dispatch says which, and the other views and task actions work as before.
 
-## Task links
+## Task links (Drover plugin)
 
 Choose **Links** beside **Task text**, **Run details** and **Dispatch** in Tasks. **Tab / Shift-Tab** cycles these views. Files, commits and agents show their explicit source; click an entry or use Up/Down and Enter. File and commit previews stay inside Tasks; arrows, wheel and PgUp/PgDn scroll, and **Back / Esc** returns to the same Links selection. Esc again closes Tasks.
 
@@ -129,7 +129,7 @@ Previews accept project-local regular UTF-8 files up to 1 MiB; external URLs, es
 
 ## Terminal workspace control
 
-**Terminal** starts `$SHELL -i` (fallback `/bin/sh`). The directory is the source pane's known project/start directory, or the Tasks project for an empty pane; it does not follow later `cd`. Shell exit keeps its screen and exit status. Closing a running shell, replacing it, closing a mixed tab, or quitting saddle asks which shells to end; Cancel preserves every session. Agent displays only detach. Shell cleanup targets the owned PTY shell and its foreground process group, not deliberately daemonized processes.
+**Terminal** starts `$SHELL -i` (fallback `/bin/sh`). The directory is the source pane's known project/start directory, or the Saddle startup directory for an empty pane; it does not follow later `cd`. Shell exit keeps its screen and exit status. Closing a running shell, replacing it, closing a mixed tab, or quitting saddle asks which shells to end; Cancel preserves every session. Agent displays only detach. Shell cleanup targets the owned PTY shell and its foreground process group, not deliberately daemonized processes.
 
 The same binary provides JSON control without starting another TUI:
 
@@ -166,26 +166,20 @@ left_width = 52
 left_split = 0.5
 refresh_ms = 1000
 
-[queue]
-drover = "drover"
-# cwd = "~/projects/my-project"
-dispatch_log = "dlog"
 ```
 
 | Setting | Meaning |
 |---|---|
 | `corral` | corral executable name or path |
 | `left_width` | Preferred width of the left column, in terminal cells |
-| `left_split` | No longer used: Agents take the whole left column and Tasks is a popup. Still accepted (between 0 and 1) so existing configs keep loading |
+| `left_split` | No longer used: Agents take the whole left column with optional plugin views. Still accepted (between 0 and 1) so existing configs keep loading |
 | `refresh_ms` | Background refresh interval in milliseconds |
-| `queue.drover` | drover executable name or path |
-| `queue.cwd` | Optional initial queue project directory |
-| `queue.dispatch_log` | Optional dispatch-log (`dlog`) executable name or path for the Dispatch view |
+
+
+
 | `colors` | Optional flat table for interface and agent-type colors |
 
-Command paths and `queue.cwd` support `~/`. Queue reads the project registry at `~/.drover/projects`: it prefers `queue.cwd`, then the startup directory if registered, then the first registered project. With no registry entries, it tries the startup directory. The project picker also accepts a manual path; switching projects only affects the current session.
-
-saddle gets task data through **`drover list --json`**. Full history requires a drover version that returns the complete history array; older versions return only the latest ten records. saddle cannot display records that the interface omits. Task details come from the read-only **`drover show Tn --json --with-agent-status`** (schema version 1); a drover without it shows the error on the details page. Apart from the project registry, it does not read corral or drover's internal data files.
+Command paths support `~/`. Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom Drover command/cwd/dlog values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). The plugin uses public schema 2 list/show/action APIs; the host does not read Drover projects or task state.
 
 [config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above. Its defaults preserve the current appearance. For a small override, add:
 
@@ -198,7 +192,7 @@ agent_selected = "#2b2621"
 
 Colors accept `default` (or `reset`), `#RRGGBB`, or lowercase ANSI names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `gray`, `dark_gray`, `light_red`, `light_green`, `light_yellow`, `light_blue`, `light_magenta`, `light_cyan`, `white`. `gray` is normal ANSI white; `dark_gray` is bright black; `white` is bright white. ANSI colors follow the terminal palette.
 
-The table covers backgrounds, selection, borders, focus, text levels, connection/unread indicators, action feedback, agent types, and reply formatting. The Agents column uses its own `agents_*` palette (plus `agent_selected` and the agent-type accents); the shared `agent_*` status accents color Tasks, including Queue action feedback, and the Agents stalled/starting states and effort icon. Unless the terminal sets `COLORTERM` to `truecolor` or `24bit`, the Agents-only RGB colors are sent as their nearest 256-color entries; ANSI names and other areas are unchanged. Invalid colors or unknown settings report a configuration error. Colors saved from Settings apply at once; edits made outside saddle apply on the next launch, as there is no hot reload. Viewer terminal output keeps its own colors. Font family and size belong to your terminal settings.
+The table covers backgrounds, selection, borders, focus, text levels, connection/unread indicators, action feedback, agent types, and reply formatting. The Agents column uses its own `agents_*` palette (plus `agent_selected` and the agent-type accents); the shared `agent_*` status accents color the Agents stalled/starting states and effort icon; plugins receive the generic text/background/accent/error theme and own their business colors. Unless the terminal sets `COLORTERM` to `truecolor` or `24bit`, the Agents-only RGB colors are sent as their nearest 256-color entries; ANSI names and other areas are unchanged. Invalid colors or unknown settings report a configuration error. Colors saved from Settings apply at once; edits made outside saddle apply on the next launch, as there is no hot reload. Viewer terminal output keeps its own colors. Font family and size belong to your terminal settings.
 
 ## Controls
 
@@ -208,10 +202,10 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Agents | Enter / click a row | Attach in the active pane, or jump to the agent's existing pane |
 | Agents | n / New | Open the new-agent form |
 | Agents | / / Search | Filter agents by project or name; Enter or a click opens the agent (jumping to its pane if already open), Esc cancels |
-| Agents | a / Attention · N | Open Attention; ↑↓ select, Enter or a click opens the agent or task, m marks a failed task seen, Esc cancels |
+| Agents | a / Attention · N | Open Attention; ↑↓ select, Enter or a click opens the agent or task, Esc cancels |
 | Agents | , / Settings | Open Settings; Tab/↑↓ select a value, F1–F5 or a click switch page, Ctrl-U clears, Ctrl-D restores the default, Ctrl-S saves, Esc cancels |
 | New-agent form | Tab / Shift-Tab, Ctrl-U | Switch field, clear field |
-| New-agent form | Ctrl-P / Project, Ctrl-E / Edit path | Choose a registered project or edit its path |
+| New-agent form | Ctrl-P / Project, Ctrl-E / Edit path | Choose an observed agent project/startup directory or edit its path |
 | New-agent form | Left/Right in Open in | Choose current pane (default), new tab, or a split direction; content-picker placement stays fixed and is shown as text |
 | New-agent form | F4 / Advanced, Ctrl-S / Create agent, Esc | Toggle advanced settings, create, or return while keeping the draft |
 | Viewer chrome | Split ▾, then a side / + | Choose a split side or a new tab, then Terminal, New agent, or an agent to open or move there |
@@ -219,8 +213,8 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Viewer chrome | Zoom / Restore | With several panes, temporarily fill the terminal area with the focused pane (Agents and tabs stay); Restore returns the same split with that pane focused. Other panes keep running; focusing another pane, closing the zoomed pane, or a new split ends the zoom |
 | Viewer chrome | Close pane / Close tab | Confirm running shells, then close the pane or tab; agent displays only detach |
 | Agents | Mouse wheel / trackpad | Scroll the list without changing selection |
-| Agents | Tab / Shift-Tab | Open Tasks / focus Viewer |
-| Anywhere | Click Tasks (top of Agents) | Open Tasks; closing returns to the previous input target |
+| Agents | Tab / Shift-Tab | Focus Viewer |
+| Anywhere | Plugins | Search plugins and open or switch to a running view |
 | Agents | PgUp / PgDn | Scroll the agent list |
 | Agents | s / Sort | Toggle status (default) / name order within repositories |
 | Agents | z / Fold | Fold unselected agents to one row, or expand them again |
@@ -233,10 +227,10 @@ The table covers backgrounds, selection, borders, focus, text levels, connection
 | Tasks | c / project selector | Open the project picker |
 | Project picker | Enter / click, e, r | Open project, enter a path, reload registry |
 | Path form | Ctrl-U / Enter / Esc | Clear / apply / cancel |
-| Tasks | r / g / n | Refresh / check and release / send next task |
-| Tasks | p / l | Pause or resume / toggle loop |
+| Tasks (plugin) | r | Refresh; dispatch/submit/accept use explicit task buttons |
+| Tasks (plugin) | p / N | Pause or resume dispatch / notification preference |
 | Tasks | a / ? | Add a task / open help |
-| Tasks, running task selected | Return to pending… (click) | Confirm work has stopped, give a reason, and return the same task to the front of Pending with the queue paused; retains run history and does not stop agents |
+| Tasks, running task selected | Return to pending… (click) | Confirm work has stopped, give a reason, and return the same task to the front of Pending without changing the pause setting; retains run history and does not stop agents |
 | Tasks, pending task selected | e / u / d / x | Edit / move up / move down / delete (confirm with y) |
 | Tasks | A | Show pending tasks from all registered projects |
 | All pending | Mouse wheel / PgUp / PgDn, r, Esc | Scroll / reload / back |
@@ -258,13 +252,13 @@ Viewer forwards input to the agent, except **Ctrl-]**. The bottom bar identifies
 
 Unknown or unrecorded values are labelled as such, never shown as zero or passing. A failed refresh shows the error and marks older details stale; the next refresh retries. Pending and unnumbered tasks are not covered by `drover show`, so their details show the list's title, body, and status; a pending task switches to full details once it starts.
 
-Select a pending task to use **Edit**, **Move up**, or **Move down** at the bottom of Tasks; other task states cannot be edited or reordered. Edit opens a full-size form in the same popup and prefills the title and multiline body; saving or cancelling returns to the same task and view. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, saddle rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
+Select a pending task to use **Edit**, **Move up**, or **Move down** at the bottom of Tasks; other task states cannot be edited or reordered. Edit opens a full-size form in the same popup and prefills the title and multiline body; saving or cancelling returns to the same task and view. Refreshes and failed saves preserve the draft; successful changes keep the task selected. The first/last pending task cannot move up/down respectively. Before writing, the Drover plugin rechecks the public pending snapshot and rejects stale content or order. The current CLI does not expose a version for atomic protection, so another writer can still race between this check and the write.
 
-**Delete x** opens a confirmation showing the selected pending task's position, id, title, and body; press **y** or click **Delete** to confirm, or **Esc** / **Cancel** to keep it. The confirmed target is fixed when the dialog opens, so refreshes do not change it. saddle runs `drover drop --pos <position> "Deleted in saddle"` after the same pending recheck: the task leaves the pending queue and drover keeps it in History as **Dropped** (with that reason); it is not erased. Only pending tasks can be deleted here; current tasks cannot be returned to pending.
+**Delete x** opens a confirmation showing the selected pending task's position, id, title, and body; press **y** or click **Delete** to confirm, or **Esc** / **Cancel** to keep it. The confirmed target is fixed when the dialog opens, so refreshes do not change it. The Drover plugin runs `drover drop --pos <position> "Deleted in saddle"` after the same pending recheck: the task leaves the pending queue and drover keeps it in History as **Dropped** (with that reason); it is not erased. Only pending tasks can be deleted here; running tasks use the separate Return to pending confirmation.
 
 **All pending A** opens a read-only page in the Tasks popup listing the pending tasks of every project in `~/.drover/projects`, grouped by project with each task's queue position, id, and full title. Each project is read in the background with its own `drover list --json`; a project that is still loading or failed to read is labeled as such, with the full error, while the other projects still show their tasks. Press **r** to reload. The page does not edit or reorder tasks; switch to a project to act on its queue.
 
-**Next, Check & release, Pause, and Loop apply to the selected project**, regardless of which history task is highlighted. A failed refresh disables actions on stale queue data. No active work is shown as `No active tasks`; history remains available, with a range indicator at the bottom.
+**Pause applies to the open project; Dispatch selected, Submit for acceptance, Accept, and Return to pending apply to their explicitly selected task.** A failed refresh disables actions on stale queue data. No active work is shown as `No active tasks`; history remains available, with a range indicator at the bottom.
 
 ## Development
 

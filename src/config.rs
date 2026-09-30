@@ -9,28 +9,11 @@ pub struct Config {
     pub left_width: u16,
     pub left_split: f64,
     pub refresh_ms: u64,
-    pub queue: Queue,
+    /// Preserved for old config files; all task settings now belong to the Drover plugin.
+    pub queue: Option<toml::Value>,
     pub colors: crate::theme::Theme,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct Queue {
-    pub drover: String,
-    pub cwd: Option<String>,
-    /// The dispatch-log command whose public reads fill the optional Dispatch view.
-    pub dispatch_log: String,
-}
-
-impl Default for Queue {
-    fn default() -> Self {
-        Self {
-            drover: "drover".into(),
-            cwd: None,
-            dispatch_log: "dlog".into(),
-        }
-    }
-}
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -38,7 +21,7 @@ impl Default for Config {
             left_width: 52,
             left_split: 0.5,
             refresh_ms: 1000,
-            queue: Queue::default(),
+            queue: None,
             colors: crate::theme::Theme::default(),
         }
     }
@@ -53,14 +36,6 @@ impl Config {
         ensure!(config.left_width > 0, "left_width must be positive");
         ensure!(config.refresh_ms > 0, "refresh_ms must be positive");
         ensure!(!config.corral.trim().is_empty(), "corral cannot be empty");
-        ensure!(
-            !config.queue.drover.trim().is_empty(),
-            "queue.drover cannot be empty"
-        );
-        ensure!(
-            !config.queue.dispatch_log.trim().is_empty(),
-            "queue.dispatch_log cannot be empty"
-        );
         Ok(config)
     }
 }

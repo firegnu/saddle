@@ -38,10 +38,7 @@ fn screen(settings: &mut Settings) -> String {
 fn empty_report(config: PathBuf) -> Report {
     Report {
         corral: "corral".into(),
-        drover: "drover".into(),
         agents: None,
-        project: "/tmp/project".into(),
-        tasks: None,
         config_path: config,
         config_from_file: false,
         layout_path: None,
@@ -54,7 +51,7 @@ fn empty_report(config: PathBuf) -> Report {
 }
 
 #[test]
-fn diagnostics_in_settings_show_the_five_groups_and_never_call_the_unrecorded_a_success() {
+fn diagnostics_in_settings_show_the_host_groups_and_never_call_the_unrecorded_a_success() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let mut settings = Settings::open(path.clone(), true);
@@ -68,7 +65,6 @@ fn diagnostics_in_settings_show_the_five_groups_and_never_call_the_unrecorded_a_
         "Diagnostics",
         "Program / commands",
         "Agents",
-        "Tasks",
         "Configuration",
         "Layout",
         "Refresh",
@@ -76,7 +72,6 @@ fn diagnostics_in_settings_show_the_five_groups_and_never_call_the_unrecorded_a_
         "Close",
         "checking…",
         "no read yet",
-        "/tmp/project",
     ] {
         assert!(shown.contains(text), "{text} missing:\n{shown}");
     }
@@ -90,20 +85,10 @@ fn diagnostics_in_settings_show_the_five_groups_and_never_call_the_unrecorded_a_
             path: Ok("/opt/bin/corral".into()),
             version: Some(Ok("0.1.0 (contract 1)".into())),
         },
-        drover: Probe {
-            path: Err("not found on PATH".into()),
-            version: None,
-        },
         config: Ok(false),
     });
     let shown = screen(&mut settings);
-    for text in [
-        "/opt/bin/corral",
-        "0.1.0 (contract 1)",
-        "not found on PATH",
-        "not offered",
-        "defaults",
-    ] {
+    for text in ["/opt/bin/corral", "0.1.0 (contract 1)", "defaults"] {
         assert!(shown.contains(text), "{text} missing:\n{shown}");
     }
     let Outcome::Copy(summary) = press(&mut settings, KeyCode::Char('c')) else {
@@ -112,7 +97,6 @@ fn diagnostics_in_settings_show_the_five_groups_and_never_call_the_unrecorded_a_
     for text in [
         "Program / commands",
         "Agents",
-        "Tasks",
         "Configuration",
         "Layout",
         "0.1.0 (contract 1)",
@@ -145,8 +129,6 @@ fn recorded_results_show_their_errors_and_the_summary_hides_the_home_folder() {
     let at = SystemTime::now();
     settings.diagnose(Report {
         agents: Some((at, Err("corral ls timed out".into()))),
-        tasks: Some((at, Ok(()))),
-        project: format!("{home}/work/project"),
         config_path: format!("{home}/.config/saddle/config.toml").into(),
         config_from_file: true,
         layout_path: Some(format!("{home}/.local/state/saddle/layout.json").into()),
@@ -155,7 +137,7 @@ fn recorded_results_show_their_errors_and_the_summary_hides_the_home_folder() {
         ..empty_report(PathBuf::new())
     });
     let shown = screen(&mut settings);
-    for text in ["corral ls timed out", "bad layout", "~/work/project"] {
+    for text in ["corral ls timed out", "bad layout"] {
         assert!(shown.contains(text), "{text} missing:\n{shown}");
     }
     let Outcome::Copy(summary) = press(&mut settings, KeyCode::Char('c')) else {
@@ -181,23 +163,14 @@ fn checks_find_the_commands_and_read_public_versions_within_a_timeout() {
     let config = dir.path().join("config.toml");
     let cancel = AtomicBool::new(false);
 
-    let checks = check(
-        &corral,
-        "saddle-test-missing-drover",
-        &config,
-        Duration::from_secs(5),
-        &cancel,
-    );
+    let checks = check(&corral, &config, Duration::from_secs(5), &cancel);
     assert_eq!(checks.corral.path, Ok(PathBuf::from(&corral)));
     assert_eq!(checks.corral.version, Some(Ok("0.1.0 (contract 1)".into())));
-    assert!(checks.drover.path.is_err(), "{:?}", checks.drover.path);
-    // drover offers no public version command, so none is run.
-    assert_eq!(checks.drover.version, None);
     assert_eq!(checks.config, Ok(false));
 
     std::fs::write(&config, "left_width = 0\n").unwrap();
     let started = Instant::now();
-    let checks = check(&slow, &corral, &config, Duration::from_millis(200), &cancel);
+    let checks = check(&slow, &config, Duration::from_millis(200), &cancel);
     assert!(started.elapsed() < Duration::from_secs(3));
     assert!(
         matches!(&checks.corral.version, Some(Err(e)) if e.contains("timed out")),
@@ -207,7 +180,7 @@ fn checks_find_the_commands_and_read_public_versions_within_a_timeout() {
     assert!(checks.config.is_err(), "{:?}", checks.config);
 
     std::fs::write(&config, "left_width = 40\n").unwrap();
-    let checks = check(&corral, &corral, &config, Duration::from_secs(5), &cancel);
+    let checks = check(&corral, &config, Duration::from_secs(5), &cancel);
     assert_eq!(checks.config, Ok(true));
 }
 
@@ -275,7 +248,7 @@ fn a_config_error_keeps_its_place_and_kind_but_not_the_configured_value() {
         ("refresh_ms = 10\nleft_width = 70000\n", "line 2"),
     ] {
         std::fs::write(&config, text).unwrap();
-        let checks = check("true", "true", &config, Duration::from_secs(5), &cancel);
+        let checks = check("true", &config, Duration::from_secs(5), &cancel);
         let error = checks.config.as_ref().unwrap_err();
         assert!(error.contains("line"), "{error}");
         assert!(error.contains(kind), "{error}");

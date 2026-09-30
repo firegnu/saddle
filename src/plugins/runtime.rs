@@ -21,7 +21,18 @@ use std::{
 pub struct Picture {
     pub frame_id: u64,
     pub revision: u64,
+    pub cursor: Option<[u16; 2]>,
+    pub escape_input: bool,
     pub buffer: ratatui::buffer::Buffer,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Navigation {
+    pub plugin: String,
+    pub session: u64,
+    pub request_id: u64,
+    pub input_id: u64,
+    pub name: String,
+    pub instance: String,
 }
 #[derive(Clone)]
 pub struct Snapshot {
@@ -32,6 +43,9 @@ pub struct Snapshot {
     pub interactive: bool,
     pub log: String,
     pub session: u64,
+    pub input_id: u64,
+    pub navigation: Option<Navigation>,
+    pub close_input: Option<u64>,
     pub attention: Option<(u64, wire::AttentionSnapshot)>,
 }
 impl Default for Snapshot {
@@ -40,6 +54,9 @@ impl Default for Snapshot {
         Self {
             session: SESSION.fetch_add(1, Ordering::Relaxed),
             attention: None,
+            input_id: 0,
+            navigation: None,
+            close_input: None,
             state: "Starting".into(),
             note: String::new(),
             pid: None,
@@ -51,6 +68,9 @@ impl Default for Snapshot {
 }
 #[derive(Clone)]
 pub struct Toast {
+    pub session: u64,
+    pub notification_id: u64,
+    pub target: Option<wire::OpenTarget>,
     pub plugin: String,
     pub name: String,
     pub text: String,
@@ -83,6 +103,12 @@ pub struct Runtime {
     worker: Option<thread::JoinHandle<()>>,
 }
 impl Runtime {
+    pub fn take_close(&self) -> Option<u64> {
+        self.shared.lock().unwrap().close_input.take()
+    }
+    pub fn take_navigation(&self) -> Option<Navigation> {
+        self.shared.lock().unwrap().navigation.take()
+    }
     pub fn start(dir: &Path, manifest: Manifest) -> Self {
         Self::with_notices(dir, manifest, Notices::default())
     }
@@ -271,6 +297,7 @@ fn run(
         let mut highest = 0;
         let mut next = 1;
         let mut ping = None;
+        let mut navigation_input = 0;
         let mut notified = 0;
         let mut tokens = 5.0f64;
         let mut token_at = start;
@@ -339,6 +366,15 @@ fn run(
                     };
                     let Some((msg, _)) = item else { break };
                     if let Message::Event { name, data } = &msg {
+                        if name == "input" {
+                            shared.lock().unwrap().input_id =
+                                data["input_id"].as_u64().unwrap_or(0);
+                        }
+                        if matches!(name.as_str(), "panel.close" | "panel.resize")
+                            || (name == "panel.focus" && data["focused"] == false)
+                        {
+                            shared.lock().unwrap().input_id = 0;
+                        }
                         if name == "panel.open" || name == "panel.resize" {
                             size = (
                                 data["cols"].as_u64().unwrap_or(0) as u16,
@@ -468,6 +504,26 @@ fn run(
                                                 ),
                                             "invalid notification"
                                         );
+                                        let target: Option<wire::OpenTarget> = params
+                                            .get("target")
+                                            .filter(|v| !v.is_null())
+                                            .map(|v| serde_json::from_value(v.clone()))
+                                            .transpose()?;
+                                        if let Some(target) = &target {
+                                            ensure!(
+                                                m.required_capabilities
+                                                    .iter()
+                                                    .any(|c| c == "notify.target.v1"),
+                                                "undeclared notification target"
+                                            );
+                                            target.validate()?;
+                                            ensure!(
+                                                m.action.as_ref().is_some_and(
+                                                    |action| action.id == target.action
+                                                ),
+                                                "unknown notification action"
+                                            );
+                                        }
                                         tokens =
                                             (tokens + token_at.elapsed().as_secs_f64()).min(5.0);
                                         token_at = Instant::now();
@@ -485,6 +541,9 @@ fn run(
                                             tokens -= 1.0;
                                             notified = notification;
                                             n.items.push_back(Toast {
+                                                session: shared.lock().unwrap().session,
+                                                notification_id: notification,
+                                                target,
                                                 plugin: m.id.clone(),
                                                 name: m.name.clone(),
                                                 text: text.into(),
@@ -493,6 +552,55 @@ fn run(
                                             "accepted"
                                         };
                                         Message::response(id, json!({"status":status}))
+                                    } else if method == "agent.open"
+                                        && m.required_capabilities
+                                            .iter()
+                                            .any(|c| c == "agent.open.v1")
+                                    {
+                                        let mut s = shared.lock().unwrap();
+                                        let input_id = params["input_id"].as_u64().unwrap_or(0);
+                                        let name = params["name"].as_str().unwrap_or_default();
+                                        let instance =
+                                            params["instance"].as_str().unwrap_or_default();
+                                        if s.state != "Running"
+                                            || !s.interactive
+                                            || input_id == 0
+                                            || input_id != s.input_id
+                                            || input_id <= navigation_input
+                                        {
+                                            Message::error(
+                                                id,
+                                                "stale_input",
+                                                "Navigation requires current user input",
+                                            )
+                                        } else if name.is_empty()
+                                            || name.len() > 256
+                                            || instance.is_empty()
+                                            || instance.len() > 256
+                                            || name
+                                                .chars()
+                                                .chain(instance.chars())
+                                                .any(char::is_control)
+                                        {
+                                            Message::error(
+                                                id,
+                                                "invalid_identity",
+                                                "Invalid agent identity",
+                                            )
+                                        } else if s.navigation.is_some() {
+                                            Message::error(id, "busy", "Navigation already pending")
+                                        } else {
+                                            navigation_input = input_id;
+                                            s.navigation = Some(Navigation {
+                                                plugin: m.id.clone(),
+                                                session: s.session,
+                                                request_id: id,
+                                                input_id,
+                                                name: name.into(),
+                                                instance: instance.into(),
+                                            });
+                                            continue;
+                                        }
                                     } else if method == "attention.replace"
                                         && m.required_capabilities
                                             .iter()
@@ -549,9 +657,33 @@ fn run(
                                 Message::Event { name, data } => {
                                     ensure!(ready, "event before handshake");
                                     match name.as_str() {
+                                        "panel.close_request" => {
+                                            ensure!(
+                                                m.required_capabilities
+                                                    .iter()
+                                                    .any(|c| c == "view.close.v1"),
+                                                "undeclared view close"
+                                            );
+                                            let mut s = shared.lock().unwrap();
+                                            let input = data["input_id"].as_u64().unwrap_or(0);
+                                            if s.state == "Running"
+                                                && s.interactive
+                                                && input != 0
+                                                && input == s.input_id
+                                            {
+                                                s.close_input = Some(input);
+                                            }
+                                        }
                                         "panel.frame" => {
                                             let frame: wire::Frame = serde_json::from_value(data)?;
                                             frame.validate()?;
+                                            ensure!(
+                                                !frame.escape_input
+                                                    || m.required_capabilities
+                                                        .iter()
+                                                        .any(|c| c == "panel.escape.v1"),
+                                                "undeclared Escape handling"
+                                            );
                                             ensure!(
                                                 frame.frame_id > last_frame
                                                     && frame.size_revision <= size.2,
@@ -570,6 +702,8 @@ fn run(
                                                 let picture = Arc::new(Picture {
                                                     frame_id: frame.frame_id,
                                                     revision: frame.size_revision,
+                                                    cursor: frame.cursor,
+                                                    escape_input: frame.escape_input,
                                                     buffer: saddle_plugin_sdk::buffer(&frame)?,
                                                 });
                                                 let mut s = shared.lock().unwrap();

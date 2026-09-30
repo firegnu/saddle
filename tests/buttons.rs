@@ -19,7 +19,7 @@ fn release_activates_only_the_original_enabled_target() {
         danger: false,
         key: crossterm::event::KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
     };
-    let hits = vec![(Focus::Queue, hit.clone())];
+    let hits = vec![(Focus::Viewer, hit.clone())];
     let mut p = Pointer::default();
     assert!(
         p.event(event(E::Down(MouseButton::Left), 3), &hits)
@@ -32,7 +32,7 @@ fn release_activates_only_the_original_enabled_target() {
     p.event(event(E::Down(MouseButton::Left), 3), &hits);
     assert_eq!(
         p.event(event(E::Up(MouseButton::Left), 3), &hits),
-        Some((Focus::Queue, hit.key))
+        Some((Focus::Viewer, hit.key))
     );
     p.event(event(E::Down(MouseButton::Left), 3), &hits);
     p.cancel();

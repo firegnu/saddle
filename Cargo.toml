@@ -1,11 +1,12 @@
 [workspace]
-members = ["crates/plugin-protocol", "crates/plugin-sdk"]
-default-members = [".", "crates/plugin-protocol", "crates/plugin-sdk"]
+members = ["crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover"]
+default-members = [".", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover"]
 exclude = ["examples/counter-plugin", "examples/attention-plugin"]
 resolver = "3"
 
 [package]
 name = "saddle"
+default-run = "saddle"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"

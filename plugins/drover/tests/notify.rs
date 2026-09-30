@@ -1,4 +1,4 @@
-use saddle::{
+use saddle_drover_plugin::{
     attention::Target,
     drover::{Preference, Snapshot, Task},
     notify::{Notifier, SHOWN, identity},

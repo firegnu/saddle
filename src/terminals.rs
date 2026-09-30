@@ -922,7 +922,7 @@ pub fn draw(
         frame.render_widget(t.block(title.clone(), focused && active), rect);
         let inside = crate::ui::inner(rect);
         if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some()) {
-            plugin.draw(frame, inside);
+            plugin.draw(frame, inside, focused && active);
         } else if let Some(session) = &pane.viewer.session {
             let cursor = session
                 .screen

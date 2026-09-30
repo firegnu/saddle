@@ -1,8 +1,8 @@
 mod common;
-use saddle::drover::Client;
+use saddle_drover_plugin::drover::Client;
 #[test]
 fn project_registry_preserves_order_deduplicates_and_reports_read_errors() {
-    use saddle::drover::registered_projects;
+    use saddle_drover_plugin::drover::registered_projects;
     let temp = tempfile::tempdir().unwrap();
     let registry = temp.path().join("projects");
     assert!(registered_projects(&registry).unwrap().is_empty());
@@ -45,7 +45,7 @@ printf '%s\n' '{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loo
 
 #[test]
 fn operations_use_literal_public_arguments_and_surface_failure_feedback() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let program = common::script(
@@ -91,7 +91,7 @@ esac
 
 #[test]
 fn pending_edit_and_move_check_public_data_and_pass_literal_arguments() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let client = Client {
@@ -175,7 +175,7 @@ fn pending_edit_and_move_check_public_data_and_pass_literal_arguments() {
 
 #[test]
 fn pending_delete_checks_public_data_and_drops_by_position() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let client = Client {
@@ -243,7 +243,7 @@ fn pending_delete_checks_public_data_and_drops_by_position() {
 
 #[test]
 fn stale_pending_content_order_or_state_never_sends_a_write() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let client = Client {
@@ -308,7 +308,7 @@ fn stale_pending_content_order_or_state_never_sends_a_write() {
 
 #[test]
 fn all_pending_reads_every_project_through_public_json_and_keeps_failures_separate() {
-    use saddle::drover::PendingLoad;
+    use saddle_drover_plugin::drover::PendingLoad;
     use std::time::Duration;
     let temp = tempfile::tempdir().unwrap();
     let program = common::script(
@@ -414,7 +414,7 @@ exit $(cat code)
 
 #[test]
 fn detail_worker_queries_one_at_a_time_and_stops_when_dropped() {
-    use saddle::drover::DetailWorker;
+    use saddle_drover_plugin::drover::DetailWorker;
     use std::time::{Duration, Instant};
     let temp = tempfile::tempdir().unwrap();
     std::fs::write(
@@ -590,7 +590,7 @@ printf '%s\n' '{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loo
 
 #[test]
 fn dispatch_selected_sends_the_shown_target_once_and_reports_delivery_and_record_apart() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let program = common::script(
@@ -789,7 +789,7 @@ exit $(cat code)
 
 #[test]
 fn dispatch_selected_feedback_claims_only_what_the_answer_states() {
-    use saddle::drover::Operation;
+    use saddle_drover_plugin::drover::Operation;
     use std::sync::atomic::AtomicBool;
     let temp = tempfile::tempdir().unwrap();
     let program = common::script(

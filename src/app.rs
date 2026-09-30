@@ -2,12 +2,11 @@ use crate::{
     agents::Panel,
     config::{Config, expand_home},
     corral::{Client, Poller},
-    drover, git,
+    git,
     input::{Focus, Route, encode_key, encode_mouse, encode_paste},
     layout::Panes,
     placement::{self, Placement},
     pty::Session,
-    queue,
     terminals::{Control, Place, Terminals, Ticket},
     ui::{self, Hits, View},
 };
@@ -45,8 +44,8 @@ use control_impl::{Closing, Record, Replacement};
 #[derive(Clone)]
 enum Action {
     Attach(String, Ticket, Option<u64>),
-    TaskAgent(crate::links::AgentRequest),
-    TaskAgentReady(crate::links::AgentRequest, Ticket),
+    PluginAgent(crate::plugins::runtime::Navigation),
+    PluginAgentReady(crate::plugins::runtime::Navigation, Ticket),
     Reply(String),
     Stop(String),
     Start(Vec<String>, Ticket, Option<u64>),
@@ -88,7 +87,7 @@ impl Actions {
                 _ => {
                     let (verb, name, timeout) = match &action {
                         Action::Attach(name, _, _) => ("status", name, 15),
-                        Action::TaskAgent(request) | Action::TaskAgentReady(request, _) => {
+                        Action::PluginAgent(request) | Action::PluginAgentReady(request, _) => {
                             ("status", &request.name, 15)
                         }
                         Action::Reply(name) => ("reply", name, 15),
@@ -166,6 +165,7 @@ struct App {
     plugin_overlay: Option<plugins_impl::Overlay>,
     parked_settings: Option<crate::settings::Settings>,
     plugin_toast: Option<(Rect, Rect)>,
+    plugin_toast_shown: Option<crate::plugins::runtime::Toast>,
 
     control: crate::control::Server,
     records: Vec<Record>,
@@ -179,28 +179,15 @@ struct App {
     actions: Actions,
     viewer: Terminals,
     layout_store: crate::layout_state::Store,
-    queue: queue::Panel,
-    queue_worker: drover::Worker,
-    pending_load: Option<drover::PendingLoad>,
-    /// The focused agent's repository lookup for the Tasks opening that started it, with the
-    /// project and input revision at that opening.
-    repo_tasks: Option<(String, u64, drover::RepoTasks)>,
-    detail: Option<(queue::DetailKey, drover::DetailWorker)>,
-    /// The one reading of the run a task confirmation page shows.
-    confirmation_target: Option<(queue::DetailKey, drover::DetailWorker)>,
+    cwd: String,
+    projects: Vec<String>,
     reply: Option<(String, String)>,
     reply_busy: bool,
     reply_due: Instant,
     placement: Option<Placement>,
     search: Option<crate::search::Search>,
-    survey: drover::Surveyor,
     board: crate::attention::Board,
     attention: Option<crate::attention::Popup>,
-    /// Drover's notification preference, read periodically and set from Settings.
-    channel: drover::ChannelWorker,
-    notifier: crate::notify::Notifier,
-    /// The task prompt as last drawn: its area and close mark.
-    toast: Option<(Rect, Rect)>,
     native_mouse: bool,
     new_agent: Option<crate::launch::Form>,
     /// Agents New draft parked while a location-bound form is in use.
@@ -210,19 +197,16 @@ struct App {
     viewer_area: Rect,
     hits: Hits,
     pointer: crate::buttons::Pointer,
-    /// The input target to return to when Tasks closes.
-    tasks_return: Focus,
     link_attach: Option<links_impl::LinkAttach>,
+    navigation: Option<crate::plugins::runtime::Navigation>,
+    navigation_revision: u64,
     config_path: std::path::PathBuf,
     settings: Option<crate::settings::Settings>,
     /// The input target to return to when Settings closes.
     settings_return: Focus,
-    /// Identifies the open Settings, so a Drover answer meant for an earlier one is not used.
-    settings_token: u64,
     /// For Diagnostics: the latest agent and task reads, where the config came from, and the
     /// check running for the open page.
     agents_read: crate::diagnostics::Last,
-    tasks_read: crate::diagnostics::Last,
     config_from_file: bool,
     checker: Option<crate::diagnostics::Checker>,
 }
@@ -233,58 +217,7 @@ impl App {
         let client = Client {
             program: expand_home(&config.corral).to_string_lossy().into_owned(),
         };
-        let registered = drover::registered_projects(&expand_home("~/.drover/projects"));
-        let registry_error = registered.as_ref().err().map(|error| format!("{error:#}"));
-        let projects = registered.unwrap_or_default();
-        let current = std::env::current_dir().unwrap_or_else(|_| ".".into());
-        let default_project = if projects
-            .iter()
-            .any(|path| std::path::Path::new(path) == current)
-        {
-            current.clone()
-        } else {
-            projects
-                .first()
-                .map(std::path::PathBuf::from)
-                .unwrap_or(current)
-        };
-        let queue_client = drover::Client {
-            program: expand_home(&config.queue.drover)
-                .to_string_lossy()
-                .into_owned(),
-            cwd: config
-                .queue
-                .cwd
-                .as_deref()
-                .map(expand_home)
-                .unwrap_or(default_project),
-        };
-        let project = queue_client
-            .cwd
-            .canonicalize()
-            .unwrap_or_else(|_| queue_client.cwd.clone())
-            .display()
-            .to_string();
-        let queue_worker =
-            drover::Worker::start(queue_client, Duration::from_millis(config.refresh_ms));
-        // Across projects, reads come every five refresh periods; opening Attention rereads.
-        let survey = drover::Surveyor::start(
-            expand_home(&config.queue.drover)
-                .to_string_lossy()
-                .into_owned(),
-            expand_home("~/.drover/projects"),
-            Duration::from_millis(config.refresh_ms.saturating_mul(5)),
-        );
-        // Drover's notification preference is checked as often as the projects are read.
-        let channel = drover::ChannelWorker::start(
-            drover::Client {
-                program: expand_home(&config.queue.drover)
-                    .to_string_lossy()
-                    .into_owned(),
-                cwd: ".".into(),
-            },
-            Duration::from_millis(config.refresh_ms.saturating_mul(5)),
-        );
+        let cwd = std::env::current_dir()?.display().to_string();
         let (layout_store, saved) =
             crate::layout_state::Store::open(crate::layout_state::default_path());
         let mut viewer = match saved {
@@ -331,6 +264,7 @@ impl App {
             plugin_overlay: None,
             parked_settings: None,
             plugin_toast: None,
+            plugin_toast_shown: None,
             layout_store,
             control: crate::control::Server::start()?,
             records: Vec::new(),
@@ -346,28 +280,15 @@ impl App {
                 ..Default::default()
             },
             focus: Focus::Agents,
-            queue: queue::Panel {
-                project,
-                projects,
-                registry_error,
-                ..Default::default()
-            },
-            queue_worker,
-            pending_load: None,
-            repo_tasks: None,
-            detail: None,
-            confirmation_target: None,
+            cwd: cwd.clone(),
+            projects: vec![cwd],
             reply: None,
             reply_busy: false,
             reply_due: Instant::now(),
             placement: None,
             search: None,
-            survey,
             board: Default::default(),
             attention: None,
-            channel,
-            notifier: Default::default(),
-            toast: None,
             native_mouse: false,
             new_agent: None,
             agent_draft: None,
@@ -375,14 +296,13 @@ impl App {
             viewer_area: Rect::default(),
             hits: Hits::default(),
             pointer: Default::default(),
-            tasks_return: Focus::Agents,
             link_attach: None,
+            navigation: None,
+            navigation_revision: 0,
             config_path,
             settings: None,
             settings_return: Focus::Agents,
-            settings_token: 0,
             agents_read: None,
-            tasks_read: None,
             config_from_file,
             checker: None,
         })
@@ -424,7 +344,7 @@ impl App {
                         showing: self.viewer.active_pane().viewer.showing.as_deref(),
                         local: &local,
                         viewer: self.viewer.active_pane().viewer.session.as_ref(),
-                        queue: &mut self.queue,
+                        projects: &self.projects,
                         viewer_note: &self.viewer.active_pane().viewer.note,
                         reply: &reply,
                         now: now(),
@@ -451,23 +371,10 @@ impl App {
                     page.draw(&self.config.colors, frame, &self.plugins);
                 }
                 self.plugin_toast = if self.plugin_page.is_none() {
-                    self.draw_plugin_toast(
-                        frame,
-                        if self.notifier.visible(Instant::now()).is_some() {
-                            Rect {
-                                height: panes.viewer.height.saturating_sub(5),
-                                ..panes.viewer
-                            }
-                        } else {
-                            panes.viewer
-                        },
-                    )
+                    self.draw_plugin_toast(frame, panes.viewer)
                 } else {
                     None
                 };
-                self.toast = self.notifier.visible(Instant::now()).and_then(|toast| {
-                    crate::notify::draw(&self.config.colors, frame, panes.viewer, toast)
-                });
                 if !self.layout_store.notice.is_empty() {
                     frame.render_widget(
                         ratatui::widgets::Paragraph::new(self.layout_store.notice.as_str())
@@ -541,10 +448,6 @@ impl App {
                 }
             }
         }
-        let updates: Vec<_> = self.channel.updates.try_iter().collect();
-        for update in updates {
-            self.channel_update(update);
-        }
         if let Some(checks) = self
             .checker
             .as_ref()
@@ -553,25 +456,15 @@ impl App {
         {
             settings.checked(checks);
         }
-        for update in self.survey.updates.try_iter() {
-            match &update {
-                drover::Survey::Projects(Ok(projects)) => self.notifier.registry(projects),
-                drover::Survey::Snapshot(project, Ok(snapshot)) => {
-                    self.notifier.snapshot(project, snapshot, Instant::now())
-                }
-                _ => {}
-            }
-            self.board.absorb(update);
-        }
         for batch in self.git.updates.try_iter() {
             self.panel.absorb_git(batch);
         }
         let results: Vec<_> = self.actions.receiver.try_iter().collect();
         for result in results {
             match result.action {
-                Action::TaskAgent(request) => self.task_agent_result(request, result.result),
-                Action::TaskAgentReady(request, ticket) => {
-                    self.task_agent_ready(request, ticket, result.result)
+                Action::PluginAgent(request) => self.navigation_result(request, result.result),
+                Action::PluginAgentReady(request, ticket) => {
+                    self.navigation_ready(request, ticket, result.result)
                 }
                 Action::Attach(name, ticket, focus_intent) if self.viewer.valid(ticket) => {
                     let expected = self
@@ -738,107 +631,7 @@ impl App {
         }
         self.viewer.tick(panes.viewer)?;
         self.control_tick();
-        if self.focus != Focus::Queue {
-            self.repo_tasks = None;
-        }
-        if let Some(found) = self
-            .repo_tasks
-            .as_ref()
-            .and_then(|(_, _, lookup)| lookup.result.try_recv().ok())
-        {
-            let (opened, revision, _) = self.repo_tasks.take().unwrap();
-            // Only while that opening is untouched: no later input, project choice, page or write.
-            if let Some(project) = found
-                && project != self.queue.project
-                && opened == self.queue.project
-                && revision == self.input_revision
-                && matches!(self.queue.page, queue::Page::List)
-                && !self.queue.busy
-            {
-                self.queue_request(drover::Request::Project(project));
-            }
-        }
-        for update in self.queue_worker.updates.try_iter() {
-            match update {
-                drover::Update::Snapshot(Ok(snapshot)) => {
-                    self.tasks_read = Some((SystemTime::now(), Ok(())));
-                    self.queue.absorb(*snapshot)
-                }
-                drover::Update::Snapshot(Err(error)) => {
-                    self.tasks_read = Some((SystemTime::now(), Err(format!("{error:#}"))));
-                    self.queue.read_error = Some(format!("{error:#}"));
-                }
-                drover::Update::Feedback(operation, result) => {
-                    self.queue.complete(&operation, result)
-                }
-            }
-        }
-        // Run details refresh only while Tasks is open to show them.
-        let wanted = self
-            .queue
-            .detail_key()
-            .filter(|_| self.focus == Focus::Queue);
-        if self.detail.as_ref().map(|(key, _)| key) != wanted.as_ref() {
-            // Dropping the old worker cancels its query and discards its results before a new
-            // target (another task, project or reopened page) starts.
-            self.detail = None;
-            self.detail = wanted.map(|key| {
-                let worker = drover::DetailWorker::start(
-                    drover::Client {
-                        program: expand_home(&self.config.queue.drover)
-                            .to_string_lossy()
-                            .into_owned(),
-                        cwd: key.project.clone().into(),
-                    },
-                    key.id.clone(),
-                    Duration::from_secs(5),
-                );
-                (key, worker)
-            });
-        }
-        if let Some((key, worker)) = &self.detail {
-            for result in worker.updates.try_iter() {
-                self.queue.absorb_detail(key, result);
-            }
-        }
-        // Read once per opening or Refresh, never renewed behind the user's back; closing
-        // Tasks drops a reading in progress, and reopening starts it again.
-        let wanted = self
-            .queue
-            .confirmation_key()
-            .filter(|_| self.focus == Focus::Queue);
-        if self.confirmation_target.as_ref().map(|(key, _)| key) != wanted.as_ref() {
-            self.confirmation_target = None;
-            self.confirmation_target = wanted.map(|key| {
-                let worker = drover::DetailWorker::start(
-                    drover::Client {
-                        program: expand_home(&self.config.queue.drover)
-                            .to_string_lossy()
-                            .into_owned(),
-                        cwd: key.project.clone().into(),
-                    },
-                    key.id.clone(),
-                    Duration::MAX,
-                );
-                (key, worker)
-            });
-        }
-        if let Some((key, worker)) = &self.confirmation_target {
-            for result in worker.updates.try_iter() {
-                self.queue.absorb_confirmation(key, result);
-            }
-        }
-        self.task_links_tick()?;
-        if !matches!(self.queue.page, queue::Page::AllPending) {
-            self.pending_load = None;
-        }
-        if let Some(load) = &self.pending_load {
-            for (index, result) in load.updates.try_iter() {
-                if let Some((_, entry)) = self.queue.all_pending.get_mut(index) {
-                    *entry = Some(result.map_err(|error| format!("{error:#}")));
-                }
-            }
-        }
+        self.navigation_tick()?;
         if self.panel.show_reply
             && !self.reply_busy
             && let Some(name) = &self.panel.selected
@@ -920,7 +713,7 @@ impl App {
                     .viewer
                     .get(anchor)
                     .and_then(|p| p.source_cwd().map(str::to_owned))
-                    .unwrap_or_else(|| self.queue.project.clone());
+                    .unwrap_or_else(|| self.cwd.clone());
                 let mut form = crate::launch::Form::new(project);
                 form.anchor = self.viewer.get(anchor).map(|p| p.ticket());
                 form.place = Place::ALL.iter().position(|p| *p == place).unwrap();
@@ -1027,11 +820,7 @@ impl App {
                 if let Some(name) = pane.viewer.remembered.name() {
                     let mut form = crate::launch::Form::for_previous(
                         name,
-                        pane.viewer
-                            .remembered
-                            .cwd()
-                            .unwrap_or(&self.queue.project)
-                            .into(),
+                        pane.viewer.remembered.cwd().unwrap_or(&self.cwd).into(),
                     );
                     form.anchor = Some(pane.ticket());
                     if self.new_agent.as_ref().is_some_and(|f| f.anchor.is_none()) {
@@ -1121,6 +910,14 @@ impl App {
         Ok(())
     }
     fn event(&mut self, event: Event, panes: Panes) -> Result<bool> {
+        if self.native_mouse
+            && let Event::Mouse(mouse) = &event
+        {
+            if matches!(mouse.kind, MouseEventKind::Up(_)) {
+                self.native_mouse = false;
+            }
+            return Ok(false);
+        }
         if matches!(&event, Event::Key(key) if key.kind != KeyEventKind::Release)
             || matches!(&event, Event::Mouse(mouse) if matches!(mouse.kind, MouseEventKind::Down(_) | MouseEventKind::ScrollUp | MouseEventKind::ScrollDown))
         {
@@ -1184,12 +981,6 @@ impl App {
                                 .min(c.snapshot.as_array().unwrap().len() as u16 * 3);
                         }
                         _ => {
-                            if self.closing.as_ref().is_some_and(|c| {
-                                matches!(c.replacement, Some(Replacement::TaskLink(_)))
-                            }) {
-                                self.queue.links.checking_agent = None;
-                                self.queue.links.message = "Cancelled".into();
-                            }
                             self.closing = None;
                         }
                     }
@@ -1201,7 +992,7 @@ impl App {
                     return Ok(false);
                 }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
-                    let submit = form.key(key, &self.queue.projects);
+                    let submit = form.key(key, &self.projects);
                     let bound = form.anchor;
                     if !form.visible && bound.is_some() {
                         if form.busy.is_none() {
@@ -1283,38 +1074,13 @@ impl App {
                     }
                     return Ok(false);
                 }
-                let before = self.focus;
                 let route = self.focus.route(key);
-                if before != Focus::Queue && self.focus == Focus::Queue {
-                    self.tasks_return = before;
-                    self.look_up_focused_repo(before);
-                }
                 match route {
                     Route::Quit => {
                         self.request_close(crate::control::CloseTarget::All)?;
                         return Ok(self.quit);
                     }
                     Route::Panel => self.panel_key(key),
-                    Route::Queue => {
-                        let typing = matches!(
-                            self.queue.page,
-                            queue::Page::Add { .. }
-                                | queue::Page::Edit { .. }
-                                | queue::Page::Project(_)
-                                | queue::Page::Confirm(_)
-                        );
-                        // Closing keeps the page, selection and scroll for the next opening.
-                        if (key.code == KeyCode::Char('q') && !typing)
-                            || (key.code == KeyCode::Esc
-                                && matches!(self.queue.page, queue::Page::List)
-                                && !self.queue.reading_link()
-                                && !self.queue.reading_dispatch())
-                        {
-                            self.focus = self.tasks_return;
-                        } else if let Some(request) = self.queue.key(key) {
-                            self.queue_request(request);
-                        }
-                    }
                     Route::Terminal => {
                         if self.plugin_input(crate::plugins::key(key)) {
                             return Ok(false);
@@ -1356,11 +1122,7 @@ impl App {
                 if self.attention.is_some() {
                     return Ok(false);
                 }
-                if self.focus == Focus::Queue {
-                    self.queue.paste(&text);
-                } else if self.viewer.active_pane().plugin_id().is_some()
-                    && self.focus == Focus::Viewer
-                {
+                if self.viewer.active_pane().plugin_id().is_some() && self.focus == Focus::Viewer {
                     if text.len() > saddle_plugin_protocol::MAX_PASTE {
                         self.panel.message = "Paste too large for plugin".into();
                     } else {
@@ -1383,24 +1145,9 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
-                if let Some((area, close)) = self.plugin_toast
-                    && area.contains(point)
-                {
-                    if mouse.kind == MouseEventKind::Down(MouseButton::Left)
-                        && close.contains(point)
-                    {
-                        self.plugins.notices.lock().unwrap().items.pop_front();
-                    }
-                    return Ok(false);
-                }
-                // The task prompt takes every mouse action over it; none reaches a terminal.
-                if let Some((area, close)) = self.toast
-                    && area.contains(point)
-                    && !self.pointer.captured()
-                    && self.notifier.visible(Instant::now()).is_some()
-                {
-                    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                        self.toast_click(close.contains(point));
+                if self.plugin_toast_event(&mouse) {
+                    if matches!(mouse.kind, MouseEventKind::Down(_)) {
+                        self.native_mouse = true;
                     }
                     return Ok(false);
                 }
@@ -1431,13 +1178,6 @@ impl App {
                     .cloned()
                     .map(|h| (Focus::Agents, h))
                     .chain(
-                        self.queue
-                            .buttons
-                            .iter()
-                            .cloned()
-                            .map(|h| (Focus::Queue, h)),
-                    )
-                    .chain(
                         self.hits
                             .terminal
                             .iter()
@@ -1446,20 +1186,6 @@ impl App {
                     .collect();
                 let captured = self.pointer.captured();
                 if let Some((focus, key)) = self.pointer.event(mouse, &controls) {
-                    if focus == Focus::Queue && self.focus != Focus::Queue {
-                        // The Tasks entry: open, remembering where input was.
-                        self.tasks_return = self.focus;
-                        self.look_up_focused_repo(self.focus);
-                        self.focus = Focus::Queue;
-                        return Ok(false);
-                    }
-                    if focus == Focus::Queue
-                        && key.code == KeyCode::Enter
-                        && matches!(self.queue.page, queue::Page::List)
-                    {
-                        self.queue.view = queue::View::Details;
-                        return Ok(false);
-                    }
                     if focus == Focus::Agents
                         && key.code == KeyCode::Char(',')
                         && self.settings.is_none()
@@ -1522,7 +1248,7 @@ impl App {
                         MouseEventKind::Down(MouseButton::Left) => {
                             if let Some(target) = popup.click(point) {
                                 // Only an agent focuses a terminal the gesture could reach;
-                                // Tasks takes the rest of it by itself.
+                                // A plugin overlay consumes the remaining gesture.
                                 self.native_mouse =
                                     matches!(target, crate::attention::Target::Agent(_));
                                 self.attention_outcome(crate::attention::Outcome::Open(target));
@@ -1539,7 +1265,7 @@ impl App {
                 }
                 if let Some(form) = self.new_agent.as_mut().filter(|f| f.visible) {
                     if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                        form.click(point, &self.queue.projects);
+                        form.click(point, &self.projects);
                     } else if mouse.kind == MouseEventKind::ScrollDown {
                         form.scroll(true);
                     } else if mouse.kind == MouseEventKind::ScrollUp {
@@ -1584,56 +1310,6 @@ impl App {
                             },
                             crossterm::event::KeyModifiers::NONE,
                         ))?;
-                    }
-                    return Ok(false);
-                }
-                // The open Tasks popup takes all mouse input; outside it nothing happens.
-                if self.focus == Focus::Queue {
-                    let scroll = matches!(
-                        mouse.kind,
-                        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-                    );
-                    let delta = if mouse.kind == MouseEventKind::ScrollUp {
-                        -1
-                    } else {
-                        1
-                    };
-                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                        self.native_mouse = false;
-                    }
-                    if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
-                        if let Some(request) = self.queue.click(mouse.column, mouse.row) {
-                            self.queue_request(request);
-                        } else if self.queue.list_area.contains(point)
-                            && let Some((_, index)) = self
-                                .hits
-                                .queue_rows
-                                .iter()
-                                .find(|(row, _)| *row == mouse.row)
-                        {
-                            self.queue.select(*index);
-                        }
-                        if self.queue.links.checking_agent.is_some() {
-                            self.native_mouse = true;
-                        }
-                    } else if scroll && self.queue.overlay_open() {
-                        self.queue.key(KeyEvent::new(
-                            if delta < 0 {
-                                KeyCode::Up
-                            } else {
-                                KeyCode::Down
-                            },
-                            crossterm::event::KeyModifiers::NONE,
-                        ));
-                    } else if scroll {
-                        self.queue.wheel(mouse.column, mouse.row, delta);
-                    }
-                    return Ok(false);
-                }
-
-                if self.native_mouse {
-                    if matches!(mouse.kind, MouseEventKind::Up(_)) {
-                        self.native_mouse = false;
                     }
                     return Ok(false);
                 }
@@ -1766,41 +1442,8 @@ impl App {
             self.config_path.clone(),
             truecolor(),
         ));
-        self.settings_token += 1;
-        self.channel.read(drover::Asker::Open(self.settings_token));
         self.settings_return = back;
         self.focus = Focus::Agents;
-    }
-    /// Every reading calibrates the prompts; the open Settings gets only the answers it asked
-    /// for. A save answered after its Settings closed is still reported.
-    fn channel_update(&mut self, update: drover::ChannelUpdate) {
-        use drover::Asker;
-        match (&update.result, update.asker) {
-            (Ok(preference), _) => self.notifier.preference(Some(*preference)),
-            (Err(_), Asker::Poll | Asker::Open(_)) => self.notifier.preference(None),
-            (Err(_), Asker::Save(_)) => {}
-        }
-        let result = update.result.map(|p| p.system_enabled);
-        let open = self.settings.as_mut().filter(
-            |_| matches!(update.asker, Asker::Open(t) | Asker::Save(t) if t == self.settings_token),
-        );
-        match (update.asker, open) {
-            (Asker::Open(_), Some(settings)) => settings.channel_status(result),
-            (Asker::Save(_), Some(settings)) => {
-                let outcome = settings.channel_saved(result);
-                self.settings_outcome(outcome);
-            }
-            (Asker::Save(_), None) => {
-                self.panel.message = match result {
-                    Ok(system) => format!(
-                        "Task notifications: {}; Drover applies it at its next notification check.",
-                        if system { "System" } else { "In saddle" }
-                    ),
-                    Err(error) => format!("Task notifications not saved: {error}"),
-                }
-            }
-            _ => {}
-        }
     }
     /// Closing returns input to where it was. A save applies colors and the sidebar width now;
     /// the other settings wait for the next start.
@@ -1813,22 +1456,11 @@ impl App {
             }
             Outcome::Stay => return,
             Outcome::Cancel => {}
-            Outcome::SetChannel(saved, system) => {
-                if let Some(saved) = saved {
-                    self.config.colors = saved.colors.for_terminal(truecolor());
-                    self.config.left_width = saved.left_width;
-                }
-                self.channel
-                    .set(drover::Asker::Save(self.settings_token), system);
-                return;
-            }
-            Outcome::Done(message) => self.panel.message = message,
             Outcome::Diagnose => {
                 let report = self.diagnostics();
                 // Replacing the checker cancels the previous check and drops its answer.
                 self.checker = Some(crate::diagnostics::Checker::start(
                     report.corral.clone(),
-                    report.drover.clone(),
                     report.config_path.clone(),
                 ));
                 if let Some(settings) = &mut self.settings {
@@ -1864,12 +1496,7 @@ impl App {
     fn diagnostics(&self) -> crate::diagnostics::Report {
         crate::diagnostics::Report {
             corral: self.actions.client.program.clone(),
-            drover: expand_home(&self.config.queue.drover)
-                .to_string_lossy()
-                .into_owned(),
             agents: self.agents_read.clone(),
-            project: self.queue.project.clone(),
-            tasks: self.tasks_read.clone(),
             config_path: self.config_path.clone(),
             config_from_file: self.config_from_file,
             layout_path: self.layout_store.path().map(Into::into),
@@ -1878,51 +1505,6 @@ impl App {
             save_off: self.layout_store.protected(),
             checked: SystemTime::now(),
             checks: None,
-        }
-    }
-    /// The close mark only closes the prompt. Elsewhere it opens its task in Tasks, or
-    /// Attention for several; while another popup has input, only the close mark works.
-    fn toast_click(&mut self, close: bool) {
-        let busy = self.settings.is_some()
-            || self.attention.is_some()
-            || self.search.is_some()
-            || self.closing.is_some()
-            || self.placement.is_some()
-            || self.panel.confirm.is_some()
-            || self.new_agent.as_ref().is_some_and(|f| f.visible);
-        if !close && busy {
-            return;
-        }
-        let Some(toast) = self.notifier.dismiss() else {
-            return;
-        };
-        if close {
-            // The release must not reach the terminal under the closed prompt.
-            self.native_mouse = !busy && self.focus != Focus::Queue;
-        } else if let [
-            (
-                crate::attention::Target::Task {
-                    project,
-                    id,
-                    title,
-                    body,
-                },
-                _,
-            ),
-        ] = &toast.targets[..]
-        {
-            self.open_tasks(
-                project.clone(),
-                Some(drover::Task {
-                    id: id.clone(),
-                    title: title.clone(),
-                    body: body.clone(),
-                    ..Default::default()
-                }),
-            );
-        } else {
-            self.attention = Some(Default::default());
-            self.survey.refresh();
         }
     }
     fn attention_items(&self) -> Vec<crate::attention::Item> {
@@ -1939,9 +1521,6 @@ impl App {
                 self.attention = None;
                 self.focus = Focus::Agents;
             }
-            Outcome::Seen(target) => {
-                self.board.seen.insert(target);
-            }
             Outcome::Open(target) => {
                 self.attention = None;
                 self.focus = Focus::Agents;
@@ -1951,71 +1530,10 @@ impl App {
                         self.panel.select(Some(name));
                         self.attach();
                     }
-                    Target::Task {
-                        project,
-                        id,
-                        title,
-                        body,
-                    } => self.open_tasks(
-                        project,
-                        Some(drover::Task {
-                            id,
-                            title,
-                            body,
-                            ..Default::default()
-                        }),
-                    ),
-                    Target::Project(project) => self.open_tasks(project, None),
                     Target::Source(_) => {}
                 }
             }
         }
-    }
-    /// Opens Tasks on `project`, selecting `task` once listed. An unfinished Tasks page or write
-    /// is kept rather than replaced.
-    fn open_tasks(&mut self, project: String, task: Option<drover::Task>) {
-        let unfinished = matches!(
-            self.queue.page,
-            queue::Page::Add { .. }
-                | queue::Page::Edit { .. }
-                | queue::Page::Delete { .. }
-                | queue::Page::Project(_)
-                | queue::Page::Confirm(_)
-        ) || (self.queue.busy && self.queue.project != project);
-        if unfinished {
-            self.panel.message =
-                "Tasks has an unfinished action; finish or cancel it, then open this again.".into();
-            return;
-        }
-        if self.queue.project != project {
-            self.queue_request(drover::Request::Project(project));
-        }
-        match task {
-            Some(task) => self.queue.locate(task),
-            None => self.queue.page = queue::Page::List,
-        }
-        self.tasks_return = Focus::Agents;
-        self.focus = Focus::Queue;
-    }
-    /// A plain Tasks opening from `from` looks for the focused agent's repository; a found
-    /// project with tasks replaces the current one in `tick`. Nothing starts over an unfinished
-    /// page or write.
-    fn look_up_focused_repo(&mut self, from: Focus) {
-        self.repo_tasks = None;
-        if !matches!(self.queue.page, queue::Page::List) || self.queue.busy {
-            return;
-        }
-        let Some(cwd) = self.focused_agent_cwd(from) else {
-            return;
-        };
-        let lookup = drover::RepoTasks::start(
-            expand_home(&self.config.queue.drover)
-                .to_string_lossy()
-                .into_owned(),
-            cwd,
-            self.queue.projects.clone(),
-        );
-        self.repo_tasks = Some((self.queue.project.clone(), self.input_revision, lookup));
     }
     /// The public cwd of the agent input was on: the one selected in Agents, or the one in the
     /// active pane in Viewer, never the sidebar's selection there.
@@ -2032,7 +1550,6 @@ impl App {
                     viewer.target_metadata().cwd.clone(),
                 )
             }
-            Focus::Queue => return None,
         };
         cwd.or_else(|| {
             self.panel
@@ -2053,7 +1570,6 @@ impl App {
             KeyCode::Char(',') => self.open_settings(Focus::Agents),
             KeyCode::Char('a') => {
                 self.attention = Some(Default::default());
-                self.survey.refresh();
             }
             KeyCode::Char('n') => {
                 self.reload_projects();
@@ -2061,7 +1577,7 @@ impl App {
                     self.new_agent = self.agent_draft.take();
                 }
                 self.new_agent
-                    .get_or_insert_with(|| crate::launch::Form::new(self.queue.project.clone()))
+                    .get_or_insert_with(|| crate::launch::Form::new(self.cwd.clone()))
                     .visible = true;
             }
             KeyCode::Char('s') => {
@@ -2092,67 +1608,12 @@ impl App {
             _ => {}
         }
     }
-    fn reload_projects(&mut self) -> bool {
-        match drover::registered_projects(&expand_home("~/.drover/projects")) {
-            Ok(projects) => {
-                self.queue.projects = projects;
-                self.queue.registry_error = None;
-                self.queue.project_selected = self
-                    .queue
-                    .projects
-                    .iter()
-                    .position(|p| *p == self.queue.project)
-                    .unwrap_or(0);
-                true
-            }
-            Err(error) => {
-                self.queue.registry_error = Some(format!("{error:#}"));
-                false
-            }
-        }
-    }
-    fn queue_request(&mut self, request: drover::Request) {
-        if matches!(request, drover::Request::Projects) {
-            self.reload_projects();
-        } else if matches!(request, drover::Request::AllPending) {
-            let projects = if self.reload_projects() {
-                self.queue.projects.clone()
-            } else {
-                Vec::new()
-            };
-            // Replacing the loader cancels the previous reads and drops their results.
-            self.pending_load = Some(drover::PendingLoad::start(
-                &expand_home(&self.config.queue.drover).to_string_lossy(),
-                &projects,
-            ));
-            self.queue.all_pending = projects.into_iter().map(|p| (p, None)).collect();
-        } else if let drover::Request::Project(path) = request {
-            if self.queue.busy {
-                return;
-            }
-            let cwd = expand_home(&path);
-            let cwd = cwd.canonicalize().unwrap_or(cwd);
-            // Drop the old reader and its result channel before showing the new state.
-            self.queue_worker = drover::Worker::start(
-                drover::Client {
-                    program: expand_home(&self.config.queue.drover)
-                        .to_string_lossy()
-                        .into_owned(),
-                    cwd: cwd.clone(),
-                },
-                Duration::from_millis(self.config.refresh_ms),
-            );
-            self.tasks_read = None;
-            self.queue = queue::Panel {
-                project: cwd.display().to_string(),
-                projects: std::mem::take(&mut self.queue.projects),
-                registry_error: self.queue.registry_error.take(),
-                view: self.queue.view,
-                ..Default::default()
-            };
-        } else {
-            self.queue_worker.request(request);
-        }
+    fn reload_projects(&mut self) {
+        self.projects = std::iter::once(self.cwd.clone())
+            .chain(self.panel.agents.iter().filter_map(|a| a.cwd.clone()))
+            .collect();
+        self.projects.sort();
+        self.projects.dedup();
     }
     fn active_inner(&self, viewer: Rect) -> Rect {
         self.viewer
@@ -2173,7 +1634,6 @@ impl App {
     fn focused_session(&self) -> Option<&Session> {
         match self.focus {
             Focus::Agents => None,
-            Focus::Queue => None,
             Focus::Viewer => {
                 let id = self.viewer.active_pane().id;
                 if !self

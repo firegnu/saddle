@@ -24,11 +24,6 @@ use unicode_width::UnicodeWidthStr;
 
 pub const TITLE: &str = " Settings ";
 const LABEL: usize = 18;
-/// The Task notifications choices; the key names no config setting, as Drover keeps it.
-const NOTIFICATIONS: &str = "notifications";
-const SYSTEM: &str = "System";
-const IN_SADDLE: &str = "In saddle";
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
     General,
@@ -49,14 +44,11 @@ const PAGES: [(Page, &str, u8); 5] = [
 enum Kind {
     Columns,
     Millis,
-    Project,
     Command,
     Color,
-    /// Task notifications: System or In saddle, read from and saved to Drover.
-    Channel,
 }
 struct Field {
-    /// The config key, dotted below a table (`queue.cwd`, `colors.bg`).
+    /// The config key, dotted below a table (`colors.bg`).
     key: String,
     label: &'static str,
     page: Page,
@@ -102,20 +94,6 @@ fn fields() -> Vec<Field> {
             Kind::Millis,
             true,
         ),
-        field(
-            "queue.cwd",
-            "Initial project",
-            Page::General,
-            Kind::Project,
-            true,
-        ),
-        field(
-            NOTIFICATIONS,
-            "Task notifications",
-            Page::General,
-            Kind::Channel,
-            false,
-        ),
     ];
     let mut colors: Vec<_> = Theme::default()
         .named_mut()
@@ -131,22 +109,13 @@ fn fields() -> Vec<Field> {
         .collect();
     colors.sort_by_key(|f| GROUPS.iter().position(|g| *g == f.group));
     list.extend(colors);
-    list.extend([
-        field(
-            "corral",
-            "corral command",
-            Page::Advanced,
-            Kind::Command,
-            true,
-        ),
-        field(
-            "queue.drover",
-            "drover command",
-            Page::Advanced,
-            Kind::Command,
-            true,
-        ),
-    ]);
+    list.extend([field(
+        "corral",
+        "corral command",
+        Page::Advanced,
+        Kind::Command,
+        true,
+    )]);
     list
 }
 
@@ -155,10 +124,7 @@ fn value(config: &Config, field: &Field) -> String {
     match field.key.as_str() {
         "left_width" => config.left_width.to_string(),
         "refresh_ms" => config.refresh_ms.to_string(),
-        "queue.cwd" => config.queue.cwd.clone().unwrap_or_default(),
         "corral" => config.corral.clone(),
-        "queue.drover" => config.queue.drover.clone(),
-        NOTIFICATIONS => String::new(),
         key => color(&config.colors, &key["colors.".len()..]).map_or_else(String::new, color_name),
     }
 }
@@ -177,22 +143,10 @@ pub enum Outcome {
     Cancel,
     /// Written: the saved configuration and the labels of saved settings that need a restart.
     Saved(Box<Config>, Vec<&'static str>),
-    /// Ask Drover to turn its system notifications on or off; any config edits are already
-    /// written (and should apply now). Settings waits for `channel_saved`.
-    SetChannel(Option<Box<Config>>, bool),
-    /// Everything saved: close with this message.
-    Done(String),
     /// Diagnostics opened or Refresh pressed: check again and answer with `diagnose`.
     Diagnose,
     /// Copy this diagnostics summary; answer with `copied`.
     Copy(String),
-}
-
-/// Drover's notification preference as Settings knows it.
-enum Remote {
-    Loading,
-    Ready,
-    Failed(String),
 }
 
 pub struct Settings {
@@ -217,13 +171,6 @@ pub struct Settings {
     keeping: bool,
     /// Field rows as last drawn with their input areas, for clicks.
     rows: Vec<(Rect, Rect, usize)>,
-    remote: Remote,
-    /// Waiting for Drover to save Task notifications.
-    saving: bool,
-    /// Restart labels of config settings this Save already wrote, while Drover is still asked.
-    written: Option<Vec<&'static str>>,
-    /// The Task notifications choices as last drawn, for clicks.
-    choices: Vec<(Rect, &'static str)>,
     /// What Diagnostics shows; None until the first check is asked for.
     report: Option<crate::diagnostics::Report>,
     /// The first Diagnostics line shown.
@@ -233,14 +180,12 @@ pub struct Settings {
 impl Settings {
     pub fn open(path: PathBuf, truecolor: bool) -> Self {
         let fields = fields();
-        let mut defaults: Vec<_> = fields
+        let defaults: Vec<_> = fields
             .iter()
             .map(|f| value(&Config::default(), f))
             .collect();
         let inputs = defaults.iter().map(|v| Input::new(v.clone())).collect();
         let saved = defaults.clone();
-        // Drover's own default: its system notifications are on.
-        defaults[channel(&fields)] = SYSTEM.into();
         let mut settings = Self {
             path,
             truecolor,
@@ -258,10 +203,6 @@ impl Settings {
             broken: None,
             keeping: false,
             rows: Vec::new(),
-            remote: Remote::Loading,
-            saving: false,
-            written: None,
-            choices: Vec::new(),
             report: None,
             report_top: 0,
         };
@@ -299,58 +240,6 @@ impl Settings {
     pub fn conflict(&self) -> bool {
         self.conflict
     }
-    /// Drover's answer to the reading asked for when Settings opened: whether its system
-    /// notifications are enabled, or why that is unknown.
-    pub fn channel_status(&mut self, result: Result<bool, String>) {
-        if self.saving {
-            return;
-        }
-        let i = channel(&self.fields);
-        match result {
-            Ok(system) => {
-                let drafted =
-                    matches!(self.remote, Remote::Ready) && self.inputs[i].text != self.saved[i];
-                self.saved[i] = choice(system).into();
-                if !drafted {
-                    self.inputs[i] = Input::new(self.saved[i].clone());
-                }
-                self.remote = Remote::Ready;
-            }
-            Err(error) => {
-                self.saved[i].clear();
-                self.inputs[i] = Input::new(String::new());
-                self.remote = Remote::Failed(error);
-            }
-        }
-    }
-    /// Drover's answer to `SetChannel`. Success closes Settings; a failure keeps the choice as
-    /// a draft and says what was and was not saved.
-    pub fn channel_saved(&mut self, result: Result<bool, String>) -> Outcome {
-        self.saving = false;
-        match result {
-            Ok(system) => {
-                let applied = format!(
-                    "Task notifications: {}; Drover applies it at its next notification check.",
-                    choice(system)
-                );
-                Outcome::Done(match self.written.take() {
-                    Some(restart) if !restart.is_empty() => format!(
-                        "Settings saved; restart saddle to apply: {}. {applied}",
-                        restart.join(", ")
-                    ),
-                    _ => format!("Settings saved. {applied}"),
-                })
-            }
-            Err(error) => {
-                let saved = if self.written.is_some() {
-                    "Config saved. "
-                } else {
-                    ""
-                };
-                self.fail(format!("{saved}Task notifications not saved: {error}"))
-            }
-        }
-    }
     fn edited(&self) -> Vec<usize> {
         (0..self.fields.len())
             .filter(|&i| self.inputs[i].text != self.saved[i])
@@ -383,9 +272,7 @@ impl Settings {
             }
         };
         let edited = if keep { self.edited() } else { Vec::new() };
-        let drover = std::mem::take(&mut self.saved[channel(&self.fields)]);
         self.saved = self.fields.iter().map(|f| value(&config, f)).collect();
-        self.saved[channel(&self.fields)] = drover;
         for (i, input) in self.inputs.iter_mut().enumerate() {
             if !edited.contains(&i) {
                 *input = Input::new(self.saved[i].clone());
@@ -431,9 +318,6 @@ impl Settings {
         if key.code == KeyCode::F(5) {
             return Outcome::Plugins;
         }
-        if self.saving {
-            return Outcome::Stay;
-        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl && matches!(key.code, KeyCode::Char(']' | '5')) {
             return Outcome::Cancel;
@@ -467,21 +351,9 @@ impl Settings {
             self.show(PAGES[usize::from(n - 1)].0);
             return Outcome::Stay;
         }
-        let choosing = self.fields[self.selected].kind == Kind::Channel;
-        // Nothing to choose from until Drover answers; moving on and saving still work.
-        let allowed = matches!(self.remote, Remote::Ready)
-            || (ctrl && key.code == KeyCode::Char('s'))
-            || matches!(
-                key.code,
-                KeyCode::Up | KeyCode::Down | KeyCode::Tab | KeyCode::BackTab
-            );
-        if choosing && !allowed {
-            return Outcome::Stay;
-        }
         if ctrl {
             match key.code {
                 KeyCode::Char('s') => return self.save(),
-                KeyCode::Char('u') if choosing => {}
                 KeyCode::Char('d') => {
                     self.inputs[self.selected] = Input::new(self.defaults[self.selected].clone())
                 }
@@ -499,15 +371,6 @@ impl Settings {
         match key.code {
             KeyCode::Up | KeyCode::BackTab => self.step(-1),
             KeyCode::Down | KeyCode::Tab => self.step(1),
-            KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') | KeyCode::Enter if choosing => {
-                let other = if self.inputs[self.selected].text == SYSTEM {
-                    IN_SADDLE
-                } else {
-                    SYSTEM
-                };
-                self.inputs[self.selected] = Input::new(other.into());
-            }
-            _ if choosing => {}
             code => self.inputs[self.selected].key(code, false),
         }
         Outcome::Stay
@@ -539,23 +402,12 @@ impl Settings {
         Outcome::Stay
     }
     pub fn paste(&mut self, text: &str) {
-        if self.page != Page::Diagnostics
-            && !self.conflict
-            && self.broken.is_none()
-            && !self.saving
-            && self.fields[self.selected].kind != Kind::Channel
-        {
+        if self.page != Page::Diagnostics && !self.conflict && self.broken.is_none() {
             self.inputs[self.selected].insert(text, false);
         }
     }
     pub fn click(&mut self, point: Position) {
-        if self.conflict || self.broken.is_some() || self.saving || self.page == Page::Diagnostics {
-            return;
-        }
-        if let Some(&(_, choice)) = self.choices.iter().find(|(area, _)| area.contains(point)) {
-            let i = channel(&self.fields);
-            self.selected = i;
-            self.inputs[i] = Input::new(choice.into());
+        if self.conflict || self.broken.is_some() || self.page == Page::Diagnostics {
             return;
         }
         if let Some(&(_, input, i)) = self.rows.iter().find(|(row, _, _)| row.contains(point)) {
@@ -572,46 +424,21 @@ impl Settings {
             } else {
                 self.report_top.saturating_sub(1)
             };
-        } else if !self.conflict && self.broken.is_none() && !self.saving {
+        } else if !self.conflict && self.broken.is_none() {
             self.step(if down { 1 } else { -1 });
         }
     }
 
-    /// Checks and writes the edited settings. Nothing is written, and the draft stays, when a
-    /// value is invalid, the file changed on disk, or writing fails. A changed Task
-    /// notifications choice goes to Drover after the file is written.
+    /// Save only edited config fields, preserving the draft on validation or disk conflicts.
     fn save(&mut self) -> Outcome {
-        let mut edited = self.edited();
+        let edited = self.edited();
         if edited.is_empty() {
             return Outcome::Cancel;
         }
-        let i = channel(&self.fields);
-        let set = edited.contains(&i).then(|| self.inputs[i].text == SYSTEM);
-        edited.retain(|&e| e != i);
-        let config = if edited.is_empty() {
-            None
-        } else {
-            match self.write_config(&edited) {
-                Ok(written) => Some(written),
-                Err(outcome) => return outcome,
-            }
-        };
-        let Some(system) = set else {
-            let (config, restart) = config.expect("edited config settings were written");
-            return Outcome::Saved(config, restart);
-        };
-        let config = config.map(|(config, restart)| {
-            // Saved now, whatever Drover answers.
-            for &e in &edited {
-                self.saved[e] = self.inputs[e].text.clone();
-            }
-            self.written = Some(restart);
-            config
-        });
-        self.saving = true;
-        self.error = false;
-        self.message = "Saving Task notifications in Drover…".into();
-        Outcome::SetChannel(config, system)
+        match self.write_config(&edited) {
+            Ok((config, restart)) => Outcome::Saved(config, restart),
+            Err(outcome) => outcome,
+        }
     }
     fn write_config(
         &mut self,
@@ -631,7 +458,7 @@ impl Settings {
                 Kind::Color => parse_color(text)
                     .err()
                     .map(|e| format!("{}: {e}", field.label)),
-                Kind::Project | Kind::Command | Kind::Channel => None,
+                Kind::Command => None,
             };
             if let Some(problem) = problem {
                 self.select(i);
@@ -739,13 +566,11 @@ impl Settings {
                 Button::control("Reload Ctrl-R", KeyCode::Char('r'), true),
             ]
         } else {
-            let custom = self.inputs[self.selected].text != self.defaults[self.selected]
-                && (self.fields[self.selected].kind != Kind::Channel
-                    || matches!(self.remote, Remote::Ready));
+            let custom = self.inputs[self.selected].text != self.defaults[self.selected];
             vec![
-                Button::control("Default Ctrl-D", KeyCode::Char('d'), custom && !self.saving),
-                Button::new("Cancel Esc", KeyCode::Esc, !self.saving),
-                Button::control("Save Ctrl-S", KeyCode::Char('s'), !self.saving).primary(),
+                Button::control("Default Ctrl-D", KeyCode::Char('d'), custom),
+                Button::new("Cancel Esc", KeyCode::Esc, true),
+                Button::control("Save Ctrl-S", KeyCode::Char('s'), true).primary(),
             ]
         };
         let (mut body, mut hits) = buttons::draw_compact(t, frame, inside, &bar);
@@ -889,11 +714,7 @@ impl Settings {
                 rows.push(Some(Err(group)));
             }
             rows.push(Some(Ok(i)));
-            if self.fields[i].kind == Kind::Channel {
-                rows.push(Some(Err(NOTIFICATIONS)));
-            }
         }
-        self.choices.clear();
         // One input width for the page, leaving room for units and restart notes.
         let page = self.page_fields();
         let unit = page
@@ -929,7 +750,6 @@ impl Settings {
             let rect = Rect::new(area.x, area.y + offset as u16, area.width, 1);
             match row {
                 None => {}
-                Some(Err(NOTIFICATIONS)) => self.draw_channel_note(t, frame, rect),
                 Some(Err(heading)) => frame.render_widget(
                     Paragraph::new(*heading)
                         .style(Style::default().fg(t.bright).add_modifier(Modifier::BOLD)),
@@ -987,10 +807,7 @@ impl Settings {
                         Tone::Unknown => t.muted,
                     });
                     let label = format!("  {} ", crate::ui::pad(label, LABEL - 2));
-                    for (n, part) in crate::queue::wrap_text(&value, room)
-                        .into_iter()
-                        .enumerate()
-                    {
+                    for (n, part) in crate::ui::wrap_text(&value, room).into_iter().enumerate() {
                         let lead = if n == 0 {
                             label.clone()
                         } else {
@@ -1006,63 +823,6 @@ impl Settings {
         let last = (lines.len() as u16).saturating_sub(area.height);
         self.report_top = self.report_top.min(last);
         frame.render_widget(Paragraph::new(lines).scroll((self.report_top, 0)), area);
-    }
-
-    /// What Task notifications controls, or why it cannot be chosen.
-    fn draw_channel_note(&self, t: &Theme, frame: &mut Frame, row: Rect) {
-        let (text, color) = match &self.remote {
-            Remote::Loading => ("Reading Drover's setting…".to_owned(), t.muted),
-            Remote::Ready => (
-                "Drover tasks across projects, for this user".to_owned(),
-                t.muted,
-            ),
-            Remote::Failed(error) => (format!("Unavailable: {error}"), t.danger),
-        };
-        let indent = (LABEL + 2) as u16;
-        let area = Rect {
-            x: row.x + indent.min(row.width),
-            width: row.width.saturating_sub(indent),
-            ..row
-        };
-        frame.render_widget(
-            Paragraph::new(crate::ui::clip(&text, usize::from(area.width)))
-                .style(Style::default().fg(color)),
-            area,
-        );
-    }
-    /// `[ System | In saddle ]`, the draft choice marked; dim until Drover answers.
-    fn draw_choice(&mut self, t: &Theme, frame: &mut Frame, at: Rect, i: usize, selected: bool) {
-        let ready = matches!(self.remote, Remote::Ready);
-        let bracket = Style::default().fg(if selected { t.focus } else { t.border });
-        let mut spans = vec![Span::styled("[ ", bracket)];
-        let mut x = at.x + 2;
-        for (n, option) in [SYSTEM, IN_SADDLE].into_iter().enumerate() {
-            if n > 0 {
-                spans.push(Span::styled(" | ", Style::default().fg(t.border)));
-                x += 3;
-            }
-            let chosen = ready && self.inputs[i].text == option;
-            spans.push(Span::styled(
-                option,
-                if chosen {
-                    Style::default()
-                        .fg(t.bright)
-                        .bg(t.selected)
-                        .add_modifier(Modifier::BOLD)
-                } else if ready {
-                    Style::default().fg(t.text)
-                } else {
-                    Style::default().fg(t.dim)
-                },
-            ));
-            let area = Rect::new(x, at.y, option.width() as u16, 1).intersection(at);
-            if ready {
-                self.choices.push((area, option));
-            }
-            x += option.width() as u16;
-        }
-        spans.push(Span::styled(" ]", bracket));
-        frame.render_widget(Paragraph::new(Line::from(spans)), at);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1111,23 +871,11 @@ impl Settings {
         let unit = unit(field.kind);
         let note = if field.restart { note } else { "" };
         let used = spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
-        if field.kind == Kind::Channel {
-            frame.render_widget(Paragraph::new(Line::from(spans)), row);
-            let at = Rect::new(row.x + used, row.y, row.width.saturating_sub(used), 1);
-            self.draw_choice(t, frame, at, i, selected);
-            self.rows.push((row, Rect::default(), i));
-            return;
-        }
         let bracket = Style::default().fg(if selected { t.focus } else { t.border });
         spans.push(Span::styled("[", bracket));
         frame.render_widget(Paragraph::new(Line::from(spans)), row);
         let input = Rect::new(row.x + used + 1, row.y, width, 1).intersection(row);
-        let placeholder = if field.kind == Kind::Project {
-            "Automatic"
-        } else {
-            ""
-        };
-        self.inputs[i].draw(frame, input, selected, placeholder, t);
+        self.inputs[i].draw(frame, input, selected, "", t);
         let after = Rect::new(
             input.right(),
             row.y,
@@ -1144,16 +892,6 @@ impl Settings {
         );
         self.rows.push((row, input, i));
     }
-}
-
-fn channel(fields: &[Field]) -> usize {
-    fields
-        .iter()
-        .position(|f| f.kind == Kind::Channel)
-        .expect("Task notifications is a field")
-}
-fn choice(system: bool) -> &'static str {
-    if system { SYSTEM } else { IN_SADDLE }
 }
 
 fn unit(kind: Kind) -> &'static str {
@@ -1266,9 +1004,7 @@ fn apply(document: &mut toml_edit::DocumentMut, field: &Field, text: &str) -> an
     let value = match field.kind {
         Kind::Columns | Kind::Millis => Some(Value::from(text.trim().parse::<i64>()?)),
         Kind::Color => Some(Value::from(text.trim())),
-        Kind::Project if text.trim().is_empty() => None,
-        Kind::Project | Kind::Command => Some(Value::from(text)),
-        Kind::Channel => return Ok(()),
+        Kind::Command => Some(Value::from(text)),
     };
     let (table, key) = match field.key.split_once('.') {
         Some((table, key)) => {

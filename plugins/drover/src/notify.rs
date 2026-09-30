@@ -4,20 +4,11 @@
 use crate::{
     attention::{Target, project_name},
     drover::{Preference, Snapshot, Task},
-    theme::Theme,
-};
-use ratatui::{
-    Frame,
-    layout::Rect,
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Clear, Paragraph},
 };
 use std::{
     collections::HashSet,
     time::{Duration, Instant},
 };
-use unicode_width::UnicodeWidthStr;
 
 /// How long a prompt stays up.
 pub const SHOWN: Duration = Duration::from_secs(5);
@@ -114,46 +105,4 @@ impl Notifier {
     pub fn dismiss(&mut self) -> Option<Toast> {
         self.toast.take()
     }
-}
-
-/// Draws the prompt at the bottom right of `area`; returns its whole area and its close mark.
-pub fn draw(t: &Theme, frame: &mut Frame, area: Rect, toast: &Toast) -> Option<(Rect, Rect)> {
-    let text = toast.text();
-    let close = " × ";
-    let width = (text.width() + close.width() + 5) as u16;
-    let width = width.min(area.width.saturating_sub(2));
-    if width < 12 || area.height < 5 {
-        return None;
-    }
-    let rect = Rect::new(area.right() - 1 - width, area.bottom() - 1 - 3, width, 3);
-    frame.render_widget(Clear, rect);
-    frame.render_widget(
-        Block::bordered()
-            .border_style(Style::default().fg(t.agent_blocked))
-            .style(t.base().bg(t.overlay)),
-        rect,
-    );
-    let inner = crate::ui::inner(rect);
-    let room = usize::from(inner.width).saturating_sub(close.width() + 3);
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(" → ", Style::default().fg(t.agent_blocked)),
-            Span::styled(
-                crate::ui::clip(&text, room),
-                Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
-            ),
-        ])),
-        inner,
-    );
-    let mark = Rect::new(
-        inner.right() - close.width() as u16,
-        inner.y,
-        close.width() as u16,
-        1,
-    );
-    frame.render_widget(
-        Paragraph::new(Span::styled(close, Style::default().fg(t.muted))),
-        mark,
-    );
-    Some((rect, mark))
 }

@@ -1,3 +1,4 @@
+pub mod navigation;
 pub mod palette;
 pub mod registry;
 pub mod runtime;
@@ -32,11 +33,18 @@ impl Panel {
             interactive: false,
         }
     }
-    pub fn draw(&self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect) {
+    pub fn draw(&self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, focused: bool) {
         if let Some(p) = &self.picture
             && p.buffer.area.width == area.width
             && p.buffer.area.height == area.height
         {
+            if focused
+                && self.interactive
+                && self.note.is_empty()
+                && let Some([x, y]) = p.cursor
+            {
+                frame.set_cursor_position((area.x + x, area.y + y));
+            }
             let truecolor = crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref());
             for y in 0..area.height {
                 for x in 0..area.width {
@@ -508,6 +516,74 @@ impl Manager {
         }
         self.input += 1;
         r.runtime.send(Message::event("input",json!({"panel":"main","input_id":self.input,"frame_id":pic.frame_id,"size_revision":pic.revision,"event":event})))
+    }
+    pub fn take_view_closes(&self) -> Vec<String> {
+        self.running
+            .iter()
+            .filter_map(|(id, r)| {
+                let input = r.runtime.take_close()?;
+                let s = r.runtime.snapshot();
+                (r.enabled && s.state == "Running" && s.input_id == input).then(|| id.clone())
+            })
+            .collect()
+    }
+    pub fn open_notification(&self, toast: &runtime::Toast) -> bool {
+        let Some(r) = self.running.get(&toast.plugin) else {
+            return false;
+        };
+        let s = r.runtime.snapshot();
+        let Some(target) = &toast.target else {
+            return false;
+        };
+        r.enabled
+            && toast.expires > std::time::Instant::now()
+            && self.notices.lock().unwrap().items.iter().any(|n| {
+                n.plugin == toast.plugin
+                    && n.session == toast.session
+                    && n.notification_id == toast.notification_id
+            })
+            && s.state == "Running"
+            && s.session == toast.session
+            && r.runtime.send(Message::event(
+                "notification.open",
+                serde_json::to_value(target).expect("validated target"),
+            ))
+    }
+    pub fn take_navigation(&self) -> Vec<runtime::Navigation> {
+        self.running
+            .values()
+            .filter_map(|r| r.runtime.take_navigation())
+            .collect()
+    }
+    pub fn navigation_current(&self, request: &runtime::Navigation) -> bool {
+        self.running.get(&request.plugin).is_some_and(|r| {
+            let s = r.runtime.snapshot();
+            r.enabled
+                && s.session == request.session
+                && s.state == "Running"
+                && s.input_id == request.input_id
+        })
+    }
+    pub fn navigation_result(&self, request: &runtime::Navigation, status: &str, message: &str) {
+        if let Some(r) = self.running.get(&request.plugin)
+            && r.runtime.snapshot().session == request.session
+        {
+            r.runtime.send(Message::response(
+                request.request_id,
+                json!({"status":status,"message":message}),
+            ));
+        }
+    }
+    pub fn view_context(&self, id: &str, cwd: Option<String>) {
+        if let Some(r) = self.running.get(id)
+            && r.manifest
+                .required_capabilities
+                .iter()
+                .any(|c| c == "view.context.v1")
+        {
+            r.runtime
+                .send(Message::event("optional.view_context", json!({"cwd": cwd})));
+        }
     }
     pub fn note(&self, id: &str) -> String {
         self.snapshot(id)

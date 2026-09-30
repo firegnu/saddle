@@ -20,12 +20,8 @@ pub type Last = Option<(SystemTime, Result<(), String>)>;
 pub struct Report {
     /// The commands as saddle runs them.
     pub corral: String,
-    pub drover: String,
     /// The latest `corral ls` read.
     pub agents: Last,
-    /// The Tasks project and its latest `drover` read.
-    pub project: String,
-    pub tasks: Last,
     pub config_path: PathBuf,
     /// Whether the config came from the file at startup, rather than defaults for a missing one.
     pub config_from_file: bool,
@@ -45,7 +41,6 @@ pub struct Report {
 #[derive(Debug)]
 pub struct Checks {
     pub corral: Probe,
-    pub drover: Probe,
     /// The config file as it reads now: whether it exists, or why it cannot be used.
     pub config: Result<bool, String>,
 }
@@ -57,13 +52,7 @@ pub struct Probe {
     pub version: Option<Result<String, String>>,
 }
 
-pub fn check(
-    corral: &str,
-    drover: &str,
-    config: &Path,
-    timeout: Duration,
-    cancel: &AtomicBool,
-) -> Checks {
+pub fn check(corral: &str, config: &Path, timeout: Duration, cancel: &AtomicBool) -> Checks {
     let version = crate::command::run(corral, &["--version"], None, timeout, cancel)
         .and_then(|output| {
             anyhow::ensure!(
@@ -93,10 +82,6 @@ pub fn check(
         corral: Probe {
             path: find(corral),
             version: Some(version),
-        },
-        drover: Probe {
-            path: find(drover),
-            version: None,
         },
         config,
     }
@@ -130,18 +115,12 @@ pub struct Checker {
     cancel: Arc<AtomicBool>,
 }
 impl Checker {
-    pub fn start(corral: String, drover: String, config: PathBuf) -> Self {
+    pub fn start(corral: String, config: PathBuf) -> Self {
         let (send, updates) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let stop = cancel.clone();
         thread::spawn(move || {
-            let _ = send.send(check(
-                &corral,
-                &drover,
-                &config,
-                Duration::from_secs(5),
-                &stop,
-            ));
+            let _ = send.send(check(&corral, &config, Duration::from_secs(5), &stop));
         });
         Self { updates, cancel }
     }
@@ -186,23 +165,15 @@ impl Report {
         };
         let checks = self.checks.as_ref();
         let [corral_path, corral_version] = probe(checks.map(|c| &c.corral));
-        let [drover_path, drover_version] = probe(checks.map(|c| &c.drover));
         let mut rows = vec![
             Heading("Program / commands"),
             Item("saddle version", env!("CARGO_PKG_VERSION").into(), Good),
             Item("corral command", private(&self.corral), Unknown),
             Item("corral path", corral_path.0, corral_path.1),
             Item("corral version", corral_version.0, corral_version.1),
-            Item("drover command", private(&self.drover), Unknown),
-            Item("drover path", drover_path.0, drover_path.1),
-            Item("drover version", drover_version.0, drover_version.1),
             Heading("Agents"),
         ];
         let (text, tone) = last(&self.agents, "no read yet");
-        rows.push(Item("Last read", text, tone));
-        rows.push(Heading("Tasks"));
-        rows.push(Item("Project", private(&self.project), Unknown));
-        let (text, tone) = last(&self.tasks, "no read yet");
         rows.push(Item("Last read", text, tone));
         rows.push(Heading("Configuration"));
         rows.push(Item(
@@ -298,7 +269,7 @@ fn clock(at: SystemTime) -> String {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64();
-    crate::detail::local(unix)
+    local(unix)
         .map(|tm| {
             format!(
                 "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
@@ -362,4 +333,11 @@ fn private(text: &str) -> String {
         }
         _ => text.to_owned(),
     }
+}
+
+pub(crate) fn local(unix: f64) -> Option<libc::tm> {
+    let seconds = unix.floor() as libc::time_t;
+    // SAFETY: localtime_r only writes the provided `tm`, which is plain data.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    (!unsafe { libc::localtime_r(&seconds, &mut tm) }.is_null()).then_some(tm)
 }

@@ -18,7 +18,6 @@ pub(super) struct Closing {
 #[derive(Clone)]
 pub(super) enum Replacement {
     Attach(String),
-    TaskLink(crate::links::AgentRequest),
     Start(Vec<String>),
 }
 impl App {
@@ -82,7 +81,7 @@ impl App {
                 let kind = if p.plugin_id().is_some() {"plugin"} else if shell.is_some() || matches!(p.viewer.remembered, crate::layout_state::Content::Shell { .. }) { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() || p.viewer.remembered.name().is_some() { "agent" } else { "empty" };
                 json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,"plugin_id":p.plugin_id(),
                     "agent":p.requested().or(p.viewer.target()).or(p.viewer.remembered.name()),"corral_instance":p.viewer.metadata.instance,
-                    "cwd":if p.plugin_id().is_some(){None}else{Some(p.source_cwd().unwrap_or(&self.queue.project))},"cwd_source":if p.plugin_id().is_some(){"none"}else if p.source_cwd().is_some() {"pane"} else {"tasks_project"},
+                    "cwd":if p.plugin_id().is_some(){None}else{Some(p.source_cwd().unwrap_or(&self.cwd))},"cwd_source":if p.plugin_id().is_some(){"none"}else if p.source_cwd().is_some() {"pane"} else {"startup_directory"},
                     "state":if let Some(plugin)=p.plugin.as_ref().filter(|_|p.plugin_id().is_some()){plugin.state.to_lowercase()} else if p.starting {"starting".into()} else if p.requested().is_some() {"accepted".into()} else {p.viewer.state().into()},
                     "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"exit_code":p.viewer.exit_code,"note":p.viewer.note})
             }).collect();
@@ -326,11 +325,11 @@ impl App {
         } else if source.source_cwd().is_some() {
             "source_pane"
         } else {
-            "tasks_project"
+            "startup_directory"
         };
         let cwd = explicit
             .or_else(|| source.source_cwd().map(str::to_owned))
-            .unwrap_or_else(|| self.queue.project.clone());
+            .unwrap_or_else(|| self.cwd.clone());
         if !matches!(content, Content::Agent { .. }) {
             ensure!(
                 std::path::Path::new(&cwd).is_absolute() && std::path::Path::new(&cwd).is_dir(),
@@ -550,11 +549,6 @@ impl App {
         if let Some(closing) = self.closing.take() {
             if self.close_snapshot(closing.target).ok().as_ref() != Some(&closing.snapshot) {
                 self.panel.message = "Close target changed; review and close again.".into();
-                if let Some(Replacement::TaskLink(request)) = closing.replacement
-                    && self.task_link_current(&request)
-                {
-                    self.task_link_error("Close target changed; retry the link.".into());
-                }
                 return Ok(());
             }
             if let Some(replacement) = closing.replacement {
@@ -567,9 +561,6 @@ impl App {
                 pane.viewer.metadata.instance = None;
                 match replacement {
                     Replacement::Attach(name) => self.attach_at(id, name),
-                    Replacement::TaskLink(request) => {
-                        self.actions.start(Action::TaskAgent(request))
-                    }
                     Replacement::Start(args) => {
                         let ticket =
                             self.begin_start(id, Place::Current, args, Some(self.input_revision))?;
@@ -636,9 +627,5 @@ impl App {
         self.hits.buttons = hits;
         self.hits.agents.clear();
         self.hits.terminal.clear();
-        self.hits.queue_rows.clear();
-        self.queue.buttons.clear();
-        self.queue.fields.clear();
-        self.queue.project_rows.clear();
     }
 }

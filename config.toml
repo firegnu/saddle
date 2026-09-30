@@ -3,13 +3,10 @@
 # All settings are optional. Omitted settings use the defaults shown here.
 corral = "corral"              # Executable name or path; ~/ is supported.
 left_width = 52               # Preferred left column width, in terminal cells.
-left_split = 0.5              # Unused: Agents fill the left column and Tasks is a popup. Kept so old configs load.
+left_split = 0.5              # Unused: Agents fill the left column. Kept so old configs load.
 refresh_ms = 1000             # Background refresh interval, in milliseconds.
 
-[queue]
-drover = "drover"             # Executable name or path; ~/ is supported.
-# cwd = "~/projects/example"  # Optional initial project; omitted by default.
-dispatch_log = "dlog"         # Optional dispatch-log command for Tasks · Dispatch.
+# Optional tasks: install plugins/drover; legacy [queue] settings are ignored.
 
 [colors]
 # "default" (or "reset") uses the terminal's color; RGB uses "#RRGGBB".

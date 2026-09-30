@@ -1,5 +1,5 @@
 mod common;
-use saddle::dispatch::{Key, State, Status};
+use saddle_drover_plugin::dispatch::{Key, State, Status};
 use serde_json::{Value, json};
 use std::{
     fs,

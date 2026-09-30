@@ -4,20 +4,20 @@
 
 [English](README.md) · 简体中文
 
-在一个窗口里查看 agent、管理任务队列，并直接使用选中 agent 的实时终端。
+在一个窗口里查看 agent、使用实时终端，并通过可选插件管理任务。
 
 ```text
-┌ Agents · 2  Tasks ──┬─ Viewer ──────────────────────────┐
+┌ Agents · 2        ──┬─ Viewer ──────────────────────────┐
 │ project/ ─────── (2)│                                   │
 │ │ ◐ main   working  │  选中 agent 的实时终端             │
 │ │ ○ review idle     │                                   │
 │                     │  在这里输入、粘贴和交互。          │
 │                     │                                   │
 └─────────────────────┴───────────────────────────────────┘
-  Tasks 以大弹窗形式在屏幕中心打开，盖在 Viewer 上。
+  Plugins 打开统一插件面板；Drover 任务界面由可选插件提供。
 ```
 
-saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](https://github.com/firegnu/corral) 的 agent 会话与 [drover](https://github.com/firegnu/drover) 的任务队列整合起来，不依赖 tmux 或 Zellij。
+saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，承载 [corral](https://github.com/firegnu/corral) 的 agent 会话与可选进程插件（包括 [Drover](plugins/drover/README.md)），不依赖 tmux 或 Zellij。
 
 ## 功能
 
@@ -31,21 +31,21 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，把 [corral](http
 
   未亮柱只留底点，选中与否图标一致。没有有效标签时不显示图标但保留对齐；所有 agent 都没有有效标签时不占该列。图标只反映委派时的公开标签，不代表运行时实际 effort。
 - **每个 agent 的 Git 摘要：** 目录上面一行，例如 `⎇ dev-t12 ↑2 main     +18 -4 ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支（与 agent 名称相同时只显示 `⎇`）；`↑n 基准`，即比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；增删放不进分支那一行时整组移到下一行右对齐；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
-- **Tasks：** 点 Agents 顶部的 **Tasks** 入口（或按 **Tab**）打开的大弹窗。弹窗关闭时入口仍以状态色显示当前项目的简短状态：`Awaiting release`、`Running`、`Paused`、待办数量或 `Idle`（尚未读到时为 `Loading…`，读取失败为 `Read failed`），不用打开就知道是否需要处理。顶部是项目和队列操作；左侧列出当前任务、待放行、待办和历史记录，右侧并排显示选中任务的原文或运行详情。原生控件支持新增任务、编辑、调整次序和删除待办、汇总查看所有登记项目的待办、切换项目、放行、暂停和循环设置。
-- **Attention：** Agents 标题下的 `Attention · N` 汇总 agent 和 `~/.drover/projects` 中每个项目需要你处理的事项；点击或在 Agents 按 **a** 打开。**Needs attention** 列出等待输入或出错的 agent、待放行任务和队列历史中的失败任务；**New replies** 列出本次运行中看到的 agent 未读回复。同一 agent 只占一行，需处理状态优先。条目只在公开状态真正变化（已回答、已放行）后消失，新回复在查看该 agent 后清除。**Mark seen / m** 仅在本次运行中隐藏一条历史失败，不修改队列历史，重启后会再次出现。读取失败的来源（corral、项目登记表或某个项目）显示为失败条目，不当作没有事项；尚未读到时显示 `…` / `loading…`。项目约每 5 个刷新周期重读一次，打开 Attention 时立即重读。打开条目只显示 agent 终端，或打开该项目的 Tasks 并按任务 id 选中；不会回答、放行或推进任务。
-- **Settings：** Attention 同一行右侧的 `Settings` 入口（或在 Agents 按 **,**）编辑 saddle 启动时使用的配置文件，路径显示在顶部。**General** 含侧栏宽度、刷新间隔和初始 Tasks 项目（留空为 Automatic）；**Colors** 按用途分组列出全部 `[colors]` 值，带色块和小范围预览；**Advanced** 含 corral 和 drover 命令。修改先留在草稿中，**Save / Ctrl-S** 才保存；**Cancel / Esc** 不改文件；**Default / Ctrl-D** 把当前项恢复默认值，仍需 Save。保存只写改动的键，保留注释和其余内容，文件或目录不存在时自动创建。无效值会报错并保留草稿。若 Settings 读取后文件在磁盘上被改动，则不保存：**Keep my edits** 重读文件并保留草稿，**Discard my edits** 采用文件现状。保存后的颜色和侧栏宽度立即生效（agent 输出保留自己的颜色）；标注 `Restart required` 的设置下次启动生效。
-- **Task notifications：** Settings 的 **General** 还可选择 Drover「任务完成、等待放行」提示在哪里出现，作用于本用户所有登记项目：**System**（Drover 系统通知）或 **In saddle**（关闭 Drover 系统通知，由 saddle 在右下角显示约 5 秒的短提示，如 `saddle · T34 ready for review`）。该选择是 Drover 自己的偏好，通过 `drover notifications` 读取和保存，不写入 saddle 配置；空格/←→ 或点击选择，Save 交给 Drover，由其下次通知检查时应用。提示不抢焦点、不吞键盘输入；点击打开该任务的 Tasks（多项合成一条时打开 Attention），× 关闭。关闭或查看提示都不放行，任务仍留在 Attention。启动或切换时已在等待放行的任务不补弹，同一任务运行在一次 saddle 运行内最多提示一次。Drover 无法给出当前选择时，Settings 如实显示，saddle 不弹提示。
+- **Drover 插件（可选）：** 任务列表、项目切换、详情、Links/Dispatch、编辑与显式派发/提交/接受/退回。通过 **Plugins → Drover** 打开；关闭视图继续后台观察，停用才停止。不会自动推进任务。见[安装与操作](plugins/drover/README.md)。
+- **Attention：** 汇总需要输入/出错的 agent、新回复和已启用插件的当前条目。点击只打开来源，不回答或推进业务。Drover 插件通过通用接口提供待验收任务与失败历史；历史标记已看在插件中操作。
+- **Settings：** Attention 同一行右侧的 `Settings` 入口（或在 Agents 按 **,**）编辑 saddle 启动时使用的配置文件，路径显示在顶部。**General** 含侧栏宽度和刷新间隔；**Colors** 按用途分组列出全部 `[colors]` 值，带色块和小范围预览；**Advanced** 含 corral 命令。修改先留在草稿中，**Save / Ctrl-S** 才保存；**Cancel / Esc** 不改文件；**Default / Ctrl-D** 把当前项恢复默认值，仍需 Save。保存只写改动的键，保留注释和其余内容，文件或目录不存在时自动创建。无效值会报错并保留草稿。若 Settings 读取后文件在磁盘上被改动，则不保存：**Keep my edits** 重读文件并保留草稿，**Discard my edits** 采用文件现状。保存后的颜色和侧栏宽度立即生效（agent 输出保留自己的颜色）；标注 `Restart required` 的设置下次启动生效。
+- **任务通知（Drover 插件）：** 在插件中按 **N** 选择 System/In Saddle，**Ctrl-S** 经公开 Drover CLI 保存。现有系统通知 watch 不变；首次观察和偏好变更建立基线，不补弹旧任务。内部提示不抢终端输入，点击打开插件目标。
 
   三步使用示例：
 
-  1. 打开 **Settings → General → Task notifications**，选择 **In saddle**，点击 **Save**。
+  1. 打开 **Plugins → Drover**，按 **N**，选择 **In Saddle**，按 **Ctrl-S** 保存。
   2. 等待一件新任务完成并进入 **Awaiting release**，右下角会出现短提示。
   3. 点击提示查看任务；查看或关闭提示都不会放行，仍由你手动放行。
 
 - **内置启动：** 原生表单填写目录、名称、命令与首条消息，预览确认后调用公开 corral start。
 - **Viewer 标签页和分屏：** 每个 tab 保存一组可四向分割的窗格，各自运行实时 `corral attach` 会话，支持终端颜色、Unicode、光标、鼠标事件与粘贴。
 - **鼠标与键盘：** 紧凑的可点击按钮、鼠标滚轮、触控板和快捷键。滚动列表不改变选择，正常刷新保留滚动位置。
-- **响应布局：** 任何宽度下 Agents 都独占左栏；Tasks 弹窗约占窗口 85%，窄时列表叠在内容上方。
+- **响应布局：** Agents 独占左栏；插件在分配的局部覆盖界面或工作区内适应宽度。
 - **终端原生外观：** 面板背景透明（Agents 使用自己的暖暗配色），状态有语义颜色，界面标签使用英文；任务内容和 agent 输出保留原文。
 
 Agents 和 Tasks 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，不嵌入外部看板界面。
@@ -55,7 +55,7 @@ Agents 和 Tasks 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，
 ### 环境要求
 
 - Rust stable **1.96 或更高版本**。
-- `corral` 和 `drover` 在 `PATH` 中，或在配置中指定路径。
+- `corral`（Drover 仅在启用其插件时需要） 在 `PATH` 中，或在配置中指定路径。
 - Agents 的 Git 摘要需要 `PATH` 中有 Git 2.45 或更高版本（依赖 `--no-lazy-fetch`）；更旧或没有 Git 时显示 `git unavailable`。
 - 支持 Unicode 和鼠标的终端，建议支持真彩色。
 
@@ -83,14 +83,14 @@ saddle
 1. 在左侧选择 agent，按 **Enter** 或点击该行接入。
 2. 在 Viewer 中直接输入，与 agent 交互。
 3. 按 **Ctrl-]** 回到 Agents，Viewer 保持连接。
-4. 按 **Tab** 或点击 Agents 顶部的 **Tasks** 打开任务弹窗，用顶部的项目选择切换已登记项目；**Esc** 关闭弹窗，输入回到打开前的位置。
+4. 任务功能需先安装启用 [Drover 插件](plugins/drover/README.md)，再从 **Plugins → Drover** 打开。Esc 返回插件子页面或关闭视图。
 5. 从任意位置退出：先按 **Ctrl-]**，再按 **q**。退出会统一确认并结束运行中的 shell，断开 agent 的显示；corral agent 继续运行。
 
 如果其他终端已经接入某个 agent，请先在那里断开，再通过 saddle 接入。停止 agent 是独立操作，需要确认。
 
 ## 启动 agent、标签页和分屏
 
-Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为当前 Tasks 项目；在这里另选项目只改变新 agent 的目录，不切换 Tasks。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。**Role** 默认选 **Controller**（主控），名称锁定为只读 `main`；选择 **Regular**（普通 agent）后可编辑名称，首次值为 `main`，角色往返切换时保留普通名称草稿。名称前的 **Prefix** 默认 `agents`，两种角色下都可改（例如 `saddle`），须非空、不含空白和 `/`、不以 `-` 开头；完整名称为 `Prefix/Name`（如 `agents/main`），预览与实际调用一致。切换项目、Codex/Claude 或角色不改变前缀、名称和角色草稿。角色另记为公开标签 `role=controller` / `role=regular`，右侧终端窗格标题显示 `Controller · 名称` 或 `Regular · 名称`；其他入口带公开标签 `role=implementer` / `role=reviewer` 创建的 agent 显示英文 `Implementer · 名称` / `Reviewer · 名称`；没有有效角色标签的 agent 显示 `Agent · 名称`，空窗格仍为 `Viewer`。角色不配置队列或开启任务派发。两种角色都按精确名称调用公开 `corral start`，不加 `--unique`；重名时显示 CLI 报错并保留草稿，不自动编号。实际名称取 corral 返回值。
+Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **Codex**（默认）或 **Claude**，点击 **Create agent / Ctrl-S**。默认目录为 Saddle 启动目录；项目候选来自公开 Corral cwd 和启动目录，与 Drover 无关。点击项目选择框或 Ctrl-P 后，可鼠标选择已登记目录，也可上下键选择、Enter 确认；**Edit path / Ctrl-E** 可手填目录。**Role** 默认选 **Controller**（主控），名称锁定为只读 `main`；选择 **Regular**（普通 agent）后可编辑名称，首次值为 `main`，角色往返切换时保留普通名称草稿。名称前的 **Prefix** 默认 `agents`，两种角色下都可改（例如 `saddle`），须非空、不含空白和 `/`、不以 `-` 开头；完整名称为 `Prefix/Name`（如 `agents/main`），预览与实际调用一致。切换项目、Codex/Claude 或角色不改变前缀、名称和角色草稿。角色另记为公开标签 `role=controller` / `role=regular`，右侧终端窗格标题显示 `Controller · 名称` 或 `Regular · 名称`；其他入口带公开标签 `role=implementer` / `role=reviewer` 创建的 agent 显示英文 `Implementer · 名称` / `Reviewer · 名称`；没有有效角色标签的 agent 显示 `Agent · 名称`，空窗格仍为 `Viewer`。角色不配置队列或开启任务派发。两种角色都按精确名称调用公开 `corral start`，不加 `--unique`；重名时显示 CLI 报错并保留草稿，不自动编号。实际名称取 corral 返回值。
 
 输入框有标签、框线、占位提示、焦点高亮及真实插入光标。点击内容定位光标，Tab／Shift-Tab 切焦点，左右键、Home／End、Backspace／Delete、Ctrl-U 清空及粘贴都按当前位置编辑，支持中文宽字符。长行横向滚动，多行消息还可上下移动、纵向滚动及 Enter 换行；小窗口可切焦点或用滚轮访问字段，底部保留创建和取消入口。
 
@@ -114,7 +114,7 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 开发者运行 `./examples/counter-plugin/package.sh`，即可构建并打包独立 Counter 示例；在设置中添加产物 `examples/counter-plugin/dist/counter-plugin`。使用者只需拿到这个目录，不需要 Rust 或开发环境变量。SDK 目前是开发接口，详见 [Counter 说明](examples/counter-plugin/README.md) 和 [插件开发入门](docs/插件开发入门.md)。Drover 插件迁移另行进行。
 
-## 任务关联跳转
+## 任务关联跳转（Drover 插件）
 
 在 Tasks 右侧的 **Task text**、**Run details** 旁选择 **Links**；**Tab / Shift-Tab** 在三个页签间切换。Files、Commits、Agents 按明确引用分组并显示来源，点击条目或用上下方向键选择后 Enter 打开。文件和提交在 Tasks 内只读查看，方向键、滚轮、PgUp/PgDn 滚动；**Back / Esc** 回到原 Links 位置，再 Esc 关闭 Tasks。
 
@@ -134,7 +134,7 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 ## 普通终端与 ctl 命令
 
-Terminal 启动 `$SHELL -i`，缺失时回退 `/bin/sh`。目录取来源窗格的已知项目／启动目录，空窗格回退当前 Tasks 项目；不跟踪 shell 后续 cd。自行退出后保留屏幕与退出状态，不重启。关闭、替换运行中的 shell 或退出 saddle 时先确认，混合 tab 整体确认后统一关闭。只回收自有 PTY 的 shell 和前台进程组，不承诺回收主动 daemonize 的进程。
+Terminal 启动 `$SHELL -i`，缺失时回退 `/bin/sh`。目录取来源窗格的已知项目／启动目录，空窗格回退 Saddle 启动目录；不跟踪 shell 后续 cd。自行退出后保留屏幕与退出状态，不重启。关闭、替换运行中的 shell 或退出 saddle 时先确认，混合 tab 整体确认后统一关闭。只回收自有 PTY 的 shell 和前台进程组，不承诺回收主动 daemonize 的进程。
 
 同一个二进制提供 JSON 命令，不启动第二个 TUI：
 
@@ -171,24 +171,19 @@ left_width = 52
 left_split = 0.5
 refresh_ms = 1000
 
-[queue]
-drover = "drover"
-# cwd = "~/projects/my-project"
 ```
 
 | 配置项 | 含义 |
 |---|---|
 | `corral` | corral 命令名或路径 |
 | `left_width` | 左栏期望宽度，单位为终端字符格 |
-| `left_split` | 已不再使用：Agents 独占左栏，Tasks 改为弹窗。为兼容既有配置仍接受（大于 0 且小于 1） |
+| `left_split` | 已不再使用：Agents 独占左栏。为兼容既有配置仍接受（大于 0 且小于 1） |
 | `refresh_ms` | 后台刷新间隔，单位毫秒 |
-| `queue.drover` | drover 命令名或路径 |
-| `queue.cwd` | 可选的初始队列项目目录 |
+
+
 | `colors` | 可选的平铺颜色表，控制界面和 agent 类型配色 |
 
-命令路径和 `queue.cwd` 支持 `~/`。Queue 读取 `~/.drover/projects` 项目清单：优先使用 `queue.cwd`，其次是已登记的启动目录，再其次是登记的首个项目；没有登记项目时尝试启动目录。项目选择页也支持手动输入路径，切换仅对本次运行生效。
-
-saddle 通过 **`drover list --json`** 获取任务数据。完整历史需要 drover 返回全部历史数组；旧版本仅返回最近十条，接口未返回的记录无法显示。任务详情来自只读的 **`drover show Tn --json --with-agent-status`**（schema_version 1）；drover 没有这个命令时，详情页显示它的报错。除了项目登记清单，saddle 不读取 corral 或 drover 的内部数据文件。
+命令路径支持 `~/`。旧 `[queue]` 表仍可加载，但不再驱动宿主。自定义 Drover 命令、目录和 dlog 路径转到插件清单 args，见[插件说明](plugins/drover/README.md)。插件通过公开 schema 2 list/show/action 接口工作，宿主不再读取 Drover 项目或任务数据。
 
 [config.toml](config.toml) 提供完整默认配置与简短注释，可直接复制到上述位置，默认呈现与原界面一致。只想改几项时，可添加：
 
@@ -201,7 +196,7 @@ agent_selected = "#2b2621"
 
 颜色支持 `default`（或 `reset`，终端默认色）、`#RRGGBB` 和小写 ANSI 色名：`black`、`red`、`green`、`yellow`、`blue`、`magenta`、`cyan`、`gray`、`dark_gray`、`light_red`、`light_green`、`light_yellow`、`light_blue`、`light_magenta`、`light_cyan`、`white`。其中 `gray` 是普通 ANSI 白，`dark_gray` 是亮黑，`white` 是亮白；ANSI 色随终端调色板变化。
 
-颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。Agents 栏使用自己的 `agents_*` 配色（另加 `agent_selected` 和 agent 类型色）；共用的 `agent_*` 状态强调色用于 Tasks（含 Queue 操作反馈），以及 Agents 的 stalled/starting 状态和 effort 图标。终端未把 `COLORTERM` 设为 `truecolor` 或 `24bit` 时，Agents 专用的 RGB 颜色按最近的 256 色发送；ANSI 颜色名和其他区域不变。未知字段和无效颜色沿用配置错误报告。在 Settings 中保存的颜色立即生效；在 saddle 外修改的配置下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
+颜色表覆盖背景、选中底色、边框、焦点、文字层次、连接/未读标记、操作反馈、agent 类型及回复格式。Agents 栏使用自己的 `agents_*` 配色（另加 `agent_selected` 和 agent 类型色）；共用的 `agent_*` 状态强调色用于 Agents 的 stalled/starting 状态和 effort 图标。插件接收通用文字/背景/强调/错误色，自行管理业务状态配色。终端未把 `COLORTERM` 设为 `truecolor` 或 `24bit` 时，Agents 专用的 RGB 颜色按最近的 256 色发送；ANSI 颜色名和其他区域不变。未知字段和无效颜色沿用配置错误报告。在 Settings 中保存的颜色立即生效；在 saddle 外修改的配置下次启动生效，不支持热加载；Viewer 的终端输出保留自己的颜色。字体和字号仍由外部终端设置控制。
 
 ## 操作
 
@@ -211,13 +206,13 @@ agent_selected = "#2b2621"
 | Agents | Enter / 点击行 | 接入活动窗格，已打开时跳到现有位置 |
 | Agents | n / New | 创建新 agent |
 | Agents | / / Search | 按项目名或 agent 名称过滤；Enter 或点击进入对应终端（已打开时跳到现有位置），Esc 取消 |
-| Agents | a / Attention · N | 打开 Attention；↑↓ 选择，Enter 或点击打开对应 agent 或任务，m 把历史失败标为已看，Esc 取消 |
+| Agents | a / Attention · N | 打开 Attention；↑↓ 选择，Enter 或点击打开对应 agent 或任务，Esc 取消 |
 | Agents | , / Settings | 打开 Settings；Tab/↑↓ 选择设置项，F1–F5 或点击切换页签，Ctrl-U 清空，Ctrl-D 恢复默认值，Ctrl-S 保存，Esc 取消 |
 | Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
 | Viewer 边框 | Zoom / Restore | 多窗格时让当前窗格临时占满右侧终端区域（保留 Agents 和 tab 条）；Restore 回到原分屏和比例，焦点仍在该窗格。其他窗格继续运行；切到其他窗格、关闭该窗格或新建分屏都会结束放大 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |
-| Agents | Tab / Shift-Tab | 打开 Tasks / 焦点到 Viewer |
-| 任意位置 | 点击 Agents 顶部的 Tasks | 打开 Tasks；关闭后回到打开前的输入目标 |
+| Agents | Tab / Shift-Tab | 聚焦 Viewer |
+| 任意位置 | Plugins | 搜索并打开/切换插件视图 |
 | Agents | PgUp / PgDn | 滚动 agent 列表 |
 | Agents | s / Sort | 仓库内按状态（默认）/ 名称排序 |
 | Agents | z / Fold | 折叠未选中的 agent 为一行，或重新展开 |
@@ -230,8 +225,8 @@ agent_selected = "#2b2621"
 | Tasks | c / 项目选择 | 打开项目选择页 |
 | 项目选择页 | Enter / 点击、e、r | 打开项目、手动目录、重读登记清单 |
 | 路径表单 | Ctrl-U / Enter / Esc | 清空 / 应用 / 取消 |
-| Tasks | r / g / n | 刷新 / 核对放行 / 发送下一件 |
-| Tasks | p / l | 暂停或恢复 / 切换循环 |
+| Tasks（插件） | r | 刷新；派发/提交/接受使用显式任务按钮 |
+| Tasks（插件） | p / N | 暂停或恢复派发 / 通知偏好 |
 | Tasks | a / ? | 新增任务 / 帮助 |
 | Tasks，选中待办 | e / u / d / x | 编辑 / 上移 / 下移 / 删除（按 y 确认） |
 | Tasks | A | 查看所有登记项目的待办 |
@@ -243,7 +238,7 @@ agent_selected = "#2b2621"
 
 选中待办后可用 Tasks 底部的 **Edit**、**Move up**、**Move down**；其他状态不能编辑或调序。编辑在同一个弹窗中打开完整表单，预填标题和多行正文，保存或取消后回到原任务和原视图；刷新及保存失败保留草稿，成功后保持选中被操作任务。首项不能上移、末项不能下移。写入前会重新核对公开待办快照，内容或顺序过期时拒绝操作；当前 CLI 没有公开的版本获取入口，预检查和写入之间仍有并发改动的窗口。
 
-**Delete x** 打开确认弹层，显示选中待办的位置、id、标题和正文；按 **y** 或点 **Delete** 确认，按 **Esc** 或点 **Cancel** 保留。确认目标在弹层打开时固定，刷新不会改变它。saddle 做同样的待办核对后运行 `drover drop --pos <位置> "Deleted in saddle"`：任务移出待办，drover 在 History 中保留为 **Dropped**（带这个原因），不是抹掉记录。这里只能删除待办；进行中的任务不能退回待办。
+**Delete x** 打开确认弹层，显示选中待办的位置、id、标题和正文；按 **y** 或点 **Delete** 确认，按 **Esc** 或点 **Cancel** 保留。确认目标在弹层打开时固定，刷新不会改变它。Drover 插件做同样的待办核对后运行 `drover drop --pos <位置> "Deleted in saddle"`：任务移出待办，drover 在 History 中保留为 **Dropped**（带这个原因），不是抹掉记录。这里只能删除待办；运行中的任务使用独立的 Return to pending 确认。
 
 **All pending A** 在 Tasks 弹窗中打开只读页，列出 `~/.drover/projects` 中每个项目的待办，按项目分组，显示任务在队列中的位置、id 和完整标题。每个项目在后台各自运行 `drover list --json`；仍在读取或读取失败的项目会如实标出并显示完整错误，其余项目照常显示。按 **r** 重新读取。该页不编辑、不调序；要操作某个项目的队列，请切换到该项目。
 
@@ -260,7 +255,7 @@ Viewer 将输入传给 agent，**Ctrl-]** 除外。底栏显示当前输入目�
 
 未知或未记录的值会明确标出，不显示成 0 或通过。刷新失败时显示错误，并把之前的数据标为旧数据，下一次刷新自动重试。`drover show` 不覆盖待办和未编号任务，它们的运行详情显示列表已有的标题、正文和状态；待办开始后自动转为完整详情。
 
-**Next、Check & release、Pause、Loop 始终作用于当前项目**，与选中的历史任务无关。读取失败会禁用旧数据上的操作。没有待处理工作时显示 `No active tasks`，历史记录仍可查看，底部显示可见范围。
+**Pause 作用于打开的项目；Dispatch selected、Submit for acceptance、Accept 和 Return to pending 作用于明确选中的任务。**读取失败会禁用旧数据上的操作。没有待处理工作时显示 `No active tasks`，历史记录仍可查看，底部显示可见范围。
 
 ## 开发与验证
 

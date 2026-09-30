@@ -113,6 +113,8 @@ pub fn frame(buffer: &Buffer, size_revision: u64, frame_id: u64) -> Result<Frame
         cols: area.width,
         rows_count: area.height,
         rows,
+        cursor: None,
+        escape_input: false,
     };
     f.validate()?;
     Ok(f)
@@ -150,19 +152,44 @@ pub trait Plugin {
     fn version(&self) -> &str;
     fn event(&mut self, event: Event, context: &mut Context) -> Result<()>;
     fn render(&mut self, area: Rect, theme: &Value) -> Result<Buffer>;
+    /// Cursor relative to the last rendered buffer. Requires panel.cursor.v1.
+    /// Handle Escape inside the current view, e.g. to cancel a form. Requires panel.escape.v1.
+    fn escape_input(&self) -> bool {
+        false
+    }
+    fn cursor(&self) -> Option<[u16; 2]> {
+        None
+    }
 }
 #[derive(Debug)]
 pub enum Event {
     Tick,
     Input(Value),
     Focus(bool),
+    /// A snapshot supplied when the user opens the view (for example its source cwd).
+    Opened(Value),
     Closed,
-    Notification { id: u64, status: String },
+    Notification {
+        id: u64,
+        status: String,
+    },
+    NotificationOpen(protocol::OpenTarget),
     AttentionOpen(protocol::AttentionOpen),
-    AttentionPublished { id: u64, status: String },
+    AgentOpened {
+        id: u64,
+        status: String,
+        message: String,
+    },
+    AttentionPublished {
+        id: u64,
+        status: String,
+    },
 }
 pub struct Context {
-    requests: Vec<(u64, String)>,
+    requests: Vec<(u64, String, Option<protocol::OpenTarget>)>,
+    input: Option<u64>,
+    close: Option<u64>,
+    navigation: Option<(u64, u64, String, String)>,
     next: u64,
     dirty: bool,
     reserved_keys: Vec<String>,
@@ -187,7 +214,43 @@ impl Context {
         Ok(self.next)
     }
 
+    /// Close the current view after a user action; the plugin process remains enabled.
+    pub fn close_view(&mut self) -> Result<()> {
+        self.close = Some(
+            self.input
+                .ok_or_else(|| anyhow::anyhow!("view close requires user input"))?,
+        );
+        Ok(())
+    }
+    /// Open an existing agent with this exact public instance identity, only from an input callback.
+    pub fn open_agent(&mut self, name: &str, instance: &str) -> Result<u64> {
+        let input = self
+            .input
+            .ok_or_else(|| anyhow::anyhow!("agent navigation requires user input"))?;
+        ensure!(self.navigation.is_none(), "navigation already requested");
+        ensure!(
+            !name.is_empty()
+                && name.len() <= 256
+                && !instance.is_empty()
+                && instance.len() <= 256
+                && !name.chars().chain(instance.chars()).any(char::is_control),
+            "invalid agent identity"
+        );
+        self.next += 1;
+        self.navigation = Some((self.next, input, name.into(), instance.into()));
+        Ok(self.next)
+    }
     pub fn notify(&mut self, text: impl Into<String>) -> Result<u64> {
+        self.notify_target(text, None)
+    }
+    pub fn notify_target(
+        &mut self,
+        text: impl Into<String>,
+        target: Option<protocol::OpenTarget>,
+    ) -> Result<u64> {
+        if let Some(target) = &target {
+            target.validate()?;
+        }
         ensure!(self.requests.len() < 16, "too many notifications");
         let text = text.into();
         ensure!(
@@ -195,7 +258,7 @@ impl Context {
             "invalid notification text"
         );
         self.next += 1;
-        self.requests.push((self.next, text));
+        self.requests.push((self.next, text, target));
         Ok(self.next)
     }
 }
@@ -225,6 +288,9 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
     let mut reader = BufReader::new(input);
     let mut context = Context {
         requests: Vec::new(),
+        input: None,
+        close: None,
+        navigation: None,
         next: 0,
         dirty: false,
         reserved_keys: Vec::new(),
@@ -234,10 +300,14 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
     let mut highest = 0;
     let mut request_id = 0;
     let mut pending = std::collections::BTreeMap::new();
+    let mut navigation_pending: Option<(u64, u64, std::time::Instant)> = None;
     let mut attention_pending: Option<(u64, u64, std::time::Instant)> = None;
     let mut size = None;
     let mut frame_id = 0;
+    let mut last_frame: Option<Frame> = None;
+    let mut last_input = 0;
     let mut focused = false;
+    let mut mouse_press: Option<(Value, u64)> = None;
     let mut theme = Value::Null;
     loop {
         use std::os::fd::AsRawFd;
@@ -293,7 +363,21 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 }
                 Message::Response { id, result, error } => {
                     ensure!(id <= request_id, "unknown response");
-                    if attention_pending.is_some_and(|(request, _, _)| request == id) {
+                    if navigation_pending.is_some_and(|(request, _, _)| request == id) {
+                        let (_, local, _) = navigation_pending.take().unwrap();
+                        let response = result.unwrap_or_default();
+                        plugin.event(
+                            Event::AgentOpened {
+                                id: local,
+                                status: response["status"].as_str().unwrap_or("failed").into(),
+                                message: response["message"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| error.map_or(String::new(), |e| e.message)),
+                            },
+                            &mut context,
+                        )?;
+                    } else if attention_pending.is_some_and(|(request, _, _)| request == id) {
                         let (_, published, _) = attention_pending.take().unwrap();
                         plugin.event(
                             Event::AttentionPublished {
@@ -319,6 +403,17 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 Message::Event { name, data } => {
                     ensure!(ready, "event before handshake");
                     match name.as_str() {
+                        "optional.view_context" => {
+                            plugin.event(Event::Opened(data), &mut context)?;
+                            redraw = true;
+                        }
+                        "notification.open" => {
+                            plugin.event(
+                                Event::NotificationOpen(serde_json::from_value(data)?),
+                                &mut context,
+                            )?;
+                            redraw = true;
+                        }
                         "attention.open" => {
                             plugin.event(
                                 Event::AttentionOpen(serde_json::from_value(data)?),
@@ -327,6 +422,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                             redraw = true;
                         }
                         "panel.open" | "panel.resize" => {
+                            mouse_press = None;
                             if let Some(keys) = data["reserved_keys"].as_array() {
                                 context.reserved_keys = keys
                                     .iter()
@@ -353,6 +449,8 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                             redraw = true;
                         }
                         "panel.close" => {
+                            mouse_press = None;
+                            last_frame = None;
                             size = None;
                             focused = false;
                             plugin.event(Event::Closed, &mut context)?;
@@ -361,6 +459,9 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                             focused = data["focused"]
                                 .as_bool()
                                 .ok_or_else(|| anyhow::anyhow!("invalid focus"))?;
+                            if !focused {
+                                mouse_press = None;
+                            }
                             plugin.event(Event::Focus(focused), &mut context)?;
                         }
                         "theme" => {
@@ -368,12 +469,42 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                             redraw = true;
                         }
                         "input" => {
+                            // A release belongs to its accepted press, including when the
+                            // press feedback was rendered before the host delivered release.
+                            let event = &data["event"];
+                            let release = event["type"] == "mouse" && event["action"] == "up";
+                            let continuation = release
+                                && mouse_press.as_ref().is_some_and(|(button, first)| {
+                                    event["button"] == *button
+                                        && data["frame_id"]
+                                            .as_u64()
+                                            .is_some_and(|id| id >= *first && id <= frame_id)
+                                });
+                            // Keyboard/paste form an ordered stream, not coordinates on a
+                            // picture. Repainting must not drop already typed characters.
+                            let typed = matches!(event["type"].as_str(), Some("key" | "paste"))
+                                && data["frame_id"]
+                                    .as_u64()
+                                    .is_some_and(|id| id > 0 && id <= frame_id);
+                            let input = data["input_id"].as_u64().unwrap_or(0);
+                            let fresh = input > last_input;
+                            last_input = last_input.max(input);
                             if focused
-                                && data["frame_id"] == frame_id
+                                && fresh
+                                && (!release || continuation)
+                                && (data["frame_id"] == frame_id || continuation || typed)
                                 && size.is_some_and(|(_, _, r)| data["size_revision"] == r)
                             {
+                                if event["type"] == "mouse" && event["action"] == "down" {
+                                    mouse_press = Some((event["button"].clone(), frame_id));
+                                } else if release || event["type"] != "mouse" {
+                                    mouse_press = None;
+                                }
+                                context.input = Some(input);
                                 plugin.event(Event::Input(data), &mut context)?;
+                                context.input = None;
                             } else {
+                                mouse_press = None;
                                 output.write_all(&protocol::encode(&Message::event("input.rejected",json!({"panel":"main","input_id":data["input_id"],"reason":"stale_frame"})))?)?;
                             }
                         }
@@ -384,7 +515,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
             }
         }
         redraw |= std::mem::take(&mut context.dirty);
-        for (id, text) in context.requests.drain(..) {
+        for (id, text, target) in context.requests.drain(..) {
             if pending.len() >= 16 {
                 plugin.event(
                     Event::Notification {
@@ -393,6 +524,9 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                     },
                     &mut Context {
                         requests: vec![],
+                        input: None,
+                        close: None,
+                        navigation: None,
                         next: context.next,
                         dirty: false,
                         reserved_keys: context.reserved_keys.clone(),
@@ -406,8 +540,46 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
             output.write_all(&protocol::encode(&Message::request(
                 request_id,
                 "notify",
-                json!({"notification_id":id,"text":text,"level":"info"}),
+                json!({"notification_id":id,"text":text,"level":"info","target":target}),
             ))?)?;
+        }
+        if let Some(input) = context.close.take() {
+            output.write_all(&protocol::encode(&Message::event(
+                "panel.close_request",
+                json!({"input_id":input}),
+            ))?)?;
+        }
+        if navigation_pending.is_some_and(|(_, _, sent)| sent.elapsed().as_secs() >= 20) {
+            let (_, id, _) = navigation_pending.take().unwrap();
+            plugin.event(
+                Event::AgentOpened {
+                    id,
+                    status: "unknown".into(),
+                    message: "Navigation result unknown; check the workspace before retrying."
+                        .into(),
+                },
+                &mut context,
+            )?;
+        }
+        if let Some((id, input, name, instance)) = context.navigation.take() {
+            if navigation_pending.is_none() {
+                request_id += 1;
+                output.write_all(&protocol::encode(&Message::request(
+                    request_id,
+                    "agent.open",
+                    json!({"input_id":input,"name":name,"instance":instance}),
+                ))?)?;
+                navigation_pending = Some((request_id, id, std::time::Instant::now()));
+            } else {
+                plugin.event(
+                    Event::AgentOpened {
+                        id,
+                        status: "busy".into(),
+                        message: "Navigation already in progress".into(),
+                    },
+                    &mut context,
+                )?;
+            }
         }
         if attention_pending.is_some_and(|(_, _, sent)| sent.elapsed().as_secs() >= 5) {
             let (_, id, _) = attention_pending.take().unwrap();
@@ -452,7 +624,6 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
             && cols > 0
             && rows > 0
         {
-            frame_id += 1;
             let result = (|| {
                 ensure!(
                     usize::from(cols) * usize::from(rows) <= protocol::MAX_CELLS,
@@ -460,10 +631,19 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                 );
                 let buf = plugin.render(Rect::new(0, 0, cols, rows), &theme)?;
                 ensure!(buf.area == Rect::new(0, 0, cols, rows), "render_failed");
-                let f = frame(&buf, revision, frame_id)?;
+                let mut f = frame(&buf, revision, frame_id.max(1))?;
+                f.cursor = plugin.cursor();
+                f.escape_input = plugin.escape_input();
+                f.validate()?;
+                if last_frame.as_ref() == Some(&f) {
+                    return Ok(Vec::new());
+                }
+                frame_id += 1;
+                f.frame_id = frame_id;
+                last_frame = Some(f.clone());
                 protocol::encode(&Message::event("panel.frame", serde_json::to_value(f)?))
             })();
-            let bytes=result.unwrap_or_else(|e:anyhow::Error| {let reason=e.to_string();let code=if reason.contains("too large")||reason=="frame_too_large"{"frame_too_large"}else if reason.contains("unsupported_style"){"unsupported_style"}else if reason.contains("glyph"){"unsupported_glyph"}else{"render_failed"};protocol::encode(&Message::event("panel.error",json!({"panel":"main","size_revision":revision,"code":code,"message":reason.chars().take(200).collect::<String>()}))).expect("bounded error")});
+            let bytes=result.unwrap_or_else(|e:anyhow::Error| {last_frame = None; let reason=e.to_string();let code=if reason.contains("too large")||reason=="frame_too_large"{"frame_too_large"}else if reason.contains("unsupported_style"){"unsupported_style"}else if reason.contains("glyph"){"unsupported_glyph"}else{"render_failed"};protocol::encode(&Message::event("panel.error",json!({"panel":"main","size_revision":revision,"code":code,"message":reason.chars().take(200).collect::<String>()}))).expect("bounded error")});
             output.write_all(&bytes)?;
         }
         output.flush()?;

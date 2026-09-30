@@ -10,10 +10,8 @@ use saddle::{
     buttons::Pointer,
     config::Config,
     corral::Agent,
-    drover::{Snapshot, Task},
     input::Focus,
     layout::Panes,
-    queue,
     terminal::{Screen, Size},
     ui::{self, View},
 };
@@ -29,11 +27,7 @@ fn main() -> anyhow::Result<()> {
     for (name, w, h, focus, overlay) in [
         ("wide", 160, 48, Focus::Agents, ""),
         ("many-agents", 160, 100, Focus::Agents, "many"),
-        ("medium", 120, 36, Focus::Queue, ""),
         ("narrow-agents", 80, 24, Focus::Agents, ""),
-        ("narrow-queue", 80, 24, Focus::Queue, ""),
-        ("projects", 120, 36, Focus::Queue, "projects"),
-        ("add", 120, 36, Focus::Queue, "add"),
         ("stop", 120, 36, Focus::Agents, "stop"),
         ("reply", 120, 36, Focus::Agents, "reply"),
     ] {
@@ -94,49 +88,7 @@ fn main() -> anyhow::Result<()> {
         }
         a.select(Some("saddle/main".into()));
         a.unread.insert("corral/main".into());
-        let mut q = queue::Panel::default();
-        q.project = "~/Developer/drover".into();
-        q.projects = vec![
-            "~/Developer/drover".into(),
-            "~/Developer/saddle".into(),
-            "~/Developer/corral".into(),
-        ];
-        q.absorb(Snapshot {
-            current: Some(Task {
-                id: Some("T23".into()),
-                title: "实现待办详情中的中文换行".into(),
-                body: "按终端显示宽度换行，并保留任务状态。".into(),
-                ..Default::default()
-            }),
-            awaiting: Some(Task {
-                id: Some("T24".into()),
-                title: "修复循环模式下的任务放行".into(),
-                ..Default::default()
-            }),
-            pending: vec![Task {
-                id: Some("T25".into()),
-                title: "Queue 支持历史任务完整展示".into(),
-                ..Default::default()
-            }],
-            history: (16..23)
-                .map(|i| Task {
-                    id: Some(format!("T{i}")),
-                    title: "完善看板的交互与测试".into(),
-                    status: Some("done".into()),
-                    ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        });
         match overlay {
-            "projects" => q.page = queue::Page::Projects,
-            "add" => {
-                q.page = queue::Page::Add {
-                    title: queue::Input::new("新增任务的中文标题".into()),
-                    body: queue::Input::new("第一行正文\n第二行正文".into()),
-                    body_focus: true,
-                }
-            }
             "stop" => a.confirm = Some("saddle/main".into()),
             "reply" => a.show_reply = true,
             _ => {}
@@ -144,11 +96,11 @@ fn main() -> anyhow::Result<()> {
         let panes = Panes::new(Rect::new(0, 0, w, h), &Config::default());
         let mut terminal = Terminal::new(TestBackend::new(w, h))?;
         terminal.draw(|frame| {
-            ui::draw(frame,&mut a,View{colors:&saddle::theme::Theme::default(),panes,focus,showing:Some("saddle/main"),local:&["saddle/main".to_string()],viewer:None,queue:&mut q,viewer_note:"",reply:"已完成布局与交互重设计。\n\n- 管理区域全部由 Rust + Ratatui 绘制\n- Viewer 保留原终端颜色与按键\n- 自动验证使用合成数据",now:150.0,pointer:&Pointer::default()});
-            if (overlay.is_empty() || overlay=="reply") && focus != Focus::Queue {
+            ui::draw(frame,&mut a,View{colors:&saddle::theme::Theme::default(),panes,focus,showing:Some("saddle/main"),local:&["saddle/main".to_string()],viewer:None,projects:&[],viewer_note:"",reply:"已完成布局与交互重设计。\n\n- 管理区域全部由 Rust + Ratatui 绘制\n- Viewer 保留原终端颜色与按键\n- 自动验证使用合成数据",now:150.0,pointer:&Pointer::default()});
+            if overlay.is_empty() || overlay=="reply" {
                 let area=ui::inner(panes.viewer);
                 let mut screen=Screen::new(Size{rows:area.height,cols:area.width});
-                screen.process("\x1b[1m› saddle 界面重设计\x1b[0m\r\n\r\n\x1b[32m●\x1b[0m Explored\r\n  Read src/ui.rs, src/queue.rs, src/buttons.rs\r\n\r\n\x1b[32m●\x1b[0m Ran cargo test\r\n  test result: ok. Synthetic checks passed\r\n\r\n\x1b[32m●\x1b[0m Edited src/ui.rs\r\n\x1b[48;2;25;50;32m  + 中文状态列保持对齐，按钮有悬停和按下反馈。\x1b[0m\r\n\r\n继续检查窄窗口和弹层输入边界。\r\n".as_bytes());
+                screen.process("\x1b[1m› saddle 界面重设计\x1b[0m\r\n\r\n\x1b[32m●\x1b[0m Explored\r\n  Read src/ui.rs, plugins/drover/src/queue.rs, src/buttons.rs\r\n\r\n\x1b[32m●\x1b[0m Ran cargo test\r\n  test result: ok. Synthetic checks passed\r\n\r\n\x1b[32m●\x1b[0m Edited src/ui.rs\r\n\x1b[48;2;25;50;32m  + 中文状态列保持对齐，按钮有悬停和按下反馈。\x1b[0m\r\n\r\n继续检查窄窗口和弹层输入边界。\r\n".as_bytes());
                 screen.render(area,frame.buffer_mut());
             }
         })?;

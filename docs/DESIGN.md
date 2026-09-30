@@ -1131,3 +1131,16 @@ Counter 独立项目提供 `package.sh [输出目录]`，通过 Cargo 构建本�
 按用户确认的迁移顺序先完成宿主通用接口。Attention 仍归 Saddle，保留 Agent 与现有 Drover 来源；新 attention.v1 插件可发布有界的当前条目快照，宿主只汇总并打开目标。每次替换具有会话/修订身份，旧点击、停用、断连均不得打开旧业务目标；断连显示来源不可用，停用撤下本来源。通知与持续条目独立，不新增任务状态或推进服务。
 
 公开契约见 [插件协议 §10](插件协议.md#10-通用-attention-来源attentionv1)。独立 Attention demo 只提供两条合成条目，用来观察更新、撤回和目标跳转。Counter 与旧插件无需升级。后续 Drover 插件接入此接口后，才替换/删除内建 Drover 来源和任务界面，避免重复提示；本步不触碰真实任务或 Drover 服务。
+
+### Drover 插件迁移（2026-09-30）
+
+用户选择插件暂放 Saddle 仓库的 `plugins/drover/`，由主控亲自实现；Drover 仓库只读，CLI、状态核心与系统通知 watch 保持原样。插件通过公开 CLI 维护 Tasks 界面、项目观察、Attention 与内部通知，不自动提交、接受或派发。宿主只保留通用接口，内建任务适配随本次迁移移除。
+
+表单引入可选 `panel.cursor.v1`：完整帧附带相对坐标，必须在帧内且处于字素起点；仅交互中、已聚焦、尺寸一致的视图显示光标。旧帧省略 cursor 即隐藏，不改变旧插件行为。
+
+
+迁移后的宿主不读取 Drover 项目登记、不调用 Drover CLI，不保留专用 Tasks 入口、轮询器、任务通知设置和 Attention 任务状态。旧 `[queue]` 表仅兼容加载，不驱动运行时；自定义值显式写入插件清单 args，不自动登记或启用插件。新建终端默认使用启动目录，agent 表单项目候选来自公开 Corral cwd 与启动目录。
+
+通用扩展仅提供局部表单和导航需要的能力：`view.context.v1` 在普通打开时提供来源 cwd 快照；Attention/通知打开保留插件目标，不再以 cwd 覆盖。`panel.escape.v1` 允许当前帧请求接收 Esc（子页面返回），Ctrl-] 始终归宿主。`view.close.v1` 允许输入回调请求关闭视图，进程保留。`agent.open.v1` 仅绑定当前用户输入、插件会话和来源焦点；宿主用公开 Corral status 验证 instance，在独立新 tab 接入后再次核验，同 instance 已打开则定位，不覆盖用户现有终端。`notify.target.v1` 为短提示携带不透明目标；过期、停用或会话变更拒绝点击。
+
+Drover 插件沿用公开 schema 2 和 opaque action/notification token；系统通知 watch 不变。插件本地观察和提醒不改变任务状态，关闭视图后台继续，停用撤下来源。失败历史的 Mark seen 留在插件内部。插件传出的 Attention ID 不包含大段任务正文，最多64项，超出时提供项目汇总入口。部署方式见 `plugins/drover/README.md`。

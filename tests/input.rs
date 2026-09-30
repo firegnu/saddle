@@ -12,8 +12,8 @@ fn escape_focus_does_not_steal_inner_terminal_keys() {
     assert_eq!(focus.route(key(K::Char(']'), M::CONTROL)), Route::Ignore);
     assert_eq!(focus, Focus::Agents);
     assert_eq!(focus.route(key(K::Tab, M::NONE)), Route::Ignore);
-    assert_eq!(focus, Focus::Queue);
-    assert_eq!(focus.route(key(K::Char('c'), M::CONTROL)), Route::Queue);
+    assert_eq!(focus, Focus::Viewer);
+    assert_eq!(focus.route(key(K::Char('c'), M::CONTROL)), Route::Terminal);
     focus.route(key(K::Char(']'), M::CONTROL));
     focus.route(key(K::BackTab, M::SHIFT));
     assert_eq!(focus, Focus::Viewer);
@@ -116,7 +116,7 @@ fn modified_enter_is_distinct_from_submit_for_multiline_prompts() {
 }
 
 #[test]
-fn queue_controls_are_native_and_never_routed_to_a_pty() {
-    let mut focus = Focus::Queue;
+fn agent_controls_are_native_and_never_routed_to_a_pty() {
+    let mut focus = Focus::Agents;
     assert_ne!(focus.route(key(K::Char('p'), M::NONE)), Route::Terminal);
 }

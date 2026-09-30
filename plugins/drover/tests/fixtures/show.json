@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "ok": true,
+  "project": "/tmp/project-a",
+  "task": {
+    "id": "T4",
+    "title": "Detail target 任务",
+    "body": "原始正文\n第二行",
+    "status": "running",
+    "run_id": "run-4",
+    "start": "6829963aecf94a2a3035eb3504e7988f7a2db27d",
+    "main": null,
+    "t0": 1790361402,
+    "actions": {},
+    "return_history": [],
+    "previous_runs": []
+  },
+  "evidence": {
+    "scope": "repository_reference",
+    "controls_transition": false,
+    "observed_at": 1790363879.5,
+    "git": {
+      "state": "unavailable",
+      "head_sha": null,
+      "main_sha": null,
+      "tracked_changes": null,
+      "unmerged_local_branches": []
+    },
+    "last_check": {
+      "state": "stale",
+      "reason": "legacy cache without run_id",
+      "record": {
+        "ok": false,
+        "cmd": "synthetic-check",
+        "why": "failed earlier",
+        "t": 1790361000
+      }
+    }
+  }
+}
