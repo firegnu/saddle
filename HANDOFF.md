@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+- 最新工作（65924c8，合并8ded529）：用户同意继续，主控亲自完成 `docs/插件协议.md` 和 `docs/插件Demo设计.md` 的具体线框，更新 DESIGN §62。选按行样式片段完整帧，固定宽度 profile 与初始预算；合成 JSON 字节测量、文档链接/锚点/JSON/空白检查通过。只做设计与数据编码比较，未实现/编译/运行插件或重启 Saddle；分支/worktree 已清理。等待用户确认具体 UI 后再实施。
+
 - 最新设计审阅：原 Claude 按用户要求只读审阅 28c8d1c，提出3项必须改、6项建议。主控已亲自修订全部必须项、采纳5项建议并部分采纳1项；记录 `docs/任务/插件系统设计-审阅处理.md`。结构不变，尚未实现或由 Claude 复审。修订分支/worktree 已清理。
 
 - 最新工作：用户确认独立进程＋版本化协议＋Rust SDK，并要求接下来主控自己做、不再委派。已写 `docs/插件系统设计.md`、`docs/插件Demo设计.md`，更新 `docs/DESIGN.md` §62；设计提交 83c0350。只是草案，不表示插件系统、SDK、管理入口或 demo 已实现。
@@ -34,7 +36,7 @@
 
 T58 已 Done；最近核对时没有 Running 或 Awaiting 任务。本轮设计不操作队列，不自动派发。新版流程为 dispatch-pending → done提交验收 → 用户go接受，Running/Awaiting可退回；没有Loop自动提交/派发。
 
-插件工作的下一步：用户审阅设计草案与管理入口/demo 线框，确认后再安排实现；不把架构认可扩大为已经批准具体 UI 或稳定协议。具体帧字段、Unicode 宽度约定与运行预算需在 demo 实现前定稿。Demo 先验证插件通路，Drover 为第二个插件；未迁移前不声称 Saddle 已无 Drover 依赖。只按现有授权继续设计，不自行安装或发布插件。
+插件工作的下一步：请用户确认 Demo 文档中的管理入口、添加目录和面板线框，随后由主控亲自实现最小宿主＋公开 Rust SDK＋独立 demo。协议字段、Unicode 宽度约定与运行预算已收敛成实施基线，但尚无运行验证，不是稳定协议发布。Demo 先验证插件通路，Drover 为第二个插件；未迁移前不声称 Saddle 已无 Drover 依赖。不自行安装或发布插件。
 
 本轮后续由主控亲自做，不再委派。已有讨论/审阅 agent `saddle/dev-plugin-design-1`（main 仓库 cwd，最近 idle、attached=1）保留，不再主动送新任务；用户未要求关闭。Corral/corral-dispatch 与 Drover 仓库、真实状态均未改。
 
