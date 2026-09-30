@@ -18,3 +18,13 @@
 - `cargo clippy --offline --all-targets -- -D warnings` 通过。日志 `/tmp/saddle-plugin-delivery-{tests,clippy,package,package-custom,pty}.log`。全部构建/测试使用共享 CARGO_TARGET_DIR。
 
 审查结论：本轮交付范围通过，已知 picker 不稳定保留；可以合并并按用户授权更新日常 release。没有新增宿主协议/行为，也没有迁移 Drover。发布与备份结果后续记在本文件及 HANDOFF。
+
+## 发布结果
+
+实现 6d39a06，合并 27f3279；主控完成审查并推送 main，清理 plugin-delivery 分支/worktree，空提交收尾 fc2c060。没有创建或操作 agent。
+
+用户已在临时开发版确认 Counter 效果，随后授权日常发布。本轮从 main 构建 release，核对日常入口 `/Users/firegnu/.local/bin/saddle` 指向 `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`，SHA-256 `99695dbeb72724160443418be64809e61b33995badfa7d7515d2a17ed29961da`。旧二进制与前后哈希保存在 `/Users/firegnu/Library/Application Support/saddle-release-backups/plugin-20260930-170510`；旧哈希 e63d8e5ab76012e1b67e34b9232636a5ee3067972ea2382771f147a1d6d9dd76。入口链接保持不变。
+
+在 main 使用 package.sh 生成正式示例目录 `/Users/firegnu/Developer/personal_projs/saddle/examples/counter-plugin/dist/counter-plugin`；未登记进日常配置。随后用 `cargo test --offline --locked --release --test workflow plugin_counter_installs_opens_notifies_and_closes_without_stopping -- --ignored --exact` 验证实际 release 宿主与正式打包程序，1 passed；仍为假 Corral/Drover、临时配置与 PTY，无真实状态修改。日志 `/tmp/saddle-plugin-delivery-release.log`、`/tmp/saddle-plugin-delivery-package-main.log`、`/tmp/saddle-plugin-delivery-release-pty.log`。
+
+发布更新的是磁盘上的日常启动版本，没有退出/重启用户现有 Saddle，没有改日常插件登记、队列或通知服务；用户下一次正常启动 Saddle 即使用新版。用户重启后的现场验收尚未发生，不宣称已经切换现有窗口。
