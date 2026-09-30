@@ -356,19 +356,28 @@ impl App {
                         search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
-                        modal: self.closing.is_some(),
+                        modal: self.closing.is_some() || self.plugin_page.is_some(),
                         attention: ui::Attention {
                             items: &items,
                             loading,
                             popup: self.attention.as_mut(),
                         },
-                        settings: self.settings.as_mut(),
+                        // Keep the draft, but do not draw its input cursor through plugin management.
+                        settings: self
+                            .settings
+                            .as_mut()
+                            .filter(|_| self.plugin_page.is_none()),
                     }),
                 );
                 self.draw_plugin_overlay(frame, panes);
                 self.draw_closing(frame);
                 if let Some(page) = &mut self.plugin_page {
                     page.draw(&self.config.colors, frame, &self.plugins);
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new(" Input ▸ Plugin settings · Esc Back")
+                            .style(self.config.colors.base()),
+                        panes.status,
+                    );
                 }
                 self.plugin_toast = if self.plugin_page.is_none() {
                     self.draw_plugin_toast(frame, panes.viewer)

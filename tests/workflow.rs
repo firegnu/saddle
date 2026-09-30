@@ -5013,6 +5013,53 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     );
 }
 
+#[test]
+fn plugin_manager_details_follow_the_visible_entries() {
+    let mut h = plugin_entry_harness("overlay");
+    open_fixture_palette(&mut h);
+    h.click("Manage plugins");
+    h.see("Settings · Plugins");
+    h.see("ID: test.entry");
+    let (_, entry_row) = h.locate("Entry fixture", 0).unwrap();
+    let (_, detail_row) = h.locate("ID: test.entry", 0).unwrap();
+    assert_eq!(detail_row, entry_row + 2, "{}", h.contents());
+}
+
+#[test]
+fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings_cursor() {
+    let mut h = plugin_entry_harness("overlay");
+    h.send(b",");
+    h.see("Sidebar width");
+    h.settle();
+    assert!(!h.screen.screen().hide_cursor());
+    h.send(b"\x1b[15~"); // F5 opens plugin management over the Settings draft.
+    h.see("Settings · Plugins");
+    h.see("Input ▸ Plugin settings");
+    h.settle();
+    assert!(h.screen.screen().hide_cursor(), "{}", h.contents());
+    h.click("Add local…");
+    h.see("Add local plugin");
+    h.settle();
+    assert!(!h.screen.screen().hide_cursor());
+    h.send(b"/tmp/plugin-input-check");
+    h.see("/tmp/plugin-input-check");
+    h.send(b"\x1b");
+    h.see("Settings · Plugins");
+    h.settle();
+    assert!(h.screen.screen().hide_cursor());
+    h.send(b"\x1b");
+    h.see("Sidebar width");
+    h.settle();
+    assert!(!h.screen.screen().hide_cursor());
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    open_fixture_palette(&mut h);
+    h.click("Manage plugins");
+    h.see("Settings · Plugins");
+    h.settle();
+    assert!(h.screen.screen().hide_cursor());
+}
+
 /// Uses the real SDK demo; no real Corral/Drover state and no notification service.
 #[test]
 #[ignore = "build examples/attention-plugin and set SADDLE_TEST_ATTENTION_PLUGIN"]

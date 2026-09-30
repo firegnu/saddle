@@ -223,7 +223,13 @@ impl Page {
         Outcome::Stay
     }
     pub fn draw(&mut self, t: &Theme, frame: &mut Frame, m: &Manager) {
-        let area = crate::theme::centered(frame.area(), 80, 28);
+        // Keep the existing details/footer room; only reserve rows for actual entries.
+        let height = if self.adding.is_some() {
+            28
+        } else {
+            16 + m.registry.entries.len().clamp(1, 12) as u16
+        };
+        let area = crate::theme::centered(frame.area(), 80, height);
         frame.render_widget(Clear, area);
         frame.render_widget(
             t.block(
