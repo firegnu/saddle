@@ -62,6 +62,7 @@ T2 增加用户主动提交表单时调用公开 `corral start` 的入口；第 
 | 退出 | 焦点在 Agents 时按 `q` |
 
 - 焦点在 Viewer 时，除了 `Ctrl-]`，所有按键、粘贴、鼠标事件都原样送进 `corral attach`。
+- T52 输入采集修复：进入外层终端备用屏幕后，用 Crossterm 的 `PushKeyboardEnhancementFlags(DISAMBIGUATE_ESCAPE_CODES)` 请求区分修饰键，使支持 Kitty 键盘协议的终端能上报 Shift+Enter；退出备用屏幕前配对 pop，恢复原键盘模式。沿用现有 Viewer 路由和 Shift+Enter 的 `CSI 13;2u` 编码，不开启完整内层 Kitty 协议。不支持该增强的终端继续使用原有输入；若它把 Shift+Enter 与 Enter 都编码成 CR，Saddle 无法从相同字节恢复 Shift。
 - Queue 是原生面板：↑↓/j k 选任务，Enter 或单击任务行在 Tasks 区域内显示详情（第 26 节），PgUp/PgDn 滚动，r 刷新，g 核对放行，n 下一件，p 暂停/恢复，l 切换循环，a 新增任务，e 编辑选中的待办，u/d 上移/下移待办，x 删除选中的待办（需确认），? / h 帮助，q / Ctrl-] 回 Agents。新增/编辑表单用 Tab 切字段、Ctrl-S 提交、Esc 取消；所有操作在后台执行并显示反馈。
 - Agents 面板现有的按键全部保留：`r` 显示或隐藏回复区、`PgUp/PgDn` 滚动回复区、`s` 按状态分组、`x` 再按 `y` 停掉 agent、滚轮在列表上滚动。
 - 原生按钮与快捷键使用相同操作：Agents 提供接入、回复、排序、停止（仍需确认）；Queue 提供项目、刷新、详情、新增、放行、下一件、暂停/恢复、循环、帮助。表单提供保存/取消，字段可点击聚焦；窄窗按钮换行。

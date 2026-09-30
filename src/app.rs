@@ -16,7 +16,8 @@ use crossterm::{
     cursor::Show,
     event::{
         self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, KeyCode, KeyEvent, KeyEventKind, MouseButton, MouseEventKind,
+        Event, KeyCode, KeyEvent, KeyEventKind, KeyboardEnhancementFlags, MouseButton,
+        MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -116,6 +117,7 @@ impl TerminalGuard {
         execute!(
             io::stdout(),
             EnterAlternateScreen,
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES),
             EnableMouseCapture,
             EnableBracketedPaste
         )?;
@@ -128,6 +130,7 @@ impl Drop for TerminalGuard {
             io::stdout(),
             DisableBracketedPaste,
             DisableMouseCapture,
+            PopKeyboardEnhancementFlags,
             LeaveAlternateScreen,
             Show
         );
