@@ -32,3 +32,11 @@ Dispatch：7785984ca0bc4ff186b50014fc89263b。分支/worktree：drover-native-co
 交付检查：`cargo test --all-targets -- --test-threads=4` **330 passed / 0 failed / 4 ignored**；`cargo clippy --all-targets -- -D warnings`、fmt、diff检查通过。最终日志 `/tmp/saddle-native-delivery-{all,clippy,build}.log`。现有Counter/Attention旧二进制对release宿主的兼容组 **3 passed**（`/tmp/saddle-native-release-compat.log`），未改demo。
 
 主控审查结论：范围符合完整插件替换，无阻断项。进入联合安装，真实队列保持原样；用户当前Saddle窗口不强退，重启后加载新版。
+
+### 安装验证发现的 ctl 读取缺陷
+
+正式插件读取真实项目时复现 ctl 的 `instance_unavailable / Invalid argument (os error 22)`。最小socketpair验证：对端存活时设置读取超时成功，发送响应后关闭时设置SO_RCVTIMEO失败，但缓冲响应仍可正常读取。原ctl在每次读取前重设超时，因响应/关闭时序产生错误；不是任务引擎或插件退出。
+
+新增“对端关闭后读取完整响应”测试先稳定RED，改用poll等待可读并保留原两秒总截止时间后GREEN；不完整响应仍拒绝。相关ctl集成4 passed。日志 `/tmp/saddle-control-closed-peer-{red,green}.log`、`/tmp/saddle-control-regression.log`。未更改任务状态、重试策略或其他控制操作。
+
+修复候选通过真实三项目只读入口复验，调用正式安装的插件包、使用隔离宿主和假Corral，没有打开或操作真实agent。任务状态/数量与备份一致，队列/事件/配置/暂停文件字节均未变；隔离宿主已正常退出。日志 `/tmp/saddle-native-probe-fixed.log`。
