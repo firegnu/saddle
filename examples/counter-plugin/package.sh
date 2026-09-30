@@ -15,4 +15,4 @@ cargo install --path "$project_dir" --bin saddle-counter --locked \
     --no-track --force
 cp "$project_dir/plugin.toml" "$output_dir/plugin.toml"
 output_dir=$(CDPATH= cd -- "$output_dir" && pwd)
-printf '\nPlugin directory: %s\nSettings → Plugins → Add local → Read manifest → Add disabled → Enable → Open panel\n' "$output_dir"
+printf '\nPlugin directory: %s\nSettings → Plugins → Add local → Read manifest → Add disabled → Enable; then close Settings and click Counter in the sidebar.\n' "$output_dir"
