@@ -41,3 +41,33 @@
 
 ## 做完
 在本文件追加完成记录：提交、改动、检查结果、取舍与未完成项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（2026-09-30）
+
+- 实现提交：`5fbe04f`（接入 Drover schema 2 的显式任务流转），分支 `drover-schema2`；完成记录另以文档提交保存。工作树保持在本任务路径，未合并、推送、安装或发布。
+- 读取：list/show 仅接受任务接口 schema 2 和成功响应；消费 task.actions、run_id、submission、previous_runs、return_history、completion_record 和 evidence。通知偏好仍为 schema 1。历史按公开列表倒序显示，有编号的 Pending 支持 show。
+- 操作：复用 Tasks 确认子页，Running 提交 done、Awaiting 接受 go；二者均可退回，退回要求原因及工作已停止确认。保留 Dispatch selected 和 Pause/Resume；删除 Next、Loop、旧 Check & release 和人工覆盖完成入口。所有转换只发送一条绑定项目、任务、运行与画面目标令牌的命令，不连做，不自动重试。
+- 结果与归属：记录成功须 task_id/run_id/state/record.status 匹配。派发送达和记账分开报告，响应矛盾、失败或未知不宣称成功。失败后 Refresh 重新确认，退回重新勾选工作停止；详情按项目/编号/打开代次/运行归属，分组或 run_id 变化丢弃旧读取。
+- 展示与通知：Git/检查只作仓库参考，陈旧检查同时保留原失败结果；旧完成、人工覆盖、真实接受及此前运行的交付/退回字段如实展示，缺失 t2 不补验收。通知直接使用公开 notification_key，保留启动基线、偏好切换、去重和 Attention 行为。
+
+### RED → GREEN 与检查
+
+全部通过前台命令等待完成，仅使用假 CLI、合成数据和现有测试设施；未调用真实任务写操作。
+
+- `cargo test --test schema2 -- --nocapture` 首次 RED：合法 v2 列表缺少旧 mode，被旧解码拒绝；改用 v2 校验后 GREEN。
+- `cargo test --test schema2 v2_show -- --nocapture` RED：旧 show 拒绝 schema_version 2；替换任务与证据模型后 GREEN。
+- `cargo test --test schema2 retired_queue -- --nocapture` RED：旧 g 仍发出无目标 go；退役旧快捷键后 GREEN。
+- `cargo test --test schema2 notification_identity -- --nocapture` RED：没有 Git 端点的 Awaiting 即便有公开 key 也不通知；改为公开 key 后 GREEN。
+- `cargo test --test schema2 inconsistent_dispatch -- --nocapture` RED：status=confirmed 但 confirmed=false 时报告仍写 Delivered；收紧报告后 GREEN。
+- 定向回归：Drover 13、Queue 20、Notify 5、schema2 8、UI 46 项通过；另已运行 Links 7、Dispatch 4 项通过。schema2 检查覆盖四种合法转换、原因/停止确认、令牌原样传递、过期重读、任务/运行结果核对、旧异步读取丢弃、无重试与无串联。
+- 标准检查各执行一次：
+  - `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo test --all-targets`：退出 0，**293 passed / 0 failed / 3 ignored**；包含 workflow 82 项通过。完整日志 `/tmp/saddle-schema2-all-targets.log`。
+  - `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo clippy --all-targets -- -D warnings`：退出 0。日志 `/tmp/saddle-schema2-clippy.log`。
+  - `git diff --check`：通过。
+- 原始失败未隐去：早期定向 UI/workflow 运行中，4 项旧界面预期随契约迁移修正；另 `t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases`、`terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal` 出现失败，未修改这些测试或终端逻辑，随后要求的全量运行均通过。原始日志 `/tmp/saddle-schema2-rendered.log`；未顺带修 T29。
+
+### 取舍与未执行项
+
+- 详细取舍已记入 `docs/DESIGN.md` §61。公开 v2 契约未提供历史 Git 结束端点，Links 不补造历史区间；Running 仅在有效仓库参考与端点齐全时提供 start..HEAD。旧记录保留原始事实，不把历史覆盖解释成检查通过。
+- 没有必须扩展 Drover/Corral 的契约缺口；未改它们的代码、技能、真实配置或状态，未操作 T57/T55/T38，未触碰真实服务/用户 agent，未清理任何 worktree。
+- 3 个原有 opt-in CLI 联调测试保持忽略；本轮未真实联调、录屏或发布。实现停在待主控审查，后续隔离联合主路径验证与统一切换由主控另行安排。
