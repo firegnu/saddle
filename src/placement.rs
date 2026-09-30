@@ -1,5 +1,5 @@
 //! Terminal placement: pick where a terminal goes (a side of a pane, or a new tab), then the
-//! agent to show there. Nothing changes in the layout until an agent is picked.
+//! content to show there. Nothing changes in the layout until content is picked.
 use crate::{
     buttons::{self, Button},
     corral::Agent,
@@ -31,6 +31,7 @@ pub struct Placement {
 pub enum Choice {
     Terminal,
     NewAgent,
+    Plugin,
     Agent(String),
 }
 impl Choice {
@@ -38,6 +39,7 @@ impl Choice {
         match self {
             Self::Terminal => "Terminal",
             Self::NewAgent => "New agent…",
+            Self::Plugin => "Plugin…",
             Self::Agent(name) => name,
         }
     }
@@ -73,14 +75,18 @@ pub fn candidates(
         })
         .collect();
     list.sort();
-    [(Choice::Terminal, false), (Choice::NewAgent, false)]
-        .into_iter()
-        .filter(|_| placement.place != Some(Place::Current))
-        .chain(
-            list.into_iter()
-                .map(|(name, open)| (Choice::Agent(name), open)),
-        )
-        .collect()
+    [
+        (Choice::Terminal, false),
+        (Choice::NewAgent, false),
+        (Choice::Plugin, false),
+    ]
+    .into_iter()
+    .filter(|_| placement.place != Some(Place::Current))
+    .chain(
+        list.into_iter()
+            .map(|(name, open)| (Choice::Agent(name), open)),
+    )
+    .collect()
 }
 
 pub fn draw(

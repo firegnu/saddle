@@ -70,6 +70,7 @@ enum Target {
     Close,
 }
 pub struct Palette {
+    pub(crate) placement: Option<(u64, crate::terminals::Place)>,
     input: Input,
     items: Vec<Item>,
     selected: Option<String>,
@@ -84,6 +85,7 @@ pub struct Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self {
+            placement: None,
             input: Input::new(String::new()),
             items: vec![],
             selected: None,
@@ -98,6 +100,21 @@ impl Default for Palette {
     }
 }
 impl Palette {
+    pub fn for_placement(pane: u64, place: crate::terminals::Place) -> Self {
+        Self {
+            placement: Some((pane, place)),
+            ..Self::default()
+        }
+    }
+    fn action(&self, item: &Item) -> Option<&'static str> {
+        item.action().map(|action| {
+            if self.placement.is_some() && item.opened {
+                "Move"
+            } else {
+                action
+            }
+        })
+    }
     pub fn update(&mut self, items: Vec<Item>) {
         if self.items != items {
             self.pressed = None;
@@ -260,9 +277,13 @@ impl Palette {
         self.hits.clear();
         self.activation_changed = false;
         frame.render_widget(Clear, area);
+        let title = self.placement.map_or_else(
+            || " Plugins ".to_owned(),
+            |(_, place)| format!(" Plugins · {} ", place.label()),
+        );
         frame.render_widget(
             theme
-                .block(" Plugins ", true)
+                .block(title, true)
                 .style(theme.base().bg(theme.overlay)),
             area,
         );
@@ -297,7 +318,11 @@ impl Palette {
         if rows.is_empty() {
             frame.render_widget(
                 Paragraph::new(if self.items.is_empty() {
-                    "No plugins registered."
+                    if self.placement.is_some() {
+                        "No plugins available here."
+                    } else {
+                        "No plugins registered."
+                    }
                 } else {
                     "No matching plugins"
                 })
@@ -349,7 +374,7 @@ impl Palette {
             if action_width > 0 {
                 let action_area = Rect::new(rect.right() - action_width, rect.y, action_width, 1);
                 frame.render_widget(
-                    Paragraph::new(item.action().unwrap_or("—")).style(style.fg(
+                    Paragraph::new(self.action(item).unwrap_or("—")).style(style.fg(
                         if item.action().is_some() {
                             theme.focus
                         } else {
@@ -409,7 +434,7 @@ impl Palette {
                 2 => "Close",
                 _ => self
                     .selected()
-                    .and_then(Item::action)
+                    .and_then(|item| self.action(item))
                     .unwrap_or("Unavailable"),
             };
             frame.render_widget(

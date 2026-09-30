@@ -708,6 +708,14 @@ impl App {
         self.placement = None;
         let content = match name {
             placement::Choice::Terminal => crate::control::Content::Shell { cwd: None },
+            placement::Choice::Plugin => {
+                self.plugin_palette = Some(crate::plugins::palette::Palette::for_placement(
+                    anchor, place,
+                ));
+                self.update_plugin_palette();
+                self.native_mouse = false;
+                return;
+            }
             placement::Choice::NewAgent => {
                 let project = self
                     .viewer

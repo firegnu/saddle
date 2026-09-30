@@ -362,7 +362,18 @@ impl App {
         if let Some(o) = &self.plugin_overlay {
             opened.insert(o.id.clone());
         }
-        self.plugins.palette_items(&opened)
+        let source_plugin = self
+            .plugin_palette
+            .as_ref()
+            .and_then(|p| p.placement)
+            .filter(|(_, place)| *place != Place::Tab)
+            .and_then(|(pane, _)| self.viewer.get(pane))
+            .and_then(|p| p.plugin_id());
+        self.plugins
+            .palette_items(&opened)
+            .into_iter()
+            .filter(|item| Some(item.id.as_str()) != source_plugin)
+            .collect()
     }
     pub(super) fn update_plugin_palette(&mut self) {
         if self.plugin_palette.is_none() {
@@ -432,7 +443,25 @@ impl App {
                 if !self.plugin_palette_items().contains(&item) || item.action().is_none() {
                     return;
                 }
-                self.plugin_palette = None;
+                let placement = self.plugin_palette.take().and_then(|p| p.placement);
+                if let Some((anchor, place)) = placement {
+                    let cwd = self
+                        .viewer
+                        .get(anchor)
+                        .and_then(|p| p.source_cwd().map(str::to_owned));
+                    match self.viewer.place_plugin(anchor, place, &item.id) {
+                        Ok(_) => {
+                            if !item.opened {
+                                self.plugins.view_context(&item.id, cwd);
+                            }
+                            self.focus = Focus::Viewer;
+                            self.pointer.cancel();
+                            self.native_mouse = false;
+                        }
+                        Err(error) => self.panel.message = error.to_string(),
+                    }
+                    return;
+                }
                 if self
                     .plugin_overlay
                     .as_ref()

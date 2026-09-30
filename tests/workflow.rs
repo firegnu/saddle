@@ -4577,6 +4577,101 @@ fn open_fixture_palette(h: &mut Harness) {
 fn plugin_entry_harness(placement: &str) -> Harness {
     plugin_palette_harness(placement, false)
 }
+
+#[test]
+fn plugin_split_picker_cancels_opens_and_moves_one_live_view() {
+    let mut h = plugin_entry_harness("overlay");
+    h.send(b"\r");
+    h.see("p/b READY");
+    let before = h.ctl(&["inspect"])["tabs"].clone();
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "Plugin…");
+    h.see("Search plugins");
+    h.send(b"\x1b");
+    h.until(|h| h.ctl(&["inspect"])["focus"] != "plugin_palette");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
+
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "Plugin…");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("Clicks: 0");
+    h.see("p/b READY");
+    let split = h.ctl(&["inspect"]);
+    assert!(split["overlay"].is_null());
+    assert_eq!(split["tabs"].as_array().unwrap().len(), 1);
+    assert_eq!(split["tabs"][0]["panes"].as_array().unwrap().len(), 2);
+    let plugin_pane = split["active_pane"].clone();
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Plugin…");
+    h.see("Move");
+    h.click("Move");
+    h.see("Clicks: 1");
+    let moved = h.ctl(&["inspect"]);
+    assert_eq!(moved["active_pane"], plugin_pane);
+    assert_eq!(moved["tabs"].as_array().unwrap().len(), 2);
+
+    h.click("Split ▾");
+    h.click("Left ←");
+    h.click_in("Open content on the left", "Plugin…");
+    h.see("No plugins available here");
+    h.send(b"\r");
+    h.see("Search plugins");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], moved["tabs"]);
+    h.send(b"\x1b");
+    h.until(|h| h.ctl(&["inspect"])["focus"] != "plugin_palette");
+    h.see("Clicks: 1");
+
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    h.send(b"\r"); // Return to the existing agent pane.
+    h.see("p/b READY");
+    h.click("Split ▾");
+    h.click("Below ↓");
+    h.click_in("Open content below", "Plugin…");
+    h.see("Move");
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    assert_eq!(h.ctl(&["inspect"])["active_pane"], plugin_pane);
+    assert_eq!(h.ctl(&["inspect"])["tabs"].as_array().unwrap().len(), 1);
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+    h.click("Close pane");
+    h.see("p/b READY");
+    h.send(b"Z");
+    h.event("input p/b 5a");
+    open_fixture_palette(&mut h);
+    h.see("Background");
+    h.send(b"\r");
+    h.see("Clicks: 1"); // Default open returns to an overlay without restarting.
+    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");
+}
+
+#[test]
+fn plugin_split_picker_does_not_start_a_disabled_plugin() {
+    let mut h = plugin_entry_harness("overlay");
+    h.send(b",\x1b[15~");
+    h.see("Running");
+    h.click("Disable");
+    h.see("Disabled");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Settings · Plugins"));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    let before = h.ctl(&["inspect"])["tabs"].clone();
+    h.click("Split ▾");
+    h.click("Right →");
+    h.click_in("Open content on the right", "Plugin…");
+    h.see("Disabled");
+    h.send(b"\r");
+    h.see("Search plugins");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+}
+
 fn plugin_palette_harness(placement: &str, second: bool) -> Harness {
     let mut h = Harness::start_prepared(
         include_str!("fixtures/drover.py"),
@@ -5042,6 +5137,33 @@ fn drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli() {
         }),
         "unexpected business write: {calls}"
     );
+}
+
+#[test]
+fn drover_plugin_opens_in_a_split_and_closes_only_its_view() {
+    let mut h = Harness::start_tasks();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("READY");
+    let before = h.ctl(&["inspect"])["tabs"].clone();
+    let queue = h.native_queue();
+    h.click("Split ▾");
+    h.click("Below ↓");
+    h.click_in("Open content below", "Plugin…");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("Native queue task");
+    let opened = h.ctl(&["inspect"]);
+    assert!(opened["overlay"].is_null());
+    assert_eq!(opened["tabs"][0]["panes"].as_array().unwrap().len(), 2);
+    h.send(b"\x1b");
+    h.until(|h| h.ctl(&["inspect"])["tabs"] == before);
+    assert_eq!(h.native_queue(), queue);
+    h.click("Plugins");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("Native queue task");
+    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");
 }
 
 #[test]

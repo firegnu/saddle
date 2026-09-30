@@ -96,7 +96,9 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 **Advanced / F4** 默认收起，包含完整命令、可选多行首条消息、**Open in** 打开位置（默认当前窗格，可选新标签页或四向分屏；内容选择入口打开的表单绑定该位置）和完整调用预览。明确点击 Codex／Claude 会把命令重置为 `codex --yolo`／`claude`；内置 Codex 默认使用 YOLO 模式。手填命令显示 **Custom command**，切焦点或收起高级设置不会丢弃，并按输入原样使用，不额外追加参数。命令支持引号分组，直接拆为 argv 调用公开 `corral start`，不展开 shell 变量、管道或重定向。PgUp／PgDn 或 Preview 聚焦后的滚轮查看完整预览；失败保留草稿。**Cancel / Esc**／Ctrl-] 返回 Agents，n 可重新打开草稿或查看正在进行的启动。
 
-**Enter／点击 agent 行** 接入活动窗格；同一 agent 已经打开时跳到现有位置，不重复接入。布局从右侧开始，先选位置再选内容：活动窗格底边的 **Split ▾** 打开紧凑菜单 **Left ←**／**Right →**／**Above ↑**／**Below ↓**（方向键同样可用），方向相对于该窗格；标签条的 **+ Tab** 表示新标签页。随后弹出以位置为标题的列表（例如 *Open content on the right*），列出 **Terminal**、**New agent…** 和已有 agent，分屏时不列出该窗格自己的 agent。点击 agent（或 ↑↓ 加 Enter，列表长时可用滚轮）之后才创建窗格或 tab。已在别处打开的 agent 标出 **Move here**：选中后移动那个窗格，会话、输出和尚未完成的接入都随之移动，不重新接入，也不停止任何东西；它离开的分屏会合并，被搬空的 tab 会消失。任一步点 **Cancel Esc** 或按 Esc 回到 Viewer，Ctrl-] 回 Agents，布局保持原样；没有已有 agent 时仍可选 Terminal 和 New agent。New agent 打开绑定该位置的原有创建表单，取消不留空位。左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
+**Enter／点击 agent 行** 接入活动窗格；同一 agent 已经打开时跳到现有位置，不重复接入。布局从右侧开始，先选位置再选内容：活动窗格底边的 **Split ▾** 打开紧凑菜单 **Left ←**／**Right →**／**Above ↑**／**Below ↓**（方向键同样可用），方向相对于该窗格；标签条的 **+ Tab** 表示新标签页。随后弹出以位置为标题的列表（例如 *Open content on the right*），列出 **Terminal**、**New agent…**、**Plugin…** 和已有 agent，分屏时不列出该窗格自己的 agent。点击 agent（或 ↑↓ 加 Enter，列表长时可用滚轮）之后才创建窗格或 tab。已在别处打开的 agent 标出 **Move here**：选中后移动那个窗格，会话、输出和尚未完成的接入都随之移动，不重新接入，也不停止任何东西；它离开的分屏会合并，被搬空的 tab 会消失。任一步点 **Cancel Esc** 或按 Esc 回到 Viewer，Ctrl-] 回 Agents，布局保持原样；没有已有 agent 时仍可选 Terminal 和 New agent。New agent 打开绑定该位置的原有创建表单，取消不留空位。左右箭头访问放不下的标签；点击 tab 切换布局，点击终端内容或标题切换输入目标。终端内容区保留原有输入透传，Ctrl-] 回 Agents。
+
+**Plugin…** 打开目标位置的插件列表。选择运行中的插件后，它会在该窗格显示，包括默认居中弹出的插件；已有视图标为 **Move**，移动原窗格并保留进程和状态。不能把插件分到自己旁边。取消不改变布局，关闭插件窗格后仍在后台运行。
 
 每个 tab 保存自己的分屏和活动窗格，切换 tab 保留接入。**Close pane** 关闭活动窗格并合并分屏；**× / Close tab** 断开该 tab 的所有接入。最后一个 tab 关闭后留一个空 tab。关闭 agent 显示只断开自有 attach，agent 继续运行；含运行 shell 的关闭或退出先统一确认，取消不影响任何会话；停止仍走原来的独立确认操作。异步启动／接入始终归属于提交时预留的窗格，目标关闭或被替换后不会接到别处，也不会停止新建 agent。启动失败可能留下预留的空窗格。
 
@@ -208,7 +210,7 @@ agent_selected = "#2b2621"
 | Agents | / / Search | 按项目名或 agent 名称过滤；Enter 或点击进入对应终端（已打开时跳到现有位置），Esc 取消 |
 | Agents | a / Attention · N | 打开 Attention；↑↓ 选择，Enter 或点击打开对应 agent 或任务，Esc 取消 |
 | Agents | , / Settings | 打开 Settings；Tab/↑↓ 选择设置项，F1–F5 或点击切换页签，Ctrl-U 清空，Ctrl-D 恢复默认值，Ctrl-S 保存，Esc 取消 |
-| Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent 或要打开／移动的已有 agent |
+| Viewer 边框 | Split ▾ 后选方向 / + Tab | 先选分屏方向或新标签页，再选 Terminal、New agent、Plugin 或要打开／移动的已有 agent |
 | Viewer 边框 | Zoom / Restore | 多窗格时让当前窗格临时占满右侧终端区域（保留 Agents 和 tab 条）；Restore 回到原分屏和比例，焦点仍在该窗格。其他窗格继续运行；切到其他窗格、关闭该窗格或新建分屏都会结束放大 |
 | Agents | 鼠标滚轮 / 触控板 | 滚动列表，不改变选择 |
 | Agents | Tab / Shift-Tab | 聚焦 Viewer |

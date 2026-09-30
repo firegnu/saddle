@@ -380,6 +380,33 @@ impl Terminals {
         p.plugin = Some(crate::plugins::Panel::unavailable(id));
         pane
     }
+    /// Places one plugin view without restarting it or replacing the anchor's content.
+    pub fn place_plugin(&mut self, anchor: u64, place: Place, id: &str) -> Result<u64> {
+        anyhow::ensure!(self.get(anchor).is_some(), "source pane no longer exists");
+        anyhow::ensure!(place != Place::Current, "plugins need a new pane");
+        let existing = self
+            .tabs
+            .iter()
+            .flat_map(|t| &t.panes)
+            .find(|p| p.plugin_id() == Some(id))
+            .map(|p| p.id);
+        anyhow::ensure!(
+            existing != Some(anchor) || place == Place::Tab,
+            "cannot split a plugin beside itself"
+        );
+        let pane = if let Some(pane) = existing {
+            self.take(pane).unwrap()
+        } else {
+            let mut pane = self.pane();
+            pane.viewer.remembered = crate::layout_state::Content::Plugin { id: id.into() };
+            pane.plugin = Some(crate::plugins::Panel::unavailable(id));
+            pane
+        };
+        let pane_id = pane.id;
+        self.layout_version = 2;
+        self.insert(anchor, place, pane);
+        Ok(pane_id)
+    }
     pub fn new_tab(&mut self) -> u64 {
         let pane = self.pane();
         let id = pane.id;
