@@ -136,10 +136,19 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 收提醒先status，working重挂；idle后dlog reply取完整DONE。主控核增量/有效RED-GREEN/目标检查；通过后确认原审查者idle与detached干净，更新review-telemetry-plugin-resources到新SHA，再用审查dispatch9c2ca1be0eda43959bd08a34c514232a交原审查者仅复核M1–M3及直接回归。每轮挂提醒，最多两轮独立复核未收敛报告用户。
 - 03B未通过、功能未合并；03A/03B实施及审查会话worktree全部保留，03C串行集成后一起合并清理。UI已批准，ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换/04或05。旧设计review和t38/t55保留，设计Claude已关闭勿恢复。
 
-## 16. 当前：03B M1–M3第一次独立复审
+## 16. 03B M1–M3第一次独立复审（最新见第17节）
 
 - 原实现者63516c9bce5d已idle、dlog取完整DONE；新候选a20fb663fc10df5b3b995c334cf1972e2f7469ba，原f63fd8d。增量仅资源实现、直接测试、使用文档及完成记录，实施worktree干净，diff --check通过。主控已核文件名校验、HOME下逐级拒绝链接及目录句柄锚定操作、锁内pending持久恢复；无Corral变更或依赖反转。
 - 本轮有效RED为原候选加保存的新测试补丁，10通过/5失败；GREEN资源单元15通过、plugin_resources 6通过，原始日志及补丁已核。实现后另一次夹具清理遗漏已纠正，未放宽断言，不算产品RED。主控隔离环境独立运行5项精确新目标全部通过，日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03b-r1-controller-r59qx2h9；没有重跑全套/clippy或写功能。
 - 已记录dlog增量核对；原审查者saddle/dev-telemetry-resources-review-1 instance235f9b4048e0在idle/attached0且detached干净时，review-telemetry-plugin-resources已更新至a20fb66。通过审查dispatch9c2ca1be0eda43959bd08a34c514232a发起第一次限定复审，send confirmed=true/merged_with_draft=false；新after提醒pending=true、instance相符。
 - 主仓库docs/任务/遥测03B-独立交叉审查.md已写主控证据和限定要求。原审查者只追加该文档，检查M1–M3及返工直接回归，允许资源单元和plugin_resources各一次，不重复其他套件/全套/clippy。收提醒先status，working重挂；idle后经dlog reply取完整DONE，逐项判断关闭，不能把本轮主控通过当独立审查通过。最多两轮独立复核未收敛报告用户。
 - 03B尚未通过，功能未合并；原标准468通过/5忽略、clippy通过及历史证据限制保持。03A/03B实施审查worktree和agent全部保留，整阶段集成后共同收尾；03C未派发。UI已批准，ureq在03C前核官方资料。真实安装/数据队列/消费者/04或05不动，设计review和t38/t55保留。
+
+
+## 17. 当前：03B M2-R1第二次限定返工
+
+- 原审查者235f9b4048e0已idle，dlog取完整本轮回复末行DONE。独立结论改完再进入集成：M1/M3关闭，M2剩1项必须改、无新增建议。主控核源码、原始日志及探针源码与候选原文一致后认可；完整裁定和限定要求见主仓库docs/任务/遥测03B-独立交叉审查.md末尾。
+- M2-R1：清理只固定父句柄，未绑定已核实子目录身份；原目标被移走、同名新空目录替换后，rmdir会删掉外来空目录。证据只支持空目录本身损失，不声称非空内容被删。原探针 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03b-r1-review-gxoec42i/cleanup-probe.rs及cleanup-probe.log已核，主控未重跑；独立资源15项与集成6项通过，原全量及历史限制不混记。
+- 原实现者saddle/dev-telemetry-resources-1 instance63516c9bce5d、dispatchffcf738641ec416f803b7af8745df86f，从a20fb66在原telemetry-plugin-resources分支/worktree继续。已记录dlog review并send返工confirmed=true/merged_with_draft=false，新after提醒pending=true、instance相符。仅修目录清理身份及安装失败/回滚/新建skills同类路径，不重开M1/M3，不全套/clippy、不扩通用框架，无法证明身份时保守保留并如实说明。
+- 收提醒先status，working重挂；idle后dlog reply取完整DONE。主控核增量、有效RED/GREEN及目标直接回归，确认原审查者idle且detached干净后从a20fb66更新新SHA，交审查dispatch9c2ca1be0eda43959bd08a34c514232a第二次限定复核M2-R1及直接回归；第二次仍不收敛则报告用户，不无限往返。主控不写功能。
+- 03B尚未通过、功能未合并；03A/03B全部实施审查agent/worktree保留，03C未派发，整阶段集成后共同收尾。需改Corral或依赖反转先停告知。UI已批准，ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换/04或05。设计review/t38/t55保留，设计Claude已关闭。
