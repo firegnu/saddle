@@ -21,3 +21,9 @@
 - 对比基线 86fc1ef，原12段帧数据和原调色板逐字节不变；新增兴奋39帧、海盗56帧，总14段517帧。运行时只增加两个普通字符映射。
 - 已逐张观察欢呼4个、海盗8个关键姿态；初版斜线容易像划痕，最终采用与眼罩相连的横向细带。新动作维持16列×3行，未改布局和状态输入。
 - 预览目录 `~/Downloads/clawd-reference-20261001-4pdhpd0_/`：`saddle-excited-pirate.mp4`、两份 keyframes PNG、`saddle-curated-14.mp4`。`saddle-curated-patrol.mp4` 为公开 Mascot.draw 导出的120秒巡游，确认包含两种新动作。预览是字符栅格化结果，不是用户窗口截图。
+
+## 安装
+
+实现提交 `e716c13` 已快进合并 main。发布构建成功，发布版 Mascot 9项检查全部通过，日志 `/tmp/saddle-clawd-excited-pirate-release-{build,test}.log`。
+
+日常入口 `~/.local/bin/saddle` 指向 `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`，SHA256 `b3d9a307f1a2a8e8ee63410202d09375f2495f0fc55d1750c5d067852521cf74`；核验二进制内含本次完整帧素材。构建前备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-excited-pirate-20261001-132432`，旧 SHA256 `1fdab61fcdb50cd5c34ccb29fe4fa7cfff6c108d410adac2a988f2b4ce4e7530`。未重启用户窗口，下次启动使用新版。
