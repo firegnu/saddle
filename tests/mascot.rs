@@ -169,7 +169,7 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
     use ratatui::style::Modifier;
     let mut mascot = Mascot::default();
     let mut terminal = Terminal::new(TestBackend::new(50, 10)).unwrap();
-    let protected = Rect::new(7, 3, 2, 1);
+    let protected = Rect::new(7, 1, 2, 1);
     let mut painted = Vec::new();
     let mut render = |m: &mut Mascot, now| {
         terminal
@@ -185,7 +185,7 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
                             );
                     }
                 }
-                painted = m.draw(f, Rect::new(0, 0, 50, 7), now, &[protected]);
+                painted = m.draw(f, Rect::new(0, 0, 50, 5), now, &[protected]);
             })
             .unwrap();
         terminal.backend().buffer().clone()
@@ -199,8 +199,8 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
     );
     assert!(painted.iter().any(|r| r.y < 3));
     assert!(
-        painted.iter().any(|r| r.y > 3),
-        "body can cross the existing border"
+        painted.iter().all(|r| r.y < 3),
+        "the smaller standing body fits above the existing border"
     );
     for r in painted {
         assert!(!r.intersects(protected));
@@ -209,8 +209,8 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
         assert!(!cell.modifier.contains(Modifier::UNDERLINED));
     }
     for x in protected.x..protected.right() {
-        assert_eq!(initial[(x, 3)].symbol(), "─");
-        assert!(initial[(x, 3)].modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(initial[(x, 1)].symbol(), "─");
+        assert!(initial[(x, 1)].modifier.contains(Modifier::UNDERLINED));
     }
     let mut indexed = Mascot::new(false);
     terminal

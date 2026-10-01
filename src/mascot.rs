@@ -2,8 +2,8 @@
 use ratatui::{Frame, layout::Rect, style::Color};
 use std::sync::LazyLock;
 
-pub const HEIGHT: u16 = 7;
-const WIDTH: u16 = 18;
+pub const HEIGHT: u16 = 5;
+const WIDTH: u16 = 16;
 pub const MIN_WIDTH: u16 = WIDTH + 2;
 const CELLS: usize = WIDTH as usize * HEIGHT as usize;
 const FPS: f64 = 12.0;
@@ -31,7 +31,7 @@ struct Sprites {
 static SPRITES: LazyLock<Sprites> = LazyLock::new(|| {
     // Trusted, checked-in asset. No external paths, parsers, or runtime downloads.
     let data = include_bytes!("../assets/clawd/frames.bin");
-    assert_eq!(&data[..7], b"CLWD1\x12\x07");
+    assert_eq!(&data[..7], b"CLWD1\x10\x05");
     let palette = data[9..9 + usize::from(data[7]) * 3]
         .chunks_exact(3)
         .map(|p| Color::Rgb(p[0], p[1], p[2]))

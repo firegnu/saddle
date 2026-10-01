@@ -5444,7 +5444,7 @@ fn plugin_real_diff_continuous_live_overlay_split_and_tab() {
 }
 
 #[test]
-fn clawd_crosses_the_border_without_resizing_or_sending_mouse_input() {
+fn clawd_patrol_keeps_layout_and_does_not_send_mouse_input() {
     let mut h = Harness::start_prepared(
         include_str!("fixtures/drover.py"),
         false,
@@ -5466,7 +5466,7 @@ fn clawd_crosses_the_border_without_resizing_or_sending_mouse_input() {
     h.send(b"\r");
     h.see("p/a READY");
     let spot = |h: &Harness| {
-        (4..7)
+        (0..5)
             .flat_map(|y| (75..140).map(move |x| (x, y)))
             .find(|&(x, y)| {
                 let c = h.screen.screen().cell(y, x).unwrap();
@@ -5479,7 +5479,7 @@ fn clawd_crosses_the_border_without_resizing_or_sending_mouse_input() {
     h.until(|h| spot(h).is_some_and(|(x, _)| x != start));
     assert!(h.input_hex("p/a").is_empty());
     // The fake agent enables SGR mouse input. A click on painted body pixels must
-    // be consumed even below the pane border, then the real key acknowledges it.
+    // be consumed, then the real key acknowledges it.
     let (x, y) = spot(&h).unwrap();
     h.send(format!("\x1b[<0;{};{}M\x1b[<0;{};{}mZ", x + 1, y + 1, x + 1, y + 1).as_bytes());
     h.event("input p/a 5a");

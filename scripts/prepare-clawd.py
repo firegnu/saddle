@@ -15,7 +15,7 @@ from rlottie_python import LottieAnimation
 
 SOURCE = Path(sys.argv[1])
 OUTPUT = Path(__file__).resolve().parents[1] / 'assets/clawd'
-WIDTH, HEIGHT = 36, 14
+WIDTH, HEIGHT = 32, 10
 TRANSPARENT = (0, 0, 0, 0)
 CLAY, EYES = (217, 119, 87), (20, 20, 19)
 
@@ -27,7 +27,7 @@ def sample(image):
             tile = image.crop((round(x * image.width / WIDTH), round(y * image.height / HEIGHT),
                                round((x + 1) * image.width / WIDTH), round((y + 1) * image.height / HEIGHT)))
             opaque = [p[:3] for p in tile.get_flattened_data() if p[3] > 200]
-            if len(opaque) < tile.width * tile.height * .22:
+            if len(opaque) < tile.width * tile.height * .5:
                 pixels.append(None)
                 continue
             dark = [p for p in opaque if max(p) < 65]
