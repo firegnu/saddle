@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前 main。核心遥测阶段01、02已审查、合并、推送并清理；尚未发布到日常安装版。阶段03接口设计已收敛、合并并清理设计会话，03A通用框架已派Codex实现。原03宿主必备JEV安排撤回。没有真实队列操作。最新状态见第8节；第7节为设计过程历史。
+更新：2026-10-02。当前 main。核心遥测阶段01、02已审查合并；尚未发布到日常安装版。03接口设计已收尾，03A候选d0db9ff完成主控核对及标准检查，已派独立Codex审查，功能未合并。原03宿主必备JEV安排撤回。没有真实队列操作。最新状态见第9节；前面保留阶段历史。
 
 ## 1. 会话摘要
 
@@ -69,3 +69,12 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 实现者saddle/dev-telemetry-core-plugin-1，instance e66304753ca5，role=implementer；worktree ../saddle-worktrees/telemetry-core-plugin，分支telemetry-core-plugin，基线af06ba5。
 - 收到完成提醒先status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4 -- corral reply saddle/dev-telemetry-core-plugin-1 取完整DONE。核diff/完成记录/有效RED-GREEN，主控一次标准test/clippy，再新开重档Codex独立审查；不能把开发回复当通过。返工交原实现者，主控不写功能代码，每轮重挂。
 - 03A审查通过保留实现分支/worktree及agent；03B资源与界面、03C业务串行接入，整阶段集成审查后共同合并。管理页线框在界面实施前需给用户看，ureq版本/底层行为在03C任务前核官方资料。04/05不启动，不改Corral或真实安装/队列；需改Corral或依赖反转先停告知用户。
+
+## 9. 当前：03A独立审查
+
+- 候选d0db9fffcaa39f186ca5dcf7ec258ee2bfb9460e，基线af06ba5，原实现分支telemetry-core-plugin。主控已status核idle、经dlog取完整DONE；diff/check、范围及完成记录已核，当前未裁定通过。
+- 主控隔离环境一次标准cargo test --all-targets：451 passed/0 failed/5 ignored，clippy通过；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03a-controller-hq43isxy。实现者原全套在两个既有plugins测试报registry busy，单项通过，主控未复现、根因未明；原日志/tmp/saddle-03a-check-env。RED表已读，原始RED完整日志未保存在该目录，不能说主控独立核验了原RED。
+- 独立审查者saddle/dev-telemetry-core-plugin-review-1，instance bdd2e2cbfba7，Codex gpt-6-astra/xhigh、role=reviewer；detached ../saddle-worktrees/review-telemetry-core-plugin固定d0db9ff。dispatch de98aef6ec7b42349af49f1696e78e72（父5f33b7c1fc3a4c1c967463a0b306b4e4）。
+- 审查任务及唯一允许追加意见的文件：主仓库docs/任务/遥测03A-独立交叉审查.md。只读代码/测试，不提交不切分支；只跑两个相关目标，不重复标准全套/clippy。重点依赖方向/registry、拒绝与业务码、起止回执背压/panic、Capture固定generation与缺begin恢复。
+- 完成后先status；working重挂。再 ../dispatch-log/dlog reply --dispatch de98aef6ec7b42349af49f1696e78e72 -- corral reply saddle/dev-telemetry-core-plugin-review-1 取完整DONE并逐项裁定。必须改交原实现者，主控不写功能；返工只跑目标及直接回归，更新干净detached后交原审查者限定复核，每轮挂提醒。
+- 03A通过仍保留实施/审查worktree与agent供03B/C串行集成，整阶段通过才合并收尾；不提前派03B、不动04/05，不release/安装/真实数据/消费者切换。需改Corral或依赖反转先停告知；旧设计review和t38/t55保留。设计Claude已关闭勿重建。
