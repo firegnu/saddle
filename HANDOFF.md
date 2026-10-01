@@ -1,17 +1,23 @@
 # 会话交接
 
-更新：2026-10-01。当前分支 `main`。本轮完成 Clawd 手机、冥想、电脑、玫瑰、爱心、呼啦圈六段新动作并安装；统一 Saddle 产品迁移仍未开始，等用户触发。主控亲自做，不自行委派。
+更新：2026-10-01。当前分支 `main`。本轮补齐 Clawd 十一段紧凑动作至31段并安装；统一 Saddle 产品迁移仍未开始，等用户触发。主控亲自做，不自行委派。
 
 ## 1. 会话摘要
 
-用户认可静止效果，但反馈动作粗糙，要求精选十来个容易表达的动作精修，尽量不越过agent上方边框。用户确认12种动作；已改成固定静止轮廓的小幅关键帧，全部放在3行内，合并推送并安装。用户之后确认其他动作都没问题，仅反馈墨镜像额头缺口；已修正镜片，其他11段逐字节不变。随后用户要求新增兴奋和经典眼罩海盗，动作自行设计；已加入自主巡游，之后又接受推荐的六段紧凑动作，现总20段，保留此前14段帧数据。没有重启用户窗口，等待其实际反馈。
+用户认可静止效果，但反馈动作粗糙，要求精选十来个容易表达的动作精修，尽量不越过agent上方边框。用户确认12种动作；已改成固定静止轮廓的小幅关键帧，全部放在3行内，合并推送并安装。用户之后确认其他动作都没问题，仅反馈墨镜像额头缺口；已修正镜片，其他11段逐字节不变。随后用户要求新增兴奋和经典眼罩海盗，动作自行设计；已加入自主巡游，之后又接受推荐的六段紧凑动作，本轮再补齐9段简化动作和2段跳舞，现总31段，保留此前20段帧数据。没有重启用户窗口，等待其实际反馈。
 
 ## 2. 完成的工作
 
-- 最新六动作实现 `f825ad9`，安装记录 `3e7e07a`，收尾 `87f9c46`。新增phone、meditating、laptop、rose、heart、hulahoop，总20段813帧，仍为16列×3行；此前14段帧数据/调色板逐字节不变。仅增加离线关键帧、调色板及普通字符映射，不增加运行时机制。
+- 最新十一段实现 `f54e357`，安装记录 `9e31182`，收尾 `ee35e03`。新增desktop、arcade、bubble、spark、lightbulb、watering、berrypicking、blooming、fishing、dancing、dancinghappy，总31段1320帧，保持16列×3行与原20段素材/调色板逐字节不变。用户强调一次交付前完成打磨。
+- 观察三张全关键姿态图；公开Mascot.draw模拟20分钟14400帧，匹配确认新11段共38种非静止独特姿态全部参与巡游。生成器重复生成一致；临时导出example已移除。调度仍为walking/边缘转身与随机动作，最近5段排除，不关联agent状态。
+- 标准全量最终 **377 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过，发布版Mascot **9 passed**。首次全量在既有插件面板流程等待Clicks界面处失败，单独复核及第二次全量通过，未改插件代码/测试。日志 `/tmp/saddle-clawd-eleven-{all-final,clippy,workflow-retry,release-build,release-test,coverage}.log`。
+- 最新预览：`saddle-eleven-actions.mp4`/`.gif`、`saddle-eleven-keyframes-{1,2,3}.png`；全31段总览 `saddle-curated-31.mp4`/`-poses.png`；实际巡游节选 `saddle-eleven-patrol-excerpts.mp4` 附原模拟秒数，有跳切。均在原Downloads目录，已打开；旧版预览保留，注意查看最新文件。
+- 记录 `docs/任务/Clawd剩余十一个紧凑动作.md`，Dispatch `8453af9bbe4c46a99cd7396f8472b71d`。worktree/分支 `clawd-eleven-actions` 已清理，没有创建agent。8段未加入：jumping、jumpinghappy、juggling、confetti、confettihappy、rainbow、kite、breakdancing。31段包括30段网页动作和1段原创海盗。
+
+- 此前六动作实现 `f825ad9`，安装记录 `3e7e07a`，收尾 `87f9c46`。新增phone、meditating、laptop、rose、heart、hulahoop，总20段813帧，仍为16列×3行；此前14段帧数据/调色板逐字节不变。仅增加离线关键帧、调色板及普通字符映射，不增加运行时机制。
 - 全关键姿态逐张观察；实际公开Mascot.draw五分钟3600帧导出，匹配确认六段全部20种非静止独特姿态参与巡游。临时example已移除。生成器重复生成一致。
 - 标准全量最终 **377 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过，发布版Mascot **9 passed**。第一次全量在既有插件背压测试的3秒启动等待处超时，单独重跑及第二次全量通过，未改插件代码/测试。日志 `/tmp/saddle-clawd-six-{all-final,clippy,plugin-retry,release-build,release-test}.log`。
-- 最新预览在原Downloads目录：`saddle-six-actions.mp4`/`.gif`、`saddle-six-actions-keyframes.png`；完整总览 `saddle-curated-20.mp4`/`.gif`/`-poses.png`；实际公开绘制五分钟巡游 `saddle-twenty-patrol.mp4`。旧14段及旧巡游预览保留，注意查看新文件。目录已用open打开。
+- 此前六动作预览在原Downloads目录：`saddle-six-actions.mp4`/`.gif`、`saddle-six-actions-keyframes.png`；完整总览 `saddle-curated-20.mp4`/`.gif`/`-poses.png`；实际公开绘制五分钟巡游 `saddle-twenty-patrol.mp4`。旧14段及旧巡游预览保留，注意查看新文件。目录已用open打开。
 - 记录 `docs/任务/Clawd六个紧凑动作.md`，Dispatch `690266cb13e64e2ab5e772b8f44501fb`。worktree/分支 `clawd-six-actions` 已清理，没有创建agent。用户强调一次成型；已完成交付前观察和验证，尚无用户对新增六段的实际窗口反馈。
 
 - 此前兴奋/海盗实现 `e716c13`，安装记录 `d309c06`，收尾 `2ed353b`。新增兴奋39帧（双手欢呼、笑眼、脚步节拍、闪光）和海盗56帧（红头巾、单眼眼罩、相连横向细带、扶眼罩、抬手致意、眨眼），总14段517帧，全部仍在16列×3行内。原12段帧数据和原调色板逐字节不变。
@@ -46,13 +52,13 @@
 
 ## 5. 当前安装与重要文件
 
-`~/.local/bin/saddle` → `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`。当前SHA256 `cd17f0e33449e7963270dfa33cac46ba5ca7826b589b065a4bb235d44535df57`，已验证内含20段完整素材。构建前旧版备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-six-actions-20261001-134141`，旧hash `b3d9a307f1a2a8e8ee63410202d09375f2495f0fc55d1750c5d067852521cf74`。
+`~/.local/bin/saddle` → `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`。当前SHA256 `7ae6d76083bd2aa41775d2f61162113d8a91a8dc0ae9e63291566d6c323d3e9e`，已验证内含31段完整素材。构建前旧版备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-eleven-actions-20261001-140905`，旧hash `cd17f0e33449e7963270dfa33cac46ba5ca7826b589b065a4bb235d44535df57`。
 
 此前安装记录（本轮未重新核查服务/插件状态）：Drover 包在 `plugins/drover/dist/drover-plugin`，清单保留 `--dispatch-log /Users/firegnu/Developer/personal_projs/dispatch-log/dlog`，重打包会覆盖自定义 args。旧 `dev.drover.loop` 及 drover/drover-board 链接已撤下，旧仓库与数据保留；替换备份 `~/Library/Application Support/saddle-release-backups/drover-native-20260930-213348/`。
 
 优先阅读：
 
-1. `docs/任务/Clawd六个紧凑动作.md`、`docs/任务/Clawd兴奋与海盗.md`、`docs/任务/Clawd墨镜额头修正.md`、`docs/任务/Clawd精选动作.md`、`docs/任务/Clawd尺寸收缩.md`、`docs/DESIGN.md`、`src/mascot.rs`、`assets/clawd/README.md`
+1. `docs/任务/Clawd剩余十一个紧凑动作.md`、`docs/任务/Clawd六个紧凑动作.md`、`docs/任务/Clawd兴奋与海盗.md`、`docs/任务/Clawd墨镜额头修正.md`、`docs/任务/Clawd精选动作.md`、`docs/任务/Clawd尺寸收缩.md`、`docs/DESIGN.md`、`src/mascot.rs`、`assets/clawd/README.md`
 2. `docs/调研/Saddle统一仓库与运行入口-2026-10-01.md`、`AGENTS.md`
 3. `docs/插件系统设计.md`、`docs/插件协议.md`、`docs/插件开发入门.md`
 4. `plugins/drover/README.md`、`src/plugins/{registry,runtime}.rs`、`crates/plugin-protocol/src/lib.rs`
