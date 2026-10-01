@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-01。当前 main。核心遥测阶段 01「存储与查询」已审查、合并、推送并清理；下一阶段是执行采集与总开关入口，尚未派发。本轮不发布、不安装、不读写真实遥测/队列。
+更新：2026-10-01。当前 main。核心遥测阶段 01「存储与查询」已审查、合并、推送并清理；用户已授权继续阶段 02；02A 执行采集已派发，02B 设置界面随后串行集成。本轮不发布、不安装、不读写真实遥测/队列。
 
 ## 1. 会话摘要
 
@@ -17,10 +17,10 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 ## 3. 待完成与现场状态
 
-- 阶段 01 无已知未关闭阻断。阶段 02–05 尚未实施：执行采集/设置入口 → 同进程 JEV 路由 → 现有 Drover 插件接入 → 消费者切换和退役外部 dlog。不要把存储完成说成整套遥测完成。
+- 阶段 01 无已知未关闭阻断。阶段 02A 已启动、尚未完成，02B–05 尚未实施：执行采集/设置入口 → 同进程 JEV 路由 → 现有 Drover 插件接入 → 消费者切换和退役外部 dlog。不要把存储完成说成整套遥测完成。
 - 本轮未构建 release、安装、切换消费者或初始化真实遥测目录；日常程序仍为此前 Clawd Opus 版，链接 ~/.local/bin/saddle 指向共享 .target/release/saddle。后续 release 构建前必须按既有规则备份，当前不构建。
 - 保留 ../saddle-worktrees/review-telemetry-design（detached 5ddd544，审查快照），t38-dispatch-study、t55-notification-flow；不要自动清理。
-- corral ls 当前仅 corral/main、dispatchlog/main、saddle/main；前两个是用户会话，勿送话/关闭。
+- 新实施者 saddle/dev-telemetry-agent-1（instance 0f297a0ff859，Codex gpt-6-astra/xhigh），分支 telemetry-agent-capture，worktree ../saddle-worktrees/telemetry-agent-capture，基线 951b13e。另有 corral/main、dispatchlog/main、saddle/main；前两个是用户会话，勿送话/关闭。
 - 旧独立 Drover 已退役，现用 plugins/drover；历史数据保留，不恢复服务。此前安装包仍带外部 --dispatch-log 配置，本阶段未切换；旧 dlog 仍用于开发派发记录。
 
 ## 4. 约束与决定入口
@@ -38,6 +38,8 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 ## 6. 下一步
 
-汇报阶段 01 已收尾；继续时按实施计划准备阶段 02 的限定任务书与派发，不提前启动阶段 03–05。本轮没有创建下一阶段 agent、分支或真实任务。
+阶段02A候选8b9324b已完成，主控核对范围并独立运行标准检查：423 passed / 0 failed / 5 ignored、clippy通过；实现者此前两个套件失败在主控本次未复现，原因未确定，原证据保留。独立审查已派发，等待公开status与经dlog reply取完整DONE回复。审查者 saddle/dev-telemetry-agent-review-1（instance 5b2ff681386d），dispatch 3906679e92ba45d2b634c3a43a75475d，detached worktree ../saddle-worktrees/review-telemetry-agent-capture，HEAD 8b9324b；任务与意见在主仓库 docs/任务/遥测02A-独立交叉审查.md。任务见 docs/任务/遥测02A-执行采集.md；实施 dispatch ba09aea9613a48f6b6e6fb9ce22904b1。每轮重新挂提醒；独立审查重点含发送参数排列的正文采集疑点、取消及回执背压；主控不改功能代码，阻断交原实现者返工。02A 与随后 Claude 实现的 02B 设置入口集成后一起合并清理；不得单独完成02A就删其worktree。未创建真实任务。
+
+用户最新硬边界：如需改 Corral 或发现依赖反转，先停止相关工作告知用户，不得先改后报。独立遥测查询界面明确归 Saddle，在阶段04实现，Drover仅提供带关联条件的快捷入口；旧视图/旧dlog依赖到阶段05再切换。主控发现Corral公开at为数值、现有Saddle存储按字符串校验，已让实施者在Saddle内按原样保存契约最小纠正，不改Corral。
 
 开发记录：实现 dispatch 4072770b1160441ca745b8ce78c7e490，独立审查 f514aac2b3de4f13a3cfa515df380147；设计审查 de1a9428bcfd448ea0c628b78f480fc5。收尾实际结果写入 dlog，各次审查原文已落主仓库，不依赖已关闭会话。
