@@ -56,3 +56,6 @@
 - 范围：批准的独立入口、列表/筛选、事件分页与当前摘要分离、完整正文、安全显示及show(trace).dispatches只读字段。不接Drover/协议导航/04B，不切旧dlog消费者，不改Corral或反向依赖。
 - 回来先status，working重挂；idle后dlog reply取完整DONE。主控核diff/完成记录/实际RED-GREEN及一次标准test/clippy，按常规审查预算，不扩审计；需改交原实现者，返工只定向/直接回归，不重复全套。
 - 04A通过后保留实施会话/分支/worktree供04B串行接入，整阶段集成后合并清理。主控不写功能；不release/安装/真实数据队列，旧设计review/t38/t55保留。
+- 初版1003f45已取完整DONE并核增量，主控标准511通过/0失败/5忽略、Clippy通过。日志 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04a-controller-32zq_vbj`；probe.rs/probe-cargo.log证实两个目标缺陷，前两次直接rustc依赖错配/探针装配失败不算功能证据。开发标准同数，RED日志已核但原dispatches断言全文与页面桩完整补丁留档不足，保留限制。
+- 已集中交原实现者第一次返工并重挂提醒，详见docs/任务/遥测04A-主控审查.md：M1刷新丢选中派发筛选；M2实际payload不可读、长详情尾部不可达及既定carried_from目标trace；M3app_control模态busy遗漏（准许最小扩文件范围）。返工只目标/直接回归，不重复全套Clippy；主控不写功能，无额外交叉审查。
+- 已接受UTC、列表顺序、顶部位置和宽窄布局；预填控制字符显示留04B集成前处理，不在本次顺手改。04A尚未通过或合并；下一轮核M1-M3及直接回归，不提前派04B。
