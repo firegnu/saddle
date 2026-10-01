@@ -1470,15 +1470,16 @@ impl App {
         }
     }
     fn open_settings(&mut self, back: Focus) {
-        if let Some(parked) = self.parked_settings.take() {
+        if let Some(mut parked) = self.parked_settings.take() {
+            parked.refresh_recording();
             self.settings = Some(parked);
             self.settings_return = back;
             return;
         }
-        self.settings = Some(crate::settings::Settings::open(
-            self.config_path.clone(),
-            truecolor(),
-        ));
+        self.settings = Some(
+            crate::settings::Settings::open(self.config_path.clone(), truecolor())
+                .with_telemetry(crate::telemetry::Store::from_environment()),
+        );
         self.settings_return = back;
         self.focus = Focus::Agents;
     }
@@ -1493,6 +1494,15 @@ impl App {
             }
             Outcome::Stay => return,
             Outcome::Cancel => {}
+            // The config part was written; Settings stays open on what was not saved.
+            Outcome::Applied(saved, _) => {
+                self.apply_settings(&saved);
+                return;
+            }
+            Outcome::Recorded => {
+                let note = self.settings.as_ref().map_or("", |s| s.message());
+                self.panel.message = format!("Settings saved. {note}");
+            }
             Outcome::Diagnose => {
                 let report = self.diagnostics();
                 // Replacing the checker cancels the previous check and drops its answer.
@@ -1513,22 +1523,29 @@ impl App {
                 return;
             }
             Outcome::Saved(saved, restart) => {
-                self.config.colors = saved.colors.for_terminal(truecolor());
-                self.config.left_width = saved.left_width;
-                self.config.mascot_enabled = saved.mascot_enabled;
+                self.apply_settings(&saved);
+                // Telemetry recording, when it was saved too.
+                let note = self.settings.as_ref().map_or("", |s| s.message());
                 self.panel.message = if restart.is_empty() {
-                    "Settings saved.".into()
+                    format!("Settings saved. {note}")
                 } else {
                     format!(
-                        "Settings saved; restart saddle to apply: {}.",
+                        "Settings saved; restart saddle to apply: {}. {note}",
                         restart.join(", ")
                     )
-                };
+                }
+                .trim_end()
+                .into();
             }
         }
         self.settings = None;
         self.checker = None;
         self.focus = self.settings_return;
+    }
+    fn apply_settings(&mut self, saved: &crate::config::Config) {
+        self.config.colors = saved.colors.clone().for_terminal(truecolor());
+        self.config.left_width = saved.left_width;
+        self.config.mascot_enabled = saved.mascot_enabled;
     }
     /// What saddle knows now; the command and config checks run in the background.
     fn diagnostics(&self) -> crate::diagnostics::Report {
