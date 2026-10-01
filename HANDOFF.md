@@ -1,12 +1,17 @@
 # 会话交接
 
-更新：2026-10-01。当前分支 `main`。本轮完成 Clawd 墨镜额头缺口修正并安装；统一 Saddle 产品迁移仍未开始，等用户触发。主控亲自做，不自行委派。
+更新：2026-10-01。当前分支 `main`。本轮完成 Clawd 兴奋与海盗两个新动作并安装；统一 Saddle 产品迁移仍未开始，等用户触发。主控亲自做，不自行委派。
 
 ## 1. 会话摘要
 
-用户认可静止效果，但反馈动作粗糙，要求精选十来个容易表达的动作精修，尽量不越过agent上方边框。用户确认12种动作；已改成固定静止轮廓的小幅关键帧，全部放在3行内，合并推送并安装。用户之后确认其他动作都没问题，仅反馈墨镜像额头缺口；已修正镜片，其他11段逐字节不变。没有重启用户窗口，等待其实际反馈。
+用户认可静止效果，但反馈动作粗糙，要求精选十来个容易表达的动作精修，尽量不越过agent上方边框。用户确认12种动作；已改成固定静止轮廓的小幅关键帧，全部放在3行内，合并推送并安装。用户之后确认其他动作都没问题，仅反馈墨镜像额头缺口；已修正镜片，其他11段逐字节不变。随后用户要求新增兴奋和经典眼罩海盗，动作自行设计；已加入自主巡游，总14段，保留原12段帧数据。没有重启用户窗口，等待其实际反馈。
 
 ## 2. 完成的工作
+
+- 最新实现 `e716c13`，安装记录 `d309c06`，收尾 `2ed353b`。新增兴奋39帧（双手欢呼、笑眼、脚步节拍、闪光）和海盗56帧（红头巾、单眼眼罩、相连横向细带、扶眼罩、抬手致意、眨眼），总14段517帧，全部仍在16列×3行内。原12段帧数据和原调色板逐字节不变。
+- 两个新动作检查先因缺少动作而RED，后GREEN；标准全量 **377 passed / 0 failed / 5 ignored**，Clippy/fmt/diff通过；发布版Mascot **9 passed**。日志 `/tmp/saddle-clawd-excited-pirate-{all,clippy,green,release-build,release-test}.log`。
+- 新预览 `saddle-excited-pirate.mp4`、`saddle-excited-keyframes.png`、`saddle-pirate-keyframes.png`；完整总览 `saddle-curated-14.mp4`/`.gif`/`-poses.png`；实际公开绘制巡游 `saddle-curated-patrol.mp4` 已更新为120秒，覆盖两种新动作。均在原Downloads预览目录，已用open打开。旧12动作预览保留。已观察全部关键姿态；海盗初版斜线像划痕，最终改为与眼罩相连的横向细带。
+- 记录 `docs/任务/Clawd兴奋与海盗.md`；Dispatch `37d50d80c3ec43df8229d86b252b66b5`。worktree/分支 `clawd-excited-pirate` 已清理，没有创建agent。
 
 - 最新墨镜修正`f82361f`，安装记录`f8f6aaa`，收尾`9618e2d`。镜片改为肤色背景上的`■`，保留完整额头和细鼻梁，尺寸/时间不变。公开绘制检查先RED后GREEN；标准全量**375 passed / 0 failed / 5 ignored**、Clippy/fmt/diff通过，发布版7项Mascot检查通过。日志`/tmp/saddle-clawd-sunglasses-{red,green,all,clippy,release-test}.log`。
 - 墨镜对照`saddle-sunglasses-fix.png`/`.mp4`在原预览目录；12动作总览与90秒巡游均已同步更新。记录`docs/任务/Clawd墨镜额头修正.md`；Dispatch `cdebdd65b29646f38d2a0703aecb9003`；worktree/分支`clawd-sunglasses`已清理。
@@ -15,7 +20,7 @@
 - 画布16列×3行，全部422帧在agent上边框上方。静止帧去掉两行空白后与此前已认可版本逐字节一致；保持tab/pane/PTY布局。动作改为离线网格关键帧和停顿，固定地面，缩小道具；不跟随agent状态、不绑定终端、不调查或安装字体。
 - 此前精选动作版本的标准`cargo test --all-targets`为**374 passed / 0 failed / 5 ignored**；Clippy/fmt/diff通过。新增公开绘制检查先RED（旧版tick107跨边框）、后GREEN。日志`/tmp/saddle-clawd-curated-{red,green,all-final,clippy}.log`。
 - 发布版巡游/鼠标避让与设置/布局两项隔离流程通过，日志`/tmp/saddle-clawd-curated-release-{patrol,settings}.log`。使用假corral/临时HOME，没有操作用户agent或真实队列。
-- 预览均在`~/Downloads/clawd-reference-20261001-4pdhpd0_/`：`saddle-curated-12.mp4`/`.gif`为全部12动作总览，`saddle-curated-12-poses.png`为代表姿态，`saddle-curated-patrol.mp4`为实际Mascot.draw导出的90秒巡游。指定字号栅格化预览，不是用户窗口截图。桌面控制连接失败；已按既有授权用系统open打开目录。
+- 预览均在`~/Downloads/clawd-reference-20261001-4pdhpd0_/`：`saddle-curated-12.mp4`/`.gif`为全部12动作总览，`saddle-curated-12-poses.png`为代表姿态，`saddle-curated-patrol.mp4`现为实际Mascot.draw导出的120秒巡游。指定字号栅格化预览，不是用户窗口截图。桌面控制连接失败；已按既有授权用系统open打开目录。
 - 记录见`docs/任务/Clawd精选动作.md`；Dispatch `36a692086a834fadbc3bf8dd26ce6d1f`。本轮worktree/分支`clawd-curated-motion`已清理，没有创建agent。
 - 此前统一产品调查报告已提交 `aeff1d6`：`docs/调研/Saddle统一仓库与运行入口-2026-10-01.md`。用户确定外围优先；本轮未开展迁移。之前临时 Diff 演示已清理，不恢复。
 
@@ -35,13 +40,13 @@
 
 ## 5. 当前安装与重要文件
 
-`~/.local/bin/saddle` → `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`。当前SHA256 `1fdab61fcdb50cd5c34ccb29fe4fa7cfff6c108d410adac2a988f2b4ce4e7530`，已验证内含墨镜修正素材。旧版备份`/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-sunglasses-20261001-130622`，旧hash`cdfafd4527ad23cc0746083eff86d11285f51e237e47a5558f866ab788ed7bdf`。
+`~/.local/bin/saddle` → `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`。当前SHA256 `b3d9a307f1a2a8e8ee63410202d09375f2495f0fc55d1750c5d067852521cf74`，已验证内含14段完整素材。构建前旧版备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-excited-pirate-20261001-132432`，旧hash `1fdab61fcdb50cd5c34ccb29fe4fa7cfff6c108d410adac2a988f2b4ce4e7530`。
 
 此前安装记录（本轮未重新核查服务/插件状态）：Drover 包在 `plugins/drover/dist/drover-plugin`，清单保留 `--dispatch-log /Users/firegnu/Developer/personal_projs/dispatch-log/dlog`，重打包会覆盖自定义 args。旧 `dev.drover.loop` 及 drover/drover-board 链接已撤下，旧仓库与数据保留；替换备份 `~/Library/Application Support/saddle-release-backups/drover-native-20260930-213348/`。
 
 优先阅读：
 
-1. `docs/任务/Clawd墨镜额头修正.md`、`docs/任务/Clawd精选动作.md`、`docs/任务/Clawd尺寸收缩.md`、`docs/DESIGN.md`、`src/mascot.rs`、`assets/clawd/README.md`
+1. `docs/任务/Clawd兴奋与海盗.md`、`docs/任务/Clawd墨镜额头修正.md`、`docs/任务/Clawd精选动作.md`、`docs/任务/Clawd尺寸收缩.md`、`docs/DESIGN.md`、`src/mascot.rs`、`assets/clawd/README.md`
 2. `docs/调研/Saddle统一仓库与运行入口-2026-10-01.md`、`AGENTS.md`
 3. `docs/插件系统设计.md`、`docs/插件协议.md`、`docs/插件开发入门.md`
 4. `plugins/drover/README.md`、`src/plugins/{registry,runtime}.rs`、`crates/plugin-protocol/src/lib.rs`
