@@ -154,7 +154,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03B尚未通过、功能未合并；03A/03B全部实施审查agent/worktree保留，03C未派发，整阶段集成后共同收尾。需改Corral或依赖反转先停告知。UI已批准，ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换/04或05。设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 18. 当前：03B M2-R1第二次独立复审
+## 18. 03B M2-R1第二次独立复审（结论见第19节）
 
 - 原实现者63516c9bce5d已idle、dlog取完整DONE，候选597f48affe8b2a5de3ae9a55744b28404a62aa51，原a20fb66；实施干净，四文件增量及diff --check已核。读取时attached1，没有打断、送话或关闭实现者。
 - 修正使用dev/inode绑定清理子目录，无可信句柄保守保留；接受遗留空目录取舍，明确核对与rmdir并非原子操作。主控发现tidy忽略skills清理失败原因，作为直接提示遗漏交独立判断，不宣称全路径提示已符合。
@@ -162,3 +162,11 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 原审查者saddle/dev-telemetry-resources-review-1 instance235f9b4048e0已在idle/attached0且干净时更新detached review-telemetry-plugin-resources到597f48a。审查dispatch9c2ca1be0eda43959bd08a34c514232a发送第二次限定复核confirmed=true/merged_with_draft=false，新提醒pending=true、实例相符。主仓库审查文档记录范围和证据，原实现dispatchffcf738641ec416f803b7af8745df86f已记dlog review。
 - 收提醒先status，working重挂；idle后dlog reply取完整DONE，逐项判断M2-R1及直接回归，M1/M3不重开。**第二次独立复审仍未收敛则报告用户，不自动再返工。** 原标准及历史证据限制不变。
 - 03B尚未通过，功能未合并，03C未派发；03A/03B全部实施审查会话worktree保留，整阶段集成后一起合并清理。需改Corral或依赖反转先停告知。UI已确认，ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换/04或05。设计review/t38/t55保留，设计Claude已关闭。
+
+
+## 19. 当前：03B通过，保留候选等待03C串行集成
+
+- 原审查者235f9b4048e0已idle，dlog取完整DONE；第二次独立复核M2-R1关闭、必须改0/建议1。主控核源码、独立19+6原始日志及tidy探针后认可03B可进入后续集成；M1/M3保持关闭。候选597f48affe8b2a5de3ae9a55744b28404a62aa51，实施和detached均干净，功能未合main。
+- S1暂不改功能：tidy可能漏报skills目录保留原因，操作仍failed且目录保留，不阻断集成。主仓库docs/遥测使用.md已明确候选限制；整阶段合并须收窄分支原有“所有路径注明directory kept”的笼统表述并保留更正。非原子身份核对窗口仍明确记录，不宣称任意并发替换都安全。没有重复测试或追加返工。
+- 03A/03B实施审查worktree及4个agent全部保留，整阶段03C集成后共同合并清理；本轮不做收尾空提交、不关闭会话。迟到提醒按本轮已处理结论核对，不自动再送返工。完整结论见docs/任务/遥测03B-独立交叉审查.md末尾。
+- 下一步先核ureq官方资料、再形成03C串行实施任务，接入可选dispatch业务及skill资源。03C尚未派发。UI已确认，不重问；需改Corral或依赖反转先停告知。无release/安装/真实数据队列/消费者切换/04或05；旧设计review/t38/t55保留，设计Claude已关闭。
