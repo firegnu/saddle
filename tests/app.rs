@@ -291,3 +291,105 @@ fn settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once() {
     assert!(cancelled.contains("Input ▸ Agents"), "{cancelled}");
     assert_eq!(std::fs::read_to_string(&config).unwrap(), file);
 }
+
+#[test]
+fn telemetry_page_takes_all_input_and_closes_back_to_where_it_opened() {
+    let temp = tempfile::tempdir().unwrap();
+    let corral = common::script(temp.path(), "corral", "#!/bin/sh\necho '{\"agents\":[]}'\n");
+    let config = temp.path().join("config.toml");
+    std::fs::write(&config, format!("corral = {corral:?}\n")).unwrap();
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 30,
+            cols: 120,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    let mut cmd = CommandBuilder::new(env!("CARGO_BIN_EXE_saddle"));
+    cmd.args(["--config", config.to_str().unwrap()]);
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("HOME", temp.path());
+    cmd.env("XDG_STATE_HOME", temp.path().join("state"));
+    cmd.env("SADDLE_RUNTIME_DIR", temp.path().join("run"));
+    cmd.cwd(temp.path());
+    let mut child = pair.slave.spawn_command(cmd).unwrap();
+    drop(pair.slave);
+    let mut reader = pair.master.try_clone_reader().unwrap();
+    let mut writer = pair.master.take_writer().unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut bytes = [0; 8192];
+        while let Ok(n) = reader.read(&mut bytes) {
+            if n == 0 || tx.send(bytes[..n].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut screen = vt100::Parser::new(30, 120, 0);
+    pump(&rx, &mut screen, &mut writer, |s| {
+        column(s, 1, "Telemetry").is_some() && s.contents().contains("t Telemetry  Tab Viewer")
+    });
+    let header = screen.screen().contents();
+    let entry = column(screen.screen(), 1, "Telemetry");
+    writer.write_all(b"t").unwrap();
+    pump(&rx, &mut screen, &mut writer, |s| {
+        s.contents().contains("Input ▸ Telemetry") && s.contents().contains("not initialized")
+    });
+    let opened = screen.screen().contents();
+    // Keys that would open New agent or quit stay in the page.
+    writer.write_all(b"nqa").unwrap();
+    pump(&rx, &mut screen, &mut writer, |_| false);
+    let held = screen.screen().contents();
+    let running = child.try_wait().unwrap().is_none();
+    writer.write_all(b"\x1b").unwrap();
+    pump(&rx, &mut screen, &mut writer, |s| {
+        s.contents().contains("Input ▸ Agents")
+    });
+    let closed = screen.screen().contents();
+    // From the Viewer, the header entry opens it and Esc returns input to the Viewer.
+    writer.write_all(b"\t").unwrap();
+    pump(&rx, &mut screen, &mut writer, |s| {
+        !s.contents().contains("Input ▸ Agents")
+    });
+    let x = entry.unwrap() + 2;
+    writer
+        .write_all(format!("\x1b[<0;{x};2M\x1b[<0;{x};2m").as_bytes())
+        .unwrap();
+    pump(&rx, &mut screen, &mut writer, |s| {
+        s.contents().contains("Input ▸ Telemetry")
+    });
+    let clicked = screen.screen().contents();
+    writer.write_all(b"\x1b").unwrap();
+    pump(&rx, &mut screen, &mut writer, |s| {
+        !s.contents().contains("Input ▸ Telemetry")
+    });
+    let returned = screen.screen().contents();
+    writer.write_all(b"\x1d").unwrap();
+    pump(&rx, &mut screen, &mut writer, |s| {
+        s.contents().contains("Input ▸ Agents")
+    });
+    let _ = writer.write_all(b"q");
+    let end = Instant::now() + Duration::from_secs(5);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > end {
+            child.kill().unwrap();
+            let _ = child.wait();
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(entry.is_some(), "{header}");
+    assert!(header.contains("t Telemetry"), "{header}");
+    assert!(opened.contains("Esc Close"), "{opened}");
+    assert!(running, "q reached the workspace: {held}");
+    assert!(held.contains("Input ▸ Telemetry"), "{held}");
+    assert!(!held.contains("New agent"), "{held}");
+    assert!(closed.contains("Input ▸ Agents"), "{closed}");
+    assert!(clicked.contains("Input ▸ Telemetry"), "{clicked}");
+    assert!(!returned.contains("Input ▸ Agents"), "{returned}");
+    assert!(
+        !temp.path().join("state/saddle/telemetry").exists(),
+        "the page must not create telemetry storage"
+    );
+}

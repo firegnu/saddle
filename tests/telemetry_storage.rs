@@ -862,3 +862,27 @@ fn public_at_accepts_numbers_and_rejects_string_or_boolean_timestamps() {
         );
     }
 }
+
+#[test]
+fn trace_show_lists_every_dispatch_even_without_events() {
+    let (_dir, store) = store();
+    store.create_dispatch(serde_json::from_value(json!({"schema_version":1,"trace_id":"t","dispatch_id":"r","kind":"review","parent_dispatch_id":"d"})).unwrap()).unwrap();
+    let record = store.show("t").unwrap()["record"].clone();
+    let dispatches = record["dispatches"].as_array().expect("dispatches field");
+    let created = |id: &str| store.show(id).unwrap()["record"]["created_at"].clone();
+    assert_eq!(
+        dispatches,
+        &vec![
+            json!({"dispatch_id":"d","kind":"implementation","parent_dispatch_id":null,"created_at":created("d")}),
+            json!({"dispatch_id":"r","kind":"review","parent_dispatch_id":"d","created_at":created("r")}),
+        ]
+    );
+    // Neither dispatch has an event; the list does not depend on loaded events.
+    assert!(
+        store.events(&EventQuery::default()).unwrap()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["dispatch_id"].is_null())
+    );
+}

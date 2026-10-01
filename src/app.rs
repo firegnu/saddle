@@ -164,6 +164,8 @@ fn truecolor() -> bool {
 struct App {
     plugins: crate::plugins::Manager,
     plugin_page: Option<crate::plugins::ui::Page>,
+    /// The Telemetry page and the input target to return to when it closes.
+    telemetry: Option<(crate::telemetry_view::Page, Focus)>,
     plugin_palette: Option<crate::plugins::palette::Palette>,
     plugin_entry_press: Option<Rect>,
     plugin_overlay: Option<plugins_impl::Overlay>,
@@ -269,6 +271,7 @@ impl App {
         Ok(Self {
             plugins,
             plugin_page: None,
+            telemetry: None,
             plugin_palette: None,
             plugin_entry_press: None,
             plugin_overlay: None,
@@ -369,7 +372,9 @@ impl App {
                         search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
-                        modal: self.closing.is_some() || self.plugin_page.is_some(),
+                        modal: self.closing.is_some()
+                            || self.plugin_page.is_some()
+                            || self.telemetry.is_some(),
                         attention: ui::Attention {
                             items: &items,
                             loading,
@@ -383,6 +388,15 @@ impl App {
                     }),
                 );
                 self.draw_plugin_overlay(frame, panes);
+                if let Some((page, _)) = &mut self.telemetry {
+                    page.draw(&self.config.colors, frame, panes.agents.union(panes.viewer));
+                    frame.render_widget(ratatui::widgets::Clear, panes.status);
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new(page.status())
+                            .style(self.config.colors.base()),
+                        panes.status,
+                    );
+                }
                 self.draw_closing(frame);
                 if let (Some(page), Some(settings)) = (&mut self.plugin_page, &self.settings) {
                     page.draw(&self.config.colors, frame, &self.plugins, settings);
@@ -393,7 +407,7 @@ impl App {
                         panes.status,
                     );
                 }
-                self.plugin_toast = if self.plugin_page.is_none() {
+                self.plugin_toast = if self.plugin_page.is_none() && self.telemetry.is_none() {
                     self.draw_plugin_toast(frame, panes.viewer)
                 } else {
                     None
@@ -428,12 +442,16 @@ impl App {
             && self.settings.is_none()
             && self.plugin_palette.is_none()
             && self.plugin_page.is_none()
+            && self.telemetry.is_none()
             && self.closing.is_none()
             && self.search.is_none()
             && self.placement.is_none()
             && self.attention.is_none()
             && self.new_agent.as_ref().is_none_or(|f| !f.visible);
         self.plugins.theme(&self.config.colors);
+        if let Some((page, _)) = &mut self.telemetry {
+            page.poll();
+        }
         self.sync_plugins(panes, focused);
         self.update_plugin_palette();
         for update in self.poller.updates.try_iter() {
@@ -527,6 +545,7 @@ impl App {
                                 && self.placement.is_none()
                                 && self.closing.is_none()
                                 && self.settings.is_none()
+                                && self.telemetry.is_none()
                                 && !self.new_agent.as_ref().is_some_and(|f| f.visible)
                                 && self.viewer.active_pane().id == ticket.pane
                             {
@@ -954,6 +973,17 @@ impl App {
         {
             self.input_revision += 1;
         }
+        // The page takes every key, paste and click until it closes; a quit confirmation
+        // raised meanwhile still gets its answer first.
+        if self.closing.is_none()
+            && let Some((page, back)) = &mut self.telemetry
+        {
+            if let crate::telemetry_view::Outcome::Close = page.event(&event) {
+                self.focus = *back;
+                self.telemetry = None;
+            }
+            return Ok(false);
+        }
         if let Some(page) = &mut self.plugin_page {
             let outcome = page.event(event, &mut self.plugins);
             match outcome {
@@ -1235,6 +1265,14 @@ impl App {
                         self.open_settings(self.focus);
                         return Ok(false);
                     }
+                    if focus == Focus::Agents
+                        && key.code == KeyCode::Char('t')
+                        && self.settings.is_none()
+                        && self.closing.is_none()
+                    {
+                        self.open_telemetry(self.focus, None, None);
+                        return Ok(false);
+                    }
                     if focus == Focus::Viewer {
                         if let Some((_, action)) = self
                             .hits
@@ -1478,6 +1516,23 @@ impl App {
             }
         }
     }
+    /// Opens the read-only Telemetry page, optionally narrowed to an opaque binding that
+    /// `source` asked for. Closing returns input to `back`.
+    fn open_telemetry(
+        &mut self,
+        back: Focus,
+        filter: Option<crate::telemetry::BindingFilter>,
+        source: Option<String>,
+    ) {
+        self.telemetry = Some((
+            crate::telemetry_view::Page::open(
+                crate::telemetry::Store::from_environment(),
+                filter,
+                source,
+            ),
+            back,
+        ));
+    }
     fn open_settings(&mut self, back: Focus) {
         if let Some(mut parked) = self.parked_settings.take() {
             parked.refresh_recording();
@@ -1632,6 +1687,7 @@ impl App {
             KeyCode::Enter => self.attach(),
             KeyCode::Char('/') => self.search = Some(Default::default()),
             KeyCode::Char(',') => self.open_settings(Focus::Agents),
+            KeyCode::Char('t') => self.open_telemetry(Focus::Agents, None, None),
             KeyCode::Char('a') => {
                 self.attention = Some(Default::default());
             }

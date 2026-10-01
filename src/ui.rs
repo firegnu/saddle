@@ -118,12 +118,12 @@ pub fn draw_workspace(
     frame.buffer_mut().set_style(screen_area, t.base());
     let header = agents_header(view.panes.agents);
     let show_plugins = terminals.is_some() && inner(view.panes.agents).height >= 6;
-    let action_width = SETTINGS.width()
-        + if show_plugins {
-            "Plugins".width() + 2
-        } else {
-            0
-        };
+    let pair_width = SETTINGS.width() + "Plugins".width() + 2;
+    let action_width = if show_plugins {
+        pair_width + TELEMETRY.width() + 2
+    } else {
+        SETTINGS.width()
+    };
     let action_row = if usize::from(header.width)
         >= format!("Agents · {}", panel.agents.len()).width() + 2 + action_width
     {
@@ -131,9 +131,21 @@ pub fn draw_workspace(
     } else {
         2
     };
-    let separate_actions = show_plugins && usize::from(header.width) < action_width;
+    let separate_actions = show_plugins && usize::from(header.width) < pair_width;
     let settings_row = action_row + u16::from(separate_actions);
-    let header_rows = (settings_row + 1).max(2);
+    // Telemetry joins Plugins and Settings when all three fit, else takes the next row.
+    let shared_row = usize::from(header.width) >= action_width;
+    let telemetry_row = if shared_row {
+        action_row
+    } else {
+        settings_row + 1
+    };
+    let header_rows = (if show_plugins {
+        telemetry_row
+    } else {
+        settings_row
+    } + 1)
+        .max(2);
     let right_aligned = |row: u16, width: u16| {
         let width = width.min(header.width);
         Rect::new(
@@ -160,6 +172,26 @@ pub fn draw_workspace(
             rect,
         );
         hits.plugins = rect;
+        let mut rect = right_aligned(telemetry_row, TELEMETRY.width() as u16);
+        if shared_row {
+            rect.x -= pair_width as u16 + 2;
+        }
+        frame.render_widget(
+            Paragraph::new(TELEMETRY).style(
+                Style::default()
+                    .fg(t.agents_text)
+                    .remove_modifier(Modifier::BOLD),
+            ),
+            rect,
+        );
+        hits.buttons.push(crate::buttons::Hit {
+            area: rect,
+            danger: false,
+            key: crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('t'),
+                crossterm::event::KeyModifiers::NONE,
+            ),
+        });
     }
     let attention_row = Rect {
         y: header.y.saturating_add(1),
@@ -341,7 +373,7 @@ pub fn draw_workspace(
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  Tab Viewer  q Quit",
+            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  t Telemetry  Tab Viewer  q Quit",
         ),
         Focus::Viewer => (
             view.showing
@@ -486,6 +518,7 @@ fn agents_header(area: Rect) -> Rect {
     )
 }
 const SETTINGS: &str = "Settings";
+const TELEMETRY: &str = "Telemetry";
 /// One bottom-bar control: key and label, whether it acts, and whether it is destructive.
 /// `lit` shows a state in normal text without making the control clickable.
 struct Control {

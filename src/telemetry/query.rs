@@ -173,6 +173,15 @@ fn trace_details(conn: &Connection, record: &mut Value) -> Result<()> {
     record["known_gaps"] = json!(gaps);
     record["evidence"] = json!(evidence);
     record["operations"] = json!(operations(conn, &id)?);
+    // Every dispatch of the trace, including ones whose events are not loaded yet.
+    let mut stmt = conn.prepare("SELECT dispatch_id,kind,parent_dispatch_id,created_at FROM dispatches WHERE trace_id=? ORDER BY created_at,dispatch_id")?;
+    let dispatches = stmt
+        .query_map([&id], |r| {
+            Ok(json!({"dispatch_id":r.get::<_, String>(0)?,"kind":r.get::<_, String>(1)?,
+                "parent_dispatch_id":r.get::<_, Option<String>>(2)?,"created_at":r.get::<_, String>(3)?}))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    record["dispatches"] = json!(dispatches);
     record["registration"] = json!(registration(conn, &id)?);
     record["coverage_notice"] =
         json!("仅描述已记录材料；未记录操作不可见，缺口原因未知，不代表任务完整历史。");

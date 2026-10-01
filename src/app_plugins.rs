@@ -117,6 +117,7 @@ impl App {
     pub(super) fn plugin_ui_busy(&self) -> bool {
         self.settings.is_some()
             || self.plugin_page.is_some()
+            || self.telemetry.is_some()
             || self.closing.is_some()
             || self.placement.is_some()
             || self.search.is_some()
