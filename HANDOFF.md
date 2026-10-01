@@ -56,3 +56,5 @@
 - dlog dispatch cba1e2fc7541408786a5ad4d8dd8a7f6。JEV重/交叉审查null/看得见；主控采纳重档，纯设计文档不另开代码交叉审查，后续行为实现重新定影响面。路由调用仅此次主控任务评估，不是产品JEV接入验证。
 - 结束后先corral status，再经 ../dispatch-log/dlog reply --dispatch cba1e2fc7541408786a5ad4d8dd8a7f6 -- corral reply saddle/dev-dispatch-plugin-design-1 取完整回复并确认DONE。主控核具体接口、依赖方向、skill资源生命周期及首版项目说明，git diff --check/静态核对即可，设计不跑标准测试。working则重挂提醒。
 - 用户批准的大方向内常规细节由主控核实；新增实质架构取舍列给用户。需改Corral或出现反向依赖先停相关部分告知。设计通过后再形成串行实施任务，不把设计交付当插件或整条遥测已实现。真实安装/消费者切换、04/05及原保留worktree不动。
+
+首轮主控核对：初稿abd1d3c，已取完整DONE，idle/attached=0，分支干净、仅两份文档、diff --check通过。尚未通过/合并：M1把契约要求的完整解析响应改成原HTTP字节；M2 skill指令只看stderr末行，缺已有起止call_id匹配；另建议明确资源半安装恢复与capture状态优先级。意见在docs/任务/遥测03-插件设计主控核对.md，已dlog note及send交原设计者限定修订，公开send confirmed=true，已重新挂提醒。没有运行测试或派功能实现。D1“停用插件后已装skill继续分派并由主控定档，还是暂停提示用户”已异步询问用户，尚未答复；后续先核对用户最新答复，不冒称批准。管理页线框仍需在界面实施前展示。
