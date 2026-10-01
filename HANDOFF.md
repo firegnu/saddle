@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；接下来派04A查询UI，04功能尚未实现，05未派发。日常安装版未更新，消费者未切换。
+更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；04A查询UI已派新Claude实施，功能未合并，04B/05未派发。日常安装版未更新，消费者未切换。
 
 ## 当前成果
 
@@ -48,3 +48,11 @@
 - 设计合并14d4e6c，最终裁定2812127；telemetry-query-design worktree/分支已无force清理，idle/attached0时安全核对后删目录，再关闭原自建saddle/dev-telemetry-query-design-1（instance ed4e60494020）。收尾空提交a919b9c。迟到提醒查not_found后忽略，不恢复旧会话。
 - dlog设计7d00e4c7b187450394d3ae4759d26c9d。下一步另路由/任务/分支派04A宿主查询UI给Claude，04B通用跳转及Drover记录接入串行；04A通过后保留实施与审查工作区，集成后整体合并清理。旧dlog留05，保留设计review/t38/t55。
 - 不改Corral或反向依赖，需改先停告知；不真实数据队列/安装release/消费者切换/05。当前没有04功能候选。
+
+## 当前派发：04A查询UI
+
+- 新Claude Code saddle/dev-telemetry-query-ui-1，instance 2be45b11bd4d，opus[1m]/high，role=implementer。worktree ../saddle-worktrees/telemetry-query-ui，分支telemetry-query-ui，基线ad823e0；任务docs/任务/遥测04A-查询界面.md。
+- dlog f4e92b504dec41f59ce2062a5e83f571。JEV三项null，主控常规/交叉审查不要/改行为：只读Store与页面结果，无存储写入或事务规则改动，不因后台线程自动提高审查档位。决定与任务快照已记录。
+- 范围：批准的独立入口、列表/筛选、事件分页与当前摘要分离、完整正文、安全显示及show(trace).dispatches只读字段。不接Drover/协议导航/04B，不切旧dlog消费者，不改Corral或反向依赖。
+- 回来先status，working重挂；idle后dlog reply取完整DONE。主控核diff/完成记录/实际RED-GREEN及一次标准test/clippy，按常规审查预算，不扩审计；需改交原实现者，返工只定向/直接回归，不重复全套。
+- 04A通过后保留实施会话/分支/worktree供04B串行接入，整阶段集成后合并清理。主控不写功能；不release/安装/真实数据队列，旧设计review/t38/t55保留。
