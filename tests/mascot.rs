@@ -231,29 +231,24 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
 #[test]
 fn standing_eyes_are_inside_an_unbroken_forehead() {
     let mut mascot = Mascot::default();
-    let mut terminal = Terminal::new(TestBackend::new(50, 5)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(20, 5)).unwrap();
     terminal
         .draw(|f| {
             mascot.draw(f, f.area(), 0.0, &[]);
         })
         .unwrap();
-    let quadrants = [
-        " ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█",
-    ];
     let buffer = terminal.backend().buffer();
-    let pixel = |x: u16, y: u16| {
-        let cell = &buffer[(x / 2, y / 2)];
-        let mask = quadrants.iter().position(|s| *s == cell.symbol()).unwrap();
-        if mask & (1 << (y % 2 * 2 + x % 2)) != 0 {
-            cell.fg
-        } else {
-            cell.bg
-        }
-    };
     let mut eyes = Vec::new();
-    for y in 0..10 {
-        for x in 0..100 {
-            if pixel(x, y) == Color::Rgb(20, 20, 19) {
+    for y in 0..5 {
+        for x in 0..20 {
+            let cell = &buffer[(x, y)];
+            if cell.symbol() == "▪" {
+                assert_eq!(cell.fg, Color::Rgb(20, 20, 19));
+                assert_eq!(
+                    cell.bg,
+                    Color::Rgb(217, 119, 87),
+                    "the forehead must remain solid around each eye"
+                );
                 eyes.push((x, y));
             }
         }
@@ -261,15 +256,25 @@ fn standing_eyes_are_inside_an_unbroken_forehead() {
     assert_eq!(
         eyes.len(),
         2,
-        "standing frame must contain exactly two eyes"
+        "standing eyes must be two small squares, not half-cell bars"
     );
     assert_eq!(eyes[0].1, eyes[1].1, "eyes must be level");
-    for (x, y) in eyes {
-        assert!(y > 0);
-        assert_eq!(
-            pixel(x, y - 1),
-            Color::Rgb(217, 119, 87),
-            "eye must not cut the forehead"
-        );
+    // Reach the right edge and turn: the small square glyph must survive mirroring.
+    for tick in 1..=16 {
+        terminal
+            .draw(|f| {
+                mascot.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+            })
+            .unwrap();
     }
+    assert_eq!(
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .filter(|c| c.symbol() == "▪")
+            .count(),
+        2
+    );
 }

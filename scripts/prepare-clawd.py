@@ -117,6 +117,10 @@ def index(p):
 
 
 def cell(samples):
+    # A square glyph keeps an enclosed eye small and above the half-cell baseline.
+    # This cell is already fully opaque, so its clay background preserves the head.
+    if samples.count(2) == 1 and samples.count(1) == 3:
+        return bytes([16, 2, 1])
     colors = sorted(set(samples))
     if len(colors) == 1:
         return bytes([0 if colors[0] == 0 else 15, colors[0], 0])
@@ -131,7 +135,7 @@ def cell(samples):
             mask |= 1 << bit
     return bytes([mask, fg, bg])
 
-out = bytearray(b'CLWD1') + bytes([WIDTH//2, HEIGHT//2, len(palette), len(clips)])
+out = bytearray(b'CLWD2') + bytes([WIDTH//2, HEIGHT//2, len(palette), len(clips)])
 for p in palette:
     out += bytes(p or (0, 0, 0))
 for name, frames in clips:

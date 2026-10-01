@@ -7,8 +7,8 @@ const WIDTH: u16 = 16;
 pub const MIN_WIDTH: u16 = WIDTH + 2;
 const CELLS: usize = WIDTH as usize * HEIGHT as usize;
 const FPS: f64 = 12.0;
-const QUADRANTS: [&str; 16] = [
-    " ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█",
+const QUADRANTS: [&str; 17] = [
+    " ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█", "▪",
 ];
 struct Clip {
     name: &'static str,
@@ -31,7 +31,7 @@ struct Sprites {
 static SPRITES: LazyLock<Sprites> = LazyLock::new(|| {
     // Trusted, checked-in asset. No external paths, parsers, or runtime downloads.
     let data = include_bytes!("../assets/clawd/frames.bin");
-    assert_eq!(&data[..7], b"CLWD1\x10\x05");
+    assert_eq!(&data[..7], b"CLWD2\x10\x05");
     let palette = data[9..9 + usize::from(data[7]) * 3]
         .chunks_exact(3)
         .map(|p| Color::Rgb(p[0], p[1], p[2]))
@@ -261,7 +261,9 @@ impl Mascot {
             }
             let col = i as u16 % WIDTH;
             let col = if mirror {
-                mask = ((mask & 0b0101) << 1) | ((mask & 0b1010) >> 1);
+                if mask < 16 {
+                    mask = ((mask & 0b0101) << 1) | ((mask & 0b1010) >> 1);
+                }
                 WIDTH - 1 - col
             } else {
                 col

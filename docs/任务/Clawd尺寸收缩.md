@@ -40,3 +40,12 @@
 眼睛修正验证：目标绘制检查GREEN，完整标准检查373 passed / 0 failed / 5 ignored，Clippy/fmt/diff通过；日志`/tmp/saddle-clawd-eyes-{green,all,clippy}.log`。同帧对照修前/修后包围盒均111×76设备像素（本对照2×显示下55.5×38逻辑像素），尺寸未变。已检查38种动作的代表帧修前/修后联系图。
 
 新对照`~/Downloads/clawd-reference-20261001-4pdhpd0_/saddle-eyes-comparison.png`已在系统预览打开；实际Buffer动画`saddle-eyes-preview.gif`同目录。修正头顶缺口与重复眼睛，字符网格仍不能精确复现原参考的眼睛像素形状。继续停在视觉候选，不构建release、不安装、不合并、不推送。
+
+## 眼睛方形与位置
+
+> 是不是还有有点差异
+> 那就继续
+
+保持已认可大小，改用小方块`▪`表达完全被肤色包围的单采样点眼睛，以减少半格眼睛的高度并上移。对照字号Menlo26（设备像素）测得字形墨迹11×10，而原半格竖条约8.5×19。原公开绘制检查先RED：小方块眼睛数量0，期望2；日志`/tmp/saddle-clawd-square-eyes-red.log`。
+
+方形眼睛候选验证：正面及转身后的小方块眼睛检查GREEN；完整标准测试373 passed / 0 failed / 5 ignored，Clippy/fmt/diff通过。日志`/tmp/saddle-clawd-square-eyes-{green,all,clippy}.log`。同帧对照`saddle-square-eyes-comparison.png`已在系统预览打开，左旧眼睛、中新候选、右原参考。修前/修后身体包围盒仍均111×76设备像素；普通Unicode字形的实际显示依赖字体，此为指定字号栅格化预览。候选未安装、未合并、未推送。
