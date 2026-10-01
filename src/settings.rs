@@ -608,13 +608,7 @@ impl Settings {
     fn save_recording(&mut self) -> Option<Result<String, String>> {
         let i = self.recording_index();
         let enabled = self.inputs[i].text == "true";
-        let still = match self.saved[i].as_str() {
-            "true" => "still Enabled",
-            "false" => "still Disabled",
-            _ => "state unknown",
-        };
-        let not_saved =
-            |e: &dyn std::fmt::Display| format!("Telemetry recording not saved ({still}): {e}.");
+        let not_saved = |e: &dyn std::fmt::Display| format!("Telemetry recording not saved: {e}.");
         let store = match &self.telemetry {
             Ok(store) => store,
             Err(e) => return Some(Err(not_saved(e))),

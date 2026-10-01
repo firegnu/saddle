@@ -460,7 +460,7 @@ fn a_saved_restart_setting_and_a_failed_switch_both_show_at_normal_size() {
     let text = visible(&shown);
     for part in [
         "Config saved",
-        "Telemetry recording not saved (still Disabled)",
+        "Telemetry recording not saved: storage_unavailable",
         "storage_unavailable: SQLite operation failed",
         "Restart saddle to apply: Refresh interval",
         // The switch's explanation keeps its place.
@@ -473,4 +473,36 @@ fn a_saved_restart_setting_and_a_failed_switch_both_show_at_normal_size() {
     assert!(shown.contains("•Telemetry recording [Enabled"), "{shown}");
     assert!(matches!(ctrl(&mut settings, 's'), Outcome::Recorded));
     assert_eq!(state(&root), (true, 1));
+}
+
+#[test]
+fn a_failed_switch_save_does_not_claim_the_last_read_state_as_current() {
+    let dir = tempfile::tempdir().unwrap();
+    let (config, root) = (dir.path().join("config.toml"), dir.path().join("telemetry"));
+    external(&root, false);
+    let lock = rusqlite::Connection::open(root.join("telemetry.sqlite3")).unwrap();
+    let mut settings = open(&config, &root);
+    toggle(&mut settings);
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Down);
+    ctrl(&mut settings, 'u');
+    settings.paste("2500");
+    // Another client turns recording on, then this Save cannot get the write lock.
+    external(&root, true);
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let Outcome::Applied(saved, _) = ctrl(&mut settings, 's') else {
+        panic!("{}", settings.message());
+    };
+    lock.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(saved.refresh_ms, 2500);
+    assert_eq!(state(&root), (true, 1));
+    assert_eq!(settings.value(RECORDING), Some("true"));
+    let shown = screen(&mut settings, 80, 24);
+    let text = visible(&shown);
+    assert!(text.contains("Config saved"), "{shown}");
+    assert!(text.contains("Telemetry recording not saved"), "{shown}");
+    // Settings has no current reading after the failure; it must not call the old one current.
+    for claim in ["still Disabled", "still Enabled"] {
+        assert!(!text.contains(claim), "{claim:?} shown:\n{shown}");
+    }
 }
