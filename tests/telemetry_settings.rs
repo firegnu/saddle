@@ -415,3 +415,62 @@ fn saved_switch_controls_agent_capture_while_business_still_runs() {
     );
     assert_eq!((calls(), begins()), (3, 2));
 }
+
+/// The visible text inside the Settings box, one row per line joined by spaces, so a phrase that
+/// wraps onto the next row still reads as one.
+fn visible(screen: &str) -> String {
+    screen
+        .lines()
+        .map(|l| l.trim().trim_matches('┃').trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[test]
+fn a_saved_restart_setting_and_a_failed_switch_both_show_at_normal_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let (config, root) = (dir.path().join("config.toml"), dir.path().join("telemetry"));
+    external(&root, false);
+    let lock = rusqlite::Connection::open(root.join("telemetry.sqlite3")).unwrap();
+    let mut settings = open(&config, &root);
+    toggle(&mut settings);
+    // From the switch, Down wraps to Sidebar width, then Refresh interval (restart required).
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Down);
+    ctrl(&mut settings, 'u');
+    settings.paste("2500");
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let Outcome::Applied(saved, restart) = ctrl(&mut settings, 's') else {
+        panic!("{}", settings.message());
+    };
+    lock.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(
+        (saved.refresh_ms, restart),
+        (2500, vec!["Refresh interval"])
+    );
+    assert!(
+        fs::read_to_string(&config)
+            .unwrap()
+            .contains("refresh_ms = 2500")
+    );
+    assert_eq!(state(&root), (false, 0));
+    assert_eq!(settings.value(RECORDING), Some("true"));
+    let shown = screen(&mut settings, 80, 24);
+    let text = visible(&shown);
+    for part in [
+        "Config saved",
+        "Telemetry recording not saved (still Disabled)",
+        "storage_unavailable: SQLite operation failed",
+        "Restart saddle to apply: Refresh interval",
+        // The switch's explanation keeps its place.
+        "only work explicitly chosen for recording",
+        "history is kept",
+    ] {
+        assert!(text.contains(part), "{part:?} not visible:\n{shown}");
+    }
+    // The switch row still shows the unsaved draft, marked as such, ready to retry.
+    assert!(shown.contains("•Telemetry recording [Enabled"), "{shown}");
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Recorded));
+    assert_eq!(state(&root), (true, 1));
+}

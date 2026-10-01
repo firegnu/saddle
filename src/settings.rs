@@ -584,12 +584,13 @@ impl Settings {
                     self.saved[i] = value(&parsed, &self.fields[i]);
                     self.inputs[i] = Input::new(self.saved[i].clone());
                 }
+                // Both parts' results lead; the restart note follows.
                 let restart_note = if restart.is_empty() {
                     String::new()
                 } else {
-                    format!("; restart saddle to apply: {}", restart.join(", "))
+                    format!(" Restart saddle to apply: {}.", restart.join(", "))
                 };
-                self.fail(format!("Config saved{restart_note}. {problem}"));
+                self.fail(format!("Config saved. {problem}{restart_note}"));
                 Outcome::Applied(Box::new(parsed), restart)
             }
             Some(Ok(note)) => {
@@ -607,7 +608,13 @@ impl Settings {
     fn save_recording(&mut self) -> Option<Result<String, String>> {
         let i = self.recording_index();
         let enabled = self.inputs[i].text == "true";
-        let not_saved = |e: &dyn std::fmt::Display| format!("Telemetry recording not saved: {e}.");
+        let still = match self.saved[i].as_str() {
+            "true" => "still Enabled",
+            "false" => "still Disabled",
+            _ => "state unknown",
+        };
+        let not_saved =
+            |e: &dyn std::fmt::Display| format!("Telemetry recording not saved ({still}): {e}.");
         let store = match &self.telemetry {
             Ok(store) => store,
             Err(e) => return Some(Err(not_saved(e))),
@@ -727,7 +734,8 @@ impl Settings {
         } else if self.page == Page::Colors {
             34
         } else if self.page == Page::General {
-            15
+            // Grows by the rows a long message wraps onto, inside the 76-column box.
+            15 + word_wrap(&self.message, 76 - 4).len().clamp(1, 3) as u16 - 1
         } else {
             16
         };
@@ -776,14 +784,17 @@ impl Settings {
         let (rest, tabs) = self.draw_header(t, frame, body, show_tabs.then_some(self.page));
         body = rest;
         hits.extend(tabs);
-        // The message line sits above the buttons.
+        // The message sits above the buttons; a long one wraps onto up to three rows.
         if body.height > 1 && !self.message.is_empty() {
+            let mut lines = word_wrap(&self.message, usize::from(body.width));
+            lines.truncate(usize::from((body.height - 1).min(3)));
+            let height = lines.len() as u16;
             frame.render_widget(
-                Paragraph::new(crate::ui::clip(&self.message, usize::from(body.width)))
+                Paragraph::new(lines.into_iter().map(Line::from).collect::<Vec<_>>())
                     .style(Style::default().fg(if self.error { t.danger } else { t.muted })),
-                Rect::new(body.x, body.bottom() - 1, body.width, 1),
+                Rect::new(body.x, body.bottom() - height, body.width, height),
             );
-            body.height -= 1;
+            body.height -= height;
         }
         if let Some(error) = self.broken.as_ref().filter(|_| !diagnostics) {
             let kept = if self.keeping && !self.edited().is_empty() {
@@ -1174,6 +1185,26 @@ fn unit(kind: Kind) -> &'static str {
         Kind::Bool => " Space/Enter toggle",
         _ => "",
     }
+}
+
+/// Rows of whole words; only a word wider than the row is split.
+fn word_wrap(text: &str, width: usize) -> Vec<String> {
+    let mut rows: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match rows.last_mut() {
+            Some(row) if row.width() + 1 + word.width() <= width => {
+                row.push(' ');
+                row.push_str(word);
+            }
+            _ if word.width() > width => rows.extend(
+                crate::ui::wrap_text(word, width as u16)
+                    .into_iter()
+                    .map(|line| line.to_string()),
+            ),
+            _ => rows.push(word.into()),
+        }
+    }
+    rows
 }
 
 fn shrink_top(area: &mut Rect, rows: u16) {
