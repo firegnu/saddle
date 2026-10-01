@@ -203,7 +203,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03A/B/C全部实施审查worktree及agent保留，功能未合并，不提前收尾；整阶段审查通过及验证缺口处理后共同合并推送清理/关闭目录已删对应自建agent/空提交/HANDOFF。不release/安装/真实JEV产品请求/真实数据队列/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 23. 当前：03C M1第一次限定独立复审
+## 23. 03C M1第一次限定独立复审（已关闭，当前见第24节）
 
 - 原实现者3583e0bc626b已idle/attached0，dlog取完整DONE。新候选6691200c7af1001c60fd50fc6bcc77bda6682596，原1692be2；实现树干净，增量9文件及完成记录/diff check已核，无Corral或反向依赖变更。
 - TLS下层保存写错，外层提交正文进度前检查，CONNECT递归标志分离；生产TLS验证保持。已读本轮有效RED补丁/原始日志（2项1过1败，确实delivered_body0而attempts1）、GREEN插件17+集成3；超时目标只有GREEN，不冒称单独RED。证据 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-m1-uqcqtds1。
@@ -212,3 +212,14 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 收提醒先status，working重挂；idle后经dlog reply取完整DONE，再逐项裁定。必须改交原实现者dispatch556e907c030040bea59cb9e0572a4e1e，主控不写功能，每轮提醒，最多两轮独立复核未收敛报告用户。需改Corral或反向依赖先停告知。
 - 标准缺口独立存在：主控179通过1失败1忽略、开发96通过1失败，两处不同既有用例busy，单项通过根因未知、后续targets未跑，Clippy通过不豁免。合并前仍需单独处理覆盖/失败裁定。
 - 03A/B/C全部实施审查会话worktree保留，功能未合main；整阶段审查通过且标准验证缺口处理后共同合并推送清理、目录删除后关对应自建agent、空提交/HANDOFF。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
+
+
+## 24. 当前：M1关闭；标准补跑发现10项workflow失败，另待busy限定核查
+
+- 原审查者a6e4e4014bbf已idle/attached0，dlog取完整DONE。M1明确关闭，剩余必须改0/新增建议0，独立20相关通过；主控核原始日志/证据接受R1–R3并记录dlog review。候选6691200不变。整阶段尚未放行。
+- 主控只补原标准未执行的30个target，各一次，全部执行完成：290通过/10失败/4忽略；证据 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-gap-controller-f9e9h7xt`（plan/results/summary.json、分包日志）。workflow90通过10失败4忽略，其余遗漏目标全通过。没有重跑全套/Clippy/已通过目标，也没有精确复跑新失败。
+- 10项均插件workflow，完整清单在docs/任务/遥测03C-独立交叉审查.md最后主控补跑结果。部分屏幕显示新Dispatch行/详情，旧断言仍期待空插件或默认test.entry；只是关联线索，不宣布10项同因或直接放宽断言。**当前禁止合并清理，等待分别核实并修正必要问题。** 先前M1关闭不重开，新发现不混记为M1第二次独立复审。
+- 在补跑结束前已向原实现者saddle/dev-telemetry-dispatch-1 instance3583e0bc626b，经dispatch556e907c030040bea59cb9e0572a4e1e送出两处busy只读核查，confirmed=true/merged_with_draft=false，新after pending=true实例相符。任务及唯一追加文件docs/任务/遥测03C-标准验证缺口核查.md，候选固定6691200。只静态/原日志，必要时最多一个仓库外合成探针一次；不改功能/测试，不重复plugins/core_plugins/标准/Clippy。发现补跑10项时他已working，未打断；任务已补事实，明确本轮不顺带扩查10项。
+- 收提醒先status，working重挂；idle后经dlog reply取完整DONE，核busy证据/原次根因可信度/合并影响。**原次失败未知不可借机制探针直接确认为同因。** 主控接着为workflow新失败形成限定核查/返工，不自行写功能，不无限追加验证。需改Corral或反向依赖先停告知。
+- 原标准开发96通过1失败、主控179通过1失败1忽略仍原样保留，两处不同既有用例busy、单项通过根因未知；遗漏覆盖补齐不等于失败裁定完成。原Clippy通过但本轮未重跑。功能仍未合main。
+- 03A/B/C所有实施审查agent及worktree保留；整阶段通过且验证失败处理后才合并推送清理，目录删除后关对应自建agent、空提交/HANDOFF/dlog实际收尾。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
