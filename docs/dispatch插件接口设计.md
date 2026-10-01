@@ -6,7 +6,7 @@
 
 - dispatch 作为同版本编译进 Saddle 的 **core plugin**：业务、路由规则、skill/模板资源和接入说明都在 `plugins/dispatch/`；宿主只提供“内置插件目录 + 启停 + 无 TUI 命令入口 + 受控采集接口 + 资源安装器”五项通用能力。现有外部进程插件、协议、SDK、Drover、`saddle ctl plugin` 都不改。
 - 依赖无环：`saddle → saddle-dispatch-plugin → saddle-core-plugin(新接口 crate)`，`saddle → saddle-core-plugin`。插件不依赖宿主应用 crate；宿主库模块也不 import dispatch，只有 `src/main.rs` 组装目录（第 2 节）。
-- 无 TUI 入口：`saddle plugin run dispatch route`。stdin 是摘要，stdout 是与 route.py 等价的业务 JSON，退出码是业务码；宿主状态与采集结果走 stderr 回执；宿主拒绝固定为 125（第 3 节）。
+- 无 TUI 入口：`saddle plugin run dispatch route`。stdin 是摘要，stdout 是与 route.py 等价的业务 JSON，退出码是业务码；宿主状态与采集结果走 stderr 起止配对回执，所有路径（含 125 拒绝）都输出同一对边界，规则与 `saddle agent` 相同；宿主拒绝固定为 125（第 3 节）。
 - 采集复用阶段 01/02 的 `Store::check_operation / prepare_operation / record_begin / record_end` 和进程内 `Capture`；插件只拿到一个只能 `begin` 一次、不返回任何状态的 `Recorder`，不接触 ID、generation、producer 或 evidence_kind（第 4 节）。
 - 路由逐项保持 route.py 的请求、整理、阈值、舍入、重试和 null 兜底语义，列出少数接受的边缘差异（第 5 节）。
 - skill 在用户**启用**插件时自动安装；TUI 启动时只升级本插件拥有且未被改过的旧版本；停用不删 skill；“Remove resources”只删自己拥有且未改的文件。现有两处软链接被当作外来同名目标，永不改写，留给阶段05（第 6 节）。
@@ -78,7 +78,10 @@ pub struct SetupFile { pub label: &'static str, pub resource: &'static str, pub 
 pub struct RouteBegin { pub router_model: String, pub router_version: Option<String>,
                         pub rules_version: Option<String>, pub summary: Vec<u8>, pub request: Vec<u8> }
 #[non_exhaustive] pub enum End { Route(RouteEnd) }
-pub struct RouteEnd { pub response: Option<Vec<u8>>, pub suggestion: Option<Vec<u8>> }
+pub struct RouteEnd { pub response: Captured, pub suggestion: Captured }
+/// 取得的完整正文，或取不到的原因（宿主映射为遥测 gap，不用其他字节顶替）。
+pub enum Captured { Bytes(Vec<u8>), Missing(Missing) }
+#[non_exhaustive] pub enum Missing { NotAvailable, Unrecognized, TooLarge }
 
 pub trait Recorder {
     /// 至多一次，紧挨在外部副作用之前调用。无返回值：业务不得依据采集结果分支。
@@ -125,19 +128,38 @@ saddle plugin [--config PATH] run ID COMMAND [--record-context /abs/context.json
   2. 只读 `plugins.toml`。读失败 125 `registry_unavailable`（无法确认启用即不执行）；未启用 125 `plugin_disabled`；ID 冲突 125 `plugin_conflict`。不自动启用、不回退到旧脚本。
   3. 命令不存在 125 `unknown_command`；命令没有声明采集却给了 `--record-context` 时 125 `capture_not_supported`。`--brief-file` 无 `--record-context` 时与 `saddle agent` 一样接受但不读取。
   4. 有记录上下文时按 4.3 先校验；关联无效 125，存储关闭/不可用只记 gap 继续。
-  5. 在 stderr 写起始边界，进入 `plugin.run`（`catch_unwind` 包住），把 `Completion.stdout` 原样写 stdout，按 4.3/4.4 写 end，最后写终止回执，以业务码退出。
+  5. 进入 `plugin.run`（`catch_unwind` 包住；起始边界已在入口写出，见下），把 `Completion.stdout` 原样写 stdout，按 4.3/4.4 写 end，最后写终止回执，以业务码退出。
+
+以上任一步的 125 拒绝都在已写出的起始行之后补写终止行。
 
 上下文文件与 `saddle agent` 同一格式（`src/agent.rs:18-29`）：`schema_version=1`、`trace_id`、`dispatch_id`、可选 `basis_event_ids`、`previous_brief_event_id`（须同时给 `--brief-file`）。route 不接受 `decision_event_id` 与 `send_kind`（路由先于主控决定；遥测也不允许 route.begin 引用 decision），出现即 125 `invalid_context_combination`。文件读取限制（O_NOFOLLOW、普通文件、64 KiB）照搬 agent。
 
-**stderr 回执**：沿用 [遥测使用](遥测使用.md) 中 `saddle agent` 的起止边界与解析规则，前缀换成 `saddle-plugin: `，以便调用方用同一解析法。起始行 `{"schema_version":1,"call_id":"<uuid>","final":false}` 在任何业务输出前写出；终止行：
+**stderr 回执（与 `saddle agent` 同一起止匹配规则）**：除 `--help` 外，每次 `run`——成功、业务失败、125 拒绝（含参数解析失败）、126 内部失败——都输出一对宿主行，前缀 `saddle-plugin: `：
 
-```json
-{"schema_version":1,"call_id":"<同一 uuid>","final":true,"plugin":"dispatch","command":"route",
- "executed":true,"exit_code":0,"error":null,
- "capture":{"requested":true,"operation_id":"…","begin":"stored","end":"stored","gaps":[]}}
+```text
+saddle-plugin: {"schema_version":1,"call_id":"<本次 UUID v4>","final":false}
+saddle-plugin: {"schema_version":1,"call_id":"<同一 UUID>","final":true,"plugin":"dispatch","command":"route","executed":true,"outcome":{"kind":"exited","exit_code":0},"error":null,"operation_id":"…","begin":"stored","end":"stored","gaps":[]}
 ```
 
-`capture.begin/end` 取 `not_requested | not_reached | stored | duplicate | disabled | unavailable | invalid`；`not_reached` 表示插件没有走到外部调用（例如没有 key），因此不建 operation。回执不含正文、key 或请求头。
+终止行字段与 `src/agent.rs` 的回执同形（平铺 operation_id/begin/end/gaps，另加 plugin、command）；拒绝时 executed=false、outcome=null、error={code,message}。不含正文、key 或请求头。
+
+宿主写出规则：
+
+1. call_id 在入口生成，不传给插件或 JEV。起始行随即写出，是本次 stderr 的字节 0，早于参数解析、启用检查和 `plugin.run`；125 拒绝路径没有业务，起始行之后直接写终止行。
+2. 两行都用 02A `process::write_receipt` 同样的有界写法：poll 可写后每次至多 512 字节，不给继承来的 fd 设 O_NONBLOCK；每行有固定等待上限（实施初值 1 s，可按合成验证调整），超时或写错误即放弃该行，不重试。回执写出从不无限阻塞业务。
+3. 起始行没能完整写出时，业务照常执行一次（与 02A“业务仍可执行”一致；回执从不阻止、推迟到无限或重放业务），但本次不再写终止行，避免在残缺首行后追加可被误读的内容。
+4. 终止行写不出或只写出一部分时同样放弃：不篡改已知退出码（业务码或 125/126），不重跑插件，不补写。stdout 写失败（如 EPIPE）只在终止行 gaps 加 `output/write_failed`，退出码不变。
+5. 插件本身不写 stderr；第三方库若意外写出，只会夹在两行之间，按下面规则不影响判定。
+
+调用方（包括按 skill 行事的主控）的判定规则与 [遥测使用](遥测使用.md) 中 `saddle agent` 的规则相同：等进程退出、stdout/stderr 收齐后，只取 stderr 字节 0 起的第一条完整 LF 行作起始边界（前缀、合法 JSON、schema_version=1、final=false、合法 UUID call_id），只取最后一条完整 LF 行作终止回执（同前缀、合法 JSON、final=true、call_id 与首行相同），不向前或向后搜索其他行。两者都匹配才采信 executed、outcome、error 与采集状态；缺失、截断或不匹配一律为“未知”，不能凭退出码（包括 125、126）断言未执行、被拒绝或插件未启用，也不据此重跑。业务结果只看 stdout 与退出码本身，不依赖回执。
+
+**采集状态（begin/end）优先级**，取值沿用 agent 回执的 not_requested、stored、duplicate、disabled、unavailable、invalid，另加 not_reached：
+
+1. 125 拒绝：与 `agent.rs` 的拒绝回执一致，begin/end=not_requested、operation_id=null。
+2. 未给 `--record-context`：not_requested。
+3. 预检 `check_operation` 已判 disabled/unavailable：begin/end 固定为该值；之后插件有没有调用 begin 都不改写。
+4. 已请求且预检可采集，但插件没调用 begin：begin/end=not_reached。它只表示没走到操作起点（例如没有 key），不用于其他情况。
+5. 插件调用了 begin：begin 为 prepare_operation/record_begin 的结果；prepare 失败时 end 与 begin 相同（同 `agent.rs`），有 Capture 时 end 为 record_end 的结果。
 
 **退出码**：
 
@@ -147,6 +169,8 @@ saddle plugin [--config PATH] run ID COMMAND [--record-context /abs/context.json
 | 125 | 宿主在进入插件前拒绝（参数、未知、停用、冲突、登记不可读、上下文/关联无效） | false |
 | 126 | 进入插件后宿主内部失败：panic，或插件返回 ≥125 的非法码；业务结果未知，stdout 可能为空 | true |
 | 128+n | 被信号终止，没有终止回执；结果未知 | 未知 |
+
+退出码 126/127 也可能来自 shell（不可执行、找不到 `saddle`），125/126 是否真是宿主拒绝或插件内部失败，只以配对回执为准；表中 executed 列指配对回执里的值。
 
 业务结果与采集结果严格分开：采集失败从不改变 stdout 或退出码，也没有“为补记录再跑一次”的选项。宿主对内置命令只做名称查找和一次同步调用，不提供队列、状态机、多步工作流或常驻服务。
 
@@ -201,13 +225,13 @@ Skill corral-dispatch r1: Claude Code installed · Codex conflict (existing link
 
 ```text
 主控 ──stdin 摘要──► saddle plugin run dispatch route [--record-context C] [--brief-file B]
-宿主：解析 → 启用检查 → (有 C) check_operation：无效→125；关闭/不可用→Recorder=Inactive
+宿主：生成 call_id、写 stderr 起始边界 → 解析 → 启用检查 → (有 C) check_operation：无效→125（写终止行）；关闭/不可用→Recorder=Inactive
 插件：读摘要、strip → 无 key：stdout ok:false，退出1，不调用 begin（capture=not_reached）
 插件：构造请求 JSON 字节（只含摘要）
 插件 ─Recorder.begin(Route{summary, request, router_model, router/rules_version})─► 宿主
       宿主：prepare_operation（读 B 快照、暂存正文、固定 generation）→ record_begin（快照+begin 同一事务）
-插件 ──POST 请求（不含 B、不含任何遥测 ID）──► JEV ──响应原字节──► 插件
-插件：整理 → Completion{exit_code, stdout=业务 JSON, end=Route{response, suggestion=stdout}}
+插件 ──POST 请求（不含 B、不含任何遥测 ID）──► JEV ──HTTP 响应──► 插件
+插件：最终 2xx 响应解析为完整 JSON 值 → 整理 → Completion{exit_code, stdout=业务 JSON, end=Route{response=完整解析响应表示, suggestion=stdout}}
 宿主：写 stdout → record_end(outcome=exited(exit_code)) → stderr 终止回执 → exit(exit_code)
 主控：读结果，自己定模型家族/强度/预算；需要时用现有 `saddle telemetry append` 提交 controller.decision（based_on 指 route.begin/end）
 ```
@@ -218,7 +242,7 @@ Skill corral-dispatch r1: Claude Code installed · Codex conflict (existing link
 
 | 情况 | 处理（依据） |
 |---|---|
-| 未给 `--record-context` | 不打开遥测库、不建目录；capture.requested=false |
+| 未给 `--record-context` | 不打开遥测库、不建目录；begin/end=not_requested |
 | 关联 ID 不存在、跨 trace、字段无效 | 执行前 125（与 `agent.rs:347-359` 相同，关闭时也校验，`capture.rs:97-140`） |
 | 总开关/链路关闭、库未初始化或不可用 | 路由照常；begin/end 记 disabled/unavailable |
 | begin 前出错（无 key、摘要不是 UTF-8） | 不建 operation，capture=not_reached；主控可在决定事件里写“路由不可用”，不伪造 begin |
@@ -226,7 +250,7 @@ Skill corral-dispatch r1: Claude Code installed · Codex conflict (existing link
 | `record_begin` 失败但 Capture 在 | 路由照常；end 时由 `record_end` 判定 begin 缺失：建 operation、标 `begin_missing=true`，沿用调用前固定的 based_on/uses_brief，若原 generation 仍有效则以 `publication_phase=end` 发布调用前暂存的任务书原字节（`capture.rs:395-470`、`validate.rs:302-310`，契约 §4 第5步）；summary/request 属于 begin 正文，不补造 |
 | 调用中关闭或关闭后重开 | `check_capture` 比较开始时的全局与链路 generation，不一致即 disabled（`capture.rs:314-322`）；不换新凭据 |
 | `begin` 被调用两次 | 第二次忽略，回执 gap `capture/unrecognized`；业务不受影响 |
-| 插件返回后 | 有 Capture 才写 end；从未调用 begin 则 end=not_reached |
+| 插件返回后 | 有 Capture 才写 end；回执状态按 3.2 的优先级，not_reached 只用于“已请求、预检可采集、但没调用 begin” |
 | panic | 有 Capture 时写 `outcome=unknown`，response/suggestion 记 gap not_available；退出 126 |
 | 被杀/超时 | 没有 end；查询显示 begin 无 end = 结果未知；不重试 |
 
@@ -240,7 +264,8 @@ Skill corral-dispatch r1: Claude Code installed · Codex conflict (existing link
 | route.begin 正文 | `summary` = strip 后的摘要 UTF-8 字节；`request` = 实际发送的 HTTP 请求体字节（重试发送同一份） |
 | route.begin 链接 | based_on → 需求/提议/授权/复用证据/controller.summary；uses_brief → 本 operation 的快照；无 uses_decision |
 | route.end outcome | 业务返回时 `{"kind":"exited","exit_code":<业务码>}`（0 成功、1 失败）；panic 为 `unknown`。HTTP 超时属于业务失败（exit 1），不是 `timed_out` |
-| route.end 正文 | `response` = 最后一次**收到的** HTTP 响应体原字节（含非 2xx；没有收到则缺省）；`suggestion` = 本次写到 stdout 的业务 JSON 原字节（成功为三项建议，失败为 `ok:false`）。成功时两者必有；用原字节而非重新序列化的 JSON，不把“解析结果”说成原始响应 |
+| route.end 正文 | `response` = **完整解析响应的表示**（契约 §5.1、接入方案 §4/§7）：仅当最终一次尝试返回 2xx 且整个响应体解析为 JSON 成功时取得；把解析得到的整个 JSON 值（含 answers、model、usage 及整理未用到的字段）按文档中的键顺序紧凑序列化为 UTF-8 JSON，重复键按 Python dict 语义（后值替换、保留首次位置），数值取解析后的值（i64/u64 内整数精确，其余为 f64）。它是解析结果的规范表示，既不是 HTTP 原始字节，也不是整理建议；不截断。保留键顺序，使存下的响应足以复核 level 平局和 cross 遍历顺序。整理（shape）失败时仍保存这份已取得的解析响应。`suggestion` = 本次写到 stdout 的业务 JSON 原字节（成功为三项建议，失败为 `ok:false`），即主控实际看到的输出 |
+| response 取不到时 | 只记 gap，不用其他字节顶替：网络失败或最终尝试为非 2xx → not_available；2xx 但响应体读取中断 → not_available；2xx 但 JSON 无效 → unrecognized；响应体超过 16 MiB 读取上限或表示超过正文上限 → too_large。重试前那次 429/529 的响应体、任何 HTTP 错误体、截断或部分响应体都不作为 response 保存；HTTP 错误的前 300 字节只出现在 `suggestion`（stdout 的 error 文本）里。成功（exited/0）时 response 与 suggestion 都必有 |
 
 主控已有的 controller.summary（purpose=route）、controller.decision、controller.note 仍走现有纯记录命令，本设计不加新事件类型。
 
@@ -287,9 +312,10 @@ Skill corral-dispatch r1: Claude Code installed · Codex conflict (existing link
 
   ```text
   echo "<摘要>" | saddle plugin run dispatch route
-  - 退出码 0：照用各项 verdict（null 照旧自己定）。
-  - 其他任何情况（stdout 为 "ok": false、插件未启用或不可用、命令不存在）：路由不可用，各项自己按下面的规则定；不要重试，不要自己启用插件，不要改用旧 route.py，不要问用户；在路由行写明原因（如「插件未启用」）。
-  - 需要记录这次路由时加 --record-context <绝对路径> [--brief-file <任务书绝对路径>]；记录结果看 stderr 最后一行回执，不影响路由，记录失败不要重跑。
+  - 等命令结束、输出收齐再判断。路由结果只看退出码和 stdout：退出码 0 且 stdout 是 "ok": true 的 JSON，照用各项 verdict（null 照旧自己定）。
+  - 其他任何情况都是路由不可用：各项自己按下面的规则定；不要重试，不要自己启用插件，不要改用旧 route.py，不要问用户。
+  - 在路由行写不可用原因时，只认 stderr 的完整配对回执：第一行是 `saddle-plugin:` 起始行（final=false），最后一行是同一 call_id 的 final=true 终止行。配对成功才照终止行的 error.code 写原因（plugin_disabled 写「插件未启用」）；回执缺失、截断或不配对，只写「路由不可用，原因未知（退出码 N）」，不能凭退出码说插件未启用或没执行。
+  - 需要记录这次路由时加 --record-context <绝对路径> [--brief-file <任务书绝对路径>]。记录状态同样只认配对终止行的 begin/end，否则记为未知；不论记录成功与否都不重跑路由。
   ```
 - `README.md`：安装/卸载节改为“随 Saddle 启用 dispatch 插件自动安装”，key 与“不用路由”说明保留；`route.py` 不再随资源分发。
 
@@ -319,13 +345,16 @@ dispatch 声明一个 `AgentSkill` 资源 `corral-dispatch`，文件为 `SKILL.m
 | owned_current | 有记录；所有记录文件为普通文件且哈希等于记录（或 pending）；revision 与内容等于随包版本 |
 | owned_outdated | 同上但记录 revision < 随包 revision |
 | newer | 记录 revision > 随包 revision（较新的 Saddle 装过） |
-| modified | 有记录，但任一记录文件缺失、变成链接或哈希不符；或同 revision 内容不同 |
+| incomplete | 有 `pending`，目标内容既不完整等于旧文件集也不完整等于 pending 文件集（安装/升级中断留下的新旧混合或缺文件） |
+| modified | 有记录（无 pending 或已排除 incomplete），但任一记录文件缺失、变成链接或哈希不符；或同 revision 内容不同 |
+
+“完整等于某个版本”指：该版本文件集里的每个路径都是普通文件且哈希一致，且只属于另一版本的路径不存在。按整套文件判断，不逐个文件拼凑。
 
 目标目录里用户新增的额外文件不算修改，始终保留；新版本若要写同名文件则该目标记 modified。
 
 ### 6.4 触发点与动作
 
-| 触发 | absent | missing | owned_outdated | owned_current | newer | modified / foreign |
+| 触发 | absent | missing | owned_outdated | owned_current | newer | modified / incomplete / foreign |
 |---|---|---|---|---|---|---|
 | 用户在管理页 Enable（首次或再次） | 安装 | 重新安装 | 升级 | 不动 | 不降级，报告 | 不写，报告冲突 |
 | Sync resources（已启用时） | 同 Enable | 同 Enable | 同 Enable | 同 Enable | 同 Enable | 同 Enable |
@@ -345,8 +374,10 @@ dispatch 声明一个 `AgentSkill` 资源 `corral-dispatch`，文件为 `SKILL.m
 ### 6.5 写入过程与回执
 
 - 安装：确认父目录状态 → 写 `pending` 记录 → `mkdir` 目标（已存在即并发冲突，按 foreign 处理）→ 每个文件先写同目录临时名（以 `.` 开头且不叫 SKILL.md）再 rename，**SKILL.md 最后写** → 记录定稿。失败时删除自己创建的文件与目录，撤 pending。不在技能根目录放整目录的暂存副本，避免 agent 把暂存目录当成重复技能。
-- 升级：在锁内重新核对未改过 → 逐文件“临时名 + rename”替换，旧版本多出的自有文件删除，SKILL.md 最后 → 定稿；中途失败用内存中的旧字节恢复已替换文件，回执 failed。
-- 记录先于目录变动写入，崩溃后：目录不存在 → missing（显式 Enable 时重装）；内容与 pending 或旧表一致 → 视为自有并定稿；都不一致 → modified，不覆盖。用户在核对与替换之间的极短窗口里编辑文件仍可能被覆盖，文档注明。
+- 升级：在锁内重新核对目标完整等于旧文件集 → 写 `pending` → 逐文件“临时名 + rename”替换，旧版本多出的自有文件在哈希仍等于旧记录时删除，SKILL.md 最后 → 定稿。
+- 同一轮内的失败回滚只处理能证明属于本轮的文件：当前哈希等于本轮刚写入的字节，才恢复为内存中的旧字节（升级）或删除（安装、新增文件）；哈希对不上的文件不覆盖、不删除，原样保留并在回执里列出，结果记 failed。目录只在空时 rmdir。
+- 记录先于目录变动写入。下次分类时：目录不存在 → missing（显式 Enable/Sync 时重装）；目标**完整等于** pending 文件集 → 视为新版本已装好并定稿；完整等于旧文件集 → 撤 pending，按旧版本处理；两者都不完整等于 → incomplete。incomplete 不会被标成 owned_current，启动和 Enable/Sync 都不自动修补，只报告“安装/升级未完成”及不一致的文件；处理方法是用户自行检查后删除该目录，再 Sync resources 按 missing 重装。v1 不提供更多恢复手段，不引入事务引擎。
+- 用户在核对与替换之间的极短窗口里编辑文件仍可能被覆盖，文档注明。
 - 回执（管理页消息和测试断言用同一结构）：
 
 ```json
@@ -396,9 +427,9 @@ Dispatch 提供路由命令 `saddle plugin run dispatch route`，并随插件安
 
 | 步 | 交付 | 文件范围 | 关键验证 |
 |---|---|---|---|
-| 03A 内置插件框架与 headless 入口 | core-plugin crate；registry `core` 表与保留 ID；`saddle plugin status/run`；回执与退出码；Recorder→遥测适配；管理页内置行与 Enable/Disable（暂无资源） | 第7节前三、四行（不含 resources） | 假内置插件：未启用/冲突/登记损坏均 125 且不进插件；业务码与 stdout 透传；panic→126；旧登记兼容与旧二进制写回后默认停用；route 采集的 stored/disabled/重开后旧 end 被拒/begin 缺失 end 恢复/未调用 begin=not_reached；未给上下文时不建遥测目录 |
+| 03A 内置插件框架与 headless 入口 | core-plugin crate；registry `core` 表与保留 ID；`saddle plugin status/run`；回执与退出码；Recorder→遥测适配；管理页内置行与 Enable/Disable（暂无资源） | 第7节前三、四行（不含 resources） | 假内置插件：未启用/冲突/登记损坏均 125 且不进插件；业务码与 stdout 透传；panic→126；旧登记兼容与旧二进制写回后默认停用；route 采集的 stored/disabled/重开后旧 end 被拒/begin 缺失 end 恢复；采集状态优先级（未请求、预检 disabled/unavailable 不被改写为 not_reached、仅可采集未 begin 才 not_reached）；未给上下文时不建遥测目录。回执：成功、业务失败、参数错误与各类 125、126 都有字节 0 起始行和同 call_id 的末行终止回执；用不读取的合成 stderr 管道验证起始行写不出时业务仍只执行一次、不写终止行、退出码不变，终止行写不出时有界返回且退出码不变；stdout EPIPE 只加 gap；任何回执失败都不重跑插件 |
 | 03B 资源生命周期 | 资源安装器、所有权记录、启动升级、Sync/Remove resources、status 资源段、接入说明与模板路径渲染 | 第7节资源安装器行 | 第 6.3 各分类与 6.4 动作矩阵；符号链接与外来目录永不写；用户额外文件保留；中途失败回滚；锁忙；不降级；模拟两处旧软链接只报告冲突 |
-| 03C dispatch 插件 | 路由移植、ureq 传输、资源复制与 SKILL/README 最小改动、接入说明、目录登记、route 事件映射 | 第7节 dispatch 行与 `src/main.rs` 目录一行 | 请求 JSON 与 route.py 常量等价；5.1 整理/舍入/顺序/阈值边界定值；重试矩阵（假传输 + 本地 TcpListener）；无 key 不发请求不 begin；请求不含任务书；记录与回执中搜不到 key；资源 revision 指纹测试；模板逐字节一致 |
+| 03C dispatch 插件 | 路由移植、ureq 传输、资源复制与 SKILL/README 最小改动、接入说明、目录登记、route 事件映射 | 第7节 dispatch 行与 `src/main.rs` 目录一行 | 请求 JSON 与 route.py 常量等价；5.1 整理/舍入/顺序/阈值边界定值；response 为完整解析表示（保留键顺序与重复键语义、shape 失败仍保存、非 2xx/前次 429/截断/无效 JSON 均不作为 response 而记对应 gap）；重试矩阵（假传输 + 本地 TcpListener）；无 key 不发请求不 begin；请求不含任务书；记录与回执中搜不到 key；资源 revision 指纹测试；模板逐字节一致 |
 
 建议主控路由时注意：03A 涉及来源证据完整性，03B 会写删用户主目录文件，03C 移植核心判定规则，都可能落在“碰要害”。阶段04（独立查询界面、Drover 关联）和阶段05（发布、切换软链接与 skill、退役 route.py/dlog 依赖）保持原计划，不并入本阶段。
 
@@ -410,7 +441,7 @@ Dispatch 提供路由命令 `saddle plugin run dispatch route`，并随插件安
 
 ### 9.2 主控可直接确认的推荐（常规细节）
 
-内置插件列入 Plugins 搜索面板（3.4）；v1 不提供 headless enable（6.4）；TUI 启动自动升级自有旧版（6.4）；response 存原字节、suggestion 存 stdout 原字节（4.4）；不跟随重定向（5.2）；`ureq`（第7节）；说明文案用中文。管理页新增的说明区按项目惯例先给用户看线框（3.4）。
+内置插件列入 Plugins 搜索面板（3.4）；v1 不提供 headless enable（6.4）；TUI 启动自动升级自有旧版（6.4）；response 按契约存完整解析响应的表示、suggestion 存 stdout 原字节（4.4，主控核对 M1 后修订，不再采用原始 HTTP 字节）；不跟随重定向（5.2）；`ureq`（第7节）；说明文案用中文。管理页新增的说明区按项目惯例先给用户看线框（3.4）。
 
 ### 9.3 阻断检查
 
@@ -424,3 +455,13 @@ Dispatch 提供路由命令 `saddle plugin run dispatch route`，并随插件安
 - 旧资源只读：`../corral/corral-dispatch-skill/{SKILL.md,项目AGENTS模板.md,route.py,README.md}`；`git -C ../corral status --short corral-dispatch-skill` 为空，HEAD `6923da1ee0c766468c31e1f577fb8370b8b6da77`；四个文件 SHA256 与调研记录一致（SKILL `84b0a8cf…`、模板 `22339f46…`、route.py `d4ab1cc8…`、README `f93d2401…`）。目录内另有 `__pycache__/`，未读取、未执行。
 - `readlink` 确认 `~/.agents/skills/corral-dispatch` 与 `~/.claude/skills/corral-dispatch` 都指向该目录；未修改。
 - 未执行：cargo 构建/测试、route.py、HTTP、Corral/JEV/队列/遥测数据访问、安装或链接切换。上文所有“验证”均为后续实现应做的检查，没有一项已验证。
+
+## 11. 主控核对修订（2026-10-01）
+
+依据主仓库 `docs/任务/遥测03-插件设计主控核对.md`，只改本文与任务完成记录：
+
+- **M1**：撤回 abd1d3c 中“response=最后收到的 HTTP 响应体原字节（含非 2xx）”。response 恢复为契约要求的完整解析响应表示，与整理建议和 HTTP 原始字节都区分；固定了 shape 失败、解析失败、HTTP 失败和重试各次响应的归属（4.4），接口改为 `Captured::{Bytes, Missing}` 以便如实记 gap（2.1）。没有发现必须改用原始字节的理由。
+- **M2**：3.2 写明所有路径（含 125 拒绝和参数错误）都有配对起止边界，起始行早于解析与插件执行，两行有界写出，起始行或终止行写不出时业务不受阻、不重放、退出码不变；调用方判定规则与 `saddle agent` 相同。5.4 的 skill 指令改为只按配对回执写原因和记录状态，缺失即未知。8 节 03A 加入对应直接验证项。来源模型不变。
+- **S1**：6.3 新增 incomplete，按整套文件判断“完整等于某个版本”；6.5 写明同轮回滚只动哈希可证明为本轮写入的文件，崩溃后混合状态只报告、不标 owned_current、不自动修补。
+- **S2**：3.2 给出采集状态优先级，与 `agent.rs` 一致；4.3 相应改写。
+- D1 仍待用户答复，本次未替用户决定；5.4 的兜底条目仍标为按 D1 推荐写的草案。
