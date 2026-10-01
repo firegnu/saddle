@@ -68,3 +68,5 @@
 - 回来先status，working重挂；idle后dlog reply取完整DONE，核diff/完成记录/有效RED-GREEN与一次标准test/clippy，再另开重档Codex对04B及整个04独立审查。必须改交原实现者，主控不写功能，返工仅目标/直接回归不重复标准。
 - 04A原实现saddle/dev-telemetry-query-ui-1（2be45b11bd4d）、分支telemetry-query-ui和worktree保留；整阶段集成通过才共同合并推送清理，删目录后关对应自建agent，空提交/HANDOFF/dlog实际收尾。旧设计review/t38/t55仍保留。
 - 04B只用隔离/合成数据与假Corral；不release/安装/真实数据队列/JEV产品调用/消费者切换/05；需改Corral或反向依赖先停告知。已批布局和选择不重复问。
+- 04B首次提醒不是完成：公开status idle/StopFailure、attached0，dlog reply返回no_reply，corral read尾部显示API Error: Connection lost mid-response；分支HEAD仍03f7282，只有未提交改动，无完成记录/DONE。主控未执行04B标准核查、未派独立审查。
+- 已经原dispatch记录中断decision并followup原会话接续，send confirmed=true/merged_with_draft=false，重新挂after pending=true；要求先核已有步骤/日志，不复位改动、不重复已过且未改检查。接续指令快照 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04b-resume-o4gqilah/resume.md`。下一轮仍须status→完整DONE，若再次无回复查公开状态/输出，不盲目循环送话或把中断算返工通过。
