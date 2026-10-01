@@ -54,6 +54,10 @@ elif verb == 'status':
         sys.exit(1)
     attached = int((root / name.replace('/', '-')).exists() or name == 'p/taken')
     print(json.dumps(dict(ok=True, name=name, instance=metadata(name).get('instance', 'abcdef123'), kind='claude', state=agents()[name], attached=attached, title='Synthetic title', last_input_source='human', last_output=100, turn_started=100, labels=labels().get(name, {}))))
+elif verb == 'send':
+    with (root / 'send-args').open('a') as f:
+        f.write(json.dumps(sys.argv[1:]) + '\n')
+    print(json.dumps(dict(ok=True, confirmed=True, merged_with_draft=False)))
 elif verb == 'reply':
     print(json.dumps(dict(ok=True, text='REPLY ' + name + '\n' + '\n'.join('line ' + str(i) for i in range(60)))))
 elif verb == 'stop':

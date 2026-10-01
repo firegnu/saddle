@@ -700,6 +700,12 @@ impl Plugin for Drover {
                     self.panel.links.checking_agent = None;
                     self.panel.links.message = e.to_string();
                 }
+                if let Some(filter) = self.panel.telemetry_request.take()
+                    && let Err(e) = context.open_telemetry(filter)
+                {
+                    self.panel.message_failed = true;
+                    self.panel.message = format!("Telemetry did not open: {e}");
+                }
                 context.redraw();
             }
             Event::AgentOpened {
@@ -711,6 +717,15 @@ impl Plugin for Drover {
                 } else {
                     message
                 };
+                context.redraw();
+            }
+            Event::TelemetryOpened {
+                status, message, ..
+            } => {
+                if status != "opened" {
+                    self.panel.message_failed = true;
+                    self.panel.message = format!("Telemetry did not open ({status}): {message}");
+                }
                 context.redraw();
             }
             Event::Focus(focused) => {

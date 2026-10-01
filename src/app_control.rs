@@ -207,6 +207,7 @@ impl App {
             && (self.plugin_palette.is_some()
                 || self.plugin_overlay.is_some()
                 || self.plugin_page.is_some()
+                || self.telemetry.is_some()
                 || self.placement.is_some()
                 || self.search.is_some()
                 || self.settings.is_some()

@@ -12,6 +12,7 @@ pub mod links;
 pub mod notify;
 pub mod plugin;
 pub mod queue;
+pub mod telemetry;
 pub mod theme;
 pub mod ui;
 

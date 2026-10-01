@@ -708,6 +708,37 @@ impl Manager {
             .filter_map(|r| r.runtime.take_navigation())
             .collect()
     }
+    pub fn take_telemetry_opens(&self) -> Vec<runtime::TelemetryOpen> {
+        self.running
+            .values()
+            .filter_map(|r| r.runtime.take_telemetry())
+            .collect()
+    }
+    /// The source is still the running session that sent it, with no newer input since.
+    pub fn telemetry_open_current(&self, request: &runtime::TelemetryOpen) -> bool {
+        self.running.get(&request.plugin).is_some_and(|r| {
+            let s = r.runtime.snapshot();
+            r.enabled
+                && s.session == request.session
+                && s.state == "Running"
+                && s.input_id == request.input_id
+        })
+    }
+    pub fn telemetry_open_result(
+        &self,
+        request: &runtime::TelemetryOpen,
+        status: &str,
+        message: &str,
+    ) {
+        if let Some(r) = self.running.get(&request.plugin)
+            && r.runtime.snapshot().session == request.session
+        {
+            r.runtime.send(Message::response(
+                request.request_id,
+                json!({"status":status,"message":message}),
+            ));
+        }
+    }
     pub fn navigation_current(&self, request: &runtime::Navigation) -> bool {
         self.running.get(&request.plugin).is_some_and(|r| {
             let s = r.runtime.snapshot();

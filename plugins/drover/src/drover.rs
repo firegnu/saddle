@@ -51,7 +51,13 @@ pub struct ActionTarget {
 }
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Snapshot {
+    /// The canonical project root drover answered for.
+    #[serde(default)]
+    pub project: String,
     pub paused: bool,
+    /// Whether this project's dispatches are recorded unless one says otherwise.
+    #[serde(default)]
+    pub record_default: bool,
     pub current: Option<Task>,
     pub awaiting: Option<Task>,
     pub pending: Vec<Task>,
@@ -108,11 +114,15 @@ pub enum Operation {
         reason: String,
     },
     /// Dispatch the Pending task the list showed at `pos`, bound by its listing token.
+    /// `record` overrides the project's recording default for this one dispatch.
     DispatchPending {
         project: String,
         pos: u64,
         token: String,
+        record: Option<bool>,
     },
+    /// Save whether this project's dispatches are recorded by default.
+    RecordDefault(bool),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transition {
@@ -158,7 +168,15 @@ impl Client {
             ..
         } = operation
         {
-            return Ok(match action {
+            let telemetry: String = match value["telemetry"]["status"].as_str() {
+                Some("stored" | "duplicate") => {
+                    "Telemetry: transition recorded on the run's trace".into()
+                }
+                Some("not_recorded") => "Telemetry: this run has no trace".into(),
+                Some(other) => format!("Telemetry: transition not recorded ({other})"),
+                None => "Telemetry: unknown".into(),
+            };
+            let done = match action {
                 Transition::Submit => format!(
                     "{id} submitted for review · Awaiting release\nRecord: recorded · Run: {run_id}"
                 ),
@@ -168,7 +186,8 @@ impl Client {
                 Transition::Return => format!(
                     "{id} returned to Pending\nRecord: recorded · Run: {run_id}\nReason: {reason}\nDispatch pause setting is unchanged. Work stopped was confirmed by the user."
                 ),
-            });
+            };
+            return Ok(format!("{done}\n{telemetry}"));
         }
         Ok(value["message"].as_str().unwrap_or("Done").into())
     }
@@ -438,6 +457,9 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
             "Delivery: not sent; paste the text below to the main agent yourself.".to_owned()
         }
         "not_sent" => "Delivery: not sent.".to_owned(),
+        "not_executed" => {
+            "Delivery not executed: Saddle did not start Corral; nothing was sent.".to_owned()
+        }
         "not_attempted" => "Delivery: not attempted; nothing was sent.".to_owned(),
         other => format!("Delivery status unrecognized ({other}); check the main agent."),
     });
@@ -457,6 +479,7 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
         "unknown" => "Record: unknown; the start may or may not have been saved.".to_owned(),
         other => format!("Record: unrecognized ({other})."),
     });
+    lines.push(telemetry_report(&value["telemetry"]));
     if let Some(code) = value["error"]["code"].as_str() {
         let meaning = match code {
             "target_changed" => "the queue changed since it was shown; Refresh and choose again",
@@ -469,6 +492,7 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
             "delivery_unknown" => "the delivery result is unknown",
             "target_ambiguous" => "another pending task shares its number or title",
             "write_failed" => "drover could not save its record",
+            "delivery_not_executed" => "Saddle did not start the delivery",
             _ => "drover refused the request",
         };
         lines.push(format!(
@@ -505,6 +529,33 @@ fn dispatch_report(value: &serde_json::Value, exited_zero: bool) -> (bool, Strin
         );
     }
     (clean, lines.join("\n"))
+}
+/// What a dispatch recorded, apart from its delivery and task record.
+fn telemetry_report(telemetry: &serde_json::Value) -> String {
+    let text = |v: &serde_json::Value| v.as_str().unwrap_or("unknown").to_owned();
+    match telemetry["status"].as_str() {
+        Some("context") => {
+            let trace: String = text(&telemetry["trace_id"]).chars().take(8).collect();
+            let send = match telemetry["send"]["receipt"].as_str() {
+                Some("matched") => format!(
+                    "send begin {}, end {}",
+                    text(&telemetry["send"]["begin"]),
+                    text(&telemetry["send"]["end"])
+                ),
+                Some(_) => "send receipt missing".into(),
+                None => "nothing sent".into(),
+            };
+            format!(
+                "Telemetry: recorded context, trace {trace}… · {send} · transition {}",
+                text(&telemetry["transition"]["status"])
+            )
+        }
+        Some("no_context") => format!(
+            "Telemetry: no record context ({}); sent the plain way.",
+            text(&telemetry["reason"])
+        ),
+        _ => "Telemetry: not requested for this dispatch.".into(),
+    }
 }
 /// Queries one task's details until dropped; the next query starts only after the previous one
 /// returned. Dropping it cancels a running query and discards its results.

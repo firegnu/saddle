@@ -472,3 +472,43 @@ fn a_second_plugin_cannot_own_the_same_user_data() {
     let result = first.api("list", json!({}));
     assert_eq!(result["pending_total"], 1);
 }
+
+#[test]
+fn telemetry_link_asks_the_host_for_every_run_of_the_task_and_shows_a_refusal() {
+    let mut p = Running::start();
+    // The opening frame already shows the selected T1 with its link.
+    let b = buffer(p.frame.as_ref().unwrap()).unwrap();
+    let label: Vec<String> = "Telemetry ↗".chars().map(String::from).collect();
+    let (x, y) = (0..b.area.height)
+        .find_map(|y| {
+            (0..b.area.width.saturating_sub(label.len() as u16))
+                .find(|x| (0..label.len()).all(|n| b[(*x + n as u16, y)].symbol() == label[n]))
+                .map(|x| (x, y))
+        })
+        .expect("Telemetry button");
+    p.input(json!({"type":"mouse","action":"down","button":"left","x":x,"y":y}));
+    p.input(json!({"type":"mouse","action":"up","button":"left","x":x,"y":y}));
+    let end = Instant::now() + Duration::from_secs(5);
+    let (id, params) = loop {
+        assert!(Instant::now() < end, "no telemetry.open request");
+        let m = p.receive();
+        if let Message::Request { id, method, params } = &m
+            && method == "telemetry.open"
+        {
+            break (*id, params.clone());
+        }
+        p.record(&m);
+    };
+    let scope = p.root.path().canonicalize().unwrap();
+    assert_eq!(
+        params,
+        json!({"input_id":p.input_id,"filter":{"kind":"drover.task","scope":scope,"key":"T1"}}),
+        "kind, scope and key only: every run of T1"
+    );
+    p.send(Message::error(
+        id,
+        "stale_input",
+        "Navigation requires current user input",
+    ));
+    p.see("Telemetry did not open");
+}

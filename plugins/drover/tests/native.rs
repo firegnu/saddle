@@ -49,6 +49,7 @@ fn dispatch(d: &tempfile::TempDir, pos: usize) -> Value {
                 .as_str()
                 .unwrap()
                 .into(),
+            record: None,
         },
         "/missing/corral",
         &AtomicBool::new(false),
@@ -250,4 +251,42 @@ fn concurrent_writes_and_changed_then_restored_queue_cannot_reuse_a_token() {
     let p = json!({"project":d.path(),"pos":1,"title":"must not save","queue_token":before["queue_token"]});
     assert!(saddle_drover_plugin::api::call("/missing/corral", "edit", &p, &stop).is_err());
     assert_eq!(std::fs::read_to_string(path).unwrap(), raw);
+}
+
+#[test]
+fn ctl_dispatch_takes_an_optional_boolean_record_choice() {
+    // This process has no host executable: a requested record has no context.
+    assert!(std::env::var_os("SADDLE_HOST_BIN").is_none());
+    let d = project();
+    let stop = AtomicBool::new(false);
+    let list = saddle_drover_plugin::api::call(
+        "/missing/corral",
+        "list",
+        &json!({"project": d.path()}),
+        &stop,
+    )
+    .unwrap();
+    assert_eq!(list["record_default"], false);
+    let token = list["pending"][0]["actions"]["dispatch-pending"]["target_token"].clone();
+    let params = |record: Value| {
+        let mut p = json!({"project": d.path(), "pos": 1, "target_token": token});
+        if !record.is_null() {
+            p["record"] = record;
+        }
+        p
+    };
+    for invalid in [json!("yes"), json!(1)] {
+        assert!(
+            saddle_drover_plugin::api::call("/missing/corral", "dispatch", &params(invalid), &stop)
+                .is_err()
+        );
+    }
+    assert!(core::list(d.path()).unwrap()["current"].is_null());
+    let v =
+        saddle_drover_plugin::api::call("/missing/corral", "dispatch", &params(json!(true)), &stop)
+            .unwrap();
+    assert_eq!(v["telemetry"]["status"], "no_context", "{v}");
+    assert_eq!(v["telemetry"]["reason"], "host_unavailable", "{v}");
+    assert_eq!(v["state"], "running");
+    assert!(!v["manual_text"].as_str().unwrap().contains("trace_id"));
 }

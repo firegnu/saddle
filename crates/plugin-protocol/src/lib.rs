@@ -291,6 +291,7 @@ pub const CAPABILITIES: &[&str] = &[
     "agent.open.v1",
     "notify.target.v1",
     "view.close.v1",
+    "telemetry.open.v1",
 ];
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -404,4 +405,16 @@ impl OpenTarget {
         }
         .validate()
     }
+}
+
+/// A telemetry binding filter for `telemetry.open`: kind, scope and key, optionally one run.
+/// The values are opaque to the host; it checks them exactly as its telemetry store does.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TelemetryFilter {
+    pub kind: String,
+    pub scope: String,
+    pub key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
 }

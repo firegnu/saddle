@@ -34,6 +34,17 @@ pub struct Navigation {
     pub name: String,
     pub instance: String,
 }
+/// A plugin's request to open the host Telemetry page on an opaque binding filter, taken from
+/// one user input. `name` is the manifest's display name, never one the plugin reports.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TelemetryOpen {
+    pub plugin: String,
+    pub name: String,
+    pub session: u64,
+    pub request_id: u64,
+    pub input_id: u64,
+    pub filter: wire::TelemetryFilter,
+}
 #[derive(Clone)]
 pub struct Snapshot {
     pub state: String,
@@ -45,6 +56,7 @@ pub struct Snapshot {
     pub session: u64,
     pub input_id: u64,
     pub navigation: Option<Navigation>,
+    pub telemetry: Option<TelemetryOpen>,
     pub close_input: Option<u64>,
     pub attention: Option<(u64, wire::AttentionSnapshot)>,
 }
@@ -56,6 +68,7 @@ impl Default for Snapshot {
             attention: None,
             input_id: 0,
             navigation: None,
+            telemetry: None,
             close_input: None,
             state: "Starting".into(),
             note: String::new(),
@@ -115,6 +128,9 @@ impl Runtime {
     }
     pub fn take_navigation(&self) -> Option<Navigation> {
         self.shared.lock().unwrap().navigation.take()
+    }
+    pub fn take_telemetry(&self) -> Option<TelemetryOpen> {
+        self.shared.lock().unwrap().telemetry.take()
     }
     pub fn start(dir: &Path, manifest: Manifest) -> Self {
         Self::with_notices(dir, manifest, Notices::default())
@@ -337,6 +353,11 @@ fn run(
     ] {
         cmd.env_remove(key);
     }
+    // Lets a plugin call this host's public CLI; it carries no record context.
+    match std::env::current_exe() {
+        Ok(host) if host.is_absolute() => cmd.env("SADDLE_HOST_BIN", host),
+        _ => cmd.env_remove("SADDLE_HOST_BIN"),
+    };
     unsafe {
         cmd.pre_exec(|| {
             if libc::setsid() < 0 {
@@ -678,6 +699,69 @@ fn run(
                                                 instance: instance.into(),
                                             });
                                             continue;
+                                        }
+                                    } else if method == "telemetry.open"
+                                        && m.required_capabilities
+                                            .iter()
+                                            .any(|c| c == "telemetry.open.v1")
+                                    {
+                                        let mut s = shared.lock().unwrap();
+                                        let input_id = params["input_id"].as_u64().unwrap_or(0);
+                                        // The host only checks the binding rule the store uses;
+                                        // the values stay opaque and are never shortened.
+                                        let filter =
+                                            serde_json::from_value::<wire::TelemetryFilter>(
+                                                params["filter"].clone(),
+                                            )
+                                            .ok()
+                                            .filter(
+                                                |f| {
+                                                    crate::telemetry::BindingFilter {
+                                                        kind: f.kind.clone(),
+                                                        scope: f.scope.clone(),
+                                                        key: f.key.clone(),
+                                                        run: f.run.clone(),
+                                                    }
+                                                    .validate()
+                                                    .is_ok()
+                                                },
+                                            );
+                                        if s.state != "Running"
+                                            || !s.interactive
+                                            || input_id == 0
+                                            || input_id != s.input_id
+                                            || input_id <= navigation_input
+                                        {
+                                            Message::error(
+                                                id,
+                                                "stale_input",
+                                                "Navigation requires current user input",
+                                            )
+                                        } else if let Some(filter) = filter {
+                                            if s.telemetry.is_some() {
+                                                Message::error(
+                                                    id,
+                                                    "busy",
+                                                    "Telemetry page request already pending",
+                                                )
+                                            } else {
+                                                navigation_input = input_id;
+                                                s.telemetry = Some(TelemetryOpen {
+                                                    plugin: m.id.clone(),
+                                                    name: m.name.clone(),
+                                                    session: s.session,
+                                                    request_id: id,
+                                                    input_id,
+                                                    filter,
+                                                });
+                                                continue;
+                                            }
+                                        } else {
+                                            Message::error(
+                                                id,
+                                                "invalid_filter",
+                                                "Telemetry filter needs nonempty kind, scope and key without NUL; run likewise when given",
+                                            )
                                         }
                                     } else if method == "attention.replace"
                                         && m.required_capabilities

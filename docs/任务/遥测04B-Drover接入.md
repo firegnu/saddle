@@ -56,9 +56,51 @@
 
 本分支提交，任务末尾追加实际改动/检查与日志/取舍/限制和未做事项。回复SHA、简明结果及需主控决定项；命令前台结束，全部完成后最后一行DONE。
 
+## 完成记录（实现者，2026-10-02）
+
+基线03f7282（含04A 0261d51与主仓库文档）。实施中一次API连接中断，续做时核对未提交改动与已跑命令后接着做，没有复位或丢弃改动；中断前只做过基线编译和耗时测量，无已通过检查被跳过。
+
+### 实际改动
+
+- **协议/SDK**：能力表加 `telemetry.open.v1`；protocol新增 `TelemetryFilter{kind,scope,key,run?}`（未知字段拒绝）。SDK `Context::open_telemetry` 只在输入回调内可用，与 `open_agent` 共用“每次输入一个导航”，排队前按既有 4 MiB 帧上限编码检查；`Event::TelemetryOpened`，20 秒无回复为 unknown，不重试。
+- **宿主**：`runtime.rs` 处理 `telemetry.open`：当前会话最近输入、与agent.open共用输入高水位；筛选用 Store 同一规则 `BindingFilter::validate()`（由 `list_bound` 原有校验抽出，行为不变），不设256字节等额外限制、不改写控制字符；错误为 stale_input/invalid_filter/busy，未声明能力仍 unsupported。所有进程插件获得 `SADDLE_HOST_BIN=current_exe()` 绝对路径（取不到则删除继承值），无其他上下文。`app_plugins.rs` 在来源视图仍开且无其他对话框时以该筛选和清单显示名打开04A页并回 opened，否则 cancelled；页面打开期间覆盖插件失焦，关闭回原处。宿主无插件ID分支、不读Drover数据。
+- **04A待接入项**：`telemetry_view.rs` 表单对含控制字符的预填值保留原值、以 `\x1b`/`\n` 可见转义显示并精确查询；该格输入/粘贴/删除即整格替换（有提示行），其余格编辑与原筛选行为不变。
+- **Drover**：`.drover.conf` `TELEMETRY_RECORD=on|off`（缺省关）；`Record default`按钮/键R保存；Dispatch selected旁 `[x]/[ ] Record` 本次覆盖（换选任务回到默认，失败保留）；ctl `dispatch` 可选布尔 `record`，`list` 返回 `record_default`。新增 `telemetry.rs`：300 ms墙钟内经公开CLI建 trace（binding drover.task/规范化项目根/任务号/run）与 controller_handoff；失败（disabled/unavailable/host_unavailable/budget_exhausted等）在发送前走原路径并写原因。有上下文时消息末尾加独立附段（仅trace/dispatch/task/run，注明非任务内容非授权），0600临时上下文 `send_kind=initial`，`$SADDLE_HOST_BIN agent --corral <原值> --record-context … -- send` 单次执行；无MAIN_AGENT时附段进manual_text。`command::run_group` 独立进程组，取消/60秒超时 TERM→≤250 ms→KILL，信号均在回收组长前发出；退出且两路输出收齐才解析回执，字节0首行与末行同call_id配对才采信executed。配对executed=false→新状态 `not_executed`；executed=true按原映射；缺失/不配/超时/取消→unknown；入口启动后不回退直发、不重发。先写Drover start，成功后append task.transition（from/to真实值、business_committed_at=Drover记录时间）；提交/接受/退回按完整binding `telemetry list` 找到该轮trace再追加，无trace报not_recorded，不在Drover数据存trace_id。结果保留delivery/record并加 `telemetry`。直发与agent入口两条交付路径的子进程环境去掉 `SADDLE_HOST_BIN`。任务详情页签行对有编号任务显示 `Telemetry ↗`（kind/scope/key，不带run）；plugin.toml声明 telemetry.open.v1。
+- **文档**：插件协议§11、遥测使用（插件跳转、Drover可选记录、旧入口未切换）、Drover README。
+
+### 检查与日志
+
+日志目录：`/private/tmp/claude-501/-Users-firegnu-Developer-personal-projs-saddle-worktrees-telemetry-drover-integration/8944a1f9-783a-4263-bfe7-f2942911793c/scratchpad`；隔离脚本 `iso.sh`（临时HOME与五个XDG、真实CARGO_HOME/RUSTUP_HOME、stdin=/dev/null、去掉TYPESAFE_API_KEY、共享target）。
+
+- RED（桩可编译、断言失败）：`red-drover-telemetry.log` 8项（telemetry字段为Null等）、`red-drover-manual.log`、`red-drover-ctl.log`（record_default缺失）、`red-host-runtime.log`（telemetry.open返回unsupported、环境无SADDLE_HOST_BIN）、`red-view-control.log`（表单显示 `T1[31m`：吞掉ESC并隐藏换行后内容）、`red-drover-ui.log`（无按钮）、`red-e2e.log`（真实saddle+真实Drover插件中无 `[ ] Record`/`Telemetry ↗`）。桩差异：`red-stub/tracked.diff` 及当时的 `telemetry.rs`、测试文件。`red-drover-process.log` 是在等待新帧的 `see` 处超时，该等待写法本身有误（首帧已含标签不会再出新帧），GREEN前改为直接读当前帧；按钮缺失由ui RED独立证明，此项不计为严格的有效RED。
+- GREEN：`green-drover-telemetry.log` 9/9（含未选不调用宿主/不建目录、disabled/无宿主/存储不可用各只直发一次、记录路径一次发送且正文全量可查、缺回执/不配对unknown不重发、真实入口无法启动Corral配对executed=false、Corral自身125/127为unknown、取消时进程组内Corral客户端被停、关闭总开关后流转报disabled与start写失败不补transition、默认值写入配置）、`green-host-runtime.log` 2/2、`green-view.log` 12/12、`green-drover-ui.log` 2/2、`green-drover-ctl.log`、`green-drover-process.log`、`green-e2e.log` 2/2（真实debug宿主+Drover插件+假Corral：跳转页、Esc回Drover、记录派发经agent入口一次送达并可经CLI查询）。e2e首轮第二次点击与Run details刷新竞争，按既有测试做法等详情加载后再点。
+- 标准各一次：`cargo test --all-targets` exit 101（`std-test.log`）：根包32个目标412 passed/1 failed/5 ignored（主控据原日志纠正原写4），失败为未改动的 `pending_delete_button_confirms_names_the_task_and_can_be_cancelled`（测试读队列时插件正在写，`core::list` 报target_changed），单项复跑一次通过（`rerun-pending-delete.log`），不宣称根因已修。cargo因此未执行其余6个工作区包，随后对这些未执行目标各跑一次（`std-test-remaining.log`）：22个目标120 passed/0 failed。合计54个目标均执行一次。`cargo clippy --all-targets -- -D warnings` exit 0（`std-clippy.log`）。`cargo fmt --check`、`git diff --check` 通过。
+
+### 取舍与限制
+
+- 300 ms为两次CLI调用的墙钟预算（含进程启动）。实测新编译debug二进制在macOS首次执行约3.3 s（之后<10 ms），刚安装后的首次记录派发可能因此以budget_exhausted走原路径（无记录、业务照常）。
+- 未向agent入口传 `--timeout-ms`：Drover 60秒总超时取消进程组，入口来不及写end，查询显示有begin无end；不重放。
+- 宿主可执行文件本身无法启动时没有配对回执，按unknown处理（保守，不判未执行）。
+- 提交/接受/退回在有宿主路径时都会只读调用一次 `telemetry list`（无库返回未初始化，不建库）。
+- `Telemetry ↗` 与 `[ ] Record` 与现有 Dispatch selected 一样只能点击；`Record default` 有键R。
+- `.drover.conf` 经现有 atomic_write 改写（与Drover既有写入一样新文件权限0600）。仅派发两条路径去掉 `SADDLE_HOST_BIN`，Drover其他corral只读调用照常继承环境。
+- 未改Corral、外部仓库、存储schema或01/02/03协议；无依赖反转。未删旧Dispatch页签/dlog、未导入旧日志、未切换消费者或05；无release/安装/真实数据/产品JEV。
+
+### 需主控决定
+
+1. 是否接受300 ms含进程启动的墙钟口径（首次执行可能降级为无记录）。
+2. 是否接受 `not_executed` 作为新的delivery状态值，及交付结果 `telemetry` 字段形状。
+3. 上述未修的既有workflow竞态失败是否另行处理。
+
 ## 主控审查（初核，2026-10-02）
 
 - 中断接续已完成，公开idle后取得完整DONE；候选81ccc7eec7b45a53d78ec4be39377b30405dee79干净。已核完成记录、diff、有效目标RED/GREEN及保存桩，未改Corral或发现反向依赖；BindingFilter仅提取同一校验供通用runtime使用，接受最小范围扩展。
 - 主控一次标准533通过/0失败/5忽略、Clippy通过，diff check通过；日志saddle-04b-controller-fid61fg2。开发原workflow target_changed失败保留，单项复跑通过，主控本轮未复现但原次原因未确认；开发原日志忽略数为5而非完成记录的4。process RED夹具等待失败不算有效RED。
 - 接受300ms含启动的准备预算、配对executed=false新增not_executed、独立telemetry状态、60秒组取消后未知不重发及预填整格替换显示取舍，详见docs/任务/遥测04B-独立交叉审查.md。开发debug首次启动耗时不外推为release事实。
 - 下一步另开重档Codex detached独立审查04B与整阶段04；本轮初核不是最终批准，不合并清理。04A/04B实施会话worktree保留，不推进05。
+
+## 主控最终审查（2026-10-02）
+
+- 81ccc7e通过主控核对及重档Codex独立集成审查：必须改0、建议改1；七项取舍逐项认可，详见遥测04B-独立交叉审查.md末尾。04A0261d51与04B共同批准合并，功能代码未因审查改变。
+- S1保留：无MAIN_AGENT且记录准备失败时，遥测提示误写sent the plain way；业务not_sent/manual_text与交付首行正确，不阻断、不自动扩修。本次主控仅合并文档两边追加记录并纠正忽略数。
+- 主控候选一次标准533通过/0失败/5忽略及Clippy通过；独立仅静态/日志核对，不重复测试。原开发workflow失败原因仍未独立查证，不能把完成记录中的归因当确证。实际清理与推送见HANDOFF及dlog收尾记录。

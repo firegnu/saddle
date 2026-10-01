@@ -104,6 +104,10 @@ pub fn call(corral: &str, method: &str, p: &Value, cancel: &AtomicBool) -> Resul
             project: project.display().to_string(),
             pos: (position(p, "pos")? + 1) as u64,
             token: string(p, "target_token")?.into(),
+            record: match &p["record"] {
+                Value::Null => None,
+                v => Some(v.as_bool().context("record must be true or false")?),
+            },
         },
         "add" => Operation::Add {
             title: string(p, "title")?.into(),

@@ -30,6 +30,14 @@ args = ["--corral", "corral", "--dispatch-log", "/absolute/path/to/dlog", "--cwd
 
 Running → Submit for review → Awaiting release → Accept → Done。退回 Pending 需要原因和确认工作已停止。各任务的提交不要求其他任务分支合并。删除仅作用于 Pending，保留 Dropped 历史。派发送达与运行登记分开报告，无法确认时不自动重发。
 
+### 可选遥测记录与跳转
+
+是否记录派发由 Drover 按项目保存：`.drover.conf` 的 `TELEMETRY_RECORD=on|off`，缺省为关；顶部 `Record default`（键 `R`）切换并立即保存。Dispatch selected 旁的 `[x] Record`/`[ ] Record` 只改这一次派发，换选任务后回到项目默认。它只决定是否请求记录，不改变项目是否采用主控分派；Saddle Settings 中的 Telemetry recording 总开关仍决定能否采集，Drover 不会开启它。
+
+选择记录时，Drover 通过 Saddle 为插件进程提供的 `SADDLE_HOST_BIN` 调用公开 `saddle telemetry`/`saddle agent`：先在 300 ms 内建立 trace 与 controller_handoff 身份；建立不成（总开关关闭、存储不可用、没有宿主路径、超预算）时在发送前照原样直接 `corral send`，并注明没有记录上下文。有上下文时，交付消息末尾附一段只含 trace_id/dispatch_id/task/run 的记录上下文（不是任务内容，也不构成授权），经 `saddle agent --corral <原程序> --record-context … -- send` 只发一次，并在独立进程组中运行以便取消。宿主回执配对且 executed=false 才算未发送；其余按 Corral 原结果映射，缺回执/超时/取消为未知；已启动后绝不改走直接发送或自动重发。先保存任务状态，再追加 task.transition；之后的提交/接受/退回按该轮完整 binding 查到 trace 后追加，没有 trace 就不补。结果的 `delivery`/`record` 不变，另有 `telemetry` 字段。细节见 [遥测使用](../../docs/遥测使用.md)。
+
+有任务号的任务详情页签行有 `Telemetry ↗`，在 Saddle 查询页打开该任务所有轮次（宿主需支持 telemetry.open.v1；无需 dispatch 插件）。未编号待办不显示。旧 Dispatch 页签与 dlog 仍保留到阶段 05。
+
 `N` 打开通知偏好，System/In Saddle 互斥，`Ctrl-S` 保存。系统通知由插件内的工作线程调用 macOS osascript；内部通知通过 Saddle 的通用通知接口显示。首次观察和偏好切换只建基线。Esc 返回子页面，列表 Esc/q 关闭视图，Ctrl-] 回 Agents。关联 agent 仍由宿主核实原始 instance 后打开。
 
 ## 主控命令
@@ -49,15 +57,15 @@ saddle ctl request UNIQUE_READ_ID --instance INSTANCE
 | projects | 无，读取登记项目 |
 | register | project、name（小写字母/数字/短横线）、可选 main_agent；创建配置并登记，不派发 |
 | notifications | 无为读取；system_enabled 为保存用户偏好 |
-| list | 可选 pending_offset/history_offset（从0开始）；两组各最多20条摘要，并返回 total/offset、queue_token |
+| list | 可选 pending_offset/history_offset（从0开始）；两组各最多20条摘要，并返回 total/offset、queue_token、record_default |
 | show | id；读取完整任务和仓库参考信息 |
 | add | title、可选 body |
 | edit | pos（从1开始）、title、body、读取时的 queue_token |
 | move | pos、to（均从1开始）、queue_token |
 | drop | pos、queue_token |
 | pause / resume | 禁止/允许显式派发；不会自动派发 |
-| dispatch | pos、所选任务 actions.dispatch-pending.target_token |
-| submit | id、所选 Running 的 actions.done.target_token |
+| dispatch | pos、所选任务 actions.dispatch-pending.target_token、可选布尔 record（本次是否记录，省略取项目默认）；结果另含 telemetry |
+| submit | id、所选 Running 的 actions.done.target_token（submit/accept/return 结果另含 telemetry） |
 | accept | id、所选 Awaiting 的 actions.go.target_token |
 | return | id、actions.return-to-pending.target_token、reason、work_stopped:true |
 

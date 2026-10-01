@@ -740,6 +740,7 @@ fn dispatch_selected_sends_the_selected_pending_target_not_the_first() {
             project: "/tmp/project-a".into(),
             pos: 2,
             token: "d1:two".into(),
+            record: None,
         }
     );
     assert!(panel.busy);

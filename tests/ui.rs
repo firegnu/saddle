@@ -1664,7 +1664,8 @@ fn render_header_actions(
 fn header_actions_share_the_title_row_and_wrap_without_colliding_with_status() {
     use crossterm::event::KeyCode;
     use saddle::theme;
-    for (width, plugin_y, settings_y) in [(52, 1, 1), (30, 3, 3), (20, 3, 4)] {
+    for (width, plugin_y, settings_y, telemetry_y) in [(52, 1, 1, 1), (30, 3, 3, 4), (20, 3, 4, 5)]
+    {
         let (buffer, hits) = render_header_actions(width, &Pointer::default(), &[]);
         let settings = hits
             .buttons
@@ -1678,15 +1679,29 @@ fn header_actions_share_the_title_row_and_wrap_without_colliding_with_status() {
             .find(|h| h.key.code == KeyCode::Char('a'))
             .unwrap()
             .area;
+        let telemetry = hits
+            .buttons
+            .iter()
+            .find(|h| h.key.code == KeyCode::Char('t'))
+            .expect("Telemetry entry is clickable")
+            .area;
         assert_eq!(settings.y, settings_y, "width {width}: Settings row");
         assert_eq!(hits.plugins.y, plugin_y, "width {width}: Plugins row");
+        assert_eq!(telemetry.y, telemetry_y, "width {width}: Telemetry row");
+        assert!(!telemetry.intersects(settings) && !telemetry.intersects(hits.plugins));
+        assert!(!telemetry.intersects(attention));
+        assert!(hits.list.y > telemetry.y);
         assert_eq!(attention.y, 2, "Attention keeps its own second row");
         assert!(!settings.intersects(hits.plugins));
         assert!(!settings.intersects(attention));
         assert!(!hits.plugins.intersects(attention));
         assert!(hits.list.y > settings.y.max(attention.y));
         assert_eq!(settings.right(), width - 2);
-        for (rect, label) in [(settings, "Settings"), (hits.plugins, "Plugins")] {
+        for (rect, label) in [
+            (settings, "Settings"),
+            (hits.plugins, "Plugins"),
+            (telemetry, "Telemetry"),
+        ] {
             let text: String = (rect.x..rect.right())
                 .map(|x| buffer[(x, rect.y)].symbol())
                 .collect();

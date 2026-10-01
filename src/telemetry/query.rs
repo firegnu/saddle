@@ -7,6 +7,18 @@ pub struct BindingFilter {
     pub key: String,
     pub run: Option<String>,
 }
+impl BindingFilter {
+    /// The binding rule: kind, scope and key nonempty without NUL; run likewise when given.
+    pub fn validate(&self) -> Result<()> {
+        for value in [&self.kind, &self.scope, &self.key] {
+            model::nonempty(value)?;
+        }
+        if let Some(run) = &self.run {
+            model::nonempty(run)?;
+        }
+        Ok(())
+    }
+}
 
 pub struct EventQuery {
     pub trace_id: Option<String>,
@@ -173,6 +185,15 @@ fn trace_details(conn: &Connection, record: &mut Value) -> Result<()> {
     record["known_gaps"] = json!(gaps);
     record["evidence"] = json!(evidence);
     record["operations"] = json!(operations(conn, &id)?);
+    // Every dispatch of the trace, including ones whose events are not loaded yet.
+    let mut stmt = conn.prepare("SELECT dispatch_id,kind,parent_dispatch_id,created_at FROM dispatches WHERE trace_id=? ORDER BY created_at,dispatch_id")?;
+    let dispatches = stmt
+        .query_map([&id], |r| {
+            Ok(json!({"dispatch_id":r.get::<_, String>(0)?,"kind":r.get::<_, String>(1)?,
+                "parent_dispatch_id":r.get::<_, Option<String>>(2)?,"created_at":r.get::<_, String>(3)?}))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    record["dispatches"] = json!(dispatches);
     record["registration"] = json!(registration(conn, &id)?);
     record["coverage_notice"] =
         json!("仅描述已记录材料；未记录操作不可见，缺口原因未知，不代表任务完整历史。");
@@ -223,12 +244,7 @@ impl Store {
 
     pub fn list_bound(&self, filter: Option<&BindingFilter>) -> Result<Value> {
         if let Some(filter) = filter {
-            for value in [&filter.kind, &filter.scope, &filter.key] {
-                model::nonempty(value)?;
-            }
-            if let Some(run) = &filter.run {
-                model::nonempty(run)?;
-            }
+            filter.validate()?;
         }
         let Some(mut conn) = self.reader()? else {
             return Ok(json!({"schema_version":1,"ok":true,"initialized":false,"traces":[]}));

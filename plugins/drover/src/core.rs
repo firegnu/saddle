@@ -519,8 +519,12 @@ impl Snapshot {
         };
         t
     }
+    /// Whether this project's dispatches are recorded unless one says otherwise; off by default.
+    fn record_default(&self) -> bool {
+        self.conf.get("TELEMETRY_RECORD").is_some_and(|v| v == "on")
+    }
     fn list(&self) -> Value {
-        json!({"schema_version":2,"ok":true,"project":self.repo,"queue_token":self.token("queue",&Value::Null),"paused":self.paused,"current":self.tasks.iter().find(|t|t["status"]=="running").map(|t|self.public(t,None)),"awaiting":self.tasks.iter().find(|t|t["status"]=="awaiting_release").map(|t|self.public(t,None)),"pending":self.pending.iter().enumerate().map(|(i,t)|self.public(t,Some(i+1))).collect::<Vec<_>>(),"history":self.tasks.iter().rev().filter(|t|matches!(t["status"].as_str(),Some("done"|"dropped"))).map(|t|self.public(t,None)).collect::<Vec<_>>()})
+        json!({"schema_version":2,"ok":true,"project":self.repo,"record_default":self.record_default(),"queue_token":self.token("queue",&Value::Null),"paused":self.paused,"current":self.tasks.iter().find(|t|t["status"]=="running").map(|t|self.public(t,None)),"awaiting":self.tasks.iter().find(|t|t["status"]=="awaiting_release").map(|t|self.public(t,None)),"pending":self.pending.iter().enumerate().map(|(i,t)|self.public(t,Some(i+1))).collect::<Vec<_>>(),"history":self.tasks.iter().rev().filter(|t|matches!(t["status"].as_str(),Some("done"|"dropped"))).map(|t|self.public(t,None)).collect::<Vec<_>>()})
     }
     fn append(&self, event: Value) -> Result<()> {
         self.fresh()?;
@@ -682,6 +686,25 @@ pub fn execute_expected(
     cancel: &AtomicBool,
     expected_queue: Option<&str>,
 ) -> Result<Value> {
+    let host = crate::telemetry::host();
+    execute_with(
+        repo,
+        operation,
+        corral,
+        host.as_deref(),
+        cancel,
+        expected_queue,
+    )
+}
+/// `host` is the Saddle executable for optional telemetry; without it nothing is recorded.
+pub fn execute_with(
+    repo: &Path,
+    operation: &crate::drover::Operation,
+    corral: &str,
+    host: Option<&Path>,
+    cancel: &AtomicBool,
+    expected_queue: Option<&str>,
+) -> Result<Value> {
     use crate::drover::{Operation as O, Transition};
     require(
         !cancel.load(Ordering::Relaxed),
@@ -770,14 +793,30 @@ pub fn execute_expected(
                 event["return_record"] = json!({"dispatched_at":t["t0"],"returned_at":at,"reason":reason,"work_stopped":true});
             }
             s.append(event)?;
+            let to = match action {
+                Transition::Submit => "awaiting_release",
+                Transition::Accept => "done",
+                Transition::Return => "pending",
+            };
+            // After Drover saved it: declared on this run's trace, if the run was recorded.
+            let telemetry = crate::telemetry::transition(
+                host,
+                &crate::telemetry::binding(s.repo.to_str().unwrap_or_default(), id, run_id),
+                None,
+                t["status"].as_str().unwrap_or_default(),
+                to,
+                crate::telemetry::record_time(at),
+                cancel,
+            );
             Ok(
-                json!({"schema_version":2,"ok":true,"task_id":id,"run_id":run_id,"state":match action{Transition::Submit=>"awaiting_release",Transition::Accept=>"done",Transition::Return=>"pending"},"record":{"status":"recorded"}}),
+                json!({"schema_version":2,"ok":true,"task_id":id,"run_id":run_id,"state":to,"record":{"status":"recorded"},"telemetry":telemetry}),
             )
         }
         O::DispatchPending {
             project,
             pos,
             token,
+            record,
         } => {
             require(
                 Path::new(project).canonicalize()? == s.repo
@@ -817,27 +856,103 @@ pub fn execute_expected(
                 "cancelled",
                 "Cancelled before dispatch",
             )?;
-            let (code, reply) = if let Some(agent) = agent {
-                match crate::command::run(
+            // Recording identity comes first. Failing to get one here, before anything is sent,
+            // is the only case where a recorded dispatch goes the plain way.
+            let binding =
+                crate::telemetry::binding(s.repo.to_str().unwrap_or_default(), &tid, &run);
+            let mut telemetry = json!({"status":"not_requested","reason":null,"trace_id":null,"dispatch_id":null,"send":null,"transition":null});
+            let context = if record.unwrap_or_else(|| s.record_default()) {
+                let made = match (host, s.repo.to_str()) {
+                    (None, _) => Err("host_unavailable".to_owned()),
+                    (_, None) => Err("unavailable".to_owned()),
+                    (Some(host), Some(_)) => crate::telemetry::prepare(
+                        host,
+                        &binding,
+                        &format!("{tid} {}", text(t, "title")),
+                        cancel,
+                    )
+                    .and_then(|identity| {
+                        crate::telemetry::context_file(&identity)
+                            .map(|file| (identity, file))
+                            .map_err(|_| "unavailable".to_owned())
+                    }),
+                };
+                match made {
+                    Ok(made) => {
+                        telemetry["status"] = json!("context");
+                        telemetry["trace_id"] = json!(made.0.trace_id);
+                        telemetry["dispatch_id"] = json!(made.0.dispatch_id);
+                        Some(made)
+                    }
+                    Err(reason) => {
+                        telemetry["status"] = json!("no_context");
+                        telemetry["reason"] = json!(reason);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            require(
+                !cancel.load(Ordering::Relaxed),
+                "cancelled",
+                "Cancelled before dispatch",
+            )?;
+            let message = match &context {
+                Some((identity, _)) => format!(
+                    "{message}{}",
+                    crate::telemetry::appendix(identity, &tid, &run)
+                ),
+                None => message,
+            };
+            // `receipt` is None on the plain path; Some(None) when the agent entry's own
+            // receipt is missing or does not pair, which leaves the delivery unknown.
+            let (code, reply, receipt) = match (agent, &context, host) {
+                (Some(agent), Some((_, (_, path))), Some(host)) => {
+                    let sent = crate::telemetry::send(
+                        host,
+                        corral,
+                        repo,
+                        agent,
+                        &message,
+                        path,
+                        Duration::from_secs(60),
+                        cancel,
+                    );
+                    let reply =
+                        serde_json::from_slice::<Value>(&sent.stdout).unwrap_or(Value::Null);
+                    (sent.code, reply, Some(sent.receipt))
+                }
+                (Some(agent), _, _) => match crate::command::run_without_env(
                     corral,
                     &["send", agent, &message],
                     Some(repo),
+                    &[crate::telemetry::HOST_VARIABLE.into()],
                     Duration::from_secs(60),
                     cancel,
                 ) {
                     Ok(r) => (
                         r.status.code(),
                         serde_json::from_slice::<Value>(&r.stdout).unwrap_or(Value::Null),
+                        None,
                     ),
-                    Err(_) => (None, Value::Null),
-                }
-            } else {
-                (None, json!({}))
+                    Err(_) => (None, Value::Null, None),
+                },
+                (None, _, _) => (None, json!({}), None),
+            };
+            let executed = match &receipt {
+                Some(Some(r)) => r["executed"].as_bool(),
+                _ => None,
             };
             let confirmed = reply["confirmed"].as_bool();
             let merged = reply["merged_with_draft"].as_bool();
+            // Only a paired executed=false says nothing was sent; exit codes alone never do.
             let status = if agent.is_none() {
                 "not_sent"
+            } else if matches!(receipt, Some(None)) {
+                "unknown"
+            } else if executed == Some(false) {
+                "not_executed"
             } else if code == Some(0) && reply["ok"] == true && confirmed == Some(true) {
                 "confirmed"
             } else if matches!(code, Some(0 | 3)) {
@@ -847,15 +962,61 @@ pub fn execute_expected(
             } else {
                 "unknown"
             };
+            telemetry["send"] = match &receipt {
+                Some(Some(r)) => {
+                    json!({"receipt":"matched","executed":r["executed"],"outcome":r["outcome"],"operation_id":r["operation_id"],"begin":r["begin"],"end":r["end"],"error":r.get("error"),"gaps":r["gaps"]})
+                }
+                Some(None) => json!({"receipt":"missing","executed":null}),
+                None => Value::Null,
+            };
             let ok = matches!(status, "not_sent" | "confirmed");
-            let mut result = json!({"schema_version":2,"ok":ok,"task_id":tid,"run_id":null,"state":"pending","record":{"status":"not_attempted"},"manual_text":if agent.is_none(){Some(message)}else{None},"delivery":{"status":status,"attempted":agent.is_some(),"corral_exit_code":code,"confirmed":confirmed,"merged_with_draft":merged}});
-            if !ok {
+            let mut result = json!({"schema_version":2,"ok":ok,"task_id":tid,"run_id":null,"state":"pending","record":{"status":"not_attempted"},"manual_text":if agent.is_none(){Some(&message)}else{None},"delivery":{"status":status,"attempted":agent.is_some(),"corral_exit_code":code,"confirmed":confirmed,"merged_with_draft":merged}});
+            if status == "not_executed" {
+                result["error"] = json!({"code":"delivery_not_executed","why":format!("Saddle did not start the delivery ({}); nothing was sent. Check the cause before dispatching again", telemetry["send"]["error"].as_str().or(telemetry["send"]["outcome"]["kind"].as_str()).unwrap_or("no reason given"))});
+            } else if !ok {
                 result["error"] = json!({"code":match status{"unconfirmed"=>"delivery_unconfirmed","rejected"=>"send_rejected",_=>"delivery_unknown"},"why":"Check the controller and task record; do not automatically resend"})
             }
-            if agent.is_none() || matches!(code, Some(0 | 3)) {
-                match s.append(json!({"ev":"start","id":tid,"run_id":run,"t":now(),"title":t["title"],"body":body,"key":t["title"],"sha":sha,"main":main})){Ok(())=>{result["run_id"]=json!(run);result["state"]=json!("running");result["record"]=json!({"status":"recorded"});},Err(e)=>{result["ok"]=json!(false);result["state"]=json!("unknown");result["record"]=json!({"status":"unknown"});result["error"]=json!({"code":"write_failed","why":format!("{e:#}; delivery may already have happened")});}}
+            if context.is_some() {
+                telemetry["transition"] = json!({"status":"not_attempted","trace_id":null});
             }
+            if agent.is_none() || matches!(status, "confirmed" | "unconfirmed") {
+                let at = now();
+                match s.append(json!({"ev":"start","id":tid,"run_id":run,"t":at,"title":t["title"],"body":body,"key":t["title"],"sha":sha,"main":main})){Ok(())=>{result["run_id"]=json!(run);result["state"]=json!("running");result["record"]=json!({"status":"recorded"});
+                    // Saved first, then declared: the transition only follows Drover's own record.
+                    if let Some((identity, _)) = &context {
+                        telemetry["transition"] = crate::telemetry::transition(host, &binding, Some(&identity.trace_id), "pending", "running", crate::telemetry::record_time(at), cancel);
+                    }
+                },Err(e)=>{result["ok"]=json!(false);result["state"]=json!("unknown");result["record"]=json!({"status":"unknown"});result["error"]=json!({"code":"write_failed","why":format!("{e:#}; delivery may already have happened")});}}
+            }
+            result["telemetry"] = telemetry;
             Ok(result)
+        }
+        O::RecordDefault(on) => {
+            let line = format!("TELEMETRY_RECORD={}\n", if *on { "on" } else { "off" });
+            let mut found = false;
+            let mut config: String = s
+                .config
+                .split_inclusive('\n')
+                .map(|l| {
+                    if l.trim().split_once('=').map(|(k, _)| k.trim()) == Some("TELEMETRY_RECORD") {
+                        found = true;
+                        line.clone()
+                    } else {
+                        l.to_owned()
+                    }
+                })
+                .collect();
+            if !found {
+                if !config.is_empty() && !config.ends_with('\n') {
+                    config.push('\n');
+                }
+                config.push_str(&line);
+            }
+            s.fresh()?;
+            atomic_write(&s.repo.join(".drover.conf"), &config)?;
+            Ok(
+                json!({"ok":true,"record_default":on,"message":format!("Dispatches of this project are {} by default. Saddle's Telemetry recording switch still decides whether anything is recorded.", if *on {"recorded"} else {"not recorded"})}),
+            )
         }
         O::Pause(on) => {
             s.fresh()?;
