@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前 main。核心遥测阶段01、02已审查、合并、推送并清理；尚未发布到日常安装版。阶段03接口设计已收敛、合并并清理设计会话，准备派发03A通用框架实现。原03宿主必备JEV安排撤回。没有真实队列操作。最新状态见第8节；第7节为设计过程历史。
+更新：2026-10-02。当前 main。核心遥测阶段01、02已审查、合并、推送并清理；尚未发布到日常安装版。阶段03接口设计已收敛、合并并清理设计会话，03A通用框架已派Codex实现。原03宿主必备JEV安排撤回。没有真实队列操作。最新状态见第8节；第7节为设计过程历史。
 
 ## 1. 会话摘要
 
@@ -66,4 +66,6 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 设计2c7db0d通过主控限定静态复核，M1/M2关闭、S1/S2接受，D1由主控按用户决定同步为c9b984c。设计合并479a454，契约/实施计划同步a6828e1已推送；仅文档，未跑测试或实现。
 - 设计worktree/分支dispatch-plugin-design已在干净、合入main、agent idle/attached=0时安全移除；目录删除后已关闭saddle/dev-dispatch-plugin-design-1 instance7cc3761a37cc。空提交de35440。迟到提醒查到not_found忽略，不恢复会话。旧review-telemetry-design、t38/t55仍保留。
 - 03A任务docs/任务/遥测03A-通用插件框架.md：下层接口crate、core登记与启停存储、headless status/run、Recorder适配及回执。只用假插件/临时数据，不改UI、不实现JEV、不安装资源。JEV重/交叉审查要/碰要害；Codex gpt-6-astra/xhigh，dlog dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4。
+- 实现者saddle/dev-telemetry-core-plugin-1，instance e66304753ca5，role=implementer；worktree ../saddle-worktrees/telemetry-core-plugin，分支telemetry-core-plugin，基线af06ba5。
+- 收到完成提醒先status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4 -- corral reply saddle/dev-telemetry-core-plugin-1 取完整DONE。核diff/完成记录/有效RED-GREEN，主控一次标准test/clippy，再新开重档Codex独立审查；不能把开发回复当通过。返工交原实现者，主控不写功能代码，每轮重挂。
 - 03A审查通过保留实现分支/worktree及agent；03B资源与界面、03C业务串行接入，整阶段集成审查后共同合并。管理页线框在界面实施前需给用户看，ureq版本/底层行为在03C任务前核官方资料。04/05不启动，不改Corral或真实安装/队列；需改Corral或依赖反转先停告知用户。
