@@ -68,6 +68,17 @@ def sample(image):
         y = max(y, min(HEIGHT-1, top+1))
         if pixels[y*WIDTH+x] is not None:
             pixels[y*WIDTH+x] = EYES
+    # The square glyph is centered in a whole cell. Keep it off the right
+    # forehead edge when the adjacent inner cell is entirely skin.
+    for y in range(0, HEIGHT, 2):
+        for x in range(2, WIDTH-2, 2):
+            at = [y*WIDTH+x, y*WIDTH+x+1, (y+1)*WIDTH+x, (y+1)*WIDTH+x+1]
+            colors = [pixels[i] for i in at]
+            if (colors.count(EYES) == 1 and colors.count(CLAY) == 3
+                    and pixels[y*WIDTH+x+2] is None
+                    and all(pixels[i-2] == CLAY for i in at)):
+                eye = at[colors.index(EYES)]
+                pixels[eye], pixels[eye-2] = CLAY, EYES
     return pixels
 
 

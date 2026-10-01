@@ -49,3 +49,19 @@
 保持已认可大小，改用小方块`▪`表达完全被肤色包围的单采样点眼睛，以减少半格眼睛的高度并上移。对照字号Menlo26（设备像素）测得字形墨迹11×10，而原半格竖条约8.5×19。原公开绘制检查先RED：小方块眼睛数量0，期望2；日志`/tmp/saddle-clawd-square-eyes-red.log`。
 
 方形眼睛候选验证：正面及转身后的小方块眼睛检查GREEN；完整标准测试373 passed / 0 failed / 5 ignored，Clippy/fmt/diff通过。日志`/tmp/saddle-clawd-square-eyes-{green,all,clippy}.log`。同帧对照`saddle-square-eyes-comparison.png`已在系统预览打开，左旧眼睛、中新候选、右原参考。修前/修后身体包围盒仍均111×76设备像素；普通Unicode字形的实际显示依赖字体，此为指定字号栅格化预览。候选未安装、未合并、未推送。
+
+## 右眼向内收
+
+> 右眼有点偏边缘。其他都还好
+
+仅处理小方块眼睛落在额头最外侧格的情况：相邻内侧格全为肤色时向内收一格。保持眼睛大小、身体大小及轮廓。公开绘制入口增加右眼外侧额头留白检查，旧素材RED为`▄`而非完整肤色`█`（`/tmp/saddle-clawd-eye-inset-red.log`）。逐帧二进制比较确认变更仅在全肤色格与方形眼睛格之间交换，所有帧透明轮廓不变。
+
+新对照为`~/Downloads/clawd-reference-20261001-4pdhpd0_/saddle-eye-inset-comparison.png`，左上一版、中右眼内收、右参考。自动打开Preview时桌面连接失败，图片已生成并检查，但未成功替用户打开。尚未安装、合并或推送。
+
+## 用户要求继续交付
+
+> 先这样吧。继续往下走
+
+停止后续字体/半格眼睛调查，保留当前右眼内收版本；未实施八分块字符方案，未修改或安装字体。眼睛整体居中仍有误差，用户要求先保持当前效果继续。开始合并及更新安装版，不重启用户已有窗口。
+
+最终素材验证：Mascot全部5项检查通过；Clippy/fmt/diff通过。标准并发全量测试两次在`overlay_resize_rejects_the_previously_displayed_frame`遇到`plugin registry busy; refresh and retry`，未修改插件代码；全量串行`cargo test --all-targets -- --test-threads=1`为373 passed / 0 failed / 5 ignored。日志`/tmp/saddle-clawd-eye-inset-{green,all,all-retry,all-serial,clippy}.log`。已逐帧确认右眼内收没有改变身体透明轮廓。

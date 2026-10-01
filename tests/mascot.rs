@@ -259,6 +259,13 @@ fn standing_eyes_are_inside_an_unbroken_forehead() {
         "standing eyes must be two small squares, not half-cell bars"
     );
     assert_eq!(eyes[0].1, eyes[1].1, "eyes must be level");
+    let outside_right_eye = &buffer[(eyes[1].0 + 1, eyes[1].1)];
+    assert_eq!(
+        outside_right_eye.symbol(),
+        "█",
+        "the right eye needs a solid forehead margin toward the head edge"
+    );
+    assert_eq!(outside_right_eye.fg, Color::Rgb(217, 119, 87));
     // Reach the right edge and turn: the small square glyph must survive mirroring.
     for tick in 1..=16 {
         terminal
