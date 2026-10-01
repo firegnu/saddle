@@ -150,6 +150,94 @@
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
+    "name": "desktop",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Desktop.json",
+    "sha256": "5e736e1acfa042169cd9e12047dd0e352b6f1d1815fe186457b031fdaf58455c",
+    "frames": 88,
+    "curated_frames": 41,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "arcade",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Arcade.json",
+    "sha256": "8b56d4f2dae0ec77421d4ebe9ccd1c9ec8890f26d4d64289cdf433507336a00e",
+    "frames": 49,
+    "curated_frames": 44,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "bubble",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Bubble.json",
+    "sha256": "129593d204b62f4d79e6dd640df87224b78d0727ba7a677dbb9d9482574dd4d6",
+    "frames": 100,
+    "curated_frames": 42,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "spark",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Spark.json",
+    "sha256": "48d30f3f83b9b59e6416ae778311236e89f1bfb134f46d0b1d95caf2b5c36052",
+    "frames": 73,
+    "curated_frames": 45,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "lightbulb",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Lightbulb.json",
+    "sha256": "548fb0a8520bf7e7ffdddf8e18e4cab1e053af2b9f9685cc2281bb4814de9c1c",
+    "frames": 50,
+    "curated_frames": 47,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "watering",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Watering.json",
+    "sha256": "ab03f851c9ab350030fa66ac67d43bf468bc2626ff4cf53f4e8791427771e694",
+    "frames": 137,
+    "curated_frames": 53,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "berrypicking",
+    "url": "https://claude.dev/shared/video/acts/Clawd-BerryPicking.json",
+    "sha256": "e20eacb98055eae3221433a7d81b5229bdd3ad7de745c87910b4487da0123f69",
+    "frames": 142,
+    "curated_frames": 44,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "blooming",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Blooming.json",
+    "sha256": "fd3a2e3f03dd0da69e828811439095e13ca687c673cef68690b773463f671e8d",
+    "frames": 99,
+    "curated_frames": 44,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "fishing",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Fishing.json",
+    "sha256": "bbb4c497221a6ce2718c59849f51adb24b048e397c56b77cb8683804fdb1d56d",
+    "frames": 109,
+    "curated_frames": 59,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "dancing",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Dancing.json",
+    "sha256": "3a78c22ead8da91994111cacbbeca6fc8dd93b76f97de678a80b1030fe2c7591",
+    "frames": 40,
+    "curated_frames": 46,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "dancinghappy",
+    "url": "https://claude.dev/shared/video/acts/Clawd-DancingHappy.json",
+    "sha256": "a677048ed573e18084020b3415a4db1e220f116ccc16bf0e2c1884b5aa9597a2",
+    "frames": 40,
+    "curated_frames": 42,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
     "name": "swaying",
     "url": "https://claude.dev/shared/video/acts/Clawd-Swaying.json",
     "sha256": "1a0d5d23aec67f91f4a36f4ef4b62ea248f63f223926d4d1a09858c0a8e7ee2e",

@@ -101,6 +101,126 @@ def pose(kind='rest', stage=0):
         eyes = [17, 17]
         if stage:
             extra = [(11 if stage == 1 else 12, 0, 18, 7, 0)]
+    elif kind == 'desktop':
+        eye_columns = (7, 9)
+        rect(p, 24, 0, 8, 2, 5)
+        rect(p, 25, 1, 6, 1, 6)
+        rect(p, 27, 2, 2, 2, 7)
+        rect(p, 24, 4, 8, 1, 7)
+        rect(p, 22, 5, 6, 1, 3)
+        rect(p, 20, 3, 2, 1, 0)
+        rect(p, 20, 4 if stage == 1 else 5, 2, 1, 1)
+        if stage == 2:
+            extra = [(13, 0, 19, 3, 5)]
+    elif kind == 'arcade':
+        eye_columns = (7, 9)
+        rect(p, 24, 0, 6, 6, 5)
+        rect(p, 24, 0, 6, 1, 11)
+        rect(p, 24, 2, 6, 1, 6)
+        extra = [(12, 2, 16, 10, 5), (14, 2, 16, 3, 5),
+                 (11, 1, 16, 10, 0), (11, 2, 30, 7, 0)]
+        rect(p, 20, 3 if stage != 1 else 4, 2, 1, 1)
+        if stage == 2:
+            extra += [(13, 1, 22, 3, 5)]
+            eyes = [21, 21]
+    elif kind == 'bubble':
+        rect(p, 20, 3, 2, 1, 0)
+        rect(p, 20, 2, 2, 1, 1)
+        extra = [(11, 1, 26, 6, 0)]
+        if stage == 1:
+            extra += [(12, 1, 28, 6, 0)]
+        elif stage == 2:
+            extra += [(13, 1, 27, 6, 0)]
+        elif stage == 3:
+            extra += [(14, 0, 27, 6, 0)]
+        elif stage == 4:
+            extra += [(14, 0, 22, 6, 0)]
+    elif kind == 'spark':
+        rect(p, 20, 3, 4, 1, 1)
+        if stage == 1:
+            extra = [(12, 1, 22, 11, 0)]
+        elif stage == 2:
+            extra = [(12, 0, 22, 3, 0), (13, 1, 22, 11, 0)]
+        elif stage == 3:
+            extra = [(13, 0, 29, 11, 0), (14, 1, 29, 11, 0)]
+    elif kind == 'lightbulb':
+        rect(p, 20, 3, 2, 1, 0)
+        rect(p, 20, 2, 2, 1, 1)
+        color = 7 if stage == 0 else 11
+        rect(p, 25, 0, 2, 1, color)
+        rect(p, 24, 1, 4, 1, color)
+        rect(p, 25, 2, 2, 1, 7)
+        if stage == 1:
+            extra = [(14, 0, 22, 3, 0)]
+        elif stage == 2:
+            eyes = [21, 21]
+    elif kind == 'watering':
+        rect(p, 20, 3, 2, 1, 1)
+        rect(p, 22, 2, 4, 2, 5)
+        rect(p, 26, 2 if stage == 0 else 3, 2, 1, 5)
+        rect(p, 28, 4, 4, 2, 4)
+        rect(p, 30, 2, 1, 2, 9)
+        rect(p, 31, 2, 1, 1, 9)
+        if stage in (1, 2):
+            extra = [(14, 1, 29, 6, 0)] if stage == 1 else [(14, 2, 29, 6, 4)]
+        if stage == 3:
+            rect(p, 29, 2, 1, 1, 9)
+            eyes = [21, 21]
+    elif kind == 'berrypicking':
+        rect(p, 24, 2, 6, 3, 9)
+        rect(p, 26, 5, 2, 1, 4)
+        extra = [(14, 1, 16, 10, 9)]
+        if stage < 2:
+            extra += [(12, 1, 16, 10, 9)]
+        if stage == 1:
+            rect(p, 20, 3, 4, 1, 1)
+        elif stage >= 2:
+            rect(p, 20, 3, 2, 1, 1)
+            extra += [(11, 1, 16, 10, 1)]
+            if stage == 3:
+                eyes = [21, 21]
+    elif kind == 'blooming':
+        rect(p, 24, 4, 6, 2, 4)
+        rect(p, 26, 2, 2, 2, 9)
+        if stage == 0:
+            rect(p, 26, 1, 2, 1, 9)
+        elif stage == 1:
+            rect(p, 26, 1, 2, 1, 10)
+        else:
+            rect(p, 26, 0, 2, 1, 10)
+            rect(p, 24, 1, 6, 1, 10)
+            rect(p, 26, 1, 2, 1, 11)
+            rect(p, 26, 2, 2, 1, 10)
+            if stage == 3:
+                eyes = [21, 21]
+                extra = [(15, 0, 22, 3, 0)]
+    elif kind == 'fishing':
+        rect(p, 20, 3, 2, 1, 1)
+        extra = [(11, 1, 19, 7, 0), (12, 1, 19, 7, 0),
+                 (13, 1, 31, 7, 0), (13, 2, 30, 7, 0),
+                 (12, 2, 32, 5, 0), (14, 2, 32, 5, 0), (15, 2, 32, 5, 0)]
+        if stage == 1:
+            extra += [(13, 2, 29, 6, 0)]
+        elif stage >= 2:
+            extra = [(11, 1, 19, 7, 0), (12, 1, 35, 7, 0), (13, 0, 31, 7, 0),
+                     (13, 1, 30, 7, 0), (13, 2, 33, 11, 0),
+                     (14, 2, 34, 11, 0), (15, 2, 33, 11, 0)]
+            if stage == 3:
+                eyes = [21, 21]
+    elif kind in ('dancing', 'dancinghappy'):
+        if stage:
+            side = 9 if stage == 1 else 20
+            rect(p, side, 3, 2, 1, 0)
+            rect(p, side, 2, 2, 1, 1)
+            rect(p, 13, 5, 5, 1, 0)
+            for x in ((14, 17) if stage == 1 else (13, 16)):
+                rect(p, x, 5, 1, 1, 1)
+            if kind == 'dancinghappy':
+                rect(p, 8 if stage == 1 else 21, 1, 2, 1, 1)
+                extra = [(12 if stage == 1 else 3, 0, 36, 11, 0)]
+                eyes = [21, 21]
+            else:
+                eyes = [17, 17]
     elif kind == 'phone':
         # Portrait screen remains outside the face; thumb taps its lower edge.
         eye_columns = (7, 9)
@@ -248,6 +368,17 @@ clips = {
     'heart': action('heart', [(0, 5), (1, 6), (2, 5), (1, 6), (2, 5), (1, 6), (0, 5)]),
     'meditating': action('meditating', [(0, 5), (1, 8), (2, 10), (1, 8), (2, 10), (1, 8), (0, 5)]),
     'hulahoop': action('hulahoop', [(0, 7), (1, 4), (2, 4), (1, 4), (2, 4), (1, 4), (2, 4), (0, 7)]),
+    'desktop': action('desktop', [(0, 6), (1, 3), (0, 3), (1, 3), (0, 3), (2, 9), (0, 5)]),
+    'arcade': action('arcade', [(0, 6), (1, 4), (0, 4), (1, 4), (0, 4), (2, 8), (0, 5)]),
+    'bubble': action('bubble', [(0, 6), (1, 5), (2, 6), (3, 7), (4, 3), (0, 6)]),
+    'spark': action('spark', [(0, 5), (1, 4), (2, 4), (3, 3), (0, 4), (1, 4), (2, 5), (3, 3), (0, 4)]),
+    'lightbulb': action('lightbulb', [(0, 9), (1, 4), (2, 10), (1, 4), (2, 6), (0, 5)]),
+    'watering': action('watering', [(0, 6), (1, 5), (2, 5), (1, 5), (2, 5), (0, 5), (3, 8), (0, 5)]),
+    'berrypicking': action('berrypicking', [(0, 6), (1, 5), (2, 6), (3, 8), (2, 5), (0, 5)]),
+    'blooming': action('blooming', [(0, 6), (1, 7), (2, 7), (3, 9), (2, 6)]),
+    'fishing': action('fishing', [(0, 10), (1, 5), (0, 6), (1, 4), (2, 6), (3, 9), (2, 5), (0, 5)]),
+    'dancing': action('dancing', [(0, 4), (1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 4)]),
+    'dancinghappy': action('dancinghappy', [(0, 4), (1, 4), (0, 3), (2, 4), (0, 3), (1, 4), (0, 3), (2, 4), (0, 4)]),
     'swaying': action('swaying', [(1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 3)]),
 }
 out = bytearray(b'CLWD3') + bytes([16, 3, len(PALETTE), len(clips)])
