@@ -34,7 +34,7 @@ impl Error {
             message: message.into(),
         }
     }
-    fn invalid(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self::new("invalid", "invalid_input", message)
     }
     fn unavailable(message: impl Into<String>) -> Self {

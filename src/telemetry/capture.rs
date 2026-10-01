@@ -56,6 +56,11 @@ impl Capture {
     pub fn end_event_id(&self) -> &str {
         &self.end_id
     }
+    pub fn gaps(&self) -> &[Value] {
+        self.begin.input.payload["gaps"]
+            .as_array()
+            .expect("validated gaps")
+    }
 }
 
 fn add_gap(input: &mut EventInput, role: &str, reason: &str) -> Result<()> {
@@ -87,6 +92,53 @@ fn body_roles(kind: &str, payload: &Value) -> &'static [&'static str] {
 }
 
 impl Store {
+    /// Check explicit associations even while recording is disabled, without reading bodies
+    /// or initializing storage. Unavailable storage cannot establish an invalid association.
+    pub fn check_operation(&self, input: &OperationInput) -> Result<()> {
+        let conn = self.reader()?.ok_or_else(Error::disabled)?;
+        let mut links: Vec<_> = input
+            .basis_event_ids
+            .iter()
+            .map(|id| Link {
+                relation: "based_on".into(),
+                target_event_id: id.clone(),
+            })
+            .collect();
+        if let Some(id) = &input.decision_event_id {
+            links.push(Link {
+                relation: "uses_decision".into(),
+                target_event_id: id.clone(),
+            });
+        }
+        let event = EventInput {
+            schema_version: input.schema_version,
+            event_id: String::new(),
+            trace_id: input.trace_id.clone(),
+            dispatch_id: Some(input.dispatch_id.clone()),
+            operation_id: None,
+            kind: format!("{}.begin", input.kind),
+            observed_at: Value::Null,
+            producer: input.producer.clone(),
+            evidence_kind: "execution_observed".into(),
+            payload: json!({}),
+            links,
+            bodies: vec![],
+        };
+        validate::identity(&conn, &event)?;
+        validate::links(&conn, &event)?;
+        if let Some(id) = &input.previous_brief_event_id {
+            let target = validate::event(&conn, id)?
+                .ok_or_else(|| Error::invalid("unknown previous brief"))?;
+            if target["kind"] != "brief.snapshot" || target["trace_id"] != input.trace_id {
+                return Err(Error::invalid(
+                    "previous brief must be a snapshot in this trace",
+                ));
+            }
+        }
+        enabled(&conn, Some(&input.trace_id))?;
+        Ok(())
+    }
+
     pub fn prepare_operation(
         &self,
         input: OperationInput,
@@ -337,6 +389,15 @@ impl Store {
     }
 
     pub fn record_end(&self, capture: &Capture, end: Observation) -> Result<Value> {
+        self.record_end_before(capture, end, None)
+    }
+
+    pub(crate) fn record_end_before(
+        &self,
+        capture: &Capture,
+        end: Observation,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<Value> {
         if !end.payload.is_object() {
             return Err(Error::invalid("payload must be an object"));
         }
@@ -364,6 +425,12 @@ impl Store {
         };
         input.payload["begin_missing"] = json!(false);
         let mut prepared = self.prepare_observation(input)?;
+        if let Some(deadline) = deadline {
+            let remaining = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .ok_or_else(|| Error::unavailable("capture deadline elapsed"))?;
+            conn.busy_timeout(remaining.min(std::time::Duration::from_millis(100)))?;
+        }
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         self.check_capture(&tx, capture)?;
         let missing = validate::event(&tx, capture.begin_event_id())?.is_none();
