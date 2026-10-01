@@ -5592,3 +5592,36 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
     h.quit();
     assert!(!h.log("events").contains("stop "));
 }
+
+#[test]
+fn telemetry_page_refuses_layout_requests_until_it_closes() {
+    let mut h = Harness::start();
+    let before = h.ctl(&["inspect"]);
+    h.send(b"\x1dt");
+    h.see("Input ▸ Telemetry");
+    let open = |h: &Harness, id: &str| {
+        h.ctl(&[
+            "open",
+            "--instance",
+            before["instance"].as_str().unwrap(),
+            "--relative-to",
+            "active",
+            "--shell",
+            "--cwd",
+            h.dir.path().to_str().unwrap(),
+            "--place",
+            "tab",
+            "--request-id",
+            id,
+        ])
+    };
+    let reply = open(&h, "telemetry-busy");
+    assert_eq!(reply["error"]["code"], "busy", "{reply}");
+    // Reading the layout is still answered.
+    let inspect = h.ctl(&["inspect"]);
+    assert_eq!(inspect["tabs"], before["tabs"], "{inspect}");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    let reply = open(&h, "telemetry-closed");
+    assert_eq!(reply["ok"], true, "{reply}");
+}

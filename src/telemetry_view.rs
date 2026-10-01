@@ -112,8 +112,9 @@ enum Panel {
 struct Detail {
     trace: Value,
     summary: Load<Value>,
-    /// 0 is All; otherwise an index into the summary's dispatches, plus one.
-    dispatch: usize,
+    /// The selected dispatch's ID; None is All. Kept by ID so a summary being read again
+    /// cannot turn it into All or another dispatch.
+    dispatch: Option<String>,
     events: Vec<Value>,
     upper: Option<i64>,
     next_after: i64,
@@ -126,6 +127,9 @@ struct Detail {
     picking: Option<usize>,
     message: String,
     reader: Option<Reader>,
+    /// A `carried_from` target of the selected event, outside the loaded events: its event
+    /// ID and the read of where it is.
+    target: Option<(String, Load<Value>)>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
@@ -210,12 +214,14 @@ impl Page {
         while let Ok(reply) = self.receiver.try_recv() {
             self.absorb(reply);
         }
+        self.sync_target();
     }
     /// Whether a read is still running for what is open.
     pub fn loading(&self) -> bool {
         let detail = self.detail.as_ref().is_some_and(|d| {
             matches!(d.summary, Load::Pending(_))
                 || matches!(d.page, Some(Load::Pending(_)))
+                || matches!(d.target, Some((_, Load::Pending(_))))
                 || d.reader
                     .as_ref()
                     .is_some_and(|r| matches!(r.load, Load::Pending(_)))
@@ -374,6 +380,15 @@ impl Page {
             }
             return;
         }
+        if let Some((_, target)) = &mut d.target
+            && target.waits(token)
+        {
+            *target = Load::Done {
+                at,
+                result: value(result),
+            };
+            return;
+        }
         if let Some(reader) = &mut d.reader
             && reader.load.waits(token)
         {
@@ -401,6 +416,34 @@ impl Page {
     }
 
     pub fn event(&mut self, event: &Event) -> Outcome {
+        let outcome = self.handle(event);
+        self.sync_target();
+        outcome
+    }
+    /// Reads where the selected event's `carried_from` target lives, only for a target
+    /// outside the loaded events and only when the selection points at a new one.
+    fn sync_target(&mut self) {
+        let Some(d) = &self.detail else {
+            return;
+        };
+        let wanted = d.events.get(d.selected).and_then(|event| {
+            event["links"]
+                .as_array()?
+                .iter()
+                .filter(|l| l["relation"] == "carried_from")
+                .map(target_id)
+                .find(|id| !d.events.iter().any(|e| e["event_id"] == *id))
+                .map(str::to_owned)
+        });
+        if d.target.as_ref().map(|(id, _)| id) == wanted.as_ref() {
+            return;
+        }
+        let token = wanted
+            .clone()
+            .map(|id| self.start(move |s| s.show(&id).map(Data::Value)));
+        self.detail.as_mut().unwrap().target = wanted.zip(token.map(Load::Pending));
+    }
+    fn handle(&mut self, event: &Event) -> Outcome {
         match event {
             Event::Key(key) if key.kind != KeyEventKind::Release => {
                 self.pointer.cancel();
@@ -450,7 +493,12 @@ impl Page {
             Some(d) if d.reader.is_some() => {}
             Some(d) => match &mut d.picking {
                 Some(choice) => *choice = i,
-                None => d.selected = i,
+                None => {
+                    if d.selected != i {
+                        d.panel_top = 0;
+                    }
+                    d.selected = i;
+                }
             },
         }
     }
@@ -465,7 +513,7 @@ impl Page {
             return;
         }
         if let Some(d) = &mut self.detail
-            && d.panel != Panel::Event
+            && d.picking.is_none()
             && self.panel_area.contains(point)
         {
             d.panel_top = d.panel_top.saturating_add_signed(delta);
@@ -528,7 +576,7 @@ impl Page {
                     self.detail = Some(Detail {
                         trace,
                         summary: Load::Pending(0),
-                        dispatch: 0,
+                        dispatch: None,
                         events: Vec::new(),
                         upper: None,
                         next_after: 0,
@@ -541,6 +589,7 @@ impl Page {
                         picking: None,
                         message: String::new(),
                         reader: None,
+                        target: None,
                     });
                     self.read_summary();
                     self.read_events();
@@ -624,6 +673,7 @@ impl Page {
             return Outcome::Stay;
         }
         d.message.clear();
+        let before = d.selected;
         let count = d.events.len();
         let scrolls = d.panel != Panel::Event;
         let step = if scrolls {
@@ -665,15 +715,28 @@ impl Page {
                 }
             }
             KeyCode::Tab | KeyCode::BackTab => {
-                let Some(count) = d.summary.ready().map(|s| dispatches(&s["record"]).len()) else {
+                let Some(ids) = d.summary.ready().map(|s| {
+                    dispatches(&s["record"])
+                        .iter()
+                        .filter_map(|x| x["dispatch_id"].as_str().map(str::to_owned))
+                        .collect::<Vec<_>>()
+                }) else {
                     d.message = "Dispatches are not loaded yet.".into();
                     return Outcome::Stay;
                 };
-                d.dispatch = if key.code == KeyCode::Tab {
-                    (d.dispatch + 1) % (count + 1)
+                // Position 0 is All, then each dispatch.
+                let count = ids.len() + 1;
+                let at = d
+                    .dispatch
+                    .as_ref()
+                    .and_then(|id| ids.iter().position(|x| x == id))
+                    .map_or(0, |i| i + 1);
+                let next = if key.code == KeyCode::Tab {
+                    (at + 1) % count
                 } else {
-                    (d.dispatch + count) % (count + 1)
+                    (at + count - 1) % count
                 };
+                d.dispatch = next.checked_sub(1).map(|i| ids[i].clone());
                 d.selected = 0;
                 d.top = 0;
                 self.read_events();
@@ -696,10 +759,20 @@ impl Page {
             }
             KeyCode::Char('n') if d.more && d.page.is_none() => self.read_page(),
             KeyCode::Char('r') => {
+                d.target = None;
                 self.read_summary();
                 self.read_events();
             }
+            // The detail panel scrolls on its own; the event selection stays.
+            KeyCode::Char('J') => d.panel_top += 1,
+            KeyCode::Char('K') => d.panel_top = d.panel_top.saturating_sub(1),
             _ => {}
+        }
+        if let Some(d) = &mut self.detail
+            && !scrolls
+            && d.selected != before
+        {
+            d.panel_top = 0;
         }
         Outcome::Stay
     }
@@ -853,6 +926,7 @@ impl Page {
             ("↑↓", "Select", None),
             ("↵", "Read", Some(K::Enter)),
             ("Tab", "Dispatch", Some(K::Tab)),
+            ("J/K", "Detail", None),
             ("o", "Ops", Some(K::Char('o'))),
             ("i", "Intervals", Some(K::Char('i'))),
             ("n", "More", Some(K::Char('n'))),
@@ -1126,7 +1200,14 @@ impl Page {
             } else if i > 1 {
                 spans.push(Span::raw(" · "));
             }
-            spans.push(if i == d.dispatch {
+            let current = match i.checked_sub(1) {
+                None => d.dispatch.is_none(),
+                Some(i) => {
+                    d.dispatch.is_some()
+                        && known[i]["dispatch_id"].as_str() == d.dispatch.as_deref()
+                }
+            };
+            spans.push(if current {
                 Span::styled(
                     name,
                     Style::default().fg(t.focus).add_modifier(Modifier::BOLD),
@@ -1140,7 +1221,7 @@ impl Page {
         // The panel: event detail, current operations, intervals or a body choice.
         d.selected = d.selected.min(d.events.len().saturating_sub(1));
         let operations = summary.and_then(|s| s["operations"].as_array());
-        let loaded_all = d.dispatch == 0 && !d.more && d.page.is_none();
+        let loaded_all = d.dispatch.is_none() && !d.more && d.page.is_none();
         let (title, lines) = if d.picking.is_some() {
             let event = d.events.get(d.selected);
             let bodies = event
@@ -1183,9 +1264,15 @@ impl Page {
                 ),
                 Panel::Event => {
                     let mut lines = Vec::new();
-                    if d.dispatch > 0
-                        && let Some(x) = known.get(d.dispatch - 1)
+                    let selected = known
+                        .iter()
+                        .find(|x| x["dispatch_id"].as_str() == d.dispatch.as_deref());
+                    if selected.is_none()
+                        && let Some(id) = &d.dispatch
                     {
+                        lines.push(format!("dispatch {} · loading…", inert(id)));
+                    }
+                    if let Some(x) = selected {
                         lines.push(format!(
                             "dispatch {} · {}",
                             text(&x["dispatch_id"]),
@@ -1201,8 +1288,14 @@ impl Page {
                     }
                     let event = d.events.get(d.selected);
                     match event {
-                        Some(event) => lines.extend(event_lines(event, &d.events, operations, &at)),
-                        None if d.dispatch == 0 => lines.push("No event selected.".into()),
+                        Some(event) => lines.extend(event_lines(
+                            event,
+                            &d.events,
+                            operations,
+                            &at,
+                            d.target.as_ref(),
+                        )),
+                        None if d.dispatch.is_none() => lines.push("No event selected.".into()),
                         None => {}
                     }
                     let seq = event.map(|e| format!("seq {}", text(&e["seq"])));
@@ -1300,7 +1393,7 @@ impl Page {
             let text = match &d.page {
                 Some(Load::Pending(_)) => "Loading…",
                 Some(Load::Done { .. }) => "",
-                None if d.dispatch > 0 => "No events recorded for this dispatch.",
+                None if d.dispatch.is_some() => "No events recorded for this dispatch.",
                 None => "No events recorded for this trace.",
             };
             put(frame, list, 0, Line::raw(text));
@@ -1352,7 +1445,6 @@ impl Page {
         }
 
         let pw = usize::from(panel.width);
-        put(frame, panel, 0, rule(t, &title, pw));
         let body = Rect {
             y: panel.y + 1.min(panel.height),
             height: panel
@@ -1366,16 +1458,25 @@ impl Page {
             .iter()
             .flat_map(|l| crate::ui::wrap_text(l, body.width))
             .collect();
-        if d.panel != Panel::Event && d.picking.is_none() {
-            d.panel_top = d
-                .panel_top
-                .min(rows.len().saturating_sub(usize::from(body.height)));
-        }
-        let skip = if d.picking.is_some() || d.panel == Panel::Event {
+        let height = usize::from(body.height);
+        let skip = if d.picking.is_some() {
             0
         } else {
+            d.panel_top = d.panel_top.min(rows.len().saturating_sub(height));
             d.panel_top
         };
+        // A detail longer than the panel says which part shows and how to reach the rest.
+        let title = if d.picking.is_none() && rows.len() > height {
+            format!(
+                "{title} · {}–{} / {} J/K",
+                skip + 1,
+                (skip + height).min(rows.len()),
+                rows.len()
+            )
+        } else {
+            title
+        };
+        put(frame, panel, 0, rule(t, &title, pw));
         for (row, line) in rows
             .into_iter()
             .skip(skip)
@@ -1512,9 +1613,7 @@ impl Page {
 
 impl Detail {
     fn dispatch_id(&self) -> Option<&str> {
-        self.summary.ready()?["record"]["dispatches"]
-            .get(self.dispatch.checked_sub(1)?)?["dispatch_id"]
-            .as_str()
+        self.dispatch.as_deref()
     }
 }
 impl Reader {
@@ -1774,6 +1873,7 @@ fn event_lines(
     events: &[Value],
     operations: Option<&Vec<Value>>,
     at: &str,
+    resolved: Option<&(String, Load<Value>)>,
 ) -> Vec<String> {
     let mut lines = Vec::new();
     let mut head = format!("{} · {}", text(&event["kind"]), source_text(event));
@@ -1788,21 +1888,23 @@ fn event_lines(
     if event["source_description"].is_string() {
         lines.push(text(&event["source_description"]));
     }
+    lines.push(format!(
+        "event {} · trace {} · dispatch {}",
+        text(&event["event_id"]),
+        text(&event["trace_id"]),
+        text(&event["dispatch_id"])
+    ));
     let payload = &event["payload"];
+    // The recorded payload as stored; gaps are listed under Not captured.
+    if let Some(fields) = payload.as_object() {
+        for (key, value) in fields.iter().filter(|(k, _)| *k != "gaps") {
+            fields_of(key, value, &mut lines);
+        }
+    }
     for body in event["bodies"].as_array().into_iter().flatten() {
         let label = body_label(event, body);
         if event["kind"] == "brief.snapshot" {
             lines.push(format!("{label}  {}", text(&payload["absolute_path"])));
-            lines.push(format!(
-                "captured {} · phase {}{}",
-                text(&payload["captured_at"]),
-                text(&payload["publication_phase"]),
-                if payload["begin_missing"] == true {
-                    " · begin missing"
-                } else {
-                    ""
-                }
-            ));
         } else {
             lines.push(label);
         }
@@ -1853,14 +1955,51 @@ fn event_lines(
                 text(&e["seq"]),
                 text(&e["kind"])
             ),
-            None => format!(
-                "link {} → event {} (not in loaded events)",
-                text(&link["relation"]),
-                short(&link["target_event_id"], 8)
-            ),
+            None => {
+                let head = format!(
+                    "link {} → event {}",
+                    text(&link["relation"]),
+                    short(&link["target_event_id"], 8)
+                );
+                match resolved
+                    .filter(|(id, _)| link["relation"] == "carried_from" && id == target_id(link))
+                {
+                    Some((_, Load::Pending(_))) => format!("{head} · reading target trace…"),
+                    Some((_, Load::Done { result: Err(f), .. })) => {
+                        format!("{head} · target trace not read ({})", f.text())
+                    }
+                    Some((_, Load::Done { result: Ok(v), .. })) if v["record"].is_object() => {
+                        let r = &v["record"];
+                        format!(
+                            "link {} → trace {} seq {} {}",
+                            text(&link["relation"]),
+                            short(&r["trace_id"], 8),
+                            text(&r["seq"]),
+                            text(&r["kind"])
+                        )
+                    }
+                    Some(_) => format!("{head} · target trace not read (not initialized)"),
+                    None => format!("{head} (not in loaded events)"),
+                }
+            }
         });
     }
     lines
+}
+/// One payload field per line; nested objects as dotted keys, arrays as compact JSON.
+fn fields_of(key: &str, value: &Value, lines: &mut Vec<String>) {
+    match value {
+        Value::Object(map) if !map.is_empty() => {
+            for (k, v) in map {
+                fields_of(&format!("{key}.{k}"), v, lines);
+            }
+        }
+        Value::String(s) => lines.push(format!("  {}: {}", inert(key), inert(s))),
+        other => lines.push(format!("  {}: {}", inert(key), inert(&other.to_string()))),
+    }
+}
+fn target_id(link: &Value) -> &str {
+    link["target_event_id"].as_str().unwrap_or("")
 }
 fn op_state(op: &Value) -> String {
     let mut parts = Vec::new();

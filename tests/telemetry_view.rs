@@ -672,3 +672,197 @@ impl Stay for Outcome {
         matches!(self, Outcome::Stay)
     }
 }
+
+#[test]
+fn refresh_keeps_the_selected_dispatch_and_its_events() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let store = store(&root);
+    task(&store, "t", "T1", "dispatches");
+    dispatch(&store, "t", "impl-77c0", "implementation", None);
+    dispatch(&store, "t", "review-90de", "review", Some("impl-77c0"));
+    send_without_end(&store, dir.path(), "t", "impl-77c0");
+    let mut page = open(&root);
+    press(&mut page, KeyCode::Enter);
+    shown(&mut page);
+    press(&mut page, KeyCode::Tab);
+    press(&mut page, KeyCode::Tab);
+    let review = shown(&mut page);
+    assert!(review.contains("parent impl-77c0"), "{review}");
+    assert!(!review.contains("agent.send.begin"), "{review}");
+    // Refresh while the dispatch list itself is being read again.
+    press(&mut page, KeyCode::Char('r'));
+    let refreshed = shown(&mut page);
+    assert!(refreshed.contains("parent impl-77c0"), "{refreshed}");
+    assert!(!refreshed.contains("agent.send.begin"), "{refreshed}");
+    assert!(!refreshed.contains("brief.snapshot"), "{refreshed}");
+    assert!(
+        refreshed.contains("No events recorded for this dispatch."),
+        "{refreshed}"
+    );
+    // Back to the implementation dispatch: its own events only.
+    press(&mut page, KeyCode::BackTab);
+    let implementation = shown(&mut page);
+    assert!(
+        implementation.contains("agent.send.begin"),
+        "{implementation}"
+    );
+    assert!(
+        implementation.contains("dispatch impl-77c0"),
+        "{implementation}"
+    );
+}
+
+#[test]
+fn event_detail_shows_recorded_fields_and_scrolls_to_the_end_when_narrow() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let store = store(&root);
+    task(&store, "t", "T1", "fields");
+    dispatch(&store, "t", "impl-77c0", "implementation", None);
+    transition(&store, "t", "move", "T1");
+    let reason = file(dir.path(), "reason.txt", b"why");
+    store
+        .append(EventInput {
+            schema_version: 1,
+            event_id: "decide".into(),
+            trace_id: "t".into(),
+            dispatch_id: Some("impl-77c0".into()),
+            operation_id: None,
+            kind: "controller.decision".into(),
+            observed_at: Value::Null,
+            producer: "synthetic controller".into(),
+            evidence_kind: "controller_statement".into(),
+            payload: json!({"planned_model":"model-x","planned_effort":"high","validation_budget":null}),
+            links: vec![],
+            bodies: vec![serde_json::from_value(json!({"role":"reason","path":reason})).unwrap()],
+        })
+        .unwrap();
+    let mut page = open(&root);
+    press(&mut page, KeyCode::Enter);
+    settle(&mut page);
+    select_event(&mut page, "task.transition");
+    let detail = shown(&mut page);
+    assert!(detail.contains("from: pending"), "{detail}");
+    assert!(detail.contains("to: running"), "{detail}");
+    assert!(detail.contains("binding.key: T1"), "{detail}");
+    assert!(detail.contains("event move"), "{detail}");
+    select_event(&mut page, "controller.decision");
+    let detail = shown(&mut page);
+    assert!(detail.contains("planned_model: model-x"), "{detail}");
+    assert!(detail.contains("planned_effort: high"), "{detail}");
+    assert!(detail.contains("validation_budget: null"), "{detail}");
+    assert!(detail.contains("dispatch impl-77c0"), "{detail}");
+
+    // In a small window the end of a long detail is reachable without moving the selection.
+    press(&mut page, KeyCode::Home);
+    select_event(&mut page, "task.transition");
+    let mut seen = screen(&mut page, 80, 24);
+    for _ in 0..30 {
+        if seen.contains("to: running") {
+            break;
+        }
+        press(&mut page, KeyCode::Char('J'));
+        seen = screen(&mut page, 80, 24);
+    }
+    assert!(seen.contains("to: running"), "{seen}");
+    assert!(marked(&seen).contains("task.transition"), "{seen}");
+}
+
+#[test]
+fn carried_from_names_the_target_trace_or_says_why_it_cannot() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let store = store(&root);
+    task(&store, "source-trace-1234", "T1", "source");
+    statement(
+        &store,
+        dir.path(),
+        "source-trace-1234",
+        "original",
+        "requirement.recorded",
+        b"text",
+    );
+    task(&store, "t", "T2", "reuser");
+    store
+        .append(EventInput {
+            schema_version: 1,
+            event_id: "reuse".into(),
+            trace_id: "t".into(),
+            dispatch_id: None,
+            operation_id: None,
+            kind: "evidence.reused".into(),
+            observed_at: Value::Null,
+            producer: "synthetic plugin".into(),
+            evidence_kind: "plugin_statement".into(),
+            payload: json!({"reused_by":"synthetic plugin"}),
+            links: vec![
+                serde_json::from_value(
+                    json!({"relation":"carried_from","target_event_id":"original"}),
+                )
+                .unwrap(),
+            ],
+            bodies: vec![],
+        })
+        .unwrap();
+    let mut page = open(&root);
+    // The newest trace (the reuser) is first.
+    press(&mut page, KeyCode::Enter);
+    settle(&mut page);
+    select_event(&mut page, "evidence.reused");
+    let detail = shown(&mut page);
+    assert!(detail.contains("carried_from → trace sour"), "{detail}");
+    assert!(detail.contains("requirement.recorded"), "{detail}");
+
+    // A failed read is reported as such, never as a guessed trace: this target ID is also
+    // a trace ID, which show() refuses as ambiguous.
+    let dir2 = tempfile::tempdir().unwrap();
+    let root2 = dir2.path().join("telemetry");
+    let store2 = crate::store(&root2);
+    task(&store2, "source-trace-1234", "T1", "source");
+    statement(
+        &store2,
+        dir2.path(),
+        "source-trace-1234",
+        "dup",
+        "requirement.recorded",
+        b"text",
+    );
+    store2
+        .create_trace(
+            serde_json::from_value(
+                json!({"schema_version":1,"trace_id":"dup","origin":"ad_hoc","label":"same id"}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    task(&store2, "t", "T2", "reuser");
+    store2
+        .append(EventInput {
+            schema_version: 1,
+            event_id: "reuse".into(),
+            trace_id: "t".into(),
+            dispatch_id: None,
+            operation_id: None,
+            kind: "evidence.reused".into(),
+            observed_at: Value::Null,
+            producer: "synthetic plugin".into(),
+            evidence_kind: "plugin_statement".into(),
+            payload: json!({"reused_by":"synthetic plugin"}),
+            links: vec![
+                serde_json::from_value(json!({"relation":"carried_from","target_event_id":"dup"}))
+                    .unwrap(),
+            ],
+            bodies: vec![],
+        })
+        .unwrap();
+    let mut page = open(&root2);
+    press(&mut page, KeyCode::Enter);
+    settle(&mut page);
+    select_event(&mut page, "evidence.reused");
+    let failed = shown(&mut page);
+    assert!(failed.contains("carried_from → event dup"), "{failed}");
+    assert!(failed.contains("target trace not read"), "{failed}");
+    assert!(failed.contains("ambiguous"), "{failed}");
+    assert!(!failed.contains("trace sour"), "{failed}");
+}
