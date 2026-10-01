@@ -1,3 +1,6 @@
+mod capture;
+pub mod cli;
+pub mod core;
 pub mod navigation;
 pub mod palette;
 pub mod registry;
@@ -78,6 +81,7 @@ struct Running {
 pub struct Manager {
     pub registry: Registry,
     pub notices: Notices,
+    core_catalog: core::Catalog,
     running: BTreeMap<String, Running>,
     restart: BTreeSet<String>,
     errors: BTreeMap<String, String>,
@@ -87,9 +91,13 @@ pub struct Manager {
 }
 impl Manager {
     pub fn open(path: PathBuf) -> Self {
-        let registry = Registry::open(path);
+        Self::with_core(path, &[])
+    }
+    pub fn with_core(path: PathBuf, core_catalog: core::Catalog) -> Self {
+        let registry = core::registry(path, core_catalog);
         let mut this = Self {
             registry,
+            core_catalog,
             notices: Notices::default(),
             running: BTreeMap::new(),
             restart: BTreeSet::new(),
@@ -110,6 +118,18 @@ impl Manager {
             this.start(&id);
         }
         this
+    }
+    pub fn core_catalog(&self) -> core::Catalog {
+        self.core_catalog
+    }
+    pub fn core_state(&self, id: &str) -> Option<core::State> {
+        self.core_catalog
+            .iter()
+            .any(|p| p.manifest().id == id)
+            .then(|| core::state(&self.registry, id))
+    }
+    pub fn core_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
+        self.registry.core_enabled(id, enabled)
     }
     fn start(&mut self, id: &str) {
         let result = (|| -> Result<()> {

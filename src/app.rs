@@ -140,9 +140,13 @@ impl Drop for TerminalGuard {
 }
 
 /// Runs saddle with `config`, loaded from `path`, which Settings edits.
-pub fn run(mut config: Config, path: std::path::PathBuf) -> Result<()> {
+pub fn run(
+    mut config: Config,
+    path: std::path::PathBuf,
+    core_catalog: crate::plugins::core::Catalog,
+) -> Result<()> {
     config.colors = config.colors.for_terminal(truecolor());
-    let mut app = App::new(config, path)?;
+    let mut app = App::new(config, path, core_catalog)?;
     let _guard = TerminalGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
@@ -212,7 +216,11 @@ struct App {
     checker: Option<crate::diagnostics::Checker>,
 }
 impl App {
-    fn new(config: Config, config_path: std::path::PathBuf) -> Result<Self> {
+    fn new(
+        config: Config,
+        config_path: std::path::PathBuf,
+        core_catalog: crate::plugins::core::Catalog,
+    ) -> Result<Self> {
         // The config loaded without error, so an existing file is where it came from.
         let config_from_file = config_path.exists();
         let client = Client {
@@ -251,11 +259,12 @@ impl App {
             };
             actions.start(Action::Attach(name, ticket, None));
         }
-        let plugins = crate::plugins::Manager::open(
+        let plugins = crate::plugins::Manager::with_core(
             config_path
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .join("plugins.toml"),
+            core_catalog,
         );
         Ok(Self {
             plugins,

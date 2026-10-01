@@ -1635,6 +1635,7 @@ dependencies = [
  "portable-pty",
  "ratatui",
  "rusqlite",
+ "saddle-core-plugin",
  "saddle-drover-plugin",
  "saddle-plugin-protocol",
  "saddle-plugin-sdk",
@@ -1650,6 +1651,10 @@ dependencies = [
  "uuid",
  "vt100",
 ]
+
+[[package]]
+name = "saddle-core-plugin"
+version = "0.1.0"
 
 [[package]]
 name = "saddle-diff-plugin"
