@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff"]
-default-members = [".", "crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff"]
+members = ["crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
+default-members = [".", "crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
 exclude = ["examples/counter-plugin", "examples/attention-plugin"]
 resolver = "3"
 
@@ -14,6 +14,7 @@ description = "A three-pane terminal workspace for corral agents and drover"
 
 [dependencies]
 saddle-core-plugin = { path = "crates/core-plugin" }
+saddle-dispatch-plugin = { path = "plugins/dispatch" }
 saddle-plugin-protocol = { path = "crates/plugin-protocol" }
 saddle-plugin-sdk = { path = "crates/plugin-sdk" }
 anyhow = "1"

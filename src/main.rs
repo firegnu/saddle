@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 use saddle::config::{Config, default_path};
-const CORE_CATALOG: saddle::plugins::core::Catalog = &[];
+const CORE_CATALOG: saddle::plugins::core::Catalog = &[&saddle_dispatch_plugin::PLUGIN];
 
 fn main() {
     let os_args: Vec<_> = std::env::args_os().skip(1).collect();

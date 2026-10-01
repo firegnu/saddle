@@ -57,3 +57,47 @@
 ## 做完
 
 本任务末尾追加完成记录：做了什么、实际RED/GREEN及标准检查、取舍/限制/未做项；在本分支提交。回复SHA与简短结果，命令都在前台跑完，全部完成后最后一行DONE。
+
+## 完成记录（2026-10-02）
+
+### 基线与范围
+
+- 开始时分支 `telemetry-dispatch-plugin`、工作区干净，**当前 HEAD 基线为 `32b34fd21022cec62f3449dfad365d21c096d4e7`**：已从 03B 候选 `597f48affe8b2a5de3ae9a55744b28404a62aa51` 叠放并合入主控文档，以此 HEAD 为本轮增量起点，不把 597f48a 当本轮直接基线。
+- 仅本分支新增 `plugins/dispatch` 和直接测试，修改根 Cargo 文件、`src/main.rs` 的目录一行及指定文档。03A/B 通用实现、协议/SDK、遥测 schema、Drover/Diff、Corral/dispatch-log 均未改；没有发现需要改 Corral、反向依赖或通用接口阻断。没有再开 agent。
+
+### 实现结果
+
+- `dispatch` 作为默认停用的 CorePlugin，`route` 声明 `Some(Route)`，只有二进制组装根引用。沿用 headless、管理页、启停、资源和 Recorder/Completion，插件不接触 Store 或自行构造遥测事件。
+- 移植固定 URL/model/题目、Python strip、舍入/阈值/null、按响应顺序处理概率与 cross、重复键后值保留首次位置、model/usage 透传与业务 0/1。局部有序 JSON 不启用 serde_json 全局 preserve_order；规则指纹固定为 `sha256:8d4ec37d101d7d6c69d48df828d488b91b68fe751a80c783b6f34911484388b0`，整理/重试版本 `route-v1`。
+- ureq 精确 3.4.2，仅 rustls（ring/WebPki），分阶段 10 秒、无总时限、无重定向、最多两次尝试。局部 Transport 适配只累计成功发出的 HTTP 头分隔符及已知请求体长度，未将 Reader 耗尽或 NextTimeout.reason 当成发送完成。响应流最多读取 16 MiB+1 字节判超限；网络诊断使用固定分类文本，不格式化库错误、授权头或 key。
+- 首次外部调用前 begin 一次，重试共享 operation。保存实际请求字节、完整解析响应和 stdout 原字节；shape 失败保留解析响应，HTTP/网络/截断/解析失败/超限按约定 gap 分类。任务书仅由宿主快照保存，不进入请求。
+- 三份资源 include_bytes，revision=1，资源指纹 `sha256:f51968bfdae9c5891afdc64a32c502db0db11fdf4c759e17ab75295739947918`；模板 SHA-256 `22339f4674469d1b8a5041086f4aa3e5a4b5e9d53f356f946dd1a06cc2f73384`，与旧来源逐字节一致。SKILL diff 仅第3节问路由命令及兜底，保留名称、其他编排规则和旧 dlog 说明；完整回执判定包含首字节、完整 LF 首末行、schema/final/UUID 与 call_id 配对。README 和插件接入说明同步，旧软链接冲突、源码接入与实际迁移分开说明。
+- 使用文档收窄了“所有保留目录路径都会注明 directory kept”的过宽表述；03B S1 提示遗漏仍未修复，身份核对与 rmdir 的非原子边界保留。原话注明来源/未经独立核验、遥测初始关闭、有标记晚交的产品默认值保持。
+
+### 实际验证及证据
+
+所有测试/Clippy 命令均通过前台 runner 等待退出；隔离 HOME 和 XDG_CONFIG_HOME/XDG_DATA_HOME/XDG_STATE_HOME/XDG_CACHE_HOME/XDG_RUNTIME_DIR，保留真实 CARGO_HOME/RUSTUP_HOME，固定共享 target，stdin=/dev/null（测试子进程仅合成正文）。外层显式移除 TYPESAFE_API_KEY，测试只内部注入合成值；仅本地回环 HTTP，无真实 JEV/Corral 请求。
+
+证据目录：`/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-8a69a7d0/`。包含 `baseline.txt`、`run.py`、各命令 `.json/.log`、`results.json` 和实际 RED 补丁。
+
+| 检查 | 实际结果 / 日志 |
+|---|---|
+| 目录登记 RED→GREEN | `red-catalog.log`：目标因 unknown_plugin、退出2≠0失败；`green-catalog.log`：1通过。`red-catalog.patch` 为纯新增测试。 |
+| 无 key RED→GREEN | `red-key.log`：错误文本 route unavailable≠约定 key 文本；`green-key.log`：1通过。`red-key.patch` 保留当时测试与可编译脚手架。 |
+| 请求/排序/重复键/舍入 RED→GREEN | `red-route.log`：合成成功响应仍返回业务1，非编译/fixture失败；`green-route.log`：2通过。`red-route.patch` 保留当时测试及路由脚手架。请求期望从旧脚本 AST/literal 提取，未 import/执行旧脚本；舍入定值另以本机 Python round 核对。 |
+| 429/529 重试 RED→GREEN | `red-retry.log`：仅1次尝试≠2；`green-retry.log`：3通过。`red-retry.patch` 为当时源码和新增测试快照。 |
+| 网络阶段分类 RED→GREEN | `red-network.log`：发送前 reset 未标可重试；`green-network.log`：4通过。`red-network.patch` 保存该测试。 |
+| 插件最终直接回归 | `cargo test -p saddle-dispatch-plugin`：**14通过，0失败**，`plugin-final-target.log`。含规则/资源固定指纹、模板、边界与舍入、无key/非UTF8无begin、两次尝试上限、假发送失败与实际发送完成标记、回环请求/429/529/重定向/非2xx/截断/无效JSON/超大响应/头与体超时。 |
+| 03A/B/03C 主路径隔离集成 | `cargo test --test dispatch_plugin`：**3通过，0失败**，`integration-green.log`。真实插件清单接管理层及真实二进制默认停用/无key路径；成功采集由测试宿主编译同一份 route/json/rules 源码，仅 HTTP 边界注入合成响应。验证启用资源、外来旧链接不动、模板路径、未选采集不建库、宿主快照/来源/operation、摘要与任务书分离、response/suggestion原字节、记录及回执无合成key、停用及移除。未提供生产换URL入口。 |
+| 标准测试（仅一轮） | `cargo test --all-targets`：**exit101，已执行96通过/1失败**，`standard-test.log`。既有 `core_plugins::management_switches_preserve_external_entries_and_enforce_reserved_ids_and_baseline` 在 `tests/core_plugins.rs:640` 报 `plugin registry busy; refresh and retry`；Cargo 随后停止，后续 target 未执行，不能说全套通过。新的 workspace/default-members 已包含 dispatch；其14项目标结果单独如上。 |
+| 获准的单项复跑（仅一次） | 对上述用例 `--exact` 复跑：**1通过，exit0**，`registry-single-rerun.log`。未改该测试或框架，保留原失败；不声称锁竞争根因修好，不继续扩查/重跑全套。 |
+| 标准 Clippy（仅一轮） | `cargo clippy --all-targets -- -D warnings`：**exit0**，`standard-clippy.log`，新成员已被检查。 |
+| 文档/资源静态检查 | `git diff --check` 通过；模板与旧来源 byte diff 为空；SKILL 仅规定区域变化；生产源码引用 dispatch 仅 `src/main.rs`。 |
+
+未计为行为 RED 的过程产物也保留：`loopback.log`/`loopback-green.log` 是 ConfigBuilder 私有类型的编译调整；`integration.log` 是测试 catalog 的静态生命周期调整。`boundaries-green.log`、`response-limit-green.log`、`response-limit-diagnose.log` 的超限断言失败来自假服务 accepted socket 继承非阻塞状态，大响应未发完；仅修 fixture 为阻塞 socket 后 `loopback-fixture-green.log` 4通过，生产读取仍用有界 as_reader。其 `red-response-limit.patch` 名称沿用当时文件名，**不作为有效行为 RED**。不将这些失败日志删除或冒充产品缺陷证据。
+
+### 取舍、限制与未做项
+
+- 现有接口足够，没有新增通用网络框架、后台服务、项目采用管理或恢复机制。HTTP 适配采用已批准的 ureq unversioned 公共接口并精确固定版本。资源/规则指纹规范及边缘差异均按既定设计，没有新增设计决定需主控裁定。
+- 主路径宿主集成的成功 HTTP 为内部假传输，真实 ureq 单独用回环验证；不冒充真实 JEV/TLS 或代理环境验证。标准测试因上述既有锁竞争未全绿，此事实应带入独立审查。
+- 没有发布/release/安装、改全局技能链接或项目 AGENTS、切消费者、迁移旧记录、实施04/05、操作真实队列、启动日常 Saddle、合并/推送/清理 worktree 或关闭任何 agent。其他 worktree 与03A/B保留会话未动；仅在本分支提交，交主控后续审查。
