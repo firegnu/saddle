@@ -847,16 +847,14 @@ impl Resources {
                         opened = dir;
                         &opened
                     }
-                    Err(e) => {
-                        let _ = agent.rmdir("skills");
-                        return Done::failed("mkdir", e);
-                    }
+                    // No trusted handle to the new directory: keep it rather than guess.
+                    Err(e) => return Done::failed("mkdir", format!("{e}; skills directory kept")),
                 }
             }
         };
         let tidy = || {
             if created_skills {
-                let _ = agent.rmdir("skills");
+                let _ = agent.rmdir_same("skills", skills);
             }
         };
         let previous = record.find(&p.key, &p.path).cloned();
@@ -870,23 +868,24 @@ impl Resources {
             tidy();
             return Done::failed("record_write", e);
         }
-        let target = match step("mkdir")
-            .and_then(|()| skills.mkdir(name))
-            .and_then(|()| skills.open(name))
-        {
+        if let Err(e) = step("mkdir").and_then(|()| skills.mkdir(name)) {
+            record.set(&p.key, &p.path, previous);
+            let _ = self.save(record);
+            tidy();
+            return if e.kind() == io::ErrorKind::AlreadyExists {
+                Done::new(Outcome::Conflict, Some("exists"), None)
+            } else {
+                Done::failed("mkdir", e)
+            };
+        }
+        let target = match skills.open(name) {
             Ok(target) => target,
+            // No trusted handle to the new directory: keep it rather than guess.
             Err(e) => {
-                if e.kind() != io::ErrorKind::AlreadyExists {
-                    let _ = skills.rmdir(name);
-                }
                 record.set(&p.key, &p.path, previous);
                 let _ = self.save(record);
                 tidy();
-                return if e.kind() == io::ErrorKind::AlreadyExists {
-                    Done::new(Outcome::Conflict, Some("exists"), None)
-                } else {
-                    Done::failed("mkdir", e)
-                };
+                return Done::failed("mkdir", format!("{e}; created directory kept"));
             }
         };
         let mut written = vec![];
@@ -895,14 +894,17 @@ impl Resources {
                 step(&format!("write:{}", f.path)).and_then(|()| target.write(f.path, f.bytes))
             {
                 let kept = rollback(&target, &written, new, &BTreeMap::new());
+                let mut detail = failure(f.path, e, &kept);
                 if kept.is_empty() {
-                    let _ = skills.rmdir(name);
+                    if let Err(e) = skills.rmdir_same(name, &target) {
+                        detail += &format!("; directory kept: {e}");
+                    }
                     record.set(&p.key, &p.path, previous);
                 }
                 // Otherwise the pending entry stays: the target reads as incomplete.
                 let _ = self.save(record);
                 tidy();
-                return Done::failed("write", failure(f.path, e, &kept));
+                return Done::failed("write", detail);
             }
             written.push(f.path);
         }
@@ -1059,10 +1061,13 @@ impl Resources {
     }
 }
 
-/// Remove the target directory through the verified skills directory, only when empty.
+/// Remove the verified target directory through the verified skills directory, only when
+/// empty and still the same directory; anything else is kept and described.
 fn empty_away(p: &Planned) -> Option<String> {
-    let skills = p.dirs.skills.as_ref()?;
-    match skills.rmdir(p.key.resource) {
+    let (Some(skills), Some(target)) = (&p.dirs.skills, &p.dirs.target) else {
+        return Some("directory kept: not verified".to_owned());
+    };
+    match skills.rmdir_same(p.key.resource, target) {
         Ok(()) => None,
         Err(e) if e.kind() == io::ErrorKind::DirectoryNotEmpty => {
             Some("directory kept with files that are not Saddle's".to_owned())
@@ -1455,9 +1460,22 @@ impl Dir {
     fn mkdir(&self, name: &str) -> io::Result<()> {
         cvt(unsafe { libc::mkdirat(self.fd(), cname(name)?.as_ptr(), 0o755) }).map(drop)
     }
-    fn rmdir(&self, name: &str) -> io::Result<()> {
-        cvt(unsafe { libc::unlinkat(self.fd(), cname(name)?.as_ptr(), libc::AT_REMOVEDIR) })
-            .map(drop)
+    fn id(&self) -> io::Result<(libc::dev_t, libc::ino_t)> {
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        cvt(unsafe { libc::fstat(self.fd(), &mut st) })?;
+        Ok((st.st_dev, st.st_ino))
+    }
+    /// Remove the empty directory `name` only while that name still refers to `child`,
+    /// the directory this round verified or created; one swapped in is kept. The check and
+    /// the removal are two system calls, not one atomic step.
+    fn rmdir_same(&self, name: &str, child: &Dir) -> io::Result<()> {
+        let c = cname(name)?;
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        cvt(unsafe { libc::fstatat(self.fd(), c.as_ptr(), &mut st, libc::AT_SYMLINK_NOFOLLOW) })?;
+        if st.st_mode & libc::S_IFMT != libc::S_IFDIR || (st.st_dev, st.st_ino) != child.id()? {
+            return Err(io::Error::other("replaced by another directory"));
+        }
+        cvt(unsafe { libc::unlinkat(self.fd(), c.as_ptr(), libc::AT_REMOVEDIR) }).map(drop)
     }
     fn remove(&self, name: &str) -> io::Result<()> {
         cvt(unsafe { libc::unlinkat(self.fd(), cname(name)?.as_ptr(), 0) }).map(drop)

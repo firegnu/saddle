@@ -1029,3 +1029,95 @@ fn a_completed_removal_clears_its_record_and_keeps_user_files() {
     assert!(env.res().read().unwrap().targets.is_empty());
     assert_eq!(fs::read(path.join("EXTRA.md")).unwrap(), b"mine");
 }
+
+// Rework 2 (M2-R1): an empty directory is only removed while its name still refers to the
+// directory this round verified or created; one swapped in under that name is kept.
+fn swap_dir(path: &Path, moved: &Path) {
+    fs::rename(path, moved).unwrap();
+    fs::create_dir(path).unwrap();
+}
+fn swap_once(at: &'static str, path: PathBuf, moved: PathBuf, fail: bool) {
+    let mut done = false;
+    on_fault(move |step| {
+        if step == at && !done {
+            done = true;
+            swap_dir(&path, &moved);
+            if fail {
+                return Err(io::Error::other("injected"));
+            }
+        }
+        Ok(())
+    });
+}
+fn entries(dir: &Path) -> usize {
+    fs::read_dir(dir).unwrap().count()
+}
+#[test]
+fn remove_keeps_a_directory_swapped_in_under_the_target_name() {
+    let env = Env::new();
+    env.res().apply(r2(), Trigger::Enable, true);
+    let verified = env.dir.path().join("verified");
+    swap_once("delete:SKILL.md", env.claude(), verified.clone(), false);
+    let receipt = env.res().apply(r2(), Trigger::Remove, false);
+    let claude = result(&receipt, "claude-code");
+    assert!(env.claude().is_dir(), "replacement directory kept");
+    assert_eq!(
+        entries(&verified),
+        0,
+        "own files deleted in the verified directory"
+    );
+    assert_eq!(claude.result, Outcome::Removed);
+    assert!(
+        claude.detail.as_deref().unwrap().contains("replaced"),
+        "{claude:?}"
+    );
+}
+#[test]
+fn completed_removal_keeps_a_directory_swapped_in_under_the_target_name() {
+    let env = Env::new();
+    fs::create_dir_all(env.claude()).unwrap();
+    env.record(
+        &env.claude(),
+        "claude-code",
+        version(2, R2),
+        Some(Version::none()),
+    );
+    let verified = env.dir.path().join("verified");
+    swap_once("record", env.claude(), verified.clone(), false);
+    let receipt = env.res().apply(r2(), Trigger::Remove, false);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Removed);
+    assert!(env.claude().is_dir(), "replacement directory kept");
+    assert!(verified.is_dir());
+    assert!(env.res().read().unwrap().targets.is_empty());
+}
+#[test]
+fn install_rollback_keeps_a_directory_swapped_in_under_the_target_name() {
+    let env = Env::new();
+    fs::create_dir_all(env.claude().parent().unwrap()).unwrap();
+    let verified = env.dir.path().join("verified");
+    swap_once("write:SKILL.md", env.claude(), verified.clone(), true);
+    let receipt = env.res().apply(r2(), Trigger::Enable, true);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Failed);
+    assert!(env.claude().is_dir(), "replacement directory kept");
+    assert_eq!(entries(&env.claude()), 0);
+    assert_eq!(
+        entries(&verified),
+        0,
+        "own files rolled back in the verified directory"
+    );
+}
+#[test]
+fn created_skills_cleanup_keeps_a_directory_swapped_in_under_that_name() {
+    let env = Env::new();
+    let skills = env.home().join(".claude/skills");
+    let verified = env.dir.path().join("verified-skills");
+    swap_once("write:SKILL.md", skills.clone(), verified.clone(), true);
+    let receipt = env.res().apply(r2(), Trigger::Enable, true);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Failed);
+    assert!(skills.is_dir(), "replacement skills directory kept");
+    assert_eq!(
+        entries(&verified),
+        0,
+        "own target removed inside the verified skills"
+    );
+}
