@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前 main。核心遥测阶段01、02已审查、合并、推送并清理；尚未发布到日常安装版。阶段03接口设计已收敛、合并并清理设计会话，准备派发03A通用框架实现。原03宿主必备JEV安排撤回。没有真实队列操作。最新状态见第8节；第7节为设计过程历史。
+更新：2026-10-02。当前 main。核心遥测阶段01、02已审查合并；尚未发布到日常安装版。03接口设计已收尾，03A候选d0db9ff完成主控核对及标准检查，已派独立Codex审查，功能未合并。原03宿主必备JEV安排撤回。没有真实队列操作。最新状态见第9节；前面保留阶段历史。
 
 ## 1. 会话摘要
 
@@ -66,4 +66,42 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 设计2c7db0d通过主控限定静态复核，M1/M2关闭、S1/S2接受，D1由主控按用户决定同步为c9b984c。设计合并479a454，契约/实施计划同步a6828e1已推送；仅文档，未跑测试或实现。
 - 设计worktree/分支dispatch-plugin-design已在干净、合入main、agent idle/attached=0时安全移除；目录删除后已关闭saddle/dev-dispatch-plugin-design-1 instance7cc3761a37cc。空提交de35440。迟到提醒查到not_found忽略，不恢复会话。旧review-telemetry-design、t38/t55仍保留。
 - 03A任务docs/任务/遥测03A-通用插件框架.md：下层接口crate、core登记与启停存储、headless status/run、Recorder适配及回执。只用假插件/临时数据，不改UI、不实现JEV、不安装资源。JEV重/交叉审查要/碰要害；Codex gpt-6-astra/xhigh，dlog dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4。
+- 实现者saddle/dev-telemetry-core-plugin-1，instance e66304753ca5，role=implementer；worktree ../saddle-worktrees/telemetry-core-plugin，分支telemetry-core-plugin，基线af06ba5。
+- 收到完成提醒先status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4 -- corral reply saddle/dev-telemetry-core-plugin-1 取完整DONE。核diff/完成记录/有效RED-GREEN，主控一次标准test/clippy，再新开重档Codex独立审查；不能把开发回复当通过。返工交原实现者，主控不写功能代码，每轮重挂。
 - 03A审查通过保留实现分支/worktree及agent；03B资源与界面、03C业务串行接入，整阶段集成审查后共同合并。管理页线框在界面实施前需给用户看，ureq版本/底层行为在03C任务前核官方资料。04/05不启动，不改Corral或真实安装/队列；需改Corral或依赖反转先停告知用户。
+
+## 9. 03A首轮独立审查（最新返工见第10节）
+
+- 候选d0db9fffcaa39f186ca5dcf7ec258ee2bfb9460e，基线af06ba5，原实现分支telemetry-core-plugin。主控已status核idle、经dlog取完整DONE；diff/check、范围及完成记录已核，当前未裁定通过。
+- 主控隔离环境一次标准cargo test --all-targets：451 passed/0 failed/5 ignored，clippy通过；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03a-controller-hq43isxy。实现者原全套在两个既有plugins测试报registry busy，单项通过，主控未复现、根因未明；原日志/tmp/saddle-03a-check-env。RED表已读，原始RED完整日志未保存在该目录，不能说主控独立核验了原RED。
+- 独立审查者saddle/dev-telemetry-core-plugin-review-1，instance bdd2e2cbfba7，Codex gpt-6-astra/xhigh、role=reviewer；detached ../saddle-worktrees/review-telemetry-core-plugin固定d0db9ff。dispatch de98aef6ec7b42349af49f1696e78e72（父5f33b7c1fc3a4c1c967463a0b306b4e4）。
+- 审查任务及唯一允许追加意见的文件：主仓库docs/任务/遥测03A-独立交叉审查.md。只读代码/测试，不提交不切分支；只跑两个相关目标，不重复标准全套/clippy。重点依赖方向/registry、拒绝与业务码、起止回执背压/panic、Capture固定generation与缺begin恢复。
+- 完成后先status；working重挂。再 ../dispatch-log/dlog reply --dispatch de98aef6ec7b42349af49f1696e78e72 -- corral reply saddle/dev-telemetry-core-plugin-review-1 取完整DONE并逐项裁定。必须改交原实现者，主控不写功能；返工只跑目标及直接回归，更新干净detached后交原审查者限定复核，每轮挂提醒。
+- 03A通过仍保留实施/审查worktree与agent供03B/C串行集成，整阶段通过才合并收尾；不提前派03B、不动04/05，不release/安装/真实数据/消费者切换。需改Corral或依赖反转先停告知；旧设计review和t38/t55保留。设计Claude已关闭勿重建。
+
+
+## 10. 03A M1第一次限定返工（最新见第11节）
+
+- 原审查者 bdd2e2cbfba7 已idle，经dlog取完整DONE；结论必须改1/建议0/可以不改4，未通过。主控逐项裁定及返工要求在 docs/任务/遥测03A-独立交叉审查.md 末尾。
+- M1：第三方库stderr无末尾LF时与终止回执粘连。主控已核设计、源码、独立探针源码/原始stderr/results；认可修复独立末行，分隔与终止共享既有1秒预算，不改起始字节0/配对/业务语义。其余4项取舍接受；不需要改Corral或依赖反转。
+- 已通过dlog note保存本轮审查及裁定，dlog send原实现dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4限定返工，confirmed=true、merged_with_draft=false；corral send --after原实现者挂好新提醒，pending=true、after_instance=e66304753ca5。
+- 实现者 saddle/dev-telemetry-core-plugin-1 在原telemetry-core-plugin分支/worktree从d0db9ff修复，仅回执实现、相关测试和原任务完成记录。定向RED/GREEN及回执直接回归，不重跑标准全套/clippy。原主控451通过5忽略/clippy通过，独立43通过1忽略；历史registry busy根因未知、原六组RED完整日志未独立核验。
+- 收提醒先status；working重挂。idle后dlog reply取完整DONE，主控核增量/证据并做目标检查；确认原审查者idle和detached干净后，将 ../saddle-worktrees/review-telemetry-core-plugin 从d0db9ff更新到新SHA，通过审查dispatch de98aef6ec7b42349af49f1696e78e72交原审查者限定复核M1及直接回归。每轮挂提醒，最多两轮独立复核仍不收敛则报告用户。
+- 03A未通过、未合并；实施及审查agent/worktree全部保留供03B/C串行集成。不提前派03B，不动04/05；UI线框待确认、ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换。保留设计review与t38/t55，已关闭设计Claude不恢复。
+
+
+## 11. 03A M1第一次独立复审（结论见第12节）
+
+- 原实现者e66304753ca5已idle、完整DONE，新候选0fa62cf7646e8f0a1b226c963098cd7a39e25f84；增量仅回执实现、直接测试和完成记录。主控已核有效RED/GREEN完整日志与8项回执回归；接受执行后补LF与终止共用原1秒预算、拒绝保持两行的修复。
+- 主控隔离环境前台精确检查M1、run拒绝、满stderr/起始失败三项，3通过0失败；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03a-m1-controller-6y80_ag9。未重复全套/clippy、未写功能。初始历史证据限制保持。
+- 原审查者saddle/dev-telemetry-core-plugin-review-1 instancebdd2e2cbfba7在idle/attached0、detached干净时已更新review-telemetry-core-plugin至0fa62cf；通过dlog send审查dispatch de98aef6ec7b42349af49f1696e78e72发起第一次限定复审，confirmed=true、merged_with_draft=false。新after提醒pending=true、实例相符。
+- 主仓库docs/任务/遥测03A-独立交叉审查.md末尾有主控核对与复核边界；原审查者只追加该文件，限定M1及增量直接回归，不重复全套/clippy。收提醒先status、working重挂；idle后dlog reply取完整DONE，逐项核关闭，不把本次主控通过当独立审查通过。
+- 功能尚未合并，03A尚未宣布通过。03A通过仍保留实施/审查分支worktree/agent，待03B/C串行集成共同合并清理；UI线框待确认，ureq在03C前核官方资料。其他禁止项与保留项不变。
+
+
+## 12. 当前：03A通过，03B线框待确认
+
+- 原审查者bdd2e2cbfba7已idle，经dlog取完整DONE，M1明确关闭、无直接回归、剩余必须改0/新增建议0。主控已核8项独立回归原始日志及增量，认可03A可进入后续串行集成，结论落入 docs/任务/遥测03A-独立交叉审查.md。候选仍0fa62cf，实施与detached均干净；没有重复测试。
+- 03A分支telemetry-core-plugin及实施/审查worktree、两个agent均保留；不单独合并、清理、关闭或空提交。没有新派发或待重挂的工作轮次；迟到提醒按已处理结果核对，不再重复返工。
+- 下一步03B资源生命周期+管理页，确认用线框在 docs/任务/遥测03B-管理页线框.md，待用户确认后再串行形成实施任务/派发。图中dispatch是03C接入后示例，03B仍用假插件。03C前核ureq官方资料；不动04/05、不release/安装/真实数据队列/消费者切换。
+- 已有测试和历史证据限制保持；需要改Corral或反向依赖先停告知。设计review和t38/t55保留，设计Claude已关闭勿恢复。
