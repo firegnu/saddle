@@ -164,9 +164,19 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03B尚未通过，功能未合并，03C未派发；03A/03B全部实施审查会话worktree保留，整阶段集成后一起合并清理。需改Corral或依赖反转先停告知。UI已确认，ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换/04或05。设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 19. 当前：03B通过，保留候选等待03C串行集成
+## 19. 03B通过（03C派发见第20节）
 
 - 原审查者235f9b4048e0已idle，dlog取完整DONE；第二次独立复核M2-R1关闭、必须改0/建议1。主控核源码、独立19+6原始日志及tidy探针后认可03B可进入后续集成；M1/M3保持关闭。候选597f48affe8b2a5de3ae9a55744b28404a62aa51，实施和detached均干净，功能未合main。
 - S1暂不改功能：tidy可能漏报skills目录保留原因，操作仍failed且目录保留，不阻断集成。主仓库docs/遥测使用.md已明确候选限制；整阶段合并须收窄分支原有“所有路径注明directory kept”的笼统表述并保留更正。非原子身份核对窗口仍明确记录，不宣称任意并发替换都安全。没有重复测试或追加返工。
 - 03A/03B实施审查worktree及4个agent全部保留，整阶段03C集成后共同合并清理；本轮不做收尾空提交、不关闭会话。迟到提醒按本轮已处理结论核对，不自动再送返工。完整结论见docs/任务/遥测03B-独立交叉审查.md末尾。
 - 下一步先核ureq官方资料、再形成03C串行实施任务，接入可选dispatch业务及skill资源。03C尚未派发。UI已确认，不重问；需改Corral或依赖反转先停告知。无release/安装/真实数据队列/消费者切换/04或05；旧设计review/t38/t55保留，设计Claude已关闭。
+
+
+## 20. 当前：03C dispatch插件实施已派发
+
+- 用户要求“继续吧”。03C任务docs/任务/遥测03C-dispatch插件.md；官方ureq文档及3.4.2发行源码已静态核实，选择精确3.4.2/default-features=false/rustls，具体传输阶段注意与未验证项见docs/调研/03C-ureq接口核对-2026-10-02.md。旧Corral HEAD与四资源哈希均未变化，没有改其仓库或真实技能。
+- JEV重/交叉审查要/碰要害，主控采纳，已dlog记录实际决定；dispatch556e907c030040bea59cb9e0572a4e1e。此调用是主控正常任务评估，不是产品JEV迁移验证。
+- 新Codex实现者saddle/dev-telemetry-dispatch-1，instance3583e0bc626b，role=implementer，gpt-6-astra/xhigh；分支telemetry-dispatch-plugin，worktree ../saddle-worktrees/telemetry-dispatch-plugin，基线32b34fd21022cec62f3449dfad365d21c096d4e7（03B597f48a叠放main任务文档99c4416）。任务书已经dlog start保存快照；after提醒pending=true且实例相符。
+- 本轮仅03C可选dispatch：Rust路由/ureq传输、受控Recorder映射、skill与模板资源、插件说明与组装根登记。不改项目规则、不把JEV放宿主；必要框架缺口先报告，需改Corral或反向依赖先停告知。03B S1功能暂不改，只收窄文档过宽提示承诺，非原子目录清理边界保留。
+- 收提醒先status，working重挂；idle后经dlog reply取完整DONE。主控核增量/有效RED-GREEN与一次标准test/clippy，再新开重档Codex独立审查03C及阶段03集成；返工原实现者，仅目标/直接回归，不重复标准，每轮挂提醒。不能把开发回复当通过。
+- 03A/03B原实施审查四个agent和worktree全部保留，03C集成审查通过后整个阶段共同合并推送/清理/关闭相应自建agent/空提交/HANDOFF。功能仍未合main；不release/安装/真实JEV产品调用/真实数据队列/消费者切换/04或05。UI已确认；设计review/t38/t55保留，设计Claude已关闭。
