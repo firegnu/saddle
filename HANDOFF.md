@@ -32,7 +32,7 @@
 
 ## 5. 当前安装与重要文件
 
-`~/.local/bin/saddle` → `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`。当前SHA256 `647565ef2d6c6a9eabfcaa166023ad1da3c67ec56333a328b2171c4a17e838d3`。旧版备份 `~/Library/Application Support/saddle-release-backups/clawd-size-20261001-122059/`，旧hash `d2ebb2f549167413324afedff7aac41207e3be97302c7d3c289f0dd0e4fafb16`。
+`~/.local/bin/saddle` → `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`。当前SHA256 `1fcb2d8d0bcd4fa023032c81ebb3e99d252aa4ee1a94d8851b20a4ad7fb65eb5`。旧版备份 `~/Library/Application Support/saddle-release-backups/clawd-size-20261001-122059/`，旧hash `d2ebb2f549167413324afedff7aac41207e3be97302c7d3c289f0dd0e4fafb16`。
 
 此前安装记录（本轮未重新核查服务/插件状态）：Drover 包在 `plugins/drover/dist/drover-plugin`，清单保留 `--dispatch-log /Users/firegnu/Developer/personal_projs/dispatch-log/dlog`，重打包会覆盖自定义 args。旧 `dev.drover.loop` 及 drover/drover-board 链接已撤下，旧仓库与数据保留；替换备份 `~/Library/Application Support/saddle-release-backups/drover-native-20260930-213348/`。
 
