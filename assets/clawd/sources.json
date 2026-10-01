@@ -88,6 +88,20 @@
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
+    "name": "pirate",
+    "origin": "Original costume and animation requested by the user; based on the existing Clawd character.",
+    "curated_frames": 56,
+    "adaptation": "Original costume and grid animation designed for the user."
+  },
+  {
+    "name": "excited",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Excited.json",
+    "sha256": "3139b34ce1268507169fea2704513475d0b1398b6e561041f43dd284b3b57447",
+    "frames": 23,
+    "curated_frames": 39,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
     "name": "swaying",
     "url": "https://claude.dev/shared/video/acts/Clawd-Swaying.json",
     "sha256": "1a0d5d23aec67f91f4a36f4ef4b62ea248f63f223926d4d1a09858c0a8e7ee2e",

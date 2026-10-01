@@ -6,9 +6,9 @@ import struct
 
 OUTPUT = Path(__file__).resolve().parents[1] / 'assets/clawd'
 WIDTH, HEIGHT = 32, 6
-# Transparent, clay, eyes, cup/paper, coffee, blue, light blue, muted accent.
+# Transparent, clay, eyes, cup/paper, coffee, blue, light blue, accent, bandana.
 PALETTE = [(0, 0, 0), (217, 119, 87), (20, 20, 19), (239, 217, 179),
-           (113, 74, 54), (79, 115, 139), (139, 177, 195), (165, 157, 139)]
+           (113, 74, 54), (79, 115, 139), (139, 177, 195), (165, 157, 139), (159, 66, 54)]
 BASE = [
     '................................',
     '................................',
@@ -100,6 +100,36 @@ def pose(kind='rest', stage=0):
         eyes = [17, 17]
         if stage:
             extra = [(11 if stage == 1 else 12, 0, 18, 7, 0)]
+    elif kind == 'pirate':
+        rect(p, 11, 1, 9, 1, 8)
+        rect(p, 9, 1, 2, 1, 8)
+        if stage in (0, 1):
+            rect(p, 20, 3, 2, 1, 0)
+            rect(p, 20, 2, 2, 1, 1)
+        if stage in (2, 3):
+            rect(p, 9, 3, 2, 1, 0)
+            rect(p, 9, 2, 2, 1, 1)
+            rect(p, 8, 1, 2, 1, 1)
+        if stage:
+            eyes = [17 if stage == 3 else 16]
+            eye_columns = (6,)
+            # Connected left-to-right strap, one inset patch, and an unobstructed other eye.
+            extra = [(7, 1, 19, 2, 1), (8, 1, 20, 2, 1), (9, 1, 19, 2, 1)]
+    elif kind == 'excited':
+        eyes = [21, 21]
+        if stage in (1, 2):
+            # Two small arm pumps, planted outer feet, and alternating inner steps.
+            rect(p, 9, 3, 2, 1, 0)
+            rect(p, 20, 3, 2, 1, 0)
+            rect(p, 9, 2, 2, 1, 1)
+            rect(p, 20, 2, 2, 1, 1)
+            rect(p, 13, 5, 5, 1, 0)
+            for x in ((13, 17) if stage == 1 else (14, 16)):
+                rect(p, x, 5, 1, 1, 1)
+        if stage == 2:
+            rect(p, 8, 1, 2, 1, 1)
+            rect(p, 21, 1, 2, 1, 1)
+            extra = [(3, 0, 22, 3, 0), (12, 0, 22, 3, 0)]
     elif kind == 'sunglasses':
         if stage:
             eyes = []
@@ -141,6 +171,8 @@ clips = {
     'watch': action('watch', [(0, 5), (1, 12), (0, 5)]),
     'snooze': action('snooze', [(0, 8), (1, 8), (2, 8), (0, 8), (1, 8), (2, 8)]),
     'sunglasses': action('sunglasses', [(0, 5), (1, 22), (0, 5)]),
+    'pirate': action('pirate', [(0, 5), (1, 7), (2, 8), (3, 3), (2, 7), (4, 8), (1, 5), (0, 4)]),
+    'excited': action('excited', [(0, 3), (1, 3), (2, 4), (1, 3), (2, 4), (1, 3), (2, 5), (0, 5)]),
     'swaying': action('swaying', [(1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 3)]),
 }
 out = bytearray(b'CLWD3') + bytes([16, 3, len(PALETTE), len(clips)])
@@ -152,6 +184,7 @@ for name, frames in clips.items():
 sources = {s['name']: s for s in json.loads((OUTPUT/'sources.json').read_text())}
 for name, frames in clips.items():
     sources[name]['curated_frames'] = len(frames)
-    sources[name]['adaptation'] = 'Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion.'
+    sources[name]['adaptation'] = ('Original costume and grid animation designed for the user.' if name == 'pirate'
+                                   else 'Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion.')
 (OUTPUT/'sources.json').write_text(json.dumps([sources[n] for n in clips], ensure_ascii=False, indent=2)+'\n')
 print(f'{len(clips)} clips, {sum(map(len, clips.values()))} frames, {len(out)} bytes')

@@ -332,7 +332,15 @@ fn sunglasses_lenses_preserve_the_forehead() {
         let buffer = terminal.backend().buffer();
         for x in 1..63 {
             let bridge = &buffer[(x, 1)];
-            if bridge.symbol() == "─" && bridge.fg == Color::Rgb(20, 20, 19) {
+            if bridge.symbol() == "─"
+                && bridge.fg == Color::Rgb(20, 20, 19)
+                && buffer
+                    .content()
+                    .iter()
+                    .filter(|c| c.symbol() == "■")
+                    .count()
+                    == 2
+            {
                 for lens_x in [x - 1, x + 1] {
                     let lens = &buffer[(lens_x, 1)];
                     assert_eq!(
@@ -347,4 +355,101 @@ fn sunglasses_lenses_preserve_the_forehead() {
         }
     }
     panic!("patrol never displayed sunglasses");
+}
+
+#[test]
+fn patrol_includes_excited_cheering_above_the_border() {
+    let mut mascot = Mascot::default();
+    let mut terminal = Terminal::new(TestBackend::new(64, 3)).unwrap();
+    let mut cheering = false;
+    let mut sparkles = false;
+    for tick in 0..7200 {
+        terminal
+            .draw(|f| {
+                mascot.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let smiles = buffer
+            .content()
+            .iter()
+            .filter(|c| c.symbol() == "^" && c.fg == Color::Rgb(20, 20, 19))
+            .count();
+        if smiles == 2 {
+            cheering = true;
+            assert!(
+                buffer
+                    .content()
+                    .iter()
+                    .filter(|c| c.symbol() == "^")
+                    .all(|c| c.bg == Color::Rgb(217, 119, 87))
+            );
+            sparkles |= (0..64).any(|x| buffer[(x, 0)].symbol() == "*");
+        }
+        if cheering && sparkles {
+            return;
+        }
+    }
+    assert!(
+        cheering && sparkles,
+        "patrol must include the new smiling, sparkling cheer"
+    );
+}
+
+#[test]
+fn pirate_keeps_one_visible_eye_and_an_inset_patch_with_connected_strap() {
+    let mut mascot = Mascot::default();
+    let mut terminal = Terminal::new(TestBackend::new(64, 3)).unwrap();
+    for tick in 0..7200 {
+        terminal
+            .draw(|f| {
+                mascot.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        if buffer
+            .content()
+            .iter()
+            .filter(|c| c.symbol() == "■")
+            .count()
+            != 1
+        {
+            continue;
+        }
+        for x in 2..63 {
+            let patch = &buffer[(x, 1)];
+            if patch.symbol() == "■" {
+                let eye = &buffer[(x - 2, 1)];
+                assert!(
+                    matches!(eye.symbol(), "▪" | "–"),
+                    "one eye remains visible beside the strap"
+                );
+                for strap_x in [x - 1, x + 1] {
+                    let strap = &buffer[(strap_x, 1)];
+                    assert_eq!(
+                        strap.symbol(),
+                        "─",
+                        "strap must connect directly to both sides of the patch"
+                    );
+                    assert_eq!(strap.fg, Color::Rgb(20, 20, 19));
+                    assert_eq!(strap.bg, Color::Rgb(217, 119, 87));
+                }
+                assert_eq!(
+                    patch.bg,
+                    Color::Rgb(217, 119, 87),
+                    "patch must preserve the forehead"
+                );
+                assert_eq!(eye.bg, Color::Rgb(217, 119, 87));
+                assert!(
+                    buffer
+                        .content()
+                        .iter()
+                        .any(|c| c.fg == Color::Rgb(159, 66, 54)),
+                    "red bandana accompanies the eye patch"
+                );
+                return;
+            }
+        }
+    }
+    panic!("patrol never displayed the pirate costume");
 }

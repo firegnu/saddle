@@ -7,9 +7,9 @@ const WIDTH: u16 = 16;
 pub const MIN_WIDTH: u16 = WIDTH + 2;
 const CELLS: usize = WIDTH as usize * HEIGHT as usize;
 const FPS: f64 = 12.0;
-const GLYPHS: [&str; 21] = [
+const GLYPHS: [&str; 23] = [
     " ", "▘", "▝", "▀", "▖", "▌", "▞", "▛", "▗", "▚", "▐", "▜", "▄", "▙", "▟", "█", "▪", "–", "z",
-    "─", "■",
+    "─", "■", "^", "*",
 ];
 struct Clip {
     name: &'static str,
