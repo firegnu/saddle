@@ -1,75 +1,44 @@
-# 会话交接
+# Saddle 交接
 
-更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；04A查询UI已通过且保留，04B已派新Claude串行接入，04功能未合并，05未派发。日常安装版未更新，消费者未切换。
+更新：2026-10-02。当前main；阶段04已通过审查、合并并完成工作区/会话清理。未发布或安装，未启动05。
 
-## 当前成果
+## 本次完成
 
-- 01存储/纯记录/headless查询：合并465c4fb；02执行采集与Settings总开关：合并3a7379e。
-- 03可选dispatch插件及必要通用能力：03A通用core-plugin接口、headless入口和Recorder；03B技能资源所有权/更新与管理页；03C Rust JEV路由及遥测接线。最终候选5df616de44df698511b55992a6bc8f4390f77b58，整阶段合并a1fd832e109936a940dec6d5b2fdd2b8aaac775f。
-- 03A0fa62cf、03B597f48a、03C最终候选均已在main祖先链；03A/B/C任务末尾已补最终审查结论，审查意见全部保存在主仓库。收尾空提交b91c6e3；随后本HANDOFF提交推送。
-- TLS发送完成误判M1已修正并独立关闭。合并前补测发现的Registry释放窗口及10项workflow旧假设也已修正、主控及独立复核关闭；生产UI未因测试适配而修改。未改Corral或引入反向依赖。
+- 04A：宿主独立Telemetry/t入口，列表/筛选→详情→完整正文，固定事件上限与当前摘要分开。候选0261d51此前已通过主控审查。
+- 04B：通用telemetry.open.v1跳转和SADDLE_HOST_BIN；Drover项目默认记录关、本次覆盖、经公开CLI单次交付与业务落盘后状态声明；任务详情关联跳转；预填控制字符保值安全显示。候选81ccc7eec7b45a53d78ec4be39377b30405dee79。
+- 原04B一次API连接中断后由原会话接续，不是返工；完整DONE已核。重档Codex独立审查可以合并，必须改0/建议改1/可不改7，主控逐项认可。
+- 主控候选标准533通过/0失败/5忽略、Clippy通过。独立审查只读源码与既有日志，未另跑测试；本次最终核对未重复标准。合并后与候选的差异只有文档。
+- 合并4ad70a3已推送；冲突只在04B任务末尾追加记录，保留双方记录并纠正开发日志忽略数。收尾空提交7eadfef；本交接随下一条文档提交推送。
+- 01存储/查询、02执行采集/总开关、03通用插件扩展及可选dispatch插件此前已落main并收尾；没有改Corral或反向依赖。
 
-## 验证结论与保留限制
+## 保留问题与验证限制
 
-- 最终独立复核必须改0、建议改0：新锁3、原两个失败用例2、workflow10，共15目标通过；主控本轮3锁+10workflow共13通过。
-- 主控按“原标准检查＋补齐30遗漏target＋失败修正后的定向回归＋独立审查”明确放行。**没有最终候选一次完整标准全绿的记录**；按用户边界没有重复全套/Clippy。原标准179过1败1忽略、开发96过1败，以及补跑290过10败4忽略均保留历史，不改写为绿。所有遗漏目标已执行，发现的当前具体失败已处理并通过复核。
-- 原两次busy缺少历史errno/持锁者证据，不能证明同因。现已用实际Registry调用验证并修复close-only在fork继承引用期间的锁释放窗口，保留真实申请错误原因；不宣称从此不会出现真实竞争。
-- 03B S1（失败时skills保留原因提示可能遗漏）仍为既有非阻断建议，未修功能；目录身份核对与删除非原子，边界已接受。真实JEV/TLS证书链/代理端到端未验。早期RED/套件失败的证据限制详见各阶段审查文件，不重造历史。
+- 04B S1非阻断未修：无MAIN_AGENT且准备记录失败时，反馈遥测行误写“sent the plain way”，交付首行及not_sent/manual_text正确。已告知用户，不自动开文案返工。
+- 开发原标准workflow pending_delete_button_confirms_names_the_task_and_can_be_cancelled报target_changed；单项复跑通过、主控全量未复现，原次原因仍未知，不称已修。原32目标412过1败5忽略（原完成记录误写4已纠正），补22目标120过0败；不是开发原次全绿。
+- process RED曾因夹具等待新帧失败，不算有效RED；其他目标有真实RED/GREEN及桩留档。独立没有实测完整60秒超时/背压/SDK20秒超时，不扩大证据。
+- 300ms身份准备含启动，失败只能在业务尝试前无上下文降级；60秒取消后可能缺end，未知不重发。开发debug首次启动耗时未由主控复测，不能推论release表现。
+- 03B S1失败时skills保留原因提示可能遗漏，仍非阻断未修；目录身份核对与删除非原子。03原历史测试失败/补测与未知原因均留在03审查文件，不因04全绿抹去。
 
-## 已完成清理与保留项
+## 清理与现存会话
 
-- 六个阶段03 worktree已无force删除：telemetry-core-plugin、review-telemetry-core-plugin、telemetry-plugin-resources、review-telemetry-plugin-resources、telemetry-dispatch-plugin、review-telemetry-dispatch-plugin。三个实施分支已用git branch -d删除。
-- 六个对应自建agent均在idle/attached0、目录删除后关闭：dev-telemetry-core-plugin-1、dev-telemetry-core-plugin-review-1、dev-telemetry-resources-1、dev-telemetry-resources-review-1、dev-telemetry-dispatch-1、dev-telemetry-dispatch-review-1（均saddle/前缀）。公开corral ls已确认仅余用户corral/main、dispatchlog/main及主控saddle/main；用户会话未操作。
-- 保留 ../saddle-worktrees/review-telemetry-design（5ddd544）、t38-dispatch-study（c15bc4d）、t55-notification-flow（3cc417d）。设计Claude已关闭，不恢复。迟到的已收尾agent提醒先查status，not_found后忽略，不重建。
-- 清理逐步原始记录：/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03-close-_2j24ryi/actions.json。
+- 已无force删除telemetry-query-ui、telemetry-drover-integration、review-telemetry-drover-integration三个worktree；两个实施分支均git branch -d删除。
+- 每个自建agent核idle/attached0且目录删除后才关闭：saddle/dev-telemetry-query-ui-1（2be45b11bd4d）、saddle/dev-telemetry-drover-1（aca3e300a88d）、saddle/dev-telemetry-drover-review-1（e3860ca07333）。迟到提醒查not_found后忽略，不恢复。
+- 公开corral ls仅余用户corral/main、dispatchlog/main及主控saddle/main；用户会话未操作。03六个旧实施审查agent/目录及04设计agent此前均已清理，勿恢复。
+- 保留../saddle-worktrees/review-telemetry-design（5ddd544）、t38-dispatch-study（c15bc4d）、t55-notification-flow（3cc417d）。旧设计Claude已关闭。
 
-## 下一步与边界
+## 下一步与硬边界
 
-- 下一阶段为04宿主独立遥测查询界面、Drover只携带关联条件跳转；05再切消费者、退役旧dispatch-log入口。04已获准启动设计，具体状态见下方当前工作；05不因迟到提醒自动启动。Corral迁移仍在最后。
-- 遥测归Saddle核心，SQLite；dispatch是可选路由插件。没有dispatch仍可手动Corral委派和使用遥测。Drover只拥有任务业务；既有Drover旧Dispatch视图/dlog入口待05处理，不恢复旧独立Drover服务、不导入旧日志。
-- 设计以docs/DESIGN.md、docs/任务遥测接口契约.md、docs/dispatch插件接口设计.md为准。若需改Corral或发现依赖反转，先停相关部分告知用户。初始遥测关闭、显式选中链路；原话逐字提交注明来源，允许标记晚交而不改历史。
-- 全局skill不意味着所有项目自动分派；项目采用规则由用户合入AGENTS模板，Saddle不管理项目采用名单、不自动修改项目规则。插件停用保留skill/项目规则，主控说明路由不可用后自行判断已授权委派，不额外询问、不自行启用、不回退旧route.py。
-- 主控不写功能代码；按AGENTS/corral-dispatch及../dispatch-log/USAGE.md分派和记录。新任务先路由，实施分支与独立detached审查，逐轮挂提醒；04设计agent已随目录清理关闭，下一实施另开会话。
-- 未release/build --release、安装、写真实技能/链接、动真实遥测/队列或消费者。~/.local/bin/saddle仍指向共享.target/release/saddle的旧日常版本；后续release构建前遵循备份规则，不能把源码合并说成日常版本已升级。
+- 04已收尾，等待用户下一步指示。计划下一阶段05才切消费者、退役旧dispatch-log入口；本次不自动派发05。旧Drover Dispatch/dlog视图仍在，不导入旧日志、不恢复旧Drover独立服务。
+- 遥测归宿主SQLite，dispatch为可选路由插件，Drover经通用公开接口关联；无需dispatch/Drover也可用独立遥测。具体设计与理由以docs/DESIGN.md及契约为准，不重新讨论已批准布局/记录选择。
+- **需改Corral或发现依赖反转，先停相关部分告知用户，不能先改后报。** Corral迁移仍最后。Saddle不管理项目是否采用主控分派，不自动改项目AGENTS。
+- 主控不写功能代码；按AGENTS/corral-dispatch和../dispatch-log/USAGE.md记录路由/派发/审查。合并、release、任务登记、队列放行/派发是不同授权。
+- 未release/build --release、安装、写真实技能/链接、遥测数据/任务队列、调用产品JEV或切消费者。~/.local/bin/saddle仍指向共享.target/release/saddle的旧日常版本；release构建前遵循备份规则，源码已合并不等于日常版本已升级。
 
 ## 优先阅读与证据
 
-- docs/任务遥测实施计划.md、docs/遥测使用.md；上述三份设计文档。
-- docs/任务/遥测03A-独立交叉审查.md、遥测03B-独立交叉审查.md、遥测03C-独立交叉审查.md（最后主控最终裁定）；各实施任务完成记录。
-- 锁调查/修正范围：docs/任务/遥测03C-标准验证缺口核查.md、遥测03C-集成验证修正.md。ureq接口研究：docs/调研/03C-ureq接口核对-2026-10-02.md。
-- 原标准日志临时目录saddle-03c-controller-xtk9ap9d；补30目标saddle-03c-gap-controller-f9e9h7xt；修正证据saddle-03c-integration-fix-jodmed7i；最终主控saddle-03c-integration-controller-efulywns；独立saddle-03c-integration-review-vpoiu48s。共同父目录/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/。
-- dlog实施/审查：03A 5f33b7c1fc3a4c1c967463a0b306b4e4 / de98aef6ec7b42349af49f1696e78e72；03B ffcf738641ec416f803b7af8745df86f / 9c2ca1be0eda43959bd08a34c514232a；03C 556e907c030040bea59cb9e0572a4e1e / 223d0cfcdeb941c79053e6641d8e93d5。实际收尾后均记decision，不补造未执行步骤。
-
-
-## 当前工作：阶段04设计已收尾，准备04A
-
-- 设计候选57d9a87，M1事件上限与当前摘要、M2降级/回执、M3binding限制均经主控静态核对关闭。完整意见docs/任务/遥测04-设计主控核对.md，成稿docs/遥测查询与Drover接入设计.md。仅静态/diff check，未测试Clippy构建，未实施。
-- 用户明确“批准”主控展示的顶部Telemetry/t、列表→详情→正文、Drover任务详情关联跳转及项目默认记录关闭/派发本次覆盖，宿主总开关仍有效。已落DESIGN和成稿，不重复询问。
-- 设计合并14d4e6c，最终裁定2812127；telemetry-query-design worktree/分支已无force清理，idle/attached0时安全核对后删目录，再关闭原自建saddle/dev-telemetry-query-design-1（instance ed4e60494020）。收尾空提交a919b9c。迟到提醒查not_found后忽略，不恢复旧会话。
-- dlog设计7d00e4c7b187450394d3ae4759d26c9d。下一步另路由/任务/分支派04A宿主查询UI给Claude，04B通用跳转及Drover记录接入串行；04A通过后保留实施与审查工作区，集成后整体合并清理。旧dlog留05，保留设计review/t38/t55。
-- 不改Corral或反向依赖，需改先停告知；不真实数据队列/安装release/消费者切换/05。当前没有04功能候选。
-
-## 当前派发：04A查询UI
-
-- 新Claude Code saddle/dev-telemetry-query-ui-1，instance 2be45b11bd4d，opus[1m]/high，role=implementer。worktree ../saddle-worktrees/telemetry-query-ui，分支telemetry-query-ui，基线ad823e0；任务docs/任务/遥测04A-查询界面.md。
-- dlog f4e92b504dec41f59ce2062a5e83f571。JEV三项null，主控常规/交叉审查不要/改行为：只读Store与页面结果，无存储写入或事务规则改动，不因后台线程自动提高审查档位。决定与任务快照已记录。
-- 范围：批准的独立入口、列表/筛选、事件分页与当前摘要分离、完整正文、安全显示及show(trace).dispatches只读字段。不接Drover/协议导航/04B，不切旧dlog消费者，不改Corral或反向依赖。
-- 回来先status，working重挂；idle后dlog reply取完整DONE。主控核diff/完成记录/实际RED-GREEN及一次标准test/clippy，按常规审查预算，不扩审计；需改交原实现者，返工只定向/直接回归，不重复全套。
-- 04A通过后保留实施会话/分支/worktree供04B串行接入，整阶段集成后合并清理。主控不写功能；不release/安装/真实数据队列，旧设计review/t38/t55保留。
-- 初版1003f45已取完整DONE并核增量，主控标准511通过/0失败/5忽略、Clippy通过。日志 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04a-controller-32zq_vbj`；probe.rs/probe-cargo.log证实两个目标缺陷，前两次直接rustc依赖错配/探针装配失败不算功能证据。开发标准同数，RED日志已核但原dispatches断言全文与页面桩完整补丁留档不足，保留限制。
-- 已集中交原实现者第一次返工并重挂提醒，详见docs/任务/遥测04A-主控审查.md：M1刷新丢选中派发筛选；M2实际payload不可读、长详情尾部不可达及既定carried_from目标trace；M3app_control模态busy遗漏（准许最小扩文件范围）。返工只目标/直接回归，不重复全套Clippy；主控不写功能，无额外交叉审查。
-- 已接受UTC、列表顺序、顶部位置和宽窄布局；预填控制字符显示留04B集成前处理，不在本次顺手改。04A尚未通过或合并；下一轮核M1-M3及直接回归，不提前派04B。
-- 更新：04A返工0261d5167143ed8d4a0d0ca98bc4a439ef03070b已通过主控核对，M1–M3全部关闭；本轮独立4目标通过，日志saddle-04a-r1-controller-ub8k8xlk，已核实现有效RED/GREEN及86相关回归，未重复全套Clippy。上行“尚未通过”为历史状态，功能仍未合并，原实施会话/worktree保留供04B。
-- 04B任务docs/任务/遥测04B-Drover接入.md已准备，dlog936889ea33ad4146bd967c25da4ae6d9；JEV重/其余null，主控重/交叉审查要/碰要害。Claude opus[1m]/xhigh整体接通用导航/宿主路径、Drover选择与单次交付/状态声明及界面，04A预填控制字符问题同批处理。完成后主控标准核对及重档Codex整阶段独立审查；不重问已批准布局、不改Corral/反向依赖，05不启动。
-
-## 当前派发：04B接入
-
-- 新Claude Code saddle/dev-telemetry-drover-1，instance aca3e300a88d，opus[1m]/xhigh，role=implementer；分支telemetry-drover-integration，worktree ../saddle-worktrees/telemetry-drover-integration，基线03f728240e009f84b803e60173aa66be8c085db9（04A0261d51＋main文档26b56dc）。dlog936889ea33ad4146bd967c25da4ae6d9，start成功。
-- 回来先status，working重挂；idle后dlog reply取完整DONE，核diff/完成记录/有效RED-GREEN与一次标准test/clippy，再另开重档Codex对04B及整个04独立审查。必须改交原实现者，主控不写功能，返工仅目标/直接回归不重复标准。
-- 04A原实现saddle/dev-telemetry-query-ui-1（2be45b11bd4d）、分支telemetry-query-ui和worktree保留；整阶段集成通过才共同合并推送清理，删目录后关对应自建agent，空提交/HANDOFF/dlog实际收尾。旧设计review/t38/t55仍保留。
-- 04B只用隔离/合成数据与假Corral；不release/安装/真实数据队列/JEV产品调用/消费者切换/05；需改Corral或反向依赖先停告知。已批布局和选择不重复问。
-- 04B首次提醒不是完成：公开status idle/StopFailure、attached0，dlog reply返回no_reply，corral read尾部显示API Error: Connection lost mid-response；分支HEAD仍03f7282，只有未提交改动，无完成记录/DONE。主控未执行04B标准核查、未派独立审查。
-- 已经原dispatch记录中断decision并followup原会话接续，send confirmed=true/merged_with_draft=false，重新挂after pending=true；要求先核已有步骤/日志，不复位改动、不重复已过且未改检查。接续指令快照 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04b-resume-o4gqilah/resume.md`。下一轮仍须status→完整DONE，若再次无回复查公开状态/输出，不盲目循环送话或把中断算返工通过。
-- 接续已完成：81ccc7eec7b45a53d78ec4be39377b30405dee79，idle/正常Stop且完整DONE，工作区干净。主控核diff/完成记录/目标RED-GREEN与桩；一次标准533通过0失败5忽略、Clippy通过，日志saddle-04b-controller-fid61fg2。开发原workflow target_changed失败单项通过、主控未复现，原次根因未知；原日志5忽略而非开发记录4。process RED夹具错误不算有效RED。
-- 已准备docs/任务/遥测04B-独立交叉审查.md，主控裁定接受300ms含启动准备预算、可信未执行状态、取消未知不重发等既定边界；尚未最终批准。新detached review-telemetry-drover-integration固定81ccc7e，审查dispatch0a1223662d11441ba1b703e6dc3f71e5（父936889ea33ad4146bd967c25da4ae6d9），准备新重档Codex审查04B及阶段04集成。
-- 独立审查已start成功：saddle/dev-telemetry-drover-review-1，instance e3860ca07333，Codex gpt-6-astra/xhigh、role=reviewer。只允许追加主仓库审查文件，代码/测试只读；完成先status再dlog reply取完整DONE，逐项裁定，不把目标绿测当通过。必须改交原04B实现者，返工定向不重复标准，每轮重新挂提醒。阶段04功能未合并，所有04实施和本轮审查worktree/会话保留。
+- docs/DESIGN.md、docs/任务遥测接口契约.md、docs/任务遥测实施计划.md、docs/遥测查询与Drover接入设计.md、docs/遥测使用.md。
+- docs/任务/遥测04A-主控审查.md；遥测04A-查询界面.md与遥测04B-Drover接入.md完成/最终记录；遥测04B-独立交叉审查.md末尾最终裁定。阶段03历史意见留03A/B/C各独立交叉审查文档。
+- 主控标准日志：/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04b-controller-fid61fg2（test.log、clippy.log、results.json）。04A旧标准saddle-04a-controller-32zq_vbj，定向saddle-04a-r1-controller-ub8k8xlk，同一父目录。
+- 04B开发证据：/private/tmp/claude-501/-Users-firegnu-Developer-personal-projs-saddle-worktrees-telemetry-drover-integration/8944a1f9-783a-4263-bfe7-f2942911793c/scratchpad。
+- 本次清理原始记录：/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04-close-hmxm_ybf/actions.json。
+- dlog：04A f4e92b504dec41f59ce2062a5e83f571；04B 936889ea33ad4146bd967c25da4ae6d9；04B独立审查0a1223662d11441ba1b703e6dc3f71e5。裁定已记录，实际收尾在推送完成后另记。
