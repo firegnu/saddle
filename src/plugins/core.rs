@@ -12,7 +12,10 @@ pub(super) struct Receipts {
 impl Receipts {
     pub fn start() -> Self {
         let call_id = uuid::Uuid::new_v4().to_string();
-        let started = write_receipt(&json!({"schema_version":1,"call_id":call_id,"final":false}));
+        let started = write_receipt(
+            &json!({"schema_version":1,"call_id":call_id,"final":false}),
+            "",
+        );
         Self { call_id, started }
     }
     pub fn finish(&self, mut receipt: Value) {
@@ -20,15 +23,22 @@ impl Receipts {
             receipt["schema_version"] = json!(1);
             receipt["call_id"] = json!(self.call_id);
             receipt["final"] = json!(true);
-            write_receipt(&receipt);
+            // A library may leave stderr mid-line. Include the separator in the same
+            // bounded write as the final receipt; rejection paths retain their two lines.
+            let separator = if receipt["executed"] == true {
+                "\n"
+            } else {
+                ""
+            };
+            write_receipt(&receipt, separator);
         }
     }
 }
 
 /// Fixed per-line budget, including writable-but-failing descriptors. Never change flags
 /// on an inherited open file description (dup would share those flags too).
-fn write_receipt(value: &Value) -> bool {
-    let line = format!("saddle-plugin: {value}\n");
+fn write_receipt(value: &Value, separator: &str) -> bool {
+    let line = format!("{separator}saddle-plugin: {value}\n");
     let mut bytes = line.as_bytes();
     let deadline = Instant::now() + Duration::from_secs(1);
     while !bytes.is_empty() {

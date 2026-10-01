@@ -152,6 +152,10 @@ impl CorePlugin for Fake {
                     .unwrap();
             }
             "final_full" => fill_pipe(libc::STDERR_FILENO),
+            // Simulate a library diagnostic that bypasses the plugin's returned output.
+            "stderr_no_lf" => std::io::stderr()
+                .write_all(b"synthetic library diagnostic without LF")
+                .unwrap(),
             _ => (),
         }
         if mode == "recover" || mode == "recover_flip" {
@@ -539,6 +543,7 @@ fn run_refusals_never_enter_plugin_and_always_pair_boundaries() {
         f.registry(registry);
         let out = f.invoke(&args);
         assert_eq!(out.status.code(), Some(125), "{args:?}");
+        assert_eq!(out.stderr.iter().filter(|b| **b == b'\n').count(), 2);
         let r = paired(&out.stderr);
         assert_eq!(r["error"]["code"], code, "{args:?}: {r}");
         assert_eq!(r["executed"], false);
@@ -1176,6 +1181,41 @@ fn wait_bounded(child: &mut std::process::Child) -> std::process::ExitStatus {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
+}
+
+#[test]
+fn library_stderr_without_lf_keeps_terminal_receipt_on_its_own_line() {
+    let f = Fixture::new();
+    f.enable();
+    let input = f.dir.path().join("input");
+    let business = b"synthetic result\0\xff";
+    fs::write(&input, business).unwrap();
+    let out = f
+        .command(&["run", "test.core", "route"])
+        .env("TEST_MODE", "stderr_no_lf")
+        .stdin(fs::File::open(input).unwrap())
+        .output()
+        .unwrap();
+    let stdout = fs::read(f.dir.path().join("output")).unwrap();
+    eprintln!(
+        "exit={:?}, calls={}, stdout={stdout:?}, stderr={:?}",
+        out.status.code(),
+        f.calls(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.status.code(), Some(7));
+    assert_eq!(stdout, business);
+    assert_eq!(f.calls(), 1);
+    assert!(!f.dir.path().join("state").exists());
+    let r = paired(&out.stderr);
+    assert_eq!(r["executed"], true);
+    assert_eq!(r["outcome"], json!({"kind":"exited","exit_code":7}));
+    assert_eq!(r["begin"], "not_requested");
+    assert_eq!(r["end"], "not_requested");
+    assert_eq!(
+        out.stderr.split(|b| *b == b'\n').nth(1).unwrap(),
+        b"synthetic library diagnostic without LF"
+    );
 }
 
 #[test]
