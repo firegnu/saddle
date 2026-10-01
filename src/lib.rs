@@ -19,6 +19,7 @@ pub mod pty;
 pub mod search;
 pub mod settings;
 pub mod terminal;
+pub mod telemetry;
 pub mod terminals;
 pub mod ui;
 pub mod viewer;
