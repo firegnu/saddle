@@ -26,20 +26,34 @@ def rect(pixels, x, y, w, h, color):
         pixels[row*WIDTH+x:row*WIDTH+x+w] = [color]*w
 
 
+def shift(pixels, row, dx):
+    # Slide one pixel row sideways; used for glances and leans above the planted waist and feet.
+    line = pixels[row*WIDTH:(row+1)*WIDTH]
+    pixels[row*WIDTH:(row+1)*WIDTH] = [0]*dx + line[:-dx] if dx > 0 else line[-dx:] + [0]*-dx
+
+
+def glance_right(pixels):
+    # The head top follows the eyes so a skin margin stays outside the right eye.
+    shift(pixels, 2, 1)
+    return (7, 9)
+
+
 def pose(kind='rest', stage=0):
     p = [int(c == '#') for row in BASE for c in row]
     eyes = [16, 16]
     eye_columns = (6, 8)
     extra = []
-    if kind in ('walking', 'swaying'):
+    if kind == 'walking':
         # Keep the silhouette and floor fixed; alternate only the inner feet.
         rect(p, 13, 5, 5, 1, 0)
         for x in ((14, 17) if stage == 1 else (13, 16) if stage == 2 else (13, 17)):
             rect(p, x, 5, 1, 1, 1)
-        if kind == 'swaying' and stage:
-            x = 9 if stage == 1 else 20
-            rect(p, x, 3, 2, 1, 0)
-            rect(p, x, 2, 2, 1, 1)
+    elif kind == 'swaying' and stage:
+        # Head and arms lean one pixel; waist and all four feet stay planted.
+        shift(p, 2, -1 if stage == 1 else 1)
+        shift(p, 3, -1 if stage == 1 else 1)
+        if stage == 2:
+            eye_columns = (7, 9)
     elif kind == 'turning' and stage:
         # Compress into a side profile, then reopen at the same floor/centre.
         rect(p, 9, 2, 13, 4, 0)
@@ -50,19 +64,29 @@ def pose(kind='rest', stage=0):
         eyes = [16]
         eye_columns = (8,) if stage == 1 else (7,)
     elif kind == 'looking':
-        eye_columns = (7, 9) if stage == 2 else (6, 8)
-        if stage == 3:
+        if stage == 1:
+            eye_columns = glance_right(p)
+        elif stage == 2:
+            # Peek left with the whole head: the approved eyes already sit left of centre,
+            # so moving only the eyes would press the left eye against the forehead edge.
+            shift(p, 2, -2)
+            shift(p, 3, -1)
+            eye_columns = (5, 7)
+        elif stage == 3:
             eyes = [17, 17]
     elif kind == 'waving':
         rect(p, 9, 3, 2, 1, 0)
         rect(p, 9, 2, 2, 1, 1)
         if stage:
             rect(p, 8 if stage == 1 else 9, 1, 2, 1, 1)
+            eyes = [21, 21]
     elif kind == 'thinking':
+        if stage:
+            eye_columns = glance_right(p)
+            # A growing "..." replaces the old one-eye wink.
+            extra = [(x, 0, 29, 6, 0) for x in (11, 12, 13)[:stage]]
         rect(p, 20, 3, 2, 1, 0)
         rect(p, 20, 2, 2, 1, 1)
-        if stage:
-            eyes[1] = 17
     elif kind == 'coffee':
         y = 2 if stage else 3
         x = 20 if stage else 22
@@ -85,31 +109,37 @@ def pose(kind='rest', stage=0):
     elif kind == 'headphones':
         rect(p, 11, 1, 9, 1, 5)
         rect(p, 10, 2, 1, 2, 6)
+        rect(p, 9, 3, 1, 1, 0)
         rect(p, 21, 3, 1, 1, 0)
         rect(p, 20, 2, 1, 2, 6)
         if stage:
             eyes = [17, 17]
-            rect(p, 13 if stage == 1 else 17, 5, 1, 1, 0)
+            # Step in place to the beat; all four feet stay visible.
+            rect(p, 13, 5, 5, 1, 0)
+            for x in ((14, 17) if stage == 1 else (13, 16)):
+                rect(p, x, 5, 1, 1, 1)
     elif kind == 'watch':
-        eye_columns = (7, 9)
+        eye_columns = glance_right(p)
         rect(p, 20, 3, 3, 1, 1)
         rect(p, 22, 2, 2, 2, 5)
-        rect(p, 22, 2, 1, 1, 3)
-        if stage:
-            eyes[1] = 17
+        # The light hand pixel ticks between the top and bottom of the dial.
+        rect(p, 22, 3 if stage == 2 else 2, 1, 1, 3)
+        if stage == 3:
+            eyes = [17, 17]
     elif kind == 'snooze':
         eyes = [17, 17]
         if stage:
-            extra = [(11 if stage == 1 else 12, 0, 18, 7, 0)]
+            extra = [(x, 0, 18, 7, 0) for x in (9, 11, 13)[:stage]]
     elif kind == 'desktop':
-        eye_columns = (7, 9)
+        eye_columns = glance_right(p)
         rect(p, 24, 0, 8, 2, 5)
         rect(p, 25, 1, 6, 1, 6)
         rect(p, 27, 2, 2, 2, 7)
         rect(p, 24, 4, 8, 1, 7)
         rect(p, 22, 5, 6, 1, 3)
         rect(p, 20, 3, 2, 1, 0)
-        rect(p, 20, 4 if stage == 1 else 5, 2, 1, 1)
+        # The typing hand stays attached at the waist instead of reading as a fifth foot.
+        rect(p, 20, 3 if stage == 1 else 4, 2, 1, 1)
         if stage == 2:
             extra = [(13, 0, 19, 3, 5)]
     elif kind == 'arcade':
@@ -219,8 +249,6 @@ def pose(kind='rest', stage=0):
                 rect(p, 8 if stage == 1 else 21, 1, 2, 1, 1)
                 extra = [(12 if stage == 1 else 3, 0, 36, 11, 0)]
                 eyes = [21, 21]
-            else:
-                eyes = [17, 17]
     elif kind == 'phone':
         # Portrait screen remains outside the face; thumb taps its lower edge.
         eye_columns = (7, 9)
@@ -282,7 +310,8 @@ def pose(kind='rest', stage=0):
         if stage == 0:
             extra = [(11, 2, 24, 11, 0), (12, 2, 19, 11, 0), (13, 2, 25, 11, 0)]
         else:
-            left, right = (3, 11) if stage == 1 else (2, 12)
+            # Swing off-centre left then right, like the original hoop's orbit.
+            left, right = (2, 11) if stage == 1 else (3, 12)
             extra = [(left, 2, 24, 11, 0), (right, 2, 25, 11, 0)]
             extra += [(x, 2, 19, 11, 0) for x in range(left+1, 5)]
             extra += [(x, 2, 19, 11, 0) for x in range(10, right)]
@@ -351,14 +380,14 @@ def action(kind, beats):
 clips = {
     'walking': [pose('walking', stage) for stage in (0, 1, 0, 2) for _ in range(3)],
     'turning': [pose('turning', stage) for stage, ticks in [(0, 2), (1, 3), (2, 3), (0, 4)] for _ in range(ticks)],
-    'looking': action('looking', [(1, 8), (0, 5), (2, 8), (0, 5)]),
+    'looking': action('looking', [(1, 8), (0, 4), (2, 8), (0, 3), (3, 2)]),
     'waving': action('waving', [(0, 3), (1, 4), (2, 4), (1, 4), (2, 4), (0, 3)]),
-    'thinking': action('thinking', [(0, 5), (1, 14), (0, 5)]),
+    'thinking': action('thinking', [(0, 5), (1, 5), (2, 5), (3, 8), (0, 5)]),
     'coffee': action('coffee', [(0, 6), (1, 5), (2, 12), (1, 5), (0, 6)]),
     'notebook': action('notebook', [(0, 10), (1, 4), (0, 10), (2, 2), (0, 8)]),
     'headphones': action('headphones', [(0, 5), (1, 6), (2, 6), (1, 6), (2, 6), (0, 5)]),
-    'watch': action('watch', [(0, 5), (1, 12), (0, 5)]),
-    'snooze': action('snooze', [(0, 8), (1, 8), (2, 8), (0, 8), (1, 8), (2, 8)]),
+    'watch': action('watch', [(0, 8), (2, 6), (0, 6), (2, 6), (3, 2), (0, 4)]),
+    'snooze': action('snooze', [(0, 8), (1, 6), (2, 6), (3, 8), (0, 6), (1, 6), (2, 6), (3, 8)]),
     'sunglasses': action('sunglasses', [(0, 5), (1, 22), (0, 5)]),
     'pirate': action('pirate', [(0, 5), (1, 7), (2, 8), (3, 3), (2, 7), (4, 8), (1, 5), (0, 4)]),
     'excited': action('excited', [(0, 3), (1, 3), (2, 4), (1, 3), (2, 4), (1, 3), (2, 5), (0, 5)]),
@@ -377,9 +406,9 @@ clips = {
     'berrypicking': action('berrypicking', [(0, 6), (1, 5), (2, 6), (3, 8), (2, 5), (0, 5)]),
     'blooming': action('blooming', [(0, 6), (1, 7), (2, 7), (3, 9), (2, 6)]),
     'fishing': action('fishing', [(0, 10), (1, 5), (0, 6), (1, 4), (2, 6), (3, 9), (2, 5), (0, 5)]),
-    'dancing': action('dancing', [(0, 4), (1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 4)]),
-    'dancinghappy': action('dancinghappy', [(0, 4), (1, 4), (0, 3), (2, 4), (0, 3), (1, 4), (0, 3), (2, 4), (0, 4)]),
-    'swaying': action('swaying', [(1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 3)]),
+    'dancing': action('dancing', [(1, 5), (2, 5), (1, 5), (2, 5), (1, 4), (2, 4)]),
+    'dancinghappy': action('dancinghappy', [(1, 4), (2, 4), (1, 4), (2, 4), (1, 4), (2, 4)]),
+    'swaying': action('swaying', [(1, 6), (0, 2), (2, 6), (0, 2), (1, 6), (0, 2), (2, 6)]),
 }
 out = bytearray(b'CLWD3') + bytes([16, 3, len(PALETTE), len(clips)])
 for color in PALETTE:

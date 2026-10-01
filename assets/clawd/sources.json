@@ -20,7 +20,7 @@
     "url": "https://claude.dev/shared/video/clawd-looking.json",
     "sha256": "2844f8478106985f50c43c316325ca161d5d3100a1eb6db4fea43f0768d57e01",
     "frames": 42,
-    "curated_frames": 35,
+    "curated_frames": 34,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
@@ -36,7 +36,7 @@
     "url": "https://claude.dev/shared/video/acts/Clawd-Thinking.json",
     "sha256": "446d0cd16f28422233f38e9ce2417791fddc29d9ca9ffea3154ea7a888092597",
     "frames": 38,
-    "curated_frames": 33,
+    "curated_frames": 37,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
@@ -68,7 +68,7 @@
     "url": "https://claude.dev/shared/video/acts/Clawd-Watch.json",
     "sha256": "572a3e0b603e642a12da85412ed332e42176c579b13fa7e573aa64667628ae05",
     "frames": 87,
-    "curated_frames": 31,
+    "curated_frames": 41,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
@@ -76,7 +76,7 @@
     "url": "https://claude.dev/shared/video/acts/Clawd-Snooze.json",
     "sha256": "10d6eac110c7f0694aecc36a2c32668fae6305a0ba47fca45c5d90133a684ef9",
     "frames": 55,
-    "curated_frames": 57,
+    "curated_frames": 63,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
@@ -226,7 +226,7 @@
     "url": "https://claude.dev/shared/video/acts/Clawd-Dancing.json",
     "sha256": "3a78c22ead8da91994111cacbbeca6fc8dd93b76f97de678a80b1030fe2c7591",
     "frames": 40,
-    "curated_frames": 46,
+    "curated_frames": 37,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
@@ -234,7 +234,7 @@
     "url": "https://claude.dev/shared/video/acts/Clawd-DancingHappy.json",
     "sha256": "a677048ed573e18084020b3415a4db1e220f116ccc16bf0e2c1884b5aa9597a2",
     "frames": 40,
-    "curated_frames": 42,
+    "curated_frames": 33,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
@@ -242,7 +242,7 @@
     "url": "https://claude.dev/shared/video/acts/Clawd-Swaying.json",
     "sha256": "1a0d5d23aec67f91f4a36f4ef4b62ea248f63f223926d4d1a09858c0a8e7ee2e",
     "frames": 49,
-    "curated_frames": 41,
+    "curated_frames": 39,
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   }
 ]
