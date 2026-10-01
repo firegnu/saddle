@@ -70,7 +70,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 收到完成提醒先status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4 -- corral reply saddle/dev-telemetry-core-plugin-1 取完整DONE。核diff/完成记录/有效RED-GREEN，主控一次标准test/clippy，再新开重档Codex独立审查；不能把开发回复当通过。返工交原实现者，主控不写功能代码，每轮重挂。
 - 03A审查通过保留实现分支/worktree及agent；03B资源与界面、03C业务串行接入，整阶段集成审查后共同合并。管理页线框在界面实施前需给用户看，ureq版本/底层行为在03C任务前核官方资料。04/05不启动，不改Corral或真实安装/队列；需改Corral或依赖反转先停告知用户。
 
-## 9. 当前：03A独立审查
+## 9. 03A首轮独立审查（最新返工见第10节）
 
 - 候选d0db9fffcaa39f186ca5dcf7ec258ee2bfb9460e，基线af06ba5，原实现分支telemetry-core-plugin。主控已status核idle、经dlog取完整DONE；diff/check、范围及完成记录已核，当前未裁定通过。
 - 主控隔离环境一次标准cargo test --all-targets：451 passed/0 failed/5 ignored，clippy通过；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03a-controller-hq43isxy。实现者原全套在两个既有plugins测试报registry busy，单项通过，主控未复现、根因未明；原日志/tmp/saddle-03a-check-env。RED表已读，原始RED完整日志未保存在该目录，不能说主控独立核验了原RED。
@@ -78,3 +78,13 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 审查任务及唯一允许追加意见的文件：主仓库docs/任务/遥测03A-独立交叉审查.md。只读代码/测试，不提交不切分支；只跑两个相关目标，不重复标准全套/clippy。重点依赖方向/registry、拒绝与业务码、起止回执背压/panic、Capture固定generation与缺begin恢复。
 - 完成后先status；working重挂。再 ../dispatch-log/dlog reply --dispatch de98aef6ec7b42349af49f1696e78e72 -- corral reply saddle/dev-telemetry-core-plugin-review-1 取完整DONE并逐项裁定。必须改交原实现者，主控不写功能；返工只跑目标及直接回归，更新干净detached后交原审查者限定复核，每轮挂提醒。
 - 03A通过仍保留实施/审查worktree与agent供03B/C串行集成，整阶段通过才合并收尾；不提前派03B、不动04/05，不release/安装/真实数据/消费者切换。需改Corral或依赖反转先停告知；旧设计review和t38/t55保留。设计Claude已关闭勿重建。
+
+
+## 10. 当前：03A M1第一次限定返工
+
+- 原审查者 bdd2e2cbfba7 已idle，经dlog取完整DONE；结论必须改1/建议0/可以不改4，未通过。主控逐项裁定及返工要求在 docs/任务/遥测03A-独立交叉审查.md 末尾。
+- M1：第三方库stderr无末尾LF时与终止回执粘连。主控已核设计、源码、独立探针源码/原始stderr/results；认可修复独立末行，分隔与终止共享既有1秒预算，不改起始字节0/配对/业务语义。其余4项取舍接受；不需要改Corral或依赖反转。
+- 已通过dlog note保存本轮审查及裁定，dlog send原实现dispatch 5f33b7c1fc3a4c1c967463a0b306b4e4限定返工，confirmed=true、merged_with_draft=false；corral send --after原实现者挂好新提醒，pending=true、after_instance=e66304753ca5。
+- 实现者 saddle/dev-telemetry-core-plugin-1 在原telemetry-core-plugin分支/worktree从d0db9ff修复，仅回执实现、相关测试和原任务完成记录。定向RED/GREEN及回执直接回归，不重跑标准全套/clippy。原主控451通过5忽略/clippy通过，独立43通过1忽略；历史registry busy根因未知、原六组RED完整日志未独立核验。
+- 收提醒先status；working重挂。idle后dlog reply取完整DONE，主控核增量/证据并做目标检查；确认原审查者idle和detached干净后，将 ../saddle-worktrees/review-telemetry-core-plugin 从d0db9ff更新到新SHA，通过审查dispatch de98aef6ec7b42349af49f1696e78e72交原审查者限定复核M1及直接回归。每轮挂提醒，最多两轮独立复核仍不收敛则报告用户。
+- 03A未通过、未合并；实施及审查agent/worktree全部保留供03B/C串行集成。不提前派03B，不动04/05；UI线框待确认、ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换。保留设计review与t38/t55，已关闭设计Claude不恢复。
