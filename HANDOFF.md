@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-01。当前 main。核心遥测阶段01、02已审查、合并、推送并清理；尚未发布到日常安装版。用户已确认dispatch可选插件边界，原03宿主同进程路由安排撤回；下一步先设计插件集成与采集接入，尚未派发。没有真实队列操作。
+更新：2026-10-01。当前 main。核心遥测阶段01、02已审查、合并、推送并清理；尚未发布到日常安装版。用户已批准dispatch插件及必要通用框架能力，阶段03接口设计已派Claude，尚未派发功能实现。原03宿主必备JEV安排撤回。没有真实队列操作。
 
 ## 1. 会话摘要
 
@@ -20,7 +20,7 @@
 - 实现者历史workflow测试超时根因仍未知，单项/主控后续通过不能当作已修好。初始02B RED完整日志未保存，摘录只明确3项缺开关行为，第4项原因仅推断；B1两次RED/GREEN有完整日志。详细限制保存在审查文件，不重造历史。
 - 未release/build --release、安装、接JEV/Drover、操作真实遥测/队列或切换消费者。已安装saddle仍是此前Clawd版，~/.local/bin/saddle指向共享.target/release/saddle；未构建release，后续构建前遵循原备份规则。
 - 保留 ../saddle-worktrees/review-telemetry-design（5ddd544）、t38-dispatch-study、t55-notification-flow；设计Claude已按用户要求关闭，不恢复。
-- 当前公开会话仅corral/main、dispatchlog/main、saddle/main；前两个属用户，勿送话或关闭。迟到的阶段02提醒查到not_found后忽略，不重建已收尾agent。
+- 保留用户会话corral/main、dispatchlog/main及主控saddle/main；新开阶段03设计者见末尾。迟到的阶段02提醒查到not_found后忽略，不重建已收尾agent。
 - 旧独立Drover已退役，现有plugins/drover仍保留旧Dispatch视图/dlog入口，阶段05再切换；不恢复旧服务或导入旧日志。
 
 ## 4. 约束与决定入口
@@ -47,3 +47,12 @@
 最新调查：已核实corral-dispatch包含SKILL.md、项目AGENTS模板.md、route.py、README；本机Claude/Codex软链接均指向Corral仓库资源，未修改。候选方案见docs/调研/Saddle-dispatch插件与技能资源接入方案-2026-10-01.md，包含无需TUI的可选core plugin入口、进程内通用采集接口、技能与模板版本化交付。现有command.v1主要依赖TUI且有正文大小限制，不能直接当作新路由入口。候选取舍尚待用户确认，未实现/派发；不改已安装技能、AGENTS、Corral或真实数据。下一步先确认候选结构及资源启用/安装边界，再定接口，不照原03方案开工。
 
 最新决定：首版在插件安装或首次启用入口提供项目接入说明和AGENTS模板位置，由用户为希望默认主控分派的项目合入规则。Saddle不管理项目采用名单或开关，不自动改项目文件；全局skill安装不让所有项目默认委派，当次明确要求仍可使用。已同步DESIGN和候选方案；执行入口、资源安装及采集接口仍待设计，未派发实现或变更实际安装。
+
+## 7. 当前在办：03插件接口设计
+
+- 用户随后批准“新增dispatch插件，加上必要的通用插件基础能力；Corral不改”，并要求开始。skill随插件自动安装更新，无须单独操作；AGENTS接入仍仅说明/模板。详见DESIGN末尾。
+- 任务：docs/任务/遥测03-插件接口设计.md；设计者saddle/dev-dispatch-plugin-design-1，instance 7cc3761a37cc，Claude opus[1m]/xhigh，role=implementer（本轮交付设计文档）。
+- 分支dispatch-plugin-design，worktree ../saddle-worktrees/dispatch-plugin-design，基线8f66df0；只改docs/dispatch插件接口设计.md及任务完成记录，不合并推送、不写功能。
+- dlog dispatch cba1e2fc7541408786a5ad4d8dd8a7f6。JEV重/交叉审查null/看得见；主控采纳重档，纯设计文档不另开代码交叉审查，后续行为实现重新定影响面。路由调用仅此次主控任务评估，不是产品JEV接入验证。
+- 结束后先corral status，再经 ../dispatch-log/dlog reply --dispatch cba1e2fc7541408786a5ad4d8dd8a7f6 -- corral reply saddle/dev-dispatch-plugin-design-1 取完整回复并确认DONE。主控核具体接口、依赖方向、skill资源生命周期及首版项目说明，git diff --check/静态核对即可，设计不跑标准测试。working则重挂提醒。
+- 用户批准的大方向内常规细节由主控核实；新增实质架构取舍列给用户。需改Corral或出现反向依赖先停相关部分告知。设计通过后再形成串行实施任务，不把设计交付当插件或整条遥测已实现。真实安装/消费者切换、04/05及原保留worktree不动。
