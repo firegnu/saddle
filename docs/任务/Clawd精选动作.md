@@ -24,3 +24,7 @@
 - 原公开绘制入口新增持续巡游不覆盖agent边框/首行的检查；旧版RED在tick107跨越边框，日志`/tmp/saddle-clawd-curated-red.log`；实现后相关23项检查GREEN，日志`/tmp/saddle-clawd-curated-green.log`。素材生成可重复，SHA256 `fa65b2f962f5423346f9b55ef91d022b90df145f0850e5c8dff9f2dc993be667`。
 
 最终标准`cargo test --all-targets`：374 passed / 0 failed / 5 ignored；Clippy/fmt/diff通过。日志`/tmp/saddle-clawd-curated-{all-final,clippy}.log`。
+
+## 安装与发布验证
+
+实现`e3172f4`已合并至main。发布版巡游/鼠标避让与设置/布局两项隔离流程通过；日志`/tmp/saddle-clawd-curated-release-{patrol,settings}.log`。当前日常链接指向共享target的`release/saddle`，SHA256 `cdfafd4527ad23cc0746083eff86d11285f51e237e47a5558f866ab788ed7bdf`；已验证其包含当前精选素材。原安装版备份`/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-curated-20261001-124041`，旧hash`1fcb2d8d0bcd4fa023032c81ebb3e99d252aa4ee1a94d8851b20a4ad7fb65eb5`。未重启用户窗口，下次启动使用新版；实际用户窗口尚未取得视觉反馈。
