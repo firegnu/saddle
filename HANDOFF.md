@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。**源码已完成这一阶段，日常安装版未更新，消费者未切换；04/05未派发。**
+更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。用户已批准开始04，当前已派精简设计；04功能尚未实现，05未派发。日常安装版未更新，消费者未切换。
 
 ## 当前成果
 
@@ -25,11 +25,11 @@
 
 ## 下一步与边界
 
-- 下一阶段为04宿主独立遥测查询界面、Drover只携带关联条件跳转；05再切消费者、退役旧dispatch-log入口。尚未派发，先读取最新计划并按用户指示推进，不因迟到提醒自动启动。Corral迁移仍在最后。
+- 下一阶段为04宿主独立遥测查询界面、Drover只携带关联条件跳转；05再切消费者、退役旧dispatch-log入口。04已获准启动设计，具体状态见下方当前工作；05不因迟到提醒自动启动。Corral迁移仍在最后。
 - 遥测归Saddle核心，SQLite；dispatch是可选路由插件。没有dispatch仍可手动Corral委派和使用遥测。Drover只拥有任务业务；既有Drover旧Dispatch视图/dlog入口待05处理，不恢复旧独立Drover服务、不导入旧日志。
 - 设计以docs/DESIGN.md、docs/任务遥测接口契约.md、docs/dispatch插件接口设计.md为准。若需改Corral或发现依赖反转，先停相关部分告知用户。初始遥测关闭、显式选中链路；原话逐字提交注明来源，允许标记晚交而不改历史。
 - 全局skill不意味着所有项目自动分派；项目采用规则由用户合入AGENTS模板，Saddle不管理项目采用名单、不自动修改项目规则。插件停用保留skill/项目规则，主控说明路由不可用后自行判断已授权委派，不额外询问、不自行启用、不回退旧route.py。
-- 主控不写功能代码；按AGENTS/corral-dispatch及../dispatch-log/USAGE.md分派和记录。新任务先路由，实施分支与独立detached审查，逐轮挂提醒；当前无待处理自建agent。
+- 主控不写功能代码；按AGENTS/corral-dispatch及../dispatch-log/USAGE.md分派和记录。新任务先路由，实施分支与独立detached审查，逐轮挂提醒；当前有下方04设计agent，其他旧实施/审查均已收尾。
 - 未release/build --release、安装、写真实技能/链接、动真实遥测/队列或消费者。~/.local/bin/saddle仍指向共享.target/release/saddle的旧日常版本；后续release构建前遵循备份规则，不能把源码合并说成日常版本已升级。
 
 ## 优先阅读与证据
@@ -39,3 +39,13 @@
 - 锁调查/修正范围：docs/任务/遥测03C-标准验证缺口核查.md、遥测03C-集成验证修正.md。ureq接口研究：docs/调研/03C-ureq接口核对-2026-10-02.md。
 - 原标准日志临时目录saddle-03c-controller-xtk9ap9d；补30目标saddle-03c-gap-controller-f9e9h7xt；修正证据saddle-03c-integration-fix-jodmed7i；最终主控saddle-03c-integration-controller-efulywns；独立saddle-03c-integration-review-vpoiu48s。共同父目录/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/。
 - dlog实施/审查：03A 5f33b7c1fc3a4c1c967463a0b306b4e4 / de98aef6ec7b42349af49f1696e78e72；03B ffcf738641ec416f803b7af8745df86f / 9c2ca1be0eda43959bd08a34c514232a；03C 556e907c030040bea59cb9e0572a4e1e / 223d0cfcdeb941c79053e6641d8e93d5。实际收尾后均记decision，不补造未执行步骤。
+
+
+## 当前工作：阶段04精简设计
+
+- 用户在确认“读取显示SQLite、简单查询展示及任务关联”后说“那就开始吧”。主控已读现有查询API和插件宿主请求/旧Drover Dispatch入口；先设计线框及最小接入，不直接写功能。任务docs/任务/遥测04-查询与接入设计.md，输出docs/遥测查询与Drover接入设计.md。
+- 新Claude Code：saddle/dev-telemetry-query-design-1，instanceed4e60494020，opus[1m]/high，role=implementer（当前职责为设计）；分支telemetry-query-design，worktree ../saddle-worktrees/telemetry-query-design，基线2068bb6。
+- dlog 7d00e4c7b187450394d3ae4759d26c9d。JEV档位拿不准/交叉审查不要/看得见，主控按既定边界选常规；决定和任务快照已记录。start成功，新after pending=true且实例相符。
+- 仅设计文档与完成记录，静态核接口及diff check，不测试/Clippy/构建/真实数据/安装。宿主独立查询页与Drover记录选择/关联/上下文交付分开，接口缺口最小化；不改Corral/反向依赖，发现先停报告。原03各裁定不重开，不额外统计图表/评分或自动分析。
+- 收提醒先status，working重挂；idle后dlog reply确认完整DONE。主控集中核文档/真实接口/取舍，再把实际页面线框展示给用户确认；用户“开始”尚不是对未见布局的批准。已批准范围常规细节直接推进，新增实质架构取舍说明，不替用户定。
+- 设计未合并，不提前清理本轮工作区或关闭agent。后续按AGENTS处理本设计任务生命周期，实施另按范围路由；04有集成关系的两半应串行接入且保留到集成验收。05消费者切换/旧dlog退役未启动，旧设计review/t38/t55保持。
