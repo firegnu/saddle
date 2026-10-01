@@ -182,7 +182,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03A/03B原实施审查四个agent和worktree全部保留，03C集成审查通过后整个阶段共同合并推送/清理/关闭相应自建agent/空提交/HANDOFF。功能仍未合main；不release/安装/真实JEV产品调用/真实数据队列/消费者切换/04或05。UI已确认；设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 21. 当前：03C及阶段03集成独立审查
+## 21. 03C及阶段03集成独立审查（返工见第22节）
 
 - 原实现者3583e0bc626b已idle/attached0，dlog取完整DONE，候选1692be22eb1c516a433dcc1a774c683486766822，分支telemetry-dispatch-plugin，基线32b34fd21022cec62f3449dfad365d21c096d4e7。21文件增量、完成记录、运行期RED/GREEN及资源差异已核；模板逐字节一致，skill只改指定路由区，无Corral/框架代码修改或依赖反转。
 - **主控标准检查未全绿**：cargo test --all-targets一次179通过1失败1忽略exit101，在tests/plugins.rs:90的registration_defaults_disabled_and_concurrent_edit_is_not_overwritten报registry busy后中止，后续target未跑；获准精确单项复跑一次通过。Clippy一次通过。隔离HOME/全部XDG、真实工具链、移除真实TYPESAFE_API_KEY、共享target、stdin=/dev/null。日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-controller-xtk9ap9d。
@@ -191,3 +191,13 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 唯一可写主仓库docs/任务/遥测03C-独立交叉审查.md末尾，代码测试只读不提交；限定插件、dispatch_plugin、core_plugins、plugin_resources四目标各一次，不plugins/全套/clippy。主控记录dlog review/实际决定及任务快照，after提醒pending=true实例相符。
 - 收提醒先status，working重挂；idle后经dlog reply取完整DONE，逐项判断实际意见与验证限制。必须改交原实现者，返工仅目标/直接回归，更新干净detached后原审查者限定复核，每轮提醒，最多两轮未收敛报告用户。主控不写功能。
 - 功能未合并；03A/03B及03C全部实施审查会话worktree保留，整阶段通过后共同合并推送清理/关闭相应自建agent/空提交/HANDOFF。03B S1非阻断提示遗漏仍不修功能，文档已收窄，非原子目录清理边界保留。需改Corral或反向依赖先停告知。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05；设计review/t38/t55保留，设计Claude已关闭。
+
+
+## 22. 当前：03C M1第一次限定返工
+
+- 原审查者a6e4e4014bbf已idle、dlog取完整DONE；读取时attached1，仅只读取证未干扰。独立结论必须改1/新增建议0/可以不改5，改完再合并。主控核源码及合成探针后认可M1，C1–C5接受；完整意见/裁定在docs/任务/遥测03C-独立交叉审查.md末尾。
+- M1：ureq3.4.2的TLS write_all只保证明文接收，rustls0.23.45可把底层写错延后暴露；当前sent=true提前，导致请求体未发完的非超时错误漏掉一次重试。已核依赖源码、探针候选原文及SHA256、原始attempts1/begin1/delivered_body0输出，主控未重跑。独立42相关目标通过不豁免该缺陷；无需改Corral或反向依赖。
+- 已dlog note记录本轮增量裁定，并send原实现者saddle/dev-telemetry-dispatch-1 instance3583e0bc626b（dispatch556e907c030040bea59cb9e0572a4e1e）从1692be2在原分支/worktree仅修M1及直接回归，confirmed=true/merged_with_draft=false，新after提醒pending=true实例相符。只插件局部传输/直接测试/文档，公开接口不足先报告；不改外部库源码或通用框架，不扩大为所有接收错误重试。
+- 收提醒先status，working重挂；idle后dlog reply完整DONE。主控核增量/有效RED-GREEN及定向，原审查者idle且未附着、detached干净后更新到新SHA，经审查dispatch223d0cfcdeb941c79053e6641d8e93d5第一次限定复核M1及直接回归。每轮提醒，最多两轮独立复核未收敛报告用户；主控不写功能。
+- 标准验证缺口仍独立存在：主控179通过1失败1忽略、开发96通过1失败，各自不同既有用例busy，单项通过根因未知、后续target未执行。Clippy通过，不能豁免标准测试；本轮返工不全套clippy、不扩查历史锁。合并前仍需单独处理覆盖/失败裁定。
+- 03A/B/C全部实施审查worktree及agent保留，功能未合并，不提前收尾；整阶段审查通过及验证缺口处理后共同合并推送清理/关闭目录已删对应自建agent/空提交/HANDOFF。不release/安装/真实JEV产品请求/真实数据队列/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
