@@ -59,3 +59,5 @@
 - 初版1003f45已取完整DONE并核增量，主控标准511通过/0失败/5忽略、Clippy通过。日志 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04a-controller-32zq_vbj`；probe.rs/probe-cargo.log证实两个目标缺陷，前两次直接rustc依赖错配/探针装配失败不算功能证据。开发标准同数，RED日志已核但原dispatches断言全文与页面桩完整补丁留档不足，保留限制。
 - 已集中交原实现者第一次返工并重挂提醒，详见docs/任务/遥测04A-主控审查.md：M1刷新丢选中派发筛选；M2实际payload不可读、长详情尾部不可达及既定carried_from目标trace；M3app_control模态busy遗漏（准许最小扩文件范围）。返工只目标/直接回归，不重复全套Clippy；主控不写功能，无额外交叉审查。
 - 已接受UTC、列表顺序、顶部位置和宽窄布局；预填控制字符显示留04B集成前处理，不在本次顺手改。04A尚未通过或合并；下一轮核M1-M3及直接回归，不提前派04B。
+- 更新：04A返工0261d5167143ed8d4a0d0ca98bc4a439ef03070b已通过主控核对，M1–M3全部关闭；本轮独立4目标通过，日志saddle-04a-r1-controller-ub8k8xlk，已核实现有效RED/GREEN及86相关回归，未重复全套Clippy。上行“尚未通过”为历史状态，功能仍未合并，原实施会话/worktree保留供04B。
+- 04B任务docs/任务/遥测04B-Drover接入.md已准备，dlog936889ea33ad4146bd967c25da4ae6d9；JEV重/其余null，主控重/交叉审查要/碰要害。Claude opus[1m]/xhigh整体接通用导航/宿主路径、Drover选择与单次交付/状态声明及界面，04A预填控制字符问题同批处理。完成后主控标准核对及重档Codex整阶段独立审查；不重问已批准布局、不改Corral/反向依赖，05不启动。
