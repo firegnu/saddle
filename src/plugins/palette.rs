@@ -18,6 +18,8 @@ pub struct Item {
     pub has_view: bool,
     pub opened: bool,
     pub pid: Option<u32>,
+    /// Built-in plugins have no process or view; Enter opens their management row.
+    pub builtin: bool,
 }
 impl Item {
     pub fn action(&self) -> Option<&'static str> {
@@ -39,6 +41,9 @@ impl Item {
         }
     }
     pub fn explanation(&self) -> String {
+        if self.builtin {
+            return "Built-in plugin. Enter opens Manage plugins with it selected.".into();
+        }
         let guidance: String = match self.state.as_str() {
             "Running" if !self.has_view => "Background-only plugin; no view to open.".into(),
             "Running" => String::new(),
@@ -71,6 +76,7 @@ enum Target {
     Row(String),
     Open(Item),
     Manage,
+    ManageItem(String),
     Close,
 }
 pub struct Palette {
@@ -111,6 +117,9 @@ impl Palette {
         }
     }
     fn action(&self, item: &Item) -> Option<&'static str> {
+        if item.builtin {
+            return Some("Manage");
+        }
         item.action().map(|action| {
             if self.placement.is_some() && item.opened {
                 "Move"
@@ -167,9 +176,11 @@ impl Palette {
         if self.activation_changed {
             return Outcome::Stay;
         }
-        self.selected()
-            .filter(|i| i.action().is_some())
-            .map_or(Outcome::Stay, |i| Outcome::Open(i.clone()))
+        match self.selected() {
+            Some(i) if i.builtin => Outcome::Manage,
+            Some(i) if i.action().is_some() => Outcome::Open(i.clone()),
+            _ => Outcome::Stay,
+        }
     }
     pub fn event(&mut self, event: &Event) -> Outcome {
         match event {
@@ -256,6 +267,12 @@ impl Palette {
                                     return Outcome::Open(item);
                                 }
                                 Target::Manage => return Outcome::Manage,
+                                Target::ManageItem(id)
+                                    if self.items.iter().any(|i| i.id == id && i.builtin) =>
+                                {
+                                    self.selected = Some(id);
+                                    return Outcome::Manage;
+                                }
                                 Target::Close => return Outcome::Close,
                                 _ => {}
                             }
@@ -365,7 +382,8 @@ impl Palette {
             );
             let action_width = if rect.width >= 30 { 7 } else { 0 };
             let gap = u16::from(rect.width > 0);
-            let status_width = 12.min(rect.width.saturating_sub(action_width + 6));
+            let status_width = (item.status().width().max(12) as u16)
+                .min(rect.width.saturating_sub(action_width + 6));
             let name_width = rect.width.saturating_sub(action_width + status_width + gap);
             let title = format!("{} {}", if selected { "›" } else { " " }, item.title);
             frame.render_widget(
@@ -396,7 +414,7 @@ impl Palette {
                 let action_area = Rect::new(rect.right() - action_width, rect.y, action_width, 1);
                 frame.render_widget(
                     Paragraph::new(self.action(item).unwrap_or("—")).style(style.fg(
-                        if item.action().is_some() {
+                        if item.action().is_some() || item.builtin {
                             theme.focus
                         } else {
                             theme.dim
@@ -406,7 +424,9 @@ impl Palette {
                 );
                 self.hits.push((
                     action_area,
-                    if item.action().is_some() {
+                    if item.builtin {
+                        Target::ManageItem(item.id.clone())
+                    } else if item.action().is_some() {
                         Target::Open(item.clone())
                     } else {
                         Target::Row(item.id.clone())

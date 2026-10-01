@@ -402,6 +402,7 @@ fn palette_filters_preserves_selection_and_gates_every_runtime_state() {
         has_view: true,
         opened: false,
         pid: Some(7),
+        builtin: false,
     };
     let mut p = Palette::default();
     let draw = |p: &mut Palette| {
@@ -489,6 +490,7 @@ fn palette_mouse_actions_cancel_when_state_changes_and_tiny_layouts_fit() {
         has_view: true,
         opened: false,
         pid: Some(7),
+        builtin: false,
     };
     p.update(vec![item.clone()]);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
@@ -1063,6 +1065,7 @@ fn palette_readability_compact_layout_and_scroll_position() {
         has_view: true,
         opened: false,
         pid: None,
+        builtin: false,
     };
     let mut p = Palette::default();
     let draw = |p: &mut Palette, width| {
@@ -1122,6 +1125,7 @@ fn palette_failure_guidance_preserves_cause_and_disabled_action() {
         has_view: true,
         opened: false,
         pid: None,
+        builtin: false,
     };
     assert!(failed.explanation().contains("output queue full"));
     assert!(failed.explanation().contains("Manage plugins"));

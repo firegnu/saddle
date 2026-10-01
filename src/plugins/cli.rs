@@ -113,13 +113,18 @@ pub fn run(args: &[OsString], catalog: Catalog) -> i32 {
                 {
                     return Err((2, "unknown_plugin"));
                 }
+                // Read-only: classification uses lstat/O_NOFOLLOW reads; nothing is created.
+                let resources = super::resources::Resources::from_environment();
                 let core = catalog.iter().map(|p| p.manifest()).filter(|m| id.as_ref().is_none_or(|id| id == m.id)).map(|m| {
-                    json!({"id":m.id,"name":m.name,"version":m.version,
+                    let status = resources.status(m).map_err(|_| (1, "resource_record_unavailable"))?;
+                    Ok(json!({"id":m.id,"name":m.name,"version":m.version,
                         "enabled":registry.core.get(m.id).is_some_and(|e| e.enabled),
                         "state":core::state(&registry, m.id),
                         "commands":m.commands.iter().map(|c| json!({"name":c.name,"capture":match c.capture {Some(Operation::Route)=>Some("route"), _=>None}})).collect::<Vec<_>>(),
-                        "setup_note":m.setup_note})
-                }).collect::<Vec<_>>();
+                        "resources":status.resources,
+                        "setup_note":m.setup_note,
+                        "setup_files":status.setup_files}))
+                }).collect::<Result<Vec<_>, _>>()?;
                 let plugins = registry.entries.iter().filter(|e| id.as_ref().is_none_or(|id| id == &e.id)).map(|e| json!({"id":e.id,"directory":e.directory,"enabled":e.enabled,"manifest_readable":Manifest::read(&e.directory).is_ok()})).collect::<Vec<_>>();
                 let result = json!({"core":core,"plugins":plugins});
                 writeln!(std::io::stdout().lock(), "{result}")
