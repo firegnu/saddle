@@ -1,6 +1,10 @@
+mod capture;
+pub mod cli;
+pub mod core;
 pub mod navigation;
 pub mod palette;
 pub mod registry;
+pub mod resources;
 pub mod runtime;
 pub mod ui;
 use anyhow::{Context, Result, ensure};
@@ -78,18 +82,33 @@ struct Running {
 pub struct Manager {
     pub registry: Registry,
     pub notices: Notices,
+    core_catalog: core::Catalog,
     running: BTreeMap<String, Running>,
     restart: BTreeSet<String>,
     errors: BTreeMap<String, String>,
     input: u64,
     catalog: BTreeMap<String, (Manifest, PathBuf)>,
     theme: serde_json::Value,
+    resources: resources::Resources,
+    resource_status: BTreeMap<String, Result<resources::Status, String>>,
+    receipts: BTreeMap<String, resources::Receipt>,
 }
 impl Manager {
     pub fn open(path: PathBuf) -> Self {
-        let registry = Registry::open(path);
+        Self::with_core(path, &[])
+    }
+    pub fn with_core(path: PathBuf, core_catalog: core::Catalog) -> Self {
+        Self::with_resources(path, core_catalog, resources::Resources::from_environment())
+    }
+    pub fn with_resources(
+        path: PathBuf,
+        core_catalog: core::Catalog,
+        resources: resources::Resources,
+    ) -> Self {
+        let registry = core::registry(path, core_catalog);
         let mut this = Self {
             registry,
+            core_catalog,
             notices: Notices::default(),
             running: BTreeMap::new(),
             restart: BTreeSet::new(),
@@ -97,6 +116,9 @@ impl Manager {
             input: 0,
             catalog: BTreeMap::new(),
             theme: serde_json::Value::Null,
+            resources,
+            resource_status: BTreeMap::new(),
+            receipts: BTreeMap::new(),
         };
         this.catalog();
         let ids: Vec<_> = this
@@ -109,7 +131,76 @@ impl Manager {
         for id in ids {
             this.start(&id);
         }
+        // Startup only upgrades enabled built-ins' own, unmodified outdated resources.
+        for plugin in core_catalog {
+            let m = plugin.manifest();
+            if core::state(&this.registry, m.id) == core::State::Enabled {
+                let receipt = this.resources.apply(m, resources::Trigger::Startup, true);
+                if receipt.notable() {
+                    this.receipts.insert(m.id.into(), receipt);
+                }
+            }
+        }
+        this.refresh_resources();
         this
+    }
+    pub fn core_catalog(&self) -> core::Catalog {
+        self.core_catalog
+    }
+    pub fn core_state(&self, id: &str) -> Option<core::State> {
+        self.core_catalog
+            .iter()
+            .any(|p| p.manifest().id == id)
+            .then(|| core::state(&self.registry, id))
+    }
+    /// The switch is saved first; resources follow only after it succeeded. Disable keeps
+    /// installed resources.
+    pub fn core_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
+        self.registry.core_enabled(id, enabled)?;
+        self.receipts.remove(id);
+        if enabled {
+            self.apply_resources(id, resources::Trigger::Enable, true);
+        }
+        Ok(())
+    }
+    pub fn core_sync(&mut self, id: &str) -> Result<()> {
+        self.refresh()?;
+        ensure!(
+            self.core_state(id) == Some(core::State::Enabled),
+            "enable the plugin before syncing resources"
+        );
+        self.apply_resources(id, resources::Trigger::Sync, true);
+        Ok(())
+    }
+    pub fn core_remove_resources(&mut self, id: &str) -> Result<()> {
+        self.refresh()?;
+        ensure!(
+            self.core_state(id) == Some(core::State::Disabled),
+            "disable the plugin before removing resources"
+        );
+        self.apply_resources(id, resources::Trigger::Remove, false);
+        Ok(())
+    }
+    fn apply_resources(&mut self, id: &str, trigger: resources::Trigger, enabled: bool) {
+        if let Some(plugin) = self.core_catalog.iter().find(|p| p.manifest().id == id) {
+            let receipt = self.resources.apply(plugin.manifest(), trigger, enabled);
+            self.receipts.insert(id.into(), receipt);
+        }
+        self.refresh_resources();
+    }
+    /// Read-only classification for display; recomputed on Refresh and after actions.
+    fn refresh_resources(&mut self) {
+        self.resource_status = self
+            .core_catalog
+            .iter()
+            .map(|p| (p.manifest().id.into(), self.resources.status(p.manifest())))
+            .collect();
+    }
+    pub fn core_resources(&self, id: &str) -> Option<&Result<resources::Status, String>> {
+        self.resource_status.get(id)
+    }
+    pub fn core_receipt(&self, id: &str) -> Option<&resources::Receipt> {
+        self.receipts.get(id)
     }
     fn start(&mut self, id: &str) {
         let result = (|| -> Result<()> {
@@ -172,6 +263,7 @@ impl Manager {
         }
     }
     pub fn refresh(&mut self) -> Result<()> {
+        self.refresh_resources();
         self.registry.refresh()?;
         self.catalog();
         Ok(())
@@ -320,6 +412,30 @@ impl Manager {
                 .is_some_and(|r| r.enabled && r.runtime.open_attention(*session, *revision, item))
     }
     pub fn palette_items(&self, opened: &BTreeSet<String>) -> Vec<palette::Item> {
+        // A conflicting external registration keeps the ID; that one stays reachable here.
+        let builtin: Vec<_> = self
+            .core_catalog
+            .iter()
+            .map(|p| p.manifest())
+            .filter(|m| self.core_state(m.id) != Some(core::State::Conflict))
+            .map(|m| palette::Item {
+                id: m.id.into(),
+                title: m.name.into(),
+                state: format!(
+                    "Built-in · {}",
+                    if self.core_state(m.id) == Some(core::State::Enabled) {
+                        "Enabled"
+                    } else {
+                        "Disabled"
+                    }
+                ),
+                note: String::new(),
+                has_view: false,
+                opened: false,
+                pid: None,
+                builtin: true,
+            })
+            .collect();
         let mut items: Vec<_> = self
             .registry
             .entries
@@ -372,11 +488,12 @@ impl Manager {
                         .is_some_and(|m| m.required_capabilities.iter().any(|c| c == "panel.v1")),
                     opened: opened.contains(&e.id),
                     pid: snapshot.and_then(|s| s.pid),
+                    builtin: false,
                 }
             })
             .collect();
         items.sort_by(|a, b| a.id.cmp(&b.id));
-        items
+        builtin.into_iter().chain(items).collect()
     }
     pub fn placement(&self, id: &str) -> saddle_plugin_protocol::Placement {
         self.running

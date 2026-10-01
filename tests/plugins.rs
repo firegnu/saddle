@@ -85,10 +85,16 @@ fn registration_defaults_disabled_and_concurrent_edit_is_not_overwritten() {
     let mut stale = Registry::open(path.clone());
     first.add(&plugin, &manifest).unwrap();
     assert!(!first.entries[0].enabled);
-    assert!(stale.add(&plugin, &manifest).is_err());
+    assert_eq!(
+        stale.add(&plugin, &manifest).unwrap_err().to_string(),
+        "plugin registry changed; refresh first"
+    );
     stale.refresh().unwrap();
     stale.enabled("demo.other", true).unwrap();
-    assert!(first.remove("demo.other").is_err());
+    assert_eq!(
+        first.remove("demo.other").unwrap_err().to_string(),
+        "plugin registry changed; refresh first"
+    );
     assert!(Registry::open(path).entries[0].enabled);
     assert!(plugin.join("entry").exists());
 }
@@ -402,6 +408,7 @@ fn palette_filters_preserves_selection_and_gates_every_runtime_state() {
         has_view: true,
         opened: false,
         pid: Some(7),
+        builtin: false,
     };
     let mut p = Palette::default();
     let draw = |p: &mut Palette| {
@@ -489,6 +496,7 @@ fn palette_mouse_actions_cancel_when_state_changes_and_tiny_layouts_fit() {
         has_view: true,
         opened: false,
         pid: Some(7),
+        builtin: false,
     };
     p.update(vec![item.clone()]);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).unwrap();
@@ -1063,6 +1071,7 @@ fn palette_readability_compact_layout_and_scroll_position() {
         has_view: true,
         opened: false,
         pid: None,
+        builtin: false,
     };
     let mut p = Palette::default();
     let draw = |p: &mut Palette, width| {
@@ -1122,6 +1131,7 @@ fn palette_failure_guidance_preserves_cause_and_disabled_action() {
         has_view: true,
         opened: false,
         pid: None,
+        builtin: false,
     };
     assert!(failed.explanation().contains("output queue full"));
     assert!(failed.explanation().contains("Manage plugins"));

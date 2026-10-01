@@ -1,9 +1,14 @@
 use anyhow::{Result, bail};
 use saddle::config::{Config, default_path};
+const CORE_CATALOG: saddle::plugins::core::Catalog = &[&saddle_dispatch_plugin::PLUGIN];
+
 fn main() {
     let os_args: Vec<_> = std::env::args_os().skip(1).collect();
     if os_args.first().is_some_and(|s| s == "agent") {
         std::process::exit(saddle::agent::run(&os_args[1..]));
+    }
+    if os_args.first().is_some_and(|s| s == "plugin") {
+        std::process::exit(saddle::plugins::cli::run(&os_args[1..], CORE_CATALOG));
     }
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|s| s == "telemetry") {
@@ -29,6 +34,9 @@ fn run() -> Result<()> {
             println!(
                 "Agent: saddle agent --help (headless Corral execution with optional capture).\n"
             );
+            println!(
+                "Plugins: saddle plugin --help (headless built-in plugin status and commands).\n"
+            );
             println!("Telemetry: saddle telemetry --help (headless storage and queries).\n");
             println!(
                 "Control: saddle ctl instances|inspect|open|request|close (JSON); saddle ctl --help lists all options.\n"
@@ -43,5 +51,5 @@ fn run() -> Result<()> {
     if args.next().is_some() {
         bail!("unexpected argument; use --help");
     }
-    saddle::app::run(Config::load(&path)?, path)
+    saddle::app::run(Config::load(&path)?, path, CORE_CATALOG)
 }

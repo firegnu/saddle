@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
+    os::fd::AsRawFd,
     path::{Component, Path, PathBuf},
 };
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,21 +119,54 @@ pub struct Entry {
     pub directory: PathBuf,
     pub enabled: bool,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CoreEntry {
+    pub enabled: bool,
+}
 #[derive(Clone, Default, Serialize, Deserialize)]
 struct File {
     version: u32,
     plugins: Vec<Entry>,
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    core: std::collections::BTreeMap<String, CoreEntry>,
 }
 pub struct Registry {
     pub entries: Vec<Entry>,
+    pub core: std::collections::BTreeMap<String, CoreEntry>,
+    reserved: std::collections::BTreeSet<String>,
     path: PathBuf,
     baseline: Option<Vec<u8>>,
     pub error: Option<String>,
 }
+struct RegistryLock<'a>(&'a fs::File);
+impl Drop for RegistryLock<'_> {
+    fn drop(&mut self) {
+        // Closing our fd alone may leave a forked child's reference holding the
+        // lock until exec. Best-effort unlock preserves the original write result
+        // (including an already persisted success); closing the file still follows.
+        unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+fn acquire_lock(fd: std::os::fd::RawFd) -> Result<()> {
+    if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = std::io::Error::last_os_error();
+        ensure!(
+            error.kind() != std::io::ErrorKind::WouldBlock,
+            "plugin registry busy; refresh and retry"
+        );
+        return Err(error).context("could not lock plugin registry");
+    }
+    Ok(())
+}
 impl Registry {
     pub fn open(path: PathBuf) -> Self {
+        Self::with_reserved(path, std::iter::empty::<&str>())
+    }
+    pub fn with_reserved<'a>(path: PathBuf, ids: impl IntoIterator<Item = &'a str>) -> Self {
         let mut r = Self {
             entries: vec![],
+            core: Default::default(),
+            reserved: ids.into_iter().map(str::to_owned).collect(),
             path,
             baseline: None,
             error: None,
@@ -144,7 +178,7 @@ impl Registry {
     }
     pub fn refresh(&mut self) -> Result<()> {
         let bytes = read(&self.path)?;
-        let entries = if let Some(b) = &bytes {
+        let (entries, core) = if let Some(b) = &bytes {
             ensure!(b.len() <= 1024 * 1024, "registry too large");
             let file: File = toml::from_slice(b)?;
             ensure!(file.version == 1, "unsupported plugins registry version");
@@ -155,11 +189,12 @@ impl Registry {
                     "invalid plugin registry"
                 );
             }
-            file.plugins
+            (file.plugins, file.core)
         } else {
-            vec![]
+            (vec![], Default::default())
         };
         self.entries = entries;
+        self.core = core;
         self.baseline = bytes;
         self.error = None;
         Ok(())
@@ -172,13 +207,17 @@ impl Registry {
             !self.entries.iter().any(|e| e.id == actual.id),
             "plugin ID already registered"
         );
+        ensure!(
+            !self.reserved.contains(&actual.id),
+            "plugin ID reserved by a built-in plugin"
+        );
         let mut entries = self.entries.clone();
         entries.push(Entry {
             id: actual.id,
             directory: dir,
             enabled: false,
         });
-        self.write(entries)
+        self.write(entries, self.core.clone())
     }
     pub fn enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
         let mut entries = self.entries.clone();
@@ -187,7 +226,7 @@ impl Registry {
             .find(|e| e.id == id)
             .context("plugin missing")?
             .enabled = enabled;
-        self.write(entries)
+        self.write(entries, self.core.clone())
     }
     pub fn remove(&mut self, id: &str) -> Result<()> {
         let mut entries = self.entries.clone();
@@ -196,9 +235,24 @@ impl Registry {
             "disable before removing"
         );
         entries.retain(|e| e.id != id);
-        self.write(entries)
+        self.write(entries, self.core.clone())
     }
-    fn write(&mut self, entries: Vec<Entry>) -> Result<()> {
+    /// Management-layer switch only; headless commands never call this.
+    pub fn core_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
+        ensure!(self.reserved.contains(id), "unknown built-in plugin");
+        ensure!(
+            !self.entries.iter().any(|e| e.id == id),
+            "plugin ID conflicts with an external plugin"
+        );
+        let mut core = self.core.clone();
+        core.insert(id.into(), CoreEntry { enabled });
+        self.write(self.entries.clone(), core)
+    }
+    fn write(
+        &mut self,
+        entries: Vec<Entry>,
+        core: std::collections::BTreeMap<String, CoreEntry>,
+    ) -> Result<()> {
         ensure!(self.error.is_none(), "registry unavailable; refresh first");
         let parent = self
             .path
@@ -211,11 +265,10 @@ impl Registry {
             .read(true)
             .write(true)
             .open(self.path.with_extension("lock"))?;
-        use std::os::fd::AsRawFd;
-        ensure!(
-            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-            "plugin registry busy; refresh and retry"
-        );
+        acquire_lock(lock.as_raw_fd())?;
+        let _unlock = RegistryLock(&lock);
+        #[cfg(test)]
+        tests::after_lock(lock.as_raw_fd());
         ensure!(
             read(&self.path)? == self.baseline,
             "plugin registry changed; refresh first"
@@ -223,6 +276,7 @@ impl Registry {
         let bytes = toml::to_string(&File {
             version: 1,
             plugins: entries.clone(),
+            core: core.clone(),
         })?
         .into_bytes();
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
@@ -230,6 +284,7 @@ impl Registry {
         tmp.as_file().sync_all()?;
         tmp.persist(&self.path)?;
         self.entries = entries;
+        self.core = core;
         self.baseline = Some(bytes);
         Ok(())
     }
@@ -246,3 +301,6 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>> {
         Err(e) => Err(e.into()),
     }
 }
+
+#[cfg(test)]
+mod tests;
