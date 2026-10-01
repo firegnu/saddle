@@ -102,3 +102,10 @@ Dispatch `4190240786d94e738c765ac187b630f5`，接续审查 `fe2b3f58445546a19f04
 - `/Users/firegnu/Downloads/clawd-reference-20261001-4pdhpd0_/saddle-opus-polish-11-before-after.png`：11 段的姿态切分图，上排改前、下排改后。
 - `/Users/firegnu/Downloads/clawd-reference-20261001-4pdhpd0_/saddle-opus-polish-11-before-after.mp4`：12fps，每段左边改前、右边改后，循环播放。
 - 单段对照图在 `/tmp/clawd-opus-review-impl/cmp-<动作>.png`；原版逐帧图在 `/tmp/clawd-opus-review-render/`。
+
+## 主控审查（2026-10-01）
+
+- 可以合并。核对提交 8194bcc 的全部 diff 与11段新旧姿态图；左视采用探头表达、摇摆经过中点短暂停顿的取舍接受，未发现本轮阻断问题。
+- 复核素材：只改指定11段，静止与其余20段逐字节不变，31段1319帧、16×3；眼睛边距与四脚检查问题数0，摇摆全部帧的底行与静止帧一致。运行时、布局、调度和测试未改。
+- 完整测试日志核得45套件、377 passed / 0 failed / 5 ignored；Clippy通过依据实现者完成记录，主控未重复跑标准套件。diff检查通过。实际四次全量超出一次预算，记为流程偏差，不补造合规记录。
+- notebook、phone、laptop、arcade的原有右眼边缘问题保留在范围外；原版下蹲、上下看、腮红不硬塞进3行。对照图不代表实际用户终端验证，未操作或重启用户窗口。
