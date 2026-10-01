@@ -395,7 +395,7 @@ fn saved_reply_end_keeps_query_unknown_separate_from_delivery() {
             )
             .unwrap();
         store.record_begin(&capture).unwrap();
-        store.record_end(&capture,Observation{observed_at:Value::Null,payload:json!({"outcome":outcome,"name":"synthetic","instance":"synthetic-instance","at":"opaque public at","association":"not_proven","gaps":[]}),bodies:vec![]}).unwrap();
+        store.record_end(&capture,Observation{observed_at:Value::Null,payload:json!({"outcome":outcome,"name":"synthetic","instance":"synthetic-instance","at":1790812345.125,"association":"not_proven","gaps":[]}),bodies:vec![]}).unwrap();
         assert_saved_result_summary(&store, &capture, Some("回复查询未完成/结果未知"), false);
     }
 }
@@ -694,7 +694,7 @@ fn route_and_reply_preserve_success_bodies_and_unknowns() {
             None,
         )
         .unwrap();
-    store.record_end(&reply,Observation{observed_at:Value::Null,payload:json!({"outcome":{"kind":"exited","exit_code":0},"name":"synthetic","instance":"instance","at":"opaque public at","association":"not_proven","gaps":[]}),bodies:vec![BodyInput{role:"reply".into(),path}]}).unwrap();
+    store.record_end(&reply,Observation{observed_at:Value::Null,payload:json!({"outcome":{"kind":"exited","exit_code":0},"name":"synthetic","instance":"instance","at":1790812345.125,"association":"not_proven","gaps":[]}),bodies:vec![BodyInput{role:"reply".into(),path}]}).unwrap();
     let shown = store.show(reply.end_event_id()).unwrap()["record"].clone();
     assert_eq!(shown["payload"]["association"], "not_proven");
     assert_eq!(shown["payload"]["begin_missing"], true);
@@ -788,6 +788,77 @@ fn malformed_internal_payloads_are_errors_not_panics() {
                 .unwrap_err()
                 .status,
             "invalid"
+        );
+    }
+}
+
+#[test]
+fn public_at_accepts_numbers_and_rejects_string_or_boolean_timestamps() {
+    let (_dir, store) = store();
+    for kind in ["agent.start", "agent.send", "agent.reply"] {
+        let begin = match kind {
+            "agent.start" => Observation {
+                observed_at: Value::Null,
+                payload: json!({"cwd":"/synthetic","agent_program":"codex","explicit_parameters":{},"labels":{},"gaps":[]}),
+                bodies: vec![],
+            },
+            "agent.reply" => Observation {
+                observed_at: Value::Null,
+                payload: json!({"target_name":"synthetic","gaps":[]}),
+                bodies: vec![],
+            },
+            _ => begin(),
+        };
+        let capture = store
+            .prepare_operation(operation(kind), begin, None)
+            .unwrap();
+        let mut payload = end().payload;
+        payload["outcome"] = json!({"kind":"exited","exit_code":1});
+        payload["gaps"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|g| g["role"] != "at");
+        if kind == "agent.reply" {
+            for key in ["confirmed", "pending", "merged_with_draft"] {
+                payload.as_object_mut().unwrap().remove(key);
+                payload["gaps"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|g| g["role"] != key);
+            }
+            payload["association"] = json!("not_proven");
+        }
+        for invalid in [json!("1790812345.125"), json!(true)] {
+            payload["at"] = invalid;
+            assert_eq!(
+                store
+                    .record_end(
+                        &capture,
+                        Observation {
+                            observed_at: Value::Null,
+                            payload: payload.clone(),
+                            bodies: vec![]
+                        }
+                    )
+                    .unwrap_err()
+                    .status,
+                "invalid"
+            );
+        }
+        payload["at"] = json!(1790812345.125);
+        store
+            .record_end(
+                &capture,
+                Observation {
+                    observed_at: Value::Null,
+                    payload,
+                    bodies: vec![],
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            store.show(capture.end_event_id()).unwrap()["record"]["payload"]["at"],
+            json!(1790812345.125)
         );
     }
 }

@@ -1,6 +1,10 @@
 use anyhow::{Result, bail};
 use saddle::config::{Config, default_path};
 fn main() {
+    let os_args: Vec<_> = std::env::args_os().skip(1).collect();
+    if os_args.first().is_some_and(|s| s == "agent") {
+        std::process::exit(saddle::agent::run(&os_args[1..]));
+    }
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|s| s == "telemetry") {
         std::process::exit(saddle::telemetry::run(&args[1..]));
@@ -22,6 +26,9 @@ fn run() -> Result<()> {
             .map(std::path::PathBuf::from)
             .ok_or_else(|| anyhow::anyhow!("--config needs a path"))?,
         Some("--help" | "-h") => {
+            println!(
+                "Agent: saddle agent --help (headless Corral execution with optional capture).\n"
+            );
             println!("Telemetry: saddle telemetry --help (headless storage and queries).\n");
             println!(
                 "Control: saddle ctl instances|inspect|open|request|close (JSON); saddle ctl --help lists all options.\n"

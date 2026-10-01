@@ -519,8 +519,13 @@ pub(super) fn observed(input: &EventInput, bodies: &[Value]) -> Result<()> {
                     bool_field(&p[key])?;
                 }
             }
-            for key in ["name", "instance", "at"] {
+            for key in ["name", "instance"] {
                 nullable_string(p, key)?;
+            }
+            if p["at"].is_null() {
+                nullable_string(p, "at")?;
+            } else if !p["at"].is_number() {
+                return Err(Error::invalid("at must be a Unix timestamp number or null"));
             }
             (
                 &[],
@@ -563,8 +568,13 @@ pub(super) fn observed(input: &EventInput, bodies: &[Value]) -> Result<()> {
             )?;
             bool_field(&p["begin_missing"])?;
             choice(&p["association"], &["not_proven"])?;
-            for key in ["name", "instance", "at"] {
+            for key in ["name", "instance"] {
                 nullable_string(p, key)?;
+            }
+            if p["at"].is_null() {
+                nullable_string(p, "at")?;
+            } else if !p["at"].is_number() {
+                return Err(Error::invalid("at must be a Unix timestamp number or null"));
             }
             (
                 &["reply"],

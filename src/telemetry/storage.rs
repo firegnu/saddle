@@ -168,6 +168,19 @@ impl Store {
     }
 
     pub fn set_recording(&self, trace: Option<&str>, input: SettingInput) -> Result<Value> {
+        self.change_recording(trace, input, None)
+    }
+    /// Sets the global switch only while its generation is still the one the caller read through
+    /// `settings` (0 before initialization), so a stale view never overwrites another change.
+    pub fn set_recording_if(&self, generation: i64, input: SettingInput) -> Result<Value> {
+        self.change_recording(None, input, Some(generation))
+    }
+    fn change_recording(
+        &self,
+        trace: Option<&str>,
+        input: SettingInput,
+        expected: Option<i64>,
+    ) -> Result<Value> {
         version(input.schema_version)?;
         nonempty(&input.actor)?;
         if trace.is_some() && self.reader()?.is_none() {
@@ -176,6 +189,13 @@ impl Store {
         let mut conn = self.writer(trace.is_none())?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let (current, generation) = policy(&tx, trace)?;
+        if expected.is_some_and(|expected| expected != generation) {
+            return Err(Error::new(
+                "conflict",
+                "setting_changed",
+                "the recording setting changed since it was read",
+            ));
+        }
         let id = trace.unwrap_or("global");
         if current == input.enabled {
             return Ok(receipt("duplicate", id));
