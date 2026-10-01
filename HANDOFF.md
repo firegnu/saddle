@@ -225,7 +225,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03A/B/C所有实施审查agent及worktree保留；整阶段通过且验证失败处理后才合并推送清理，目录删除后关对应自建agent、空提交/HANDOFF/dlog实际收尾。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 25. 当前：03C集成验证限定修正已交原实现者
+## 25. 03C集成验证限定修正（当前复核见第26节）
 
 - 原实现者3583e0bc626b的busy只读调查已idle，经dlog取完整DONE。首次读取attached1未干扰，完成主控核对和具体任务后再次status为idle/attached0，才发送后续。
 - 调查及主控裁定在docs/任务/遥测03C-标准验证缺口核查.md。已读单次探针源码/commands/probe.log，对照实际Registry/Runtime；证据 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-lock-audit-8m41u2t1`。确认close-only flock可被fork子进程继承引用延长；plugins原失败有可信候选但未证原因，core_plugins原次原因仍未知。主控未重跑探针，不将机制复现说成历史同因。
@@ -235,3 +235,14 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 验证限锁实际调用处确定性有效RED/GREEN、10个workflow失败目标各一次及两个原busy用例直接回归；不全套/Clippy/workflow整套、不重复已有绿套件。主控收到先status/完整DONE，核增量/证据/目标，再确认原审查者a6e4e4014bbf idle未附着和detached干净，更新新SHA，经审查dispatch223d0cfcdeb941c79053e6641d8e93d5限定独立复核新修正；每轮提醒，不无限追加验证，主控不写功能。
 - 原标准两次busy失败和补30目标290通过10失败4忽略保留，不伪称全套绿或原历史根因已修。整阶段验证尚未通过、功能未合main。需要改Corral或反向依赖先停告知。
 - 03A/B/C全部实施审查worktree/agent保留；通过后才一起合并推送清理、目录删后关闭对应自建agent、空提交/HANDOFF/dlog实际收尾。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05。03B S1非阻断保留；设计review和t38/t55保留，设计Claude已关闭。
+
+
+## 26. 当前：03C集成验证修正第一次限定独立复核
+
+- 原实现者3583e0bc626b已idle/attached0，经dlog取完整DONE；新候选5df616de44df698511b55992a6bc8f4390f77b58，基线6691200，6文件增量和完成记录已核，工作区干净。
+- 生产仅Registry局部显式解锁及真实错误分类；cfg(test)线程局部一次性hook测试实际Registry退出而非复制算法。Drop解锁best-effort保留原已持久化结果/错误，不承诺极端系统错误绝不busy。两原用例精确断言，workflow10项只改测试定位/旧预期，生产UI未改。M1及03A/B裁定保持。
+- 已核原始RED/GREEN/补丁及所有记录哈希。成功退出RED有效；首次stale夹具早期busy不算目标RED，改夹具后首写changed/下一写busy为有效RED。错误分类真实EBADF RED→GREEN。开发15不同目标最终通过，workflow首次5过5败修定位后只重跑5项绿；不伪称开发一次全绿。证据 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-integration-fix-jodmed7i`。
+- 主控独立3锁+10workflow共13项通过，证据 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-integration-controller-efulywns`；未全套Clippy。两个原busy目标本轮主控核开发原始通过日志，未再跑。历史两次busy无法证明同因仍保留，原标准失败/补30目标结果不改写。
+- 原审查者saddle/dev-telemetry-dispatch-review-1 instancea6e4e4014bbf已确认idle/attached0、detached干净后更新5df616d。经审查dispatch223d0cfcdeb941c79053e6641d8e93d5发送本次新修正第一次限定复核，confirmed=true/merged_with_draft=false，新after pending=true实例相符。唯一可写主仓库docs/任务/遥测03C-独立交叉审查.md末尾，限定新锁3+原两用例2+workflow10共15目标，不全套/Clippy/整套workflow或其他绿套件。
+- 收提醒先status，working重挂；idle后dlog reply完整DONE，逐项核关闭状态/取舍/当前具体合并阻断。不是M1第二次返工；每轮提醒，本次最多两轮限定复核未收敛报告用户，不无限追加验证。必须改交原实现者，主控不写功能。需改Corral或依赖反转先停告知。
+- 尚未合并；03A/B/C实施审查worktree/分支/agent全部保留。整阶段通过及验证裁定完成后才合并推送、清理目录分支、成功删目录后关闭对应自建agent、空提交/HANDOFF/dlog实际收尾。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05。03B S1非阻断；设计review/t38/t55保留，设计Claude已关闭。
