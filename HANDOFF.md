@@ -107,7 +107,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 已有测试和历史证据限制保持；需要改Corral或反向依赖先停告知。设计review和t38/t55保留，设计Claude已关闭勿恢复。
 
 
-## 13. 当前：03B资源与管理页实施
+## 13. 03B资源与管理页实施（最新审查见第14节）
 
 - 用户对03B线框回复“可以”，已将批准同步到线框及DESIGN，任务 docs/任务/遥测03B-资源与管理页.md。main任务提交99a0d69；不再询问布局，不增加项目采用开关或自动改AGENTS。
 - 新Claude实现者 saddle/dev-telemetry-resources-1，instance63516c9bce5d，role=implementer，opus[1m]/xhigh。分支telemetry-plugin-resources，worktree ../saddle-worktrees/telemetry-plugin-resources；基线4f16a409a49a3717423c9a23fceaae06b79c4936（03A已审查0fa62cf加main文档），尚未有03B功能提交。
@@ -115,3 +115,13 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03B范围：通用资源生命周期/所有权/受控写删、只读status资源状态、管理页内置行与动作/说明、Plugins面板入口；生产目录仍空，仅用假插件和临时HOME/XDG。实际dispatch/JEV/资源正文归03C，不改真实技能与链接。
 - 收提醒先corral status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch ffcf738641ec416f803b7af8745df86f -- corral reply saddle/dev-telemetry-resources-1 取完整DONE。主控核diff/完成记录/有效RED-GREEN，独立一次标准test/clippy，再新开重档Codex独立审查；主控不写功能代码。每轮返工限定检查并重新挂提醒。
 - 03A两个实施/审查agent及worktree继续保留，03B通过也保留，03C串行集成并整阶段审查后一起合并清理。功能未合main，不release/安装/真实业务数据队列/消费者切换/04或05。需改Corral或依赖反转先停告知用户。ureq在03C前核官方资料；保留旧设计review及t38/t55，不恢复已关闭Claude设计会话。
+
+
+## 14. 当前：03B独立交叉审查
+
+- 实现者saddle/dev-telemetry-resources-1 instance63516c9bce5d已idle、dlog取得完整DONE；候选f63fd8dbd83f52ae792c5fdfebde041b38f2ce90，基线4f16a409a49a3717423c9a23fceaae06b79c4936，分支telemetry-plugin-resources。主控核11文件增量/完成记录/保存RED-GREEN日志，diff --check通过，实施工作区干净。
+- 主控隔离HOME/XDG、真实工具链、共享target、stdin=/dev/null，前台标准各一次：468 passed/0 failed/5 ignored，clippy通过；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03b-controller-a3kxep67。开发原全量core_plugins的management_switches…报registry busy，单项复跑通过；不能认定与03A历史失败同根因。实现者stdin继承超时解释尚非主控独立根因核验；当前主控未复现。RED日志可核运行期缺失行为，完整桩补丁未保存，不宣称独立复现历史状态。
+- 新独立审查者saddle/dev-telemetry-resources-review-1，instance235f9b4048e0，Codex gpt-6-astra/xhigh、role=reviewer；dispatch9c2ca1be0eda43959bd08a34c514232a（parent ffcf738641ec416f803b7af8745df86f）。JEV重/交叉审查要/碰要害。detached ../saddle-worktrees/review-telemetry-plugin-resources固定f63fd8d。
+- 唯一可写为主仓库 docs/任务/遥测03B-独立交叉审查.md 末尾；代码测试只读，核03B及03A直接集成，不重复全套/clippy。主控待核疑点：父目录跟随链接尚未批准；完整pending是否持久定稿/撤销。其他取舍逐项记任务书，不等于相关实现通过。
+- 收提醒先status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch 9c2ca1be0eda43959bd08a34c514232a -- corral reply saddle/dev-telemetry-resources-review-1 取完整DONE，逐项裁定。必须改交原实现者、主控不写功能；返工只目标/直接回归、更新干净detached后限定复核、每轮挂提醒，最多两轮独立复核仍不收敛报告用户。
+- 功能未合main，03B未裁定通过；03A实施/审查及03B实施/审查worktree和agent全部保留，03C串行集成后整体合并清理。UI布局已批准不重复问；ureq在03C前核官方资料。需改Corral或依赖反转先停告知；其他真实安装/数据队列/消费者/04/05及保留旧worktree边界不变。
