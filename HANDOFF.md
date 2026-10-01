@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；04A查询UI已派新Claude实施，功能未合并，04B/05未派发。日常安装版未更新，消费者未切换。
+更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；04A查询UI已通过且保留，04B已派新Claude串行接入，04功能未合并，05未派发。日常安装版未更新，消费者未切换。
 
 ## 当前成果
 
@@ -61,3 +61,10 @@
 - 已接受UTC、列表顺序、顶部位置和宽窄布局；预填控制字符显示留04B集成前处理，不在本次顺手改。04A尚未通过或合并；下一轮核M1-M3及直接回归，不提前派04B。
 - 更新：04A返工0261d5167143ed8d4a0d0ca98bc4a439ef03070b已通过主控核对，M1–M3全部关闭；本轮独立4目标通过，日志saddle-04a-r1-controller-ub8k8xlk，已核实现有效RED/GREEN及86相关回归，未重复全套Clippy。上行“尚未通过”为历史状态，功能仍未合并，原实施会话/worktree保留供04B。
 - 04B任务docs/任务/遥测04B-Drover接入.md已准备，dlog936889ea33ad4146bd967c25da4ae6d9；JEV重/其余null，主控重/交叉审查要/碰要害。Claude opus[1m]/xhigh整体接通用导航/宿主路径、Drover选择与单次交付/状态声明及界面，04A预填控制字符问题同批处理。完成后主控标准核对及重档Codex整阶段独立审查；不重问已批准布局、不改Corral/反向依赖，05不启动。
+
+## 当前派发：04B接入
+
+- 新Claude Code saddle/dev-telemetry-drover-1，instance aca3e300a88d，opus[1m]/xhigh，role=implementer；分支telemetry-drover-integration，worktree ../saddle-worktrees/telemetry-drover-integration，基线03f728240e009f84b803e60173aa66be8c085db9（04A0261d51＋main文档26b56dc）。dlog936889ea33ad4146bd967c25da4ae6d9，start成功。
+- 回来先status，working重挂；idle后dlog reply取完整DONE，核diff/完成记录/有效RED-GREEN与一次标准test/clippy，再另开重档Codex对04B及整个04独立审查。必须改交原实现者，主控不写功能，返工仅目标/直接回归不重复标准。
+- 04A原实现saddle/dev-telemetry-query-ui-1（2be45b11bd4d）、分支telemetry-query-ui和worktree保留；整阶段集成通过才共同合并推送清理，删目录后关对应自建agent，空提交/HANDOFF/dlog实际收尾。旧设计review/t38/t55仍保留。
+- 04B只用隔离/合成数据与假Corral；不release/安装/真实数据队列/JEV产品调用/消费者切换/05；需改Corral或反向依赖先停告知。已批布局和选择不重复问。
