@@ -38,7 +38,7 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 ## 6. 下一步
 
-等待阶段 02A 实施回复，先 status，再经 dlog reply 取完整回复确认 DONE；核实任务完成记录、代码范围和真实检查。任务见 docs/任务/遥测02A-执行采集.md；实施 dispatch ba09aea9613a48f6b6e6fb9ce22904b1。每轮重新挂提醒，主控核对后另开重档 Codex 交叉审查。02A 与随后 Claude 实现的 02B 设置入口集成后一起合并清理；不得单独完成02A就删其worktree。未创建真实任务。
+阶段02A候选8b9324b已完成，主控核对范围并独立运行标准检查：423 passed / 0 failed / 5 ignored、clippy通过；实现者此前两个套件失败在主控本次未复现，原因未确定，原证据保留。独立审查已派发，等待公开status与经dlog reply取完整DONE回复。审查者 saddle/dev-telemetry-agent-review-1（instance 5b2ff681386d），dispatch 3906679e92ba45d2b634c3a43a75475d，detached worktree ../saddle-worktrees/review-telemetry-agent-capture，HEAD 8b9324b；任务与意见在主仓库 docs/任务/遥测02A-独立交叉审查.md。任务见 docs/任务/遥测02A-执行采集.md；实施 dispatch ba09aea9613a48f6b6e6fb9ce22904b1。每轮重新挂提醒；独立审查重点含发送参数排列的正文采集疑点、取消及回执背压；主控不改功能代码，阻断交原实现者返工。02A 与随后 Claude 实现的 02B 设置入口集成后一起合并清理；不得单独完成02A就删其worktree。未创建真实任务。
 
 用户最新硬边界：如需改 Corral 或发现依赖反转，先停止相关工作告知用户，不得先改后报。独立遥测查询界面明确归 Saddle，在阶段04实现，Drover仅提供带关联条件的快捷入口；旧视图/旧dlog依赖到阶段05再切换。主控发现Corral公开at为数值、现有Saddle存储按字符串校验，已让实施者在Saddle内按原样保存契约最小纠正，不改Corral。
 
