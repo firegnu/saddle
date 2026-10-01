@@ -90,10 +90,18 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 03A未通过、未合并；实施及审查agent/worktree全部保留供03B/C串行集成。不提前派03B，不动04/05；UI线框待确认、ureq在03C前核官方资料；不release/安装/真实数据队列/消费者切换。保留设计review与t38/t55，已关闭设计Claude不恢复。
 
 
-## 11. 当前：03A M1第一次独立复审
+## 11. 03A M1第一次独立复审（结论见第12节）
 
 - 原实现者e66304753ca5已idle、完整DONE，新候选0fa62cf7646e8f0a1b226c963098cd7a39e25f84；增量仅回执实现、直接测试和完成记录。主控已核有效RED/GREEN完整日志与8项回执回归；接受执行后补LF与终止共用原1秒预算、拒绝保持两行的修复。
 - 主控隔离环境前台精确检查M1、run拒绝、满stderr/起始失败三项，3通过0失败；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03a-m1-controller-6y80_ag9。未重复全套/clippy、未写功能。初始历史证据限制保持。
 - 原审查者saddle/dev-telemetry-core-plugin-review-1 instancebdd2e2cbfba7在idle/attached0、detached干净时已更新review-telemetry-core-plugin至0fa62cf；通过dlog send审查dispatch de98aef6ec7b42349af49f1696e78e72发起第一次限定复审，confirmed=true、merged_with_draft=false。新after提醒pending=true、实例相符。
 - 主仓库docs/任务/遥测03A-独立交叉审查.md末尾有主控核对与复核边界；原审查者只追加该文件，限定M1及增量直接回归，不重复全套/clippy。收提醒先status、working重挂；idle后dlog reply取完整DONE，逐项核关闭，不把本次主控通过当独立审查通过。
 - 功能尚未合并，03A尚未宣布通过。03A通过仍保留实施/审查分支worktree/agent，待03B/C串行集成共同合并清理；UI线框待确认，ureq在03C前核官方资料。其他禁止项与保留项不变。
+
+
+## 12. 当前：03A通过，03B线框待确认
+
+- 原审查者bdd2e2cbfba7已idle，经dlog取完整DONE，M1明确关闭、无直接回归、剩余必须改0/新增建议0。主控已核8项独立回归原始日志及增量，认可03A可进入后续串行集成，结论落入 docs/任务/遥测03A-独立交叉审查.md。候选仍0fa62cf，实施与detached均干净；没有重复测试。
+- 03A分支telemetry-core-plugin及实施/审查worktree、两个agent均保留；不单独合并、清理、关闭或空提交。没有新派发或待重挂的工作轮次；迟到提醒按已处理结果核对，不再重复返工。
+- 下一步03B资源生命周期+管理页，确认用线框在 docs/任务/遥测03B-管理页线框.md，待用户确认后再串行形成实施任务/派发。图中dispatch是03C接入后示例，03B仍用假插件。03C前核ureq官方资料；不动04/05、不release/安装/真实数据队列/消费者切换。
+- 已有测试和历史证据限制保持；需要改Corral或反向依赖先停告知。设计review和t38/t55保留，设计Claude已关闭勿恢复。
