@@ -193,7 +193,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 功能未合并；03A/03B及03C全部实施审查会话worktree保留，整阶段通过后共同合并推送清理/关闭相应自建agent/空提交/HANDOFF。03B S1非阻断提示遗漏仍不修功能，文档已收窄，非原子目录清理边界保留。需改Corral或反向依赖先停告知。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05；设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 22. 当前：03C M1第一次限定返工
+## 22. 03C M1第一次限定返工（复审见第23节）
 
 - 原审查者a6e4e4014bbf已idle、dlog取完整DONE；读取时attached1，仅只读取证未干扰。独立结论必须改1/新增建议0/可以不改5，改完再合并。主控核源码及合成探针后认可M1，C1–C5接受；完整意见/裁定在docs/任务/遥测03C-独立交叉审查.md末尾。
 - M1：ureq3.4.2的TLS write_all只保证明文接收，rustls0.23.45可把底层写错延后暴露；当前sent=true提前，导致请求体未发完的非超时错误漏掉一次重试。已核依赖源码、探针候选原文及SHA256、原始attempts1/begin1/delivered_body0输出，主控未重跑。独立42相关目标通过不豁免该缺陷；无需改Corral或反向依赖。
@@ -201,3 +201,14 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 收提醒先status，working重挂；idle后dlog reply完整DONE。主控核增量/有效RED-GREEN及定向，原审查者idle且未附着、detached干净后更新到新SHA，经审查dispatch223d0cfcdeb941c79053e6641d8e93d5第一次限定复核M1及直接回归。每轮提醒，最多两轮独立复核未收敛报告用户；主控不写功能。
 - 标准验证缺口仍独立存在：主控179通过1失败1忽略、开发96通过1失败，各自不同既有用例busy，单项通过根因未知、后续target未执行。Clippy通过，不能豁免标准测试；本轮返工不全套clippy、不扩查历史锁。合并前仍需单独处理覆盖/失败裁定。
 - 03A/B/C全部实施审查worktree及agent保留，功能未合并，不提前收尾；整阶段审查通过及验证缺口处理后共同合并推送清理/关闭目录已删对应自建agent/空提交/HANDOFF。不release/安装/真实JEV产品请求/真实数据队列/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
+
+
+## 23. 当前：03C M1第一次限定独立复审
+
+- 原实现者3583e0bc626b已idle/attached0，dlog取完整DONE。新候选6691200c7af1001c60fd50fc6bcc77bda6682596，原1692be2；实现树干净，增量9文件及完成记录/diff check已核，无Corral或反向依赖变更。
+- TLS下层保存写错，外层提交正文进度前检查，CONNECT递归标志分离；生产TLS验证保持。已读本轮有效RED补丁/原始日志（2项1过1败，确实delivered_body0而attempts1）、GREEN插件17+集成3；超时目标只有GREEN，不冒称单独RED。证据 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-m1-uqcqtds1。
+- 主控独立TLS3项目标一次通过，日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-m1-controller-7x2bqpax；未全套/clippy/扩查历史锁，没有真实JEV/TLS/代理验证。dlog review已记实际核对，尚不宣称M1关闭。
+- 原审查者saddle/dev-telemetry-dispatch-review-1 instancea6e4e4014bbf已核idle/attached0，干净detached review-telemetry-dispatch-plugin由1692be2更新6691200。经dispatch223d0cfcdeb941c79053e6641d8e93d5 send首次限定复审M1及直接回归，confirmed=true/merged_with_draft=false；新after提醒pending=true实例相符。唯一允许写主仓库docs/任务/遥测03C-独立交叉审查.md末尾，允许插件与dispatch_plugin目标各一次，禁全套/clippy及历史锁扩查。
+- 收提醒先status，working重挂；idle后经dlog reply取完整DONE，再逐项裁定。必须改交原实现者dispatch556e907c030040bea59cb9e0572a4e1e，主控不写功能，每轮提醒，最多两轮独立复核未收敛报告用户。需改Corral或反向依赖先停告知。
+- 标准缺口独立存在：主控179通过1失败1忽略、开发96通过1失败，两处不同既有用例busy，单项通过根因未知、后续targets未跑，Clippy通过不豁免。合并前仍需单独处理覆盖/失败裁定。
+- 03A/B/C全部实施审查会话worktree保留，功能未合main；整阶段审查通过且标准验证缺口处理后共同合并推送清理、目录删除后关对应自建agent、空提交/HANDOFF。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05。03B S1非阻断保留，设计review/t38/t55保留，设计Claude已关闭。
