@@ -65,3 +65,9 @@
 停止后续字体/半格眼睛调查，保留当前右眼内收版本；未实施八分块字符方案，未修改或安装字体。眼睛整体居中仍有误差，用户要求先保持当前效果继续。开始合并及更新安装版，不重启用户已有窗口。
 
 最终素材验证：Mascot全部5项检查通过；Clippy/fmt/diff通过。标准并发全量测试两次在`overlay_resize_rejects_the_previously_displayed_frame`遇到`plugin registry busy; refresh and retry`，未修改插件代码；全量串行`cargo test --all-targets -- --test-threads=1`为373 passed / 0 failed / 5 ignored。日志`/tmp/saddle-clawd-eye-inset-{green,all,all-retry,all-serial,clippy}.log`。已逐帧确认右眼内收没有改变身体透明轮廓。
+
+## 交付记录
+
+实现提交`b577dda`、`5333405`、`d36ef2c`、`f9b7080`已合并至main。发布版的巡游/鼠标避让和设置开关/布局两项隔离流程通过；日志`/tmp/saddle-clawd-size-release-{overlay,settings}.log`。运行时全部38个动作片段及自主walking保留。
+
+日常链接仍为`~/.local/bin/saddle`→共享target的`release/saddle`，当前SHA256为`647565ef2d6c6a9eabfcaa166023ad1da3c67ec56333a328b2171c4a17e838d3`。原发布版已备份至`~/Library/Application Support/saddle-release-backups/clawd-size-20261001-122059/`，旧SHA256为`d2ebb2f549167413324afedff7aac41207e3be97302c7d3c289f0dd0e4fafb16`。未重启用户正在使用的窗口，实际窗口视觉效果尚未验证，下次启动加载新版。
