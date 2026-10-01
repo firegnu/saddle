@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-01。当前 main。核心遥测阶段 01「存储与查询」已审查、合并、推送并清理；用户已授权继续阶段 02；02A 执行采集候选已通过独立复审，02B 首轮独立审查发现B1提示截断，第一次返工新增状态误报，原实现者正在第二次限定修正。本轮不发布、不安装、不读写真实遥测/队列。
+更新：2026-10-01。当前 main。核心遥测阶段 01「存储与查询」已审查、合并、推送并清理；用户已授权继续阶段 02；02A 执行采集候选已通过独立复审，02B 首轮独立审查发现B1提示截断，第二次限定修正已通过主控，原审查者正在第一次独立复审。本轮不发布、不安装、不读写真实遥测/队列。
 
 ## 1. 会话摘要
 
@@ -17,7 +17,7 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 ## 3. 待完成与现场状态
 
-- 阶段 01 无已知未关闭阻断。阶段 02A 候选已通过审查、尚未合并；02B候选4dea76b待B1返工新增误报修正，03–05尚未实施：执行采集/设置入口 → 同进程 JEV 路由 → 现有 Drover 插件接入 → 消费者切换和退役外部 dlog。不要把存储完成说成整套遥测完成。
+- 阶段 01 无已知未关闭阻断。阶段 02A 候选已通过审查、尚未合并；02B候选51d4c5f待B1独立复审，03–05尚未实施：执行采集/设置入口 → 同进程 JEV 路由 → 现有 Drover 插件接入 → 消费者切换和退役外部 dlog。不要把存储完成说成整套遥测完成。
 - 本轮未构建 release、安装、切换消费者或初始化真实遥测目录；日常程序仍为此前 Clawd Opus 版，链接 ~/.local/bin/saddle 指向共享 .target/release/saddle。后续 release 构建前必须按既有规则备份，当前不构建。
 - 保留 ../saddle-worktrees/review-telemetry-design（detached 5ddd544，审查快照），t38-dispatch-study、t55-notification-flow；不要自动清理。
 - 新实施者 saddle/dev-telemetry-agent-1（instance 0f297a0ff859，Codex gpt-6-astra/xhigh），分支 telemetry-agent-capture，worktree ../saddle-worktrees/telemetry-agent-capture，基线 951b13e。另有 corral/main、dispatchlog/main、saddle/main；前两个是用户会话，勿送话/关闭。
@@ -40,11 +40,13 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 02A候选ae77967经主控和原独立审查者确认M1关闭：stderr字节0宿主起始与末行final按本次call_id匹配，缺失/截断/不匹配保持未知。主控首版标准423通过5忽略/clippy通过；修正后主控4项、独立23项通过，没有重复全套。S1发送参数换序建议未纳入，历史两项未改动测试失败未查明且主控未复现，记录保留。
 
-02B初版baff5bf、第一次返工4dea76b（基线8378fe9），分支telemetry-settings；实现者 saddle/dev-telemetry-settings-1（instance f8977ca3444b，Claude opus[1m]/high），dispatch 52441b99bb8e4d96955de374d94f65b5。实施与证据补充轮均已idle/DONE；现已发出B1第二次限定修正。主控六文件diff检查及独立一次标准测试431通过/0失败/5忽略、Clippy通过；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-02b-controller-p4azt8gs。实现者原全量有两项workflow超时，单项通过，根因未知；RED完整原日志未存，事后摘录能确认3项缺目标行为，第4项原因仅推测，详见审查任务。
+02B初版baff5bf、两次修正4dea76b/51d4c5f（基线8378fe9），分支telemetry-settings；实现者 saddle/dev-telemetry-settings-1（instance f8977ca3444b，Claude opus[1m]/high），dispatch 52441b99bb8e4d96955de374d94f65b5。实施与证据补充轮均已idle/DONE；第二次修正51d4c5f已idle/DONE，主控增量核对通过。主控六文件diff检查及独立一次标准测试431通过/0失败/5忽略、Clippy通过；日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-02b-controller-p4azt8gs。实现者原全量有两项workflow超时，单项通过，根因未知；RED完整原日志未存，事后摘录能确认3项缺目标行为，第4项原因仅推测，详见审查任务。
 
-新独立审查者 saddle/dev-telemetry-settings-review-1（instance 00ac093b0abb，Codex gpt-6-astra/xhigh），dispatch 4864f70f7a7b48868eadc3e82e6c87c1；detached ../saddle-worktrees/review-telemetry-settings 位于baff5bf。首轮审查已idle/DONE：1必须改B1、0建议、6可以不改，主控均认可。B1为同时保存需重启配置和遥测开关、遥测失败时错误关键词被单行截掉；原实现者限定修提示和渲染回归，不改提交顺序。独立61项相关检查通过，探针已证实B1。任务 docs/任务/遥测02B-独立交叉审查.md 在主仓库，含完整意见及返工要求；审查者只可追加该文件，代码只读。本次新增DESIGN保存取舍、审查任务和交接均为主控文档；主仓库已有文档提交尚未推送，功能候选均未合并。
+新独立审查者 saddle/dev-telemetry-settings-review-1（instance 00ac093b0abb，Codex gpt-6-astra/xhigh），dispatch 4864f70f7a7b48868eadc3e82e6c87c1；detached ../saddle-worktrees/review-telemetry-settings 已由主控更新至51d4c5f。首轮审查已idle/DONE：1必须改B1、0建议、6可以不改，主控均认可。B1为同时保存需重启配置和遥测开关、遥测失败时错误关键词被单行截掉；原实现者限定修提示和渲染回归，不改提交顺序。独立61项相关检查通过，探针已证实B1。任务 docs/任务/遥测02B-独立交叉审查.md 在主仓库，含完整意见及返工要求；审查者只可追加该文件，代码只读。本次新增DESIGN保存取舍、审查任务和交接均为主控文档；主仓库已有文档提交尚未推送，功能候选均未合并。
 
-第一次返工4dea76b解决原截断，主控1项通过且RED/GREEN/20项回归已核；但新增still Disabled/Enabled只取旧值，主控探针证实外部已改true、保存取锁失败时误报still Disabled。已交原实现者继续修此直接回归，优先删除无当前依据的状态断言；review worktree仍baff5bf、尚未独立复审。主控日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-02b-b1-controller-6m0nm548。本次等第二次修正提醒，先status，working则重新挂；经实施dispatch的dlog reply读取完整DONE，核对4dea76b后的增量、真实RED/GREEN及定向回归。必须改交原02B实现者（若涉及02A则原02A实现者），主控不写功能；返工后先更新干净detached review到新提交，再交原审查者限定复核，最多两轮，每轮挂提醒。不重复标准全套/Clippy，仅定向及相关回归。
+第一次返工4dea76b解决原截断但新增still状态误报被主控探针拦下；第二次51d4c5f删除该断言。主控已读真实RED/GREEN与21项直接回归，独立telemetry_settings6项通过，日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-02b-b1-r2-controller-ql6edm5n。未重跑全套/Clippy。原审查者已收到限定复审：只看baff5bf..51d4c5f的B1及直接回归；本次是第一次独立复审，之前两次是实现返工/主控核对。
+
+等原审查者提醒，先status，working则重挂，再经审查dispatch的dlog reply取完整DONE。逐项核实B1和返工误报关闭状态、实际渲染/相关页与草稿重试；未收敛不要无限往返，按边界报告用户。主控不写功能；若需要返工仅原实现者，审查worktree须更新再复核，每轮挂提醒。通过才执行下述整阶段收尾。
 
 02A原实施者saddle/dev-telemetry-agent-1及审查者saddle/dev-telemetry-agent-review-1、对应两个worktree和分支保留，整个02通过才合并推送、清理02A/02B实施及代码审查worktree/分支，并在成功删目录后关闭对应自建agent，空提交收尾、更新HANDOFF。保留设计review与t38/t55，不恢复设计Claude。尚未批准02B，不提前清理02A；不release/安装/真实队列/消费者切换，03–05不提前派发。
 
