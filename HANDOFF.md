@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-01。当前 main。核心遥测阶段 01「存储与查询」已审查、合并、推送并清理；用户已授权继续阶段 02；02A 执行采集已派发，02B 设置界面随后串行集成。本轮不发布、不安装、不读写真实遥测/队列。
+更新：2026-10-01。当前 main。核心遥测阶段 01「存储与查询」已审查、合并、推送并清理；用户已授权继续阶段 02；02A 执行采集候选已通过独立复审，02B 设置界面正在串行集成。本轮不发布、不安装、不读写真实遥测/队列。
 
 ## 1. 会话摘要
 
@@ -17,7 +17,7 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 ## 3. 待完成与现场状态
 
-- 阶段 01 无已知未关闭阻断。阶段 02A 已启动、尚未完成，02B–05 尚未实施：执行采集/设置入口 → 同进程 JEV 路由 → 现有 Drover 插件接入 → 消费者切换和退役外部 dlog。不要把存储完成说成整套遥测完成。
+- 阶段 01 无已知未关闭阻断。阶段 02A 候选已通过审查、尚未合并；02B正在实施，03–05尚未实施：执行采集/设置入口 → 同进程 JEV 路由 → 现有 Drover 插件接入 → 消费者切换和退役外部 dlog。不要把存储完成说成整套遥测完成。
 - 本轮未构建 release、安装、切换消费者或初始化真实遥测目录；日常程序仍为此前 Clawd Opus 版，链接 ~/.local/bin/saddle 指向共享 .target/release/saddle。后续 release 构建前必须按既有规则备份，当前不构建。
 - 保留 ../saddle-worktrees/review-telemetry-design（detached 5ddd544，审查快照），t38-dispatch-study、t55-notification-flow；不要自动清理。
 - 新实施者 saddle/dev-telemetry-agent-1（instance 0f297a0ff859，Codex gpt-6-astra/xhigh），分支 telemetry-agent-capture，worktree ../saddle-worktrees/telemetry-agent-capture，基线 951b13e。另有 corral/main、dispatchlog/main、saddle/main；前两个是用户会话，勿送话/关闭。
@@ -38,7 +38,11 @@ dispatch-log 的需求已收敛为 Saddle 核心遥测，完成三轮 Claude 独
 
 ## 6. 下一步
 
-阶段02A候选8b9324b已完成，主控核对范围并独立运行标准检查：423 passed / 0 failed / 5 ignored、clippy通过；实现者此前两个套件失败在主控本次未复现，原因未确定，原证据保留。独立审查已派发，等待公开status与经dlog reply取完整DONE回复。审查者 saddle/dev-telemetry-agent-review-1（instance 5b2ff681386d），dispatch 3906679e92ba45d2b634c3a43a75475d，detached worktree ../saddle-worktrees/review-telemetry-agent-capture，HEAD 8b9324b；任务与意见在主仓库 docs/任务/遥测02A-独立交叉审查.md。任务见 docs/任务/遥测02A-执行采集.md；实施 dispatch ba09aea9613a48f6b6e6fb9ce22904b1。每轮重新挂提醒；独立审查重点含发送参数排列的正文采集疑点、取消及回执背压；主控不改功能代码，阻断交原实现者返工。02A 与随后 Claude 实现的 02B 设置入口集成后一起合并清理；不得单独完成02A就删其worktree。未创建真实任务。
+02A候选ae77967经主控和原独立审查者确认M1关闭：stderr字节0宿主起始与末行final按本次call_id匹配，缺失/截断/不匹配保持未知。主控首版标准423通过5忽略/clippy通过；修正后主控4项、独立23项通过，没有重复全套。S1发送参数换序建议未纳入，历史两项未改动测试失败未查明且主控未复现，记录保留。
+
+当前02B实施者 saddle/dev-telemetry-settings-1（instance f8977ca3444b，Claude opus[1m]/high），dispatch 52441b99bb8e4d96955de374d94f65b5；任务 docs/任务/遥测02B-设置总开关.md。分支telemetry-settings、worktree ../saddle-worktrees/telemetry-settings，基线8378fe9（ae77967加主控文档main）。只在现有General加Store总开关，使用草稿Save/Cancel，不另存config开关；需核对保存失败/外部修改和假Corral集成。JEV三项拿不准，主控判常规/交叉审查要/碰要害。
+
+完成提醒后先status，再经dlog reply读完整DONE；主控核对及标准测试后另开重档Codex审查02B/集成。02A实施者saddle/dev-telemetry-agent-1及审查者saddle/dev-telemetry-agent-review-1、对应两个worktree和分支保持，整个02集成通过才合并清理，不提前清02A。每轮重挂提醒，主控不写功能代码；没有真实队列操作。
 
 用户最新硬边界：如需改 Corral 或发现依赖反转，先停止相关工作告知用户，不得先改后报。独立遥测查询界面明确归 Saddle，在阶段04实现，Drover仅提供带关联条件的快捷入口；旧视图/旧dlog依赖到阶段05再切换。主控发现Corral公开at为数值、现有Saddle存储按字符串校验，已让实施者在Saddle内按原样保存契约最小纠正，不改Corral。
 
