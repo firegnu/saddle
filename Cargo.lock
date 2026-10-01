@@ -1757,6 +1757,7 @@ dependencies = [
 name = "saddle-dispatch-plugin"
 version = "0.1.0"
 dependencies = [
+ "rustls",
  "saddle-core-plugin",
  "serde",
  "serde_json",

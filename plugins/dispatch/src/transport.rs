@@ -5,7 +5,7 @@ use saddle_core_plugin::Missing;
 use std::{
     io::Read,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -16,7 +16,8 @@ use ureq::{
     unversioned::{
         resolver::DefaultResolver,
         transport::{
-            Buffers, ConnectionDetails, Connector, DefaultConnector, NextTimeout, Transport,
+            Buffers, ConnectProxyConnector, ConnectionDetails, Connector, NextTimeout,
+            RustlsConnector, TcpConnector, Transport,
         },
     },
 };
@@ -51,10 +52,15 @@ fn send(
     config: Config,
 ) -> Result<Response, Failure> {
     let sent = Arc::new(AtomicBool::new(false));
-    let connector = DefaultConnector::default().chain(Observe {
-        sent: sent.clone(),
-        length: body.len(),
-    });
+    // Preserve the CONNECT/TCP/rustls order of the enabled default transports,
+    // inserting the write check below TLS (inside Observe).
+    let connector = ConnectProxyConnector::default()
+        .chain(TcpConnector::default())
+        .chain(Observe {
+            sent: sent.clone(),
+            length: body.len(),
+            uri: url.parse().expect("internal URL"),
+        });
     // New agent for each attempt: no reused connection or internal stale-pool retry.
     let agent = Agent::with_parts(config, connector, DefaultResolver::default());
     let mut response = agent
@@ -98,9 +104,12 @@ fn send(
         body: bytes,
     })
 }
+fn is_timeout(error: &ureq::Error) -> bool {
+    matches!(error, ureq::Error::Timeout(_))
+        || matches!(error,ureq::Error::Io(e) if matches!(e.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock))
+}
 fn classify(error: ureq::Error, sent: bool) -> Failure {
-    let timeout = matches!(error, ureq::Error::Timeout(_))
-        || matches!(&error,ureq::Error::Io(e) if matches!(e.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock));
+    let timeout = is_timeout(&error);
     // Deliberately closed diagnostics: never format library errors, headers or keys.
     let message = if timeout {
         "network: timeout"
@@ -124,23 +133,67 @@ fn classify(error: ureq::Error, sent: bool) -> Failure {
 struct Observe {
     sent: Arc<AtomicBool>,
     length: usize,
+    uri: ureq::http::Uri,
 }
 impl<T: Transport> Connector<T> for Observe {
-    type Out = Observed<T>;
+    type Out = Observed<Box<dyn Transport>>;
     fn connect(
         &self,
-        _: &ConnectionDetails,
+        details: &ConnectionDetails,
         chained: Option<T>,
     ) -> Result<Option<Self::Out>, ureq::Error> {
-        Ok(chained.map(|inner| Observed {
+        let write_failure = Arc::new(Mutex::new(None));
+        let checked = chained.map(|inner| WriteChecked {
             inner,
-            sent: self.sent.clone(),
+            failure: write_failure.clone(),
+        });
+        let tls = RustlsConnector::default().connect(details, checked)?;
+        Ok(tls.map(|inner| Observed {
+            inner: inner.boxed(),
+            // Recursive CONNECT setup must not mark the target request as sent.
+            sent: if details.uri == &self.uri {
+                self.sent.clone()
+            } else {
+                Arc::new(AtomicBool::new(false))
+            },
+            write_failure,
             progress: Progress {
                 matched: 0,
                 headers: false,
                 remaining: self.length,
             },
         }))
+    }
+}
+
+#[derive(Debug)]
+struct WriteChecked<T> {
+    inner: T,
+    failure: Arc<Mutex<Option<std::io::ErrorKind>>>,
+}
+impl<T: Transport> Transport for WriteChecked<T> {
+    fn buffers(&mut self) -> &mut dyn Buffers {
+        self.inner.buffers()
+    }
+    fn transmit_output(&mut self, amount: usize, timeout: NextTimeout) -> Result<(), ureq::Error> {
+        let result = self.inner.transmit_output(amount, timeout);
+        if let Err(error) = &result {
+            *self.failure.lock().unwrap() = Some(if is_timeout(error) {
+                std::io::ErrorKind::TimedOut
+            } else {
+                std::io::ErrorKind::Other
+            });
+        }
+        result
+    }
+    fn await_input(&mut self, timeout: NextTimeout) -> Result<bool, ureq::Error> {
+        self.inner.await_input(timeout)
+    }
+    fn is_open(&mut self) -> bool {
+        self.inner.is_open()
+    }
+    fn is_tls(&self) -> bool {
+        self.inner.is_tls()
     }
 }
 #[derive(Clone, Copy, Debug)]
@@ -175,6 +228,7 @@ impl Progress {
 struct Observed<T> {
     inner: T,
     sent: Arc<AtomicBool>,
+    write_failure: Arc<Mutex<Option<std::io::ErrorKind>>>,
     progress: Progress,
 }
 impl<T: Transport> Transport for Observed<T> {
@@ -185,6 +239,11 @@ impl<T: Transport> Transport for Observed<T> {
         let mut next = self.progress;
         next.advance(&self.inner.buffers().output()[..amount]);
         self.inner.transmit_output(amount, timeout)?;
+        // rustls 0.23.45 Stream::write can accept plaintext while hiding a failed
+        // complete_io write. Surface that failure before committing body progress.
+        if let Some(kind) = self.write_failure.lock().unwrap().take() {
+            return Err(std::io::Error::from(kind).into());
+        }
         self.progress = next;
         self.sent.store(next.done(), Ordering::Relaxed);
         Ok(())

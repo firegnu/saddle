@@ -1,5 +1,7 @@
 use super::*;
 
+mod tls;
+
 #[test]
 fn connect_and_timeout_errors_retry_but_receive_reset_does_not() {
     // The network boundary's stage marker must distinguish identical IO errors.
@@ -219,6 +221,7 @@ fn production_transport_constants_have_phase_budgets_and_no_redirects() {
     let t = config.timeouts();
     assert_eq!(config.max_redirects(), 0);
     assert!(!config.http_status_as_error());
+    assert!(!config.tls_config().disable_verification());
     assert_eq!(t.global, None);
     assert_eq!(t.per_call, None);
     for value in [
@@ -266,6 +269,7 @@ fn send_marker_requires_successful_transport_writes_of_the_complete_body() {
             fail: false,
         },
         sent: sent.clone(),
+        write_failure: Arc::new(Mutex::new(None)),
         progress: Progress {
             matched: 0,
             headers: false,

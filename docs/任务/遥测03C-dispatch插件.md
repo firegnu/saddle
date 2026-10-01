@@ -101,3 +101,32 @@
 - 现有接口足够，没有新增通用网络框架、后台服务、项目采用管理或恢复机制。HTTP 适配采用已批准的 ureq unversioned 公共接口并精确固定版本。资源/规则指纹规范及边缘差异均按既定设计，没有新增设计决定需主控裁定。
 - 主路径宿主集成的成功 HTTP 为内部假传输，真实 ureq 单独用回环验证；不冒充真实 JEV/TLS 或代理环境验证。标准测试因上述既有锁竞争未全绿，此事实应带入独立审查。
 - 没有发布/release/安装、改全局技能链接或项目 AGENTS、切消费者、迁移旧记录、实施04/05、操作真实队列、启动日常 Saddle、合并/推送/清理 worktree 或关闭任何 agent。其他 worktree 与03A/B保留会话未动；仅在本分支提交，交主控后续审查。
+
+## 第一次限定返工完成记录（M1，2026-10-02）
+
+### 基线、裁定与实现
+
+- 已读主仓库 `docs/任务/遥测03C-独立交叉审查.md` 首轮审查及末尾“主控裁定与第一次限定返工”，接受 M1。此次从原分支干净 HEAD `1692be22eb1c516a433dcc1a774c683486766822` 继续；首轮叠放基线仍是前文的 `32b34fd21022cec62f3449dfad365d21c096d4e7`（03B 597f48a 加主控文档），没有切分支或操作其他 worktree。
+- **纠正首轮完成记录的发送完成结论**：旧观察器在 TLS 之外，仅凭 `transmit_output` 成功推进明文计数不足以证明底层写入完成。锁定的 rustls `Stream::write` 会接收明文后隐藏 `complete_io` 的写错误，审查反例成立；旧 HTTP/假 Wire 绿测不能证明这一点。
+- 修复仅在 dispatch 局部适配：用 ureq 公开 `ConnectProxyConnector → TcpConnector → RustlsConnector` 保留当前启用的传输顺序，在 TLS 下方增加 `WriteChecked`。每条连接仅保留写错误种类；TLS 返回成功后、提交 HTTP 进度和 `sent` 之前，显式传播被隐藏的错误。正常向上传播的错误保留原值，隐藏超时保留 timeout 分类，诊断不保存或格式化授权头/key。CONNECT 递归连接使用独立发送标志，避免代理握手误标目标正文完成；未增加代理能力或声称代理环境已验证。
+- 真正完整写入后接收非超时错误仍不重试；两次尝试上限、begin 一次、首次 429/529 一秒退避、其他业务规则及 response gap 接线未改。固定生产 URL、分阶段预算、无重定向及生产 TLS 验证保持；新增断言检查生产配置未关闭证书验证。“发送完成”仍不等于服务端确认收到/处理。
+- 公开接口足够，无需改 Corral、外部库源码、宿主/SDK/遥测 schema、03A/B 或依赖方向。只增加测试依赖 `rustls =0.23.45`，沿用锁文件中原有版本及 ring/std/tls12；Cargo.lock 仅将该既有包列入 dispatch 的依赖，不升级或新增库版本。README 同步真实实现与验证边界；C1–C5、03B S1 暂不修复及目录清理非原子边界继续保留。
+
+### 实际 RED/GREEN 与直接回归
+
+证据目录：`/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-m1-uqcqtds1/`。包含本轮 `baseline.txt`、`run.py`、命令 `.json/.log`、`red-tls.patch`、`final.patch`、`results.json`。所有命令前台等待退出；每轮测试均隔离 HOME 及全部五个 XDG 目录，保留真实 CARGO_HOME/RUSTUP_HOME，固定共享 target，stdin=/dev/null，外层移除真实 TYPESAFE_API_KEY。
+
+| 检查 | 实际结果与证据 |
+|---|---|
+| M1 有效 RED | `cargo test -p saddle-dispatch-plugin transport::tests::tls`：exit101，1通过/1失败。先添加审查同类合成 TLS 测试，生产适配仍为 1692be2 原文；真实 ureq/rustls 内存握手及 HTTP 头完成后，拒绝正文 TLS 记录。断言先确认写失败确实注入且正文交付为0，再检查尝试次数。失败显示 `(body=1955, delivered=0, sent=true, retry=false)`，实际1次≠期望2次；完整发送后接收 reset 的对照测试通过。`red-tls.log`、`red-tls.json` 与实施前保存的完整 `red-tls.patch` 对应，不是编译/夹具错误。 |
+| 插件 GREEN（仅一轮） | `cargo test -p saddle-dispatch-plugin`：exit0，**17通过/0失败**，doc-tests 0项；`green-dispatch-unit.log/.json`。TLS 正文 BrokenPipe：每次交付0、sent=false/retry=true、两次尝试且 begin 一次；隐藏 TimedOut：同样最多两次、保留 `network: timeout`；完整正文交付后 ConnectionReset：sent=true/retry=false、一次尝试。三者均检查无状态退避、not_available gap、业务退出1及 stdout 无合成 key。既有 HTTP 状态/429/529/响应 gap/头体超时、请求整理、资源及 Recorder 目标同时通过。 |
+| 直接集成 GREEN（仅一轮） | `cargo test --test dispatch_plugin`：exit0，**3通过/0失败**；`green-dispatch-integration.log/.json`。沿用原有真实登记/停用/无key和同源码业务采集集成，未扩大为其他目标。 |
+| 静态检查 | `git diff --check`、限定 Rust 文件 rustfmt 检查通过；两份合成 TLS fixture 与 ureq 3.4.2 发行包对应文件逐字节一致，具体哈希及结果保存在 `results.json`。 |
+
+TLS 测试使用 `plugins/dispatch/tests/fixtures/tls-{cert,key}.pem`，来源为 ureq 3.4.2 `src/unversioned/transport/testdata/{cert,key}.pem` 的公开夹具，和审查探针同源。内存服务端不调用 DNS/socket；只在该测试配置关闭夹具证书验证。GREEN 使用修复后的同一个 `Observe` 接入实际 `RustlsConnector`，未用假 TLS 代替目标行为。没有真实 JEV、真实 TLS 服务、真实凭据或 Corral 请求；HTTP 回环仅既有直接目标。生产 TLS 开启的配置断言不等于真实证书链/代理整链路验证。
+
+### 验证限制与交付边界
+
+- **标准测试未全绿的缺口仍独立保留**：实施首轮96通过/1失败，主控179通过/1失败/1忽略，分别在两个不同既有用例报 registry busy；单项通过不能证明根因修复，也不能将两者认定同根因。前文“锁竞争”措辞不代表已确认根因。本轮17+3项目标通过不替代标准全套，不自行豁免主控合并前裁定。
+- 本轮未跑全套、Clippy、core_plugins、plugin_resources 或 plugins；没有历史 registry busy 扩查、重复绿测、额外覆盖矩阵或重建历史 RED。没有修改主仓库审查文档、其他 worktree、外部库源码或 Corral，没有再开 agent。
+- 仅在原 `telemetry-dispatch-plugin` 分支提交本修复和记录；不合并/推送/清理/关闭，不 release/安装/启动日常 Saddle，不动真实遥测/队列、消费者、04/05。等待主控限定复核及独立处理标准验证缺口。
