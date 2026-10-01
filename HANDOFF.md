@@ -1,6 +1,6 @@
 # 会话交接
 
-更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；接下来派04A查询UI，04功能尚未实现，05未派发。日常安装版未更新，消费者未切换。
+更新：2026-10-02。当前main。遥测阶段01、02、03均已审查合并推送；阶段03已完成worktree/分支/agent清理及空提交。04设计已核对合并收尾，用户已批准布局及记录选择；04A查询UI已派新Claude实施，功能未合并，04B/05未派发。日常安装版未更新，消费者未切换。
 
 ## 当前成果
 
@@ -48,3 +48,16 @@
 - 设计合并14d4e6c，最终裁定2812127；telemetry-query-design worktree/分支已无force清理，idle/attached0时安全核对后删目录，再关闭原自建saddle/dev-telemetry-query-design-1（instance ed4e60494020）。收尾空提交a919b9c。迟到提醒查not_found后忽略，不恢复旧会话。
 - dlog设计7d00e4c7b187450394d3ae4759d26c9d。下一步另路由/任务/分支派04A宿主查询UI给Claude，04B通用跳转及Drover记录接入串行；04A通过后保留实施与审查工作区，集成后整体合并清理。旧dlog留05，保留设计review/t38/t55。
 - 不改Corral或反向依赖，需改先停告知；不真实数据队列/安装release/消费者切换/05。当前没有04功能候选。
+
+## 当前派发：04A查询UI
+
+- 新Claude Code saddle/dev-telemetry-query-ui-1，instance 2be45b11bd4d，opus[1m]/high，role=implementer。worktree ../saddle-worktrees/telemetry-query-ui，分支telemetry-query-ui，基线ad823e0；任务docs/任务/遥测04A-查询界面.md。
+- dlog f4e92b504dec41f59ce2062a5e83f571。JEV三项null，主控常规/交叉审查不要/改行为：只读Store与页面结果，无存储写入或事务规则改动，不因后台线程自动提高审查档位。决定与任务快照已记录。
+- 范围：批准的独立入口、列表/筛选、事件分页与当前摘要分离、完整正文、安全显示及show(trace).dispatches只读字段。不接Drover/协议导航/04B，不切旧dlog消费者，不改Corral或反向依赖。
+- 回来先status，working重挂；idle后dlog reply取完整DONE。主控核diff/完成记录/实际RED-GREEN及一次标准test/clippy，按常规审查预算，不扩审计；需改交原实现者，返工只定向/直接回归，不重复全套。
+- 04A通过后保留实施会话/分支/worktree供04B串行接入，整阶段集成后合并清理。主控不写功能；不release/安装/真实数据队列，旧设计review/t38/t55保留。
+- 初版1003f45已取完整DONE并核增量，主控标准511通过/0失败/5忽略、Clippy通过。日志 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04a-controller-32zq_vbj`；probe.rs/probe-cargo.log证实两个目标缺陷，前两次直接rustc依赖错配/探针装配失败不算功能证据。开发标准同数，RED日志已核但原dispatches断言全文与页面桩完整补丁留档不足，保留限制。
+- 已集中交原实现者第一次返工并重挂提醒，详见docs/任务/遥测04A-主控审查.md：M1刷新丢选中派发筛选；M2实际payload不可读、长详情尾部不可达及既定carried_from目标trace；M3app_control模态busy遗漏（准许最小扩文件范围）。返工只目标/直接回归，不重复全套Clippy；主控不写功能，无额外交叉审查。
+- 已接受UTC、列表顺序、顶部位置和宽窄布局；预填控制字符显示留04B集成前处理，不在本次顺手改。04A尚未通过或合并；下一轮核M1-M3及直接回归，不提前派04B。
+- 更新：04A返工0261d5167143ed8d4a0d0ca98bc4a439ef03070b已通过主控核对，M1–M3全部关闭；本轮独立4目标通过，日志saddle-04a-r1-controller-ub8k8xlk，已核实现有效RED/GREEN及86相关回归，未重复全套Clippy。上行“尚未通过”为历史状态，功能仍未合并，原实施会话/worktree保留供04B。
+- 04B任务docs/任务/遥测04B-Drover接入.md已准备，dlog936889ea33ad4146bd967c25da4ae6d9；JEV重/其余null，主控重/交叉审查要/碰要害。Claude opus[1m]/xhigh整体接通用导航/宿主路径、Drover选择与单次交付/状态声明及界面，04A预填控制字符问题同批处理。完成后主控标准核对及重档Codex整阶段独立审查；不重问已批准布局、不改Corral/反向依赖，05不启动。
