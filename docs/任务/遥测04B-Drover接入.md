@@ -55,3 +55,10 @@
 ## 做完
 
 本分支提交，任务末尾追加实际改动/检查与日志/取舍/限制和未做事项。回复SHA、简明结果及需主控决定项；命令前台结束，全部完成后最后一行DONE。
+
+## 主控审查（初核，2026-10-02）
+
+- 中断接续已完成，公开idle后取得完整DONE；候选81ccc7eec7b45a53d78ec4be39377b30405dee79干净。已核完成记录、diff、有效目标RED/GREEN及保存桩，未改Corral或发现反向依赖；BindingFilter仅提取同一校验供通用runtime使用，接受最小范围扩展。
+- 主控一次标准533通过/0失败/5忽略、Clippy通过，diff check通过；日志saddle-04b-controller-fid61fg2。开发原workflow target_changed失败保留，单项复跑通过，主控本轮未复现但原次原因未确认；开发原日志忽略数为5而非完成记录的4。process RED夹具等待失败不算有效RED。
+- 接受300ms含启动的准备预算、配对executed=false新增not_executed、独立telemetry状态、60秒组取消后未知不重发及预填整格替换显示取舍，详见docs/任务/遥测04B-独立交叉审查.md。开发debug首次启动耗时不外推为release事实。
+- 下一步另开重档Codex detached独立审查04B与整阶段04；本轮初核不是最终批准，不合并清理。04A/04B实施会话worktree保留，不推进05。

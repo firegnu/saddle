@@ -70,3 +70,5 @@
 - 04B只用隔离/合成数据与假Corral；不release/安装/真实数据队列/JEV产品调用/消费者切换/05；需改Corral或反向依赖先停告知。已批布局和选择不重复问。
 - 04B首次提醒不是完成：公开status idle/StopFailure、attached0，dlog reply返回no_reply，corral read尾部显示API Error: Connection lost mid-response；分支HEAD仍03f7282，只有未提交改动，无完成记录/DONE。主控未执行04B标准核查、未派独立审查。
 - 已经原dispatch记录中断decision并followup原会话接续，send confirmed=true/merged_with_draft=false，重新挂after pending=true；要求先核已有步骤/日志，不复位改动、不重复已过且未改检查。接续指令快照 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04b-resume-o4gqilah/resume.md`。下一轮仍须status→完整DONE，若再次无回复查公开状态/输出，不盲目循环送话或把中断算返工通过。
+- 接续已完成：81ccc7eec7b45a53d78ec4be39377b30405dee79，idle/正常Stop且完整DONE，工作区干净。主控核diff/完成记录/目标RED-GREEN与桩；一次标准533通过0失败5忽略、Clippy通过，日志saddle-04b-controller-fid61fg2。开发原workflow target_changed失败单项通过、主控未复现，原次根因未知；原日志5忽略而非开发记录4。process RED夹具错误不算有效RED。
+- 已准备docs/任务/遥测04B-独立交叉审查.md，主控裁定接受300ms含启动准备预算、可信未执行状态、取消未知不重发等既定边界；尚未最终批准。新detached review-telemetry-drover-integration固定81ccc7e，审查dispatch0a1223662d11441ba1b703e6dc3f71e5（父936889ea33ad4146bd967c25da4ae6d9），准备新重档Codex审查04B及阶段04集成。
