@@ -99,9 +99,19 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 功能尚未合并，03A尚未宣布通过。03A通过仍保留实施/审查分支worktree/agent，待03B/C串行集成共同合并清理；UI线框待确认，ureq在03C前核官方资料。其他禁止项与保留项不变。
 
 
-## 12. 当前：03A通过，03B线框待确认
+## 12. 03A通过（03B已确认并派发，见第13节）
 
 - 原审查者bdd2e2cbfba7已idle，经dlog取完整DONE，M1明确关闭、无直接回归、剩余必须改0/新增建议0。主控已核8项独立回归原始日志及增量，认可03A可进入后续串行集成，结论落入 docs/任务/遥测03A-独立交叉审查.md。候选仍0fa62cf，实施与detached均干净；没有重复测试。
 - 03A分支telemetry-core-plugin及实施/审查worktree、两个agent均保留；不单独合并、清理、关闭或空提交。没有新派发或待重挂的工作轮次；迟到提醒按已处理结果核对，不再重复返工。
 - 下一步03B资源生命周期+管理页，确认用线框在 docs/任务/遥测03B-管理页线框.md，待用户确认后再串行形成实施任务/派发。图中dispatch是03C接入后示例，03B仍用假插件。03C前核ureq官方资料；不动04/05、不release/安装/真实数据队列/消费者切换。
 - 已有测试和历史证据限制保持；需要改Corral或反向依赖先停告知。设计review和t38/t55保留，设计Claude已关闭勿恢复。
+
+
+## 13. 当前：03B资源与管理页实施
+
+- 用户对03B线框回复“可以”，已将批准同步到线框及DESIGN，任务 docs/任务/遥测03B-资源与管理页.md。main任务提交99a0d69；不再询问布局，不增加项目采用开关或自动改AGENTS。
+- 新Claude实现者 saddle/dev-telemetry-resources-1，instance63516c9bce5d，role=implementer，opus[1m]/xhigh。分支telemetry-plugin-resources，worktree ../saddle-worktrees/telemetry-plugin-resources；基线4f16a409a49a3717423c9a23fceaae06b79c4936（03A已审查0fa62cf加main文档），尚未有03B功能提交。
+- dlog dispatch ffcf738641ec416f803b7af8745df86f；JEV重，交叉审查/影响面拿不准，主控因资源所有权/用户目录写删判交叉审查要、碰要害。按技能含界面实现交Claude；JEV仅此次主控任务评估，不是产品JEV验证。
+- 03B范围：通用资源生命周期/所有权/受控写删、只读status资源状态、管理页内置行与动作/说明、Plugins面板入口；生产目录仍空，仅用假插件和临时HOME/XDG。实际dispatch/JEV/资源正文归03C，不改真实技能与链接。
+- 收提醒先corral status；working重挂。idle后 ../dispatch-log/dlog reply --dispatch ffcf738641ec416f803b7af8745df86f -- corral reply saddle/dev-telemetry-resources-1 取完整DONE。主控核diff/完成记录/有效RED-GREEN，独立一次标准test/clippy，再新开重档Codex独立审查；主控不写功能代码。每轮返工限定检查并重新挂提醒。
+- 03A两个实施/审查agent及worktree继续保留，03B通过也保留，03C串行集成并整阶段审查后一起合并清理。功能未合main，不release/安装/真实业务数据队列/消费者切换/04或05。需改Corral或依赖反转先停告知用户。ureq在03C前核官方资料；保留旧设计review及t38/t55，不恢复已关闭Claude设计会话。
