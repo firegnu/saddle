@@ -50,11 +50,18 @@ def sample(image):
         edge.difference_update(component)
         if not edge or len(component) < 8:
             continue
-        skin = sum(image.getpixel(q)[3] > 200 and image.getpixel(q)[0] > 150
+        skin = sum(image.getpixel(q)[3] > 128 and image.getpixel(q)[0] > 60
                    and image.getpixel(q)[0] > image.getpixel(q)[1] * 1.5 for q in edge)
         xs, ys = zip(*component)
         if skin < len(edge) * .45 or max(xs)-min(xs) > (max(ys)-min(ys)+1)*3:
             continue
+        # Remove the coarse copy before placing the preserved eye below the forehead.
+        # Include antialiased clay in the surrounding-skin check above.
+        for sy in range(int(min(ys)*HEIGHT/image.height), min(HEIGHT, int(max(ys)*HEIGHT/image.height)+1)):
+            for sx in range(int(min(xs)*WIDTH/image.width), min(WIDTH, int(max(xs)*WIDTH/image.width)+1)):
+                c = pixels[sy*WIDTH+sx]
+                if c is not None and max(c) < 65:
+                    pixels[sy*WIDTH+sx] = CLAY
         x = max(0, min(WIDTH-1, round((min(xs)+max(xs)+1)*WIDTH/(2*image.width)-.5)))
         y = max(0, min(HEIGHT-1, round((min(ys)+max(ys)+1)*HEIGHT/(2*image.height)-.5)))
         top = next((r for r in range(HEIGHT) if pixels[r*WIDTH+x] == CLAY), y)

@@ -30,3 +30,13 @@
 最终 `cargo test --all-targets`：372 passed / 0 failed / 5 ignored；Clippy、fmt、diff通过。日志 `/tmp/saddle-clawd-size-{all,clippy}-final.log`。原断言要求身体跨过边框，已按本次缩小目标改为站立在3行内，并将控件避让位置移到真实身体处；行为实现未改。
 
 阶段结论：尺寸候选可供用户查看，非最终视觉验收；不合并、不安装，不记收尾。
+
+## 眼睛修正（尺寸已获认可）
+
+> 大小一致了，但是眼睛那块还有点问题
+
+用户认可大小，继续修正采样产生的头顶缺口。保持画布与身体尺寸；修正抗锯齿肤色识别，并在放置眼睛前清除粗采样的重复黑块。公开Mascot绘制入口新增两眼同高、上方额头连续断言；旧候选实际RED为“eye must not cut the forehead”（`/tmp/saddle-clawd-eyes-red.log`）。
+
+眼睛修正验证：目标绘制检查GREEN，完整标准检查373 passed / 0 failed / 5 ignored，Clippy/fmt/diff通过；日志`/tmp/saddle-clawd-eyes-{green,all,clippy}.log`。同帧对照修前/修后包围盒均111×76设备像素（本对照2×显示下55.5×38逻辑像素），尺寸未变。已检查38种动作的代表帧修前/修后联系图。
+
+新对照`~/Downloads/clawd-reference-20261001-4pdhpd0_/saddle-eyes-comparison.png`已在系统预览打开；实际Buffer动画`saddle-eyes-preview.gif`同目录。修正头顶缺口与重复眼睛，字符网格仍不能精确复现原参考的眼睛像素形状。继续停在视觉候选，不构建release、不安装、不合并、不推送。
