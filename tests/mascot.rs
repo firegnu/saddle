@@ -318,3 +318,33 @@ fn curated_patrol_stays_above_the_agent_border() {
         }
     }
 }
+
+#[test]
+fn sunglasses_lenses_preserve_the_forehead() {
+    let mut mascot = Mascot::default();
+    let mut terminal = Terminal::new(TestBackend::new(64, 3)).unwrap();
+    for tick in 0..7200 {
+        terminal
+            .draw(|f| {
+                mascot.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        for x in 1..63 {
+            let bridge = &buffer[(x, 1)];
+            if bridge.symbol() == "─" && bridge.fg == Color::Rgb(20, 20, 19) {
+                for lens_x in [x - 1, x + 1] {
+                    let lens = &buffer[(lens_x, 1)];
+                    assert_eq!(
+                        lens.symbol(),
+                        "■",
+                        "lenses must sit inside the face, not cut into its top edge"
+                    );
+                    assert_eq!(lens.bg, Color::Rgb(217, 119, 87));
+                }
+                return;
+            }
+        }
+    }
+    panic!("patrol never displayed sunglasses");
+}

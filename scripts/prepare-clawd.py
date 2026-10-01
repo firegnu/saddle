@@ -103,9 +103,7 @@ def pose(kind='rest', stage=0):
     elif kind == 'sunglasses':
         if stage:
             eyes = []
-            rect(p, 12, 2, 2, 1, 2)
-            rect(p, 16, 2, 2, 1, 2)
-            extra = [(7, 1, 19, 2, 1)]
+            extra = [(6, 1, 20, 2, 1), (7, 1, 19, 2, 1), (8, 1, 20, 2, 1)]
         else:
             rect(p, 22, 3, 4, 1, 2)
     cells = []
