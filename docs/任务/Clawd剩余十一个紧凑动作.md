@@ -20,3 +20,9 @@
 - 预览在原Downloads目录：`saddle-eleven-actions.mp4`/`.gif`、`saddle-eleven-keyframes-{1,2,3}.png`；全31段总览 `saddle-curated-31.mp4`/`-poses.png`；`saddle-eleven-patrol-excerpts.mp4`是公开绘制巡游中的动作片段，附原始模拟秒数，片段之间有跳切。预览是字符栅格化，不是用户窗口截图。已用既有授权打开目录。
 - 首轮全量在现有插件流程 `plugin_palette_switches_overlays_and_blocks_background_layout_writes` 等待Clicks界面处失败；单独复核通过（7.77秒），未改插件实现或测试。日志 `/tmp/saddle-clawd-eleven-all.log`、`/tmp/saddle-clawd-eleven-workflow-retry.log`。
 - 最终标准全量377 passed / 0 failed / 5 ignored；Clippy、fmt、diff检查通过。日志 `/tmp/saddle-clawd-eleven-all-final.log`、`/tmp/saddle-clawd-eleven-clippy.log`。
+
+## 安装
+
+实现 `f54e357` 已快进合并main；发布构建及9项发布版Mascot检查通过。日志 `/tmp/saddle-clawd-eleven-release-{build,test}.log`。
+
+日常链接 `~/.local/bin/saddle` 指向 `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`，SHA256 `7ae6d76083bd2aa41775d2f61162113d8a91a8dc0ae9e63291566d6c323d3e9e`，已核对内含本次完整素材。构建前备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-eleven-actions-20261001-140905`，旧SHA256 `cd17f0e33449e7963270dfa33cac46ba5ca7826b589b065a4bb235d44535df57`。未重启用户窗口，下次启动使用新版。
