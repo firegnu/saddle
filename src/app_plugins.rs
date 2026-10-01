@@ -203,7 +203,7 @@ impl App {
             (
                 o.id.as_str(),
                 ui::inner(overlay_area(panes)),
-                self.plugin_palette.is_none(),
+                self.plugin_palette.is_none() && self.telemetry.is_none(),
             )
         });
         let picture = self.plugins.sync_with_overlay(
@@ -214,6 +214,43 @@ impl App {
         );
         if let (Some(o), Some(p)) = (&mut self.plugin_overlay, picture) {
             o.panel = p;
+        }
+    }
+    /// Opens the Telemetry page a plugin asked for from its current input, over the view that
+    /// asked; closing the page returns there. The filter stays opaque to the host.
+    pub(super) fn telemetry_open_tick(&mut self) {
+        for request in self.plugins.take_telemetry_opens() {
+            let source_open = self.plugin_palette.is_none()
+                && !self.plugin_ui_busy()
+                && match &self.plugin_overlay {
+                    Some(o) => o.id == request.plugin,
+                    None => {
+                        self.focus == Focus::Viewer
+                            && self.viewer.active_pane().plugin_id()
+                                == Some(request.plugin.as_str())
+                    }
+                };
+            if !source_open || !self.plugins.telemetry_open_current(&request) {
+                self.plugins.telemetry_open_result(
+                    &request,
+                    "cancelled",
+                    "Source view changed or another dialog is open",
+                );
+                continue;
+            }
+            let filter = request.filter.clone();
+            self.pointer.cancel();
+            self.open_telemetry(
+                self.focus,
+                Some(crate::telemetry::BindingFilter {
+                    kind: filter.kind,
+                    scope: filter.scope,
+                    key: filter.key,
+                    run: filter.run,
+                }),
+                Some(request.name.clone()),
+            );
+            self.plugins.telemetry_open_result(&request, "opened", "");
         }
     }
     pub(super) fn draw_plugin_overlay(&mut self, frame: &mut ratatui::Frame, panes: Panes) {

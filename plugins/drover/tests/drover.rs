@@ -200,6 +200,7 @@ fn dispatch_records_delivery_separately_and_never_retries_corral() {
                 .as_str()
                 .unwrap()
                 .into(),
+            record: None,
         };
         let v = core::execute(d.path(), &op, &corral, &AtomicBool::new(false)).unwrap();
         assert_eq!(v["delivery"]["status"], delivery);

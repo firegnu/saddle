@@ -99,9 +99,34 @@ impl<T> Load<T> {
 
 struct Form {
     fields: [Input; 4],
+    /// A prefilled value holding control characters: kept exactly and shown escaped; typing
+    /// in that field replaces it.
+    exact: [Option<String>; 4],
     focus: usize,
     areas: [Rect; 4],
     error: String,
+}
+impl Form {
+    /// An edit to the focused field; an exact value gives way to what is typed.
+    fn edit(&mut self, code: KeyCode) {
+        let i = self.focus;
+        if self.exact[i].is_some() {
+            match code {
+                KeyCode::Char(_) => self.exact[i] = None,
+                KeyCode::Backspace | KeyCode::Delete => {
+                    self.exact[i] = None;
+                    return;
+                }
+                _ => return,
+            }
+        }
+        self.fields[i].key(code, false);
+    }
+    fn value(&self, i: usize) -> String {
+        self.exact[i]
+            .clone()
+            .unwrap_or_else(|| self.fields[i].text.clone())
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Panel {
@@ -453,6 +478,7 @@ impl Page {
                 if let Some(form) = &mut self.form
                     && text.len() <= 65536
                 {
+                    form.exact[form.focus] = None;
                     form.fields[form.focus].insert(text, false);
                 }
                 Outcome::Stay
@@ -534,7 +560,7 @@ impl Page {
                 KeyCode::Tab => form.focus = (form.focus + 1) % 4,
                 KeyCode::BackTab => form.focus = (form.focus + 3) % 4,
                 KeyCode::Enter => {
-                    let [kind, scope, key, run] = form.fields.each_ref().map(|f| f.text.clone());
+                    let [kind, scope, key, run] = [0, 1, 2, 3].map(|i| form.value(i));
                     // The same rule as the Store's binding: kind, scope and key, run optional.
                     if kind.is_empty() || scope.is_empty() || key.is_empty() {
                         form.error = "kind, scope and key are required".into();
@@ -552,7 +578,7 @@ impl Page {
                     }
                 }
                 code => {
-                    form.fields[form.focus].key(code, false);
+                    form.edit(code);
                     form.error.clear();
                 }
             }
@@ -597,16 +623,25 @@ impl Page {
             }
             KeyCode::Char('f') => {
                 let f = self.filter.as_ref();
-                let value = |get: fn(&BindingFilter) -> Option<&String>| {
-                    Input::new(f.and_then(get).cloned().unwrap_or_default())
-                };
+                let values = [
+                    f.map(|f| f.kind.clone()),
+                    f.map(|f| f.scope.clone()),
+                    f.map(|f| f.key.clone()),
+                    f.and_then(|f| f.run.clone()),
+                ]
+                .map(Option::unwrap_or_default);
+                let exact = values
+                    .clone()
+                    .map(|v| v.chars().any(char::is_control).then_some(v));
                 self.form = Some(Form {
-                    fields: [
-                        value(|f| Some(&f.kind)),
-                        value(|f| Some(&f.scope)),
-                        value(|f| Some(&f.key)),
-                        value(|f| f.run.as_ref()),
-                    ],
+                    fields: values.map(|v| {
+                        Input::new(if v.chars().any(char::is_control) {
+                            String::new()
+                        } else {
+                            v
+                        })
+                    }),
+                    exact,
                     focus: 0,
                     areas: [Rect::default(); 4],
                     error: String::new(),
@@ -1091,6 +1126,19 @@ impl Page {
                 frame
                     .buffer_mut()
                     .set_style(field, Style::default().bg(t.selected));
+                if let Some(exact) = &form.exact[i] {
+                    let shown = clip(&inert(exact), usize::from(field.width));
+                    let end = (UnicodeWidthStr::width(shown.as_str()) as u16)
+                        .min(field.width.saturating_sub(1));
+                    frame.render_widget(
+                        Paragraph::new(shown).style(Style::default().fg(t.text)),
+                        field,
+                    );
+                    if form.focus == i && !field.is_empty() {
+                        frame.set_cursor_position((field.x + end, field.y));
+                    }
+                    continue;
+                }
                 form.fields[i].draw(
                     frame,
                     field,
@@ -1103,7 +1151,12 @@ impl Page {
                 frame,
                 bottom,
                 2,
-                if form.error.is_empty() {
+                if form.error.is_empty() && form.exact.iter().any(Option::is_some) {
+                    Line::styled(
+                        "\\x escapes show control characters kept exactly; typing there replaces the value.",
+                        Style::default().fg(t.muted),
+                    )
+                } else if form.error.is_empty() {
                     Line::styled(
                         "kind, scope and key must match exactly; run is optional.",
                         Style::default().fg(t.muted),

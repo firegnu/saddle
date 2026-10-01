@@ -1100,6 +1100,7 @@ fn dispatch_selected_is_a_pending_task_button_that_sends_the_shown_target() {
             project: "/tmp/project-a".into(),
             pos: 2,
             token: "d1:two".into(),
+            record: None,
         }
     );
     q.complete(&op, Ok("done".into()));
@@ -1117,4 +1118,112 @@ fn dispatch_selected_is_a_pending_task_button_that_sends_the_shown_target() {
     // History offers no dispatch.
     q.select(2);
     assert!(!text(&render_queue(&mut q, 150, 40)).contains("Dispatch selected"));
+}
+
+fn recording_queue(record_default: bool) -> Snapshot {
+    serde_json::from_value(serde_json::json!({
+        "project":"/tmp/canonical-a", "record_default":record_default,
+        "paused":false, "current":null, "awaiting":null,
+        "history":[{"id":"T0", "title":"Old", "status":"done"}],
+        "pending":[
+            {"id":"T1", "title":"First", "actions":{"dispatch-pending":{"pos":1, "target_token":"d1:one", "unavailable_reason":null}}},
+            {"id":"T2", "title":"Second", "actions":{"dispatch-pending":{"pos":2, "target_token":"d1:two", "unavailable_reason":null}}},
+            {"title":"Loose idea", "actions":{"dispatch-pending":{"pos":3, "target_token":"d1:three", "unavailable_reason":null}}}
+        ]
+    }))
+    .unwrap()
+}
+fn click_label(q: &mut queue::Panel, label: &str) -> Option<saddle::drover::Request> {
+    let buffer = render_queue(q, 150, 40);
+    let (x, y) = find(&buffer, label).unwrap_or_else(|| panic!("{label}\n{}", text(&buffer)));
+    q.click(x, y)
+}
+
+#[test]
+fn recording_choice_follows_the_project_default_and_overrides_one_dispatch() {
+    use saddle::drover::{Operation, Request};
+    let mut q = queue::Panel::default();
+    q.project = "/tmp/project-a".into();
+    q.absorb(recording_queue(false));
+    q.select(0);
+    let screen = text(&render_queue(&mut q, 150, 40));
+    assert!(screen.contains("Record default: Off"), "{screen}");
+    assert!(screen.contains("[ ] Record"), "{screen}");
+    // The project default is saved at once, like Pause.
+    let Some(Request::Run(op)) = click_label(&mut q, "Record default: Off") else {
+        panic!("the default is one write")
+    };
+    assert_eq!(op, Operation::RecordDefault(true));
+    q.complete(&op, Ok("saved".into()));
+    q.absorb(recording_queue(true));
+    let screen = text(&render_queue(&mut q, 150, 40));
+    assert!(screen.contains("Record default: On"), "{screen}");
+    assert!(screen.contains("[x] Record"), "{screen}");
+    // This dispatch only: switched off beside Dispatch selected and sent as that choice.
+    assert!(click_label(&mut q, "[x] Record").is_none());
+    let Some(Request::Run(op)) = click_label(&mut q, "Dispatch selected") else {
+        panic!("dispatch")
+    };
+    assert_eq!(
+        op,
+        Operation::DispatchPending {
+            project: "/tmp/project-a".into(),
+            pos: 1,
+            token: "d1:one".into(),
+            record: Some(false),
+        }
+    );
+    q.complete(&op, Ok("done".into()));
+    q.key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    // Another task starts from the project default; untouched, the dispatch leaves it to Drover.
+    q.select(1);
+    let screen = text(&render_queue(&mut q, 150, 40));
+    assert!(screen.contains("[x] Record"), "{screen}");
+    let Some(Request::Run(op)) = click_label(&mut q, "Dispatch selected") else {
+        panic!("dispatch")
+    };
+    assert!(
+        matches!(
+            op,
+            Operation::DispatchPending {
+                pos: 2,
+                record: None,
+                ..
+            }
+        ),
+        "{op:?}"
+    );
+}
+
+#[test]
+fn telemetry_link_is_offered_for_numbered_tasks_and_covers_all_their_runs() {
+    let mut q = queue::Panel::default();
+    q.project = "/tmp/project-a".into();
+    q.absorb(recording_queue(false));
+    q.select(1);
+    assert!(click_label(&mut q, "Telemetry ↗").is_none());
+    assert_eq!(
+        q.telemetry_request.take(),
+        Some(saddle_plugin_sdk::protocol::TelemetryFilter {
+            kind: "drover.task".into(),
+            scope: "/tmp/canonical-a".into(),
+            key: "T2".into(),
+            run: None,
+        })
+    );
+    // An unnumbered task has no runs to link.
+    q.select(2);
+    let screen = text(&render_queue(&mut q, 150, 40));
+    assert!(
+        screen.contains("Loose idea") && !screen.contains("Telemetry ↗"),
+        "{screen}"
+    );
+    assert!(q.telemetry_request.is_none());
+    // History keeps its link.
+    q.select(3);
+    assert!(click_label(&mut q, "Telemetry ↗").is_none());
+    assert_eq!(q.telemetry_request.take().unwrap().key, "T0");
 }

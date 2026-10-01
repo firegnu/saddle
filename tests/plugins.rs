@@ -1154,3 +1154,190 @@ fn palette_failure_guidance_preserves_cause_and_disabled_action() {
         Outcome::Stay
     );
 }
+
+fn telemetry_peer(capability: bool) -> (tempfile::TempDir, Runtime) {
+    use saddle_plugin_protocol::Message;
+    use serde_json::json;
+    let (dir, mut manifest) = attention_peer();
+    if capability {
+        manifest
+            .required_capabilities
+            .push("telemetry.open.v1".into());
+    }
+    std::fs::write(dir.path().join("peer"), r#"#!/usr/bin/env python3
+import sys,json,os
+from pathlib import Path
+root=Path(__file__).parent
+(root/'environment.json').write_text(json.dumps({k:v for k,v in os.environ.items() if k.startswith('SADDLE')}))
+for line in sys.stdin:
+ m=json.loads(line)
+ if m.get('method')=='initialize':
+  print(json.dumps(dict(kind='response',id=m['id'],result=dict(id='test.attention',version='1',protocol_major=1,capabilities=m['params']['capabilities'],width_profile='saddle-grapheme-v1'))),flush=True)
+ elif m.get('method')=='shutdown':break
+ elif m.get('kind')=='response':
+  (root/('result-%d.json' % m['id'])).write_text(json.dumps(m))
+ elif m.get('name')=='panel.open':
+  print(json.dumps(dict(kind='event',name='panel.frame',data=dict(panel='main',size_revision=1,frame_id=1,cols=1,rows_count=1,rows=[[dict(text=' ',fg='default',bg='default',modifiers=[])]]))),flush=True)
+ elif m.get('name')=='test.open':
+  print(json.dumps(dict(kind='request',id=m['data']['id'],method='telemetry.open',params=m['data']['params'])),flush=True)
+"#).unwrap();
+    std::fs::write(
+        dir.path().join("plugin.toml"),
+        toml::to_string(&manifest).unwrap(),
+    )
+    .unwrap();
+    let runtime = Runtime::start(dir.path(), manifest);
+    assert!(
+        runtime.wait_for("Running", Duration::from_secs(4)),
+        "{}",
+        runtime.snapshot().note
+    );
+    runtime.send(Message::event(
+        "panel.open",
+        json!({"cols":1,"rows_count":1,"size_revision":1}),
+    ));
+    wait_until(|| runtime.snapshot().interactive);
+    (dir, runtime)
+}
+fn telemetry_answer(dir: &std::path::Path, id: u64) -> serde_json::Value {
+    let path = dir.join(format!("result-{id}.json"));
+    wait_until(|| path.exists());
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+
+#[test]
+fn telemetry_open_takes_one_current_input_and_the_binding_exactly_as_given() {
+    use saddle_plugin_protocol::{Message, TelemetryFilter};
+    use serde_json::json;
+    let (dir, runtime) = telemetry_peer(true);
+    let open = |id: u64, params: serde_json::Value| {
+        runtime.send(Message::event(
+            "test.open",
+            json!({"id":id,"params":params}),
+        ));
+    };
+    // No current input: refused, nothing for the host to open.
+    open(
+        1,
+        json!({"input_id":0,"filter":{"kind":"drover.task","scope":"/p","key":"T1"}}),
+    );
+    assert_eq!(
+        telemetry_answer(dir.path(), 1)["error"]["code"],
+        "stale_input"
+    );
+    assert!(runtime.take_telemetry().is_none());
+    runtime.send(Message::event("input", json!({"input_id":7})));
+    // Values are opaque: longer than an agent identity, with control characters, kept as is.
+    let scope = format!("/{}", "long-project-root/".repeat(40));
+    let key = "T1\u{1b}[31m\nnext";
+    open(
+        2,
+        json!({"input_id":7,"filter":{"kind":"drover.task","scope":scope,"key":key}}),
+    );
+    wait_until(|| runtime.snapshot().telemetry.is_some());
+    let request = runtime.take_telemetry().unwrap();
+    assert_eq!(
+        request.filter,
+        TelemetryFilter {
+            kind: "drover.task".into(),
+            scope: scope.clone(),
+            key: key.into(),
+            run: None,
+        }
+    );
+    assert_eq!(
+        (request.input_id, request.name.as_str()),
+        (7, "Attention demo")
+    );
+    // One request per input.
+    open(
+        3,
+        json!({"input_id":7,"filter":{"kind":"k","scope":"s","key":"x"}}),
+    );
+    assert_eq!(
+        telemetry_answer(dir.path(), 3)["error"]["code"],
+        "stale_input"
+    );
+    // The store's binding rule decides what is valid; nothing is trimmed or guessed.
+    runtime.send(Message::event("input", json!({"input_id":8})));
+    for (id, filter) in [
+        (4, json!({"kind":"drover.task","scope":"/p","key":""})),
+        (
+            5,
+            json!({"kind":"drover.task","scope":"/p\u{0}x","key":"T1"}),
+        ),
+        (
+            6,
+            json!({"kind":"drover.task","scope":"/p","key":"T1","run":""}),
+        ),
+        (
+            7,
+            json!({"kind":"drover.task","scope":"/p","key":"T1","Run":"r"}),
+        ),
+        (8, json!({"kind":"drover.task","scope":"/p"})),
+    ] {
+        open(id, json!({"input_id":8,"filter":filter}));
+        assert_eq!(
+            telemetry_answer(dir.path(), id)["error"]["code"],
+            "invalid_filter",
+            "{filter}"
+        );
+    }
+    assert!(runtime.take_telemetry().is_none());
+    open(
+        9,
+        json!({"input_id":8,"filter":{"kind":"drover.task","scope":"/p","key":"T1","run":"r1"}}),
+    );
+    wait_until(|| runtime.snapshot().telemetry.is_some());
+    assert_eq!(
+        runtime.take_telemetry().unwrap().filter.run.as_deref(),
+        Some("r1")
+    );
+    runtime.stop();
+    assert!(runtime.wait_for("Disabled", Duration::from_secs(4)));
+
+    // Without the declared capability the request is unknown.
+    let (dir, runtime) = telemetry_peer(false);
+    runtime.send(Message::event("input", json!({"input_id":3})));
+    open_without(&runtime, 1);
+    assert_eq!(
+        telemetry_answer(dir.path(), 1)["error"]["code"],
+        "unsupported"
+    );
+    assert!(runtime.take_telemetry().is_none());
+    runtime.stop();
+}
+fn open_without(runtime: &Runtime, id: u64) {
+    runtime.send(saddle_plugin_protocol::Message::event(
+        "test.open",
+        serde_json::json!({"id":id,"params":{"input_id":3,"filter":{"kind":"k","scope":"s","key":"x"}}}),
+    ));
+}
+
+#[test]
+fn process_plugins_are_told_the_host_executable_and_nothing_else() {
+    let (dir, runtime) = telemetry_peer(false);
+    let environment: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("environment.json")).unwrap())
+            .unwrap();
+    let host = std::env::current_exe().unwrap();
+    assert!(host.is_absolute());
+    // Inherited SADDLE_* values pass through unchanged; the host adds only its own path.
+    let mut expected: serde_json::Map<String, serde_json::Value> = std::env::vars()
+        .filter(|(k, _)| {
+            k.starts_with("SADDLE")
+                && !matches!(
+                    k.as_str(),
+                    "SADDLE_INSTANCE" | "SADDLE_PANE" | "SADDLE_REVISION" | "SADDLE_HOST_BIN"
+                )
+        })
+        .map(|(k, v)| (k, v.into()))
+        .collect();
+    expected.insert("SADDLE_HOST_BIN".into(), host.display().to_string().into());
+    assert_eq!(
+        environment,
+        serde_json::Value::Object(expected),
+        "the current host path, no record context"
+    );
+    runtime.stop();
+}

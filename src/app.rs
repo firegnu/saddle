@@ -674,6 +674,7 @@ impl App {
         self.viewer.tick(panes.viewer)?;
         self.control_tick();
         self.navigation_tick()?;
+        self.telemetry_open_tick();
         if self.panel.show_reply
             && !self.reply_busy
             && let Some(name) = &self.panel.selected

@@ -185,6 +185,13 @@ pub enum Event {
         status: String,
         message: String,
     },
+    /// The answer to `Context::open_telemetry`: opened, failed or cancelled, or unknown when the
+    /// host did not answer in time. Never retried.
+    TelemetryOpened {
+        id: u64,
+        status: String,
+        message: String,
+    },
     AttentionPublished {
         id: u64,
         status: String,
@@ -196,6 +203,7 @@ pub struct Context {
     input: Option<u64>,
     close: Option<u64>,
     navigation: Option<(u64, u64, String, String)>,
+    telemetry: Option<(u64, u64, protocol::TelemetryFilter)>,
     next: u64,
     dirty: bool,
     reserved_keys: Vec<String>,
@@ -247,7 +255,10 @@ impl Context {
         let input = self
             .input
             .ok_or_else(|| anyhow::anyhow!("agent navigation requires user input"))?;
-        ensure!(self.navigation.is_none(), "navigation already requested");
+        ensure!(
+            self.navigation.is_none() && self.telemetry.is_none(),
+            "navigation already requested"
+        );
         ensure!(
             !name.is_empty()
                 && name.len() <= 256
@@ -258,6 +269,26 @@ impl Context {
         );
         self.next += 1;
         self.navigation = Some((self.next, input, name.into(), instance.into()));
+        Ok(self.next)
+    }
+    /// Open the host's Telemetry page narrowed to this binding, only from an input callback.
+    /// The host checks the values as its telemetry store does; the request only has to fit one
+    /// protocol message. Requires telemetry.open.v1.
+    pub fn open_telemetry(&mut self, filter: protocol::TelemetryFilter) -> Result<u64> {
+        let input = self
+            .input
+            .ok_or_else(|| anyhow::anyhow!("telemetry navigation requires user input"))?;
+        ensure!(
+            self.navigation.is_none() && self.telemetry.is_none(),
+            "navigation already requested"
+        );
+        protocol::encode(&Message::request(
+            u64::MAX,
+            "telemetry.open",
+            json!({"input_id":input,"filter":&filter}),
+        ))?;
+        self.next += 1;
+        self.telemetry = Some((self.next, input, filter));
         Ok(self.next)
     }
     pub fn notify(&mut self, text: impl Into<String>) -> Result<u64> {
@@ -312,6 +343,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
         input: None,
         close: None,
         navigation: None,
+        telemetry: None,
         next: 0,
         dirty: false,
         reserved_keys: Vec::new(),
@@ -322,6 +354,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
     let mut request_id = 0;
     let mut pending = std::collections::BTreeMap::new();
     let mut navigation_pending: Option<(u64, u64, std::time::Instant)> = None;
+    let mut telemetry_pending: Option<(u64, u64, std::time::Instant)> = None;
     let mut attention_pending: Option<(u64, u64, std::time::Instant)> = None;
     let mut size = None;
     let mut frame_id = 0;
@@ -389,6 +422,20 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                         let response = result.unwrap_or_default();
                         plugin.event(
                             Event::AgentOpened {
+                                id: local,
+                                status: response["status"].as_str().unwrap_or("failed").into(),
+                                message: response["message"]
+                                    .as_str()
+                                    .map(str::to_owned)
+                                    .unwrap_or_else(|| error.map_or(String::new(), |e| e.message)),
+                            },
+                            &mut context,
+                        )?;
+                    } else if telemetry_pending.is_some_and(|(request, _, _)| request == id) {
+                        let (_, local, _) = telemetry_pending.take().unwrap();
+                        let response = result.unwrap_or_default();
+                        plugin.event(
+                            Event::TelemetryOpened {
                                 id: local,
                                 status: response["status"].as_str().unwrap_or("failed").into(),
                                 message: response["message"]
@@ -574,6 +621,7 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                         input: None,
                         close: None,
                         navigation: None,
+                        telemetry: None,
                         next: context.next,
                         dirty: false,
                         reserved_keys: context.reserved_keys.clone(),
@@ -623,6 +671,38 @@ pub fn run(factory: impl FnOnce() -> Box<dyn Plugin>) -> Result<()> {
                         id,
                         status: "busy".into(),
                         message: "Navigation already in progress".into(),
+                    },
+                    &mut context,
+                )?;
+            }
+        }
+        if telemetry_pending.is_some_and(|(_, _, sent)| sent.elapsed().as_secs() >= 20) {
+            let (_, id, _) = telemetry_pending.take().unwrap();
+            plugin.event(
+                Event::TelemetryOpened {
+                    id,
+                    status: "unknown".into(),
+                    message: "Telemetry page result unknown; check the workspace before retrying."
+                        .into(),
+                },
+                &mut context,
+            )?;
+        }
+        if let Some((id, input, filter)) = context.telemetry.take() {
+            if telemetry_pending.is_none() {
+                request_id += 1;
+                output.write_all(&protocol::encode(&Message::request(
+                    request_id,
+                    "telemetry.open",
+                    json!({"input_id":input,"filter":filter}),
+                ))?)?;
+                telemetry_pending = Some((request_id, id, std::time::Instant::now()));
+            } else {
+                plugin.event(
+                    Event::TelemetryOpened {
+                        id,
+                        status: "busy".into(),
+                        message: "Telemetry page request already in progress".into(),
                     },
                     &mut context,
                 )?;

@@ -5625,3 +5625,116 @@ fn telemetry_page_refuses_layout_requests_until_it_closes() {
     let reply = open(&h, "telemetry-closed");
     assert_eq!(reply["ok"], true, "{reply}");
 }
+
+/// Drover with a numbered and an unnumbered Pending task, run by the real host binary.
+fn telemetry_harness(record: bool) -> Harness {
+    Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        move |root| {
+            std::fs::write(
+                root.join("queue-state.json"),
+                serde_json::json!({
+                    "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
+                    "pending": [{"id":"T38", "title":"Dispatch task", "body":"SYNTHETIC BODY"},
+                                {"title":"Loose idea", "body":""}]
+                })
+                .to_string(),
+            )
+            .unwrap();
+            Harness::install_drover(root);
+            if record {
+                let mut conf = std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(root.join(".drover.conf"))
+                    .unwrap();
+                writeln!(conf, "MAIN_AGENT=p/a").unwrap();
+                let input = root.join("telemetry-on.json");
+                std::fs::write(
+                    &input,
+                    r#"{"schema_version":1,"enabled":true,"actor":"synthetic"}"#,
+                )
+                .unwrap();
+                let out = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"))
+                    .args(["telemetry", "settings", "set", "--input"])
+                    .arg(&input)
+                    .env("XDG_STATE_HOME", root.join("state"))
+                    .output()
+                    .unwrap();
+                assert!(out.status.success(), "{out:?}");
+            }
+        },
+    )
+}
+
+#[test]
+fn drover_telemetry_link_opens_the_host_page_on_that_task_and_returns_to_drover() {
+    let mut h = telemetry_harness(false);
+    h.see("Synthetic title");
+    h.open_tasks();
+    h.see("Dispatch task");
+    h.click("Telemetry ↗");
+    h.see("Input ▸ Telemetry");
+    h.see("(from Drover)");
+    h.see("key=T38");
+    h.see("not initialized");
+    assert!(!h.dir.path().join("state/saddle/telemetry").exists());
+    h.send(b"\x1b");
+    h.see("Input ▸ Drover");
+    h.see("Dispatch task");
+    // An unnumbered task has nothing to link.
+    h.send(b"j");
+    h.see("Loose idea");
+    h.until(|h| !h.contents().contains("Telemetry ↗"));
+    h.quit();
+}
+
+#[test]
+fn a_recorded_dispatch_goes_once_through_the_host_agent_entry_and_is_queryable() {
+    let mut h = telemetry_harness(true);
+    h.see("Synthetic title");
+    h.open_tasks();
+    h.see("Dispatch task");
+    h.see("[ ] Record");
+    h.click("Record default: Off");
+    h.see("Record default: On");
+    h.see("[x] Record");
+    h.click("Dispatch selected");
+    h.see("Delivered to the main agent");
+    h.see("Telemetry: recorded");
+    let sent = h.log("send-args");
+    assert_eq!(sent.lines().count(), 1, "{sent}");
+    let args: Vec<String> = serde_json::from_str(sent.lines().next().unwrap()).unwrap();
+    assert_eq!(&args[..2], ["send", "p/a"]);
+    assert!(args[2].starts_with("TASK T38: Dispatch task\n\nSYNTHETIC BODY\n\n---\n"));
+    assert!(args[2].contains("trace_id: ") && args[2].contains("task: T38"));
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"))
+        .args(["telemetry", "list", "--kind", "drover.task", "--scope"])
+        .arg(h.dir.path().canonicalize().unwrap())
+        .args(["--key", "T38"])
+        .env("XDG_STATE_HOME", h.dir.path().join("state"))
+        .output()
+        .unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(list["traces"].as_array().unwrap().len(), 1, "{list}");
+    assert_eq!(
+        list["traces"][0]["registration"], "登记声明未核验",
+        "{list}"
+    );
+    h.send(b"\x1b");
+    h.see("Close Esc");
+    // Run details read the task again; press against the settled frame.
+    h.see("Run records");
+    let end = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < end {
+        h.pump();
+    }
+    h.click("Telemetry ↗");
+    h.see("Input ▸ Telemetry");
+    h.see("1 trace");
+    h.send(b"\x1b");
+    h.see("Input ▸ Drover");
+    h.quit();
+}

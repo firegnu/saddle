@@ -1,0 +1,573 @@
+//! Drover's optional dispatch recording through the public `saddle telemetry`/`saddle agent` CLI
+//! of the real debug host, with a fake Corral and isolated telemetry state.
+mod common;
+use saddle_drover_plugin::{
+    core,
+    drover::{Operation, Transition},
+};
+use serde_json::{Value, json};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+
+const CORRAL: &str = r#"#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+root = Path(__file__).parent
+with (root / 'corral-calls').open('a') as f:
+    f.write(json.dumps({'args': sys.argv[1:], 'host_env': 'SADDLE_HOST_BIN' in os.environ}) + '\n')
+if (root / 'hang').exists():
+    (root / 'corral-pid').write_text(str(os.getpid()))
+    time.sleep(30)
+answer = root / 'answer'
+print(answer.read_text() if answer.exists() else json.dumps({'ok': True, 'confirmed': True, 'merged_with_draft': False}))
+code = root / 'code'
+sys.exit(int(code.read_text()) if code.exists() else 0)
+"#;
+
+struct Project {
+    dir: tempfile::TempDir,
+    root: PathBuf,
+}
+impl Project {
+    fn new(conf: &str) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("project").canonicalize_or_create();
+        std::fs::create_dir(root.join("data")).unwrap();
+        std::fs::write(
+            root.join(".drover.conf"),
+            format!("HANDOFF_DIR=data\nMAIN_AGENT=p/main\n{conf}"),
+        )
+        .unwrap();
+        std::fs::write(root.join("data/queue.md"), "## T1 First\nBody\n").unwrap();
+        common::script(dir.path(), "corral", CORRAL);
+        Self { dir, root }
+    }
+    fn path(&self, name: &str) -> PathBuf {
+        self.dir.path().join(name)
+    }
+    fn corral(&self) -> String {
+        self.path("corral").display().to_string()
+    }
+    /// The real host with this project's telemetry state; logs which subcommand ran.
+    fn host(&self) -> PathBuf {
+        self.host_with_state(&self.path("state"))
+    }
+    fn host_with_state(&self, state: &Path) -> PathBuf {
+        common::script(
+            self.dir.path(),
+            "host",
+            &format!(
+                "#!/bin/sh\necho \"$1 $2\" >> {:?}\nXDG_STATE_HOME={:?} exec {:?} \"$@\"\n",
+                self.path("host-calls"),
+                state,
+                env!("CARGO_BIN_EXE_saddle")
+            ),
+        )
+        .into()
+    }
+    /// A host whose agent entry runs Corral once but leaves `stderr` instead of its receipt.
+    fn host_without_receipt(&self, stderr: &str) -> PathBuf {
+        common::script(
+            self.dir.path(),
+            "host",
+            &format!(
+                r#"#!/usr/bin/env python3
+import os, subprocess, sys
+args = sys.argv[1:]
+if args[0] == 'telemetry':
+    os.environ['XDG_STATE_HOME'] = {state:?}
+    os.execv({saddle:?}, [{saddle:?}] + args)
+corral = args[args.index('--corral') + 1]
+out = subprocess.run([corral] + args[args.index('--') + 1:], capture_output=True)
+sys.stdout.buffer.write(out.stdout)
+sys.stderr.write({stderr:?})
+sys.exit(out.returncode)
+"#,
+                state = self.path("state"),
+                saddle = env!("CARGO_BIN_EXE_saddle"),
+            ),
+        )
+        .into()
+    }
+    fn telemetry(&self, args: &[&str]) -> Value {
+        let out = Command::new(env!("CARGO_BIN_EXE_saddle"))
+            .arg("telemetry")
+            .args(args)
+            .env("XDG_STATE_HOME", self.path("state"))
+            .output()
+            .unwrap();
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+    fn enable(&self, enabled: bool) {
+        let input = self.path("setting.json");
+        std::fs::write(
+            &input,
+            json!({"schema_version":1,"enabled":enabled,"actor":"synthetic"}).to_string(),
+        )
+        .unwrap();
+        let receipt = self.telemetry(&["settings", "set", "--input", input.to_str().unwrap()]);
+        assert_eq!(receipt["ok"], true, "{receipt}");
+    }
+    fn calls(&self) -> Vec<Value> {
+        std::fs::read_to_string(self.path("corral-calls"))
+            .unwrap_or_default()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+    fn dispatch_with(
+        &self,
+        record: Option<bool>,
+        corral: &str,
+        host: Option<&Path>,
+        cancel: &AtomicBool,
+    ) -> Value {
+        let v = core::list(&self.root).unwrap();
+        let op = Operation::DispatchPending {
+            project: self.root.display().to_string(),
+            pos: 1,
+            token: v["pending"][0]["actions"]["dispatch-pending"]["target_token"]
+                .as_str()
+                .unwrap()
+                .into(),
+            record,
+        };
+        core::execute_with(&self.root, &op, corral, host, cancel, None).unwrap()
+    }
+    fn dispatch(&self, record: Option<bool>, host: Option<&Path>) -> Value {
+        self.dispatch_with(record, &self.corral(), host, &AtomicBool::new(false))
+    }
+    fn transition(&self, action: Transition, host: Option<&Path>) -> Value {
+        let v = core::list(&self.root).unwrap();
+        let t = if v["current"].is_object() {
+            &v["current"]
+        } else {
+            &v["awaiting"]
+        };
+        core::execute_with(
+            &self.root,
+            &Operation::Transition {
+                project: self.root.display().to_string(),
+                id: t["id"].as_str().unwrap().into(),
+                run_id: t["run_id"].as_str().unwrap().into(),
+                token: t["actions"][action.command()]["target_token"]
+                    .as_str()
+                    .unwrap()
+                    .into(),
+                action,
+                reason: "needs revision".into(),
+            },
+            &self.corral(),
+            host,
+            &AtomicBool::new(false),
+            None,
+        )
+        .unwrap()
+    }
+    fn events(&self, trace: &str) -> Vec<Value> {
+        self.telemetry(&["events", "--trace-id", trace])["events"]
+            .as_array()
+            .unwrap()
+            .clone()
+    }
+}
+trait Canonical {
+    fn canonicalize_or_create(self) -> PathBuf;
+}
+impl Canonical for PathBuf {
+    fn canonicalize_or_create(self) -> PathBuf {
+        std::fs::create_dir_all(&self).unwrap();
+        self.canonicalize().unwrap()
+    }
+}
+fn plain_message() -> Value {
+    json!(["send", "p/main", "TASK T1: First\n\nBody"])
+}
+
+#[test]
+fn unselected_recording_keeps_the_plain_send_and_never_calls_saddle() {
+    let p = Project::new("");
+    assert_eq!(core::list(&p.root).unwrap()["record_default"], false);
+    let host = p.host();
+    let v = p.dispatch(None, Some(&host));
+    assert_eq!(v["delivery"]["status"], "confirmed", "{v}");
+    assert_eq!(v["record"]["status"], "recorded");
+    assert_eq!(v["telemetry"]["status"], "not_requested", "{v}");
+    let calls = p.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["args"], plain_message());
+    assert_eq!(calls[0]["host_env"], false);
+    assert!(!p.path("host-calls").exists(), "no telemetry call at all");
+    assert!(
+        !p.path("state").exists(),
+        "no telemetry store for an unrecorded dispatch"
+    );
+
+    // An explicit "no" for this dispatch wins over a project that records by default.
+    let p = Project::new("TELEMETRY_RECORD=on\n");
+    assert_eq!(core::list(&p.root).unwrap()["record_default"], true);
+    let host = p.host();
+    let v = p.dispatch(Some(false), Some(&host));
+    assert_eq!(v["telemetry"]["status"], "not_requested", "{v}");
+    assert_eq!(p.calls()[0]["args"], plain_message());
+    assert!(!p.path("host-calls").exists());
+}
+
+#[test]
+fn without_a_record_context_the_delivery_goes_the_plain_way_once() {
+    // Global recording off (never enabled), no host, and an unusable telemetry state directory.
+    for case in ["disabled", "host_unavailable", "unavailable"] {
+        let p = Project::new("");
+        let host = match case {
+            "disabled" => Some(p.host()),
+            "unavailable" => {
+                std::fs::write(p.path("not-a-directory"), "").unwrap();
+                Some(p.host_with_state(&p.path("not-a-directory")))
+            }
+            _ => None,
+        };
+        let v = p.dispatch(Some(true), host.as_deref());
+        assert_eq!(v["telemetry"]["status"], "no_context", "{case}: {v}");
+        assert_eq!(v["telemetry"]["reason"], case, "{case}: {v}");
+        assert_eq!(v["delivery"]["status"], "confirmed", "{case}: {v}");
+        assert_eq!(v["state"], "running");
+        let calls = p.calls();
+        assert_eq!(calls.len(), 1, "{case}");
+        assert_eq!(calls[0]["args"], plain_message(), "{case}");
+        assert!(
+            !std::fs::read_to_string(p.path("host-calls"))
+                .unwrap_or_default()
+                .contains("agent"),
+            "{case}: never through the agent entry without context"
+        );
+    }
+}
+
+#[test]
+fn a_recorded_dispatch_sends_once_with_its_context_and_follows_each_transition() {
+    let p = Project::new("TELEMETRY_RECORD=on\n");
+    p.enable(true);
+    let host = p.host();
+    let v = p.dispatch(None, Some(&host));
+    assert_eq!(v["delivery"]["status"], "confirmed", "{v}");
+    assert_eq!(v["record"]["status"], "recorded");
+    let telemetry = &v["telemetry"];
+    assert_eq!(telemetry["status"], "context", "{v}");
+    assert_eq!(telemetry["send"]["receipt"], "matched", "{v}");
+    assert_eq!(telemetry["send"]["executed"], true);
+    assert_eq!(telemetry["send"]["begin"], "stored");
+    assert_eq!(telemetry["send"]["end"], "stored");
+    assert_eq!(telemetry["transition"]["status"], "stored", "{v}");
+    let (trace, dispatch) = (
+        telemetry["trace_id"].as_str().unwrap(),
+        telemetry["dispatch_id"].as_str().unwrap(),
+    );
+    let run = v["run_id"].as_str().unwrap();
+
+    let calls = p.calls();
+    assert_eq!(calls.len(), 1, "exactly one delivery");
+    assert_eq!(
+        calls[0]["host_env"], false,
+        "Corral does not receive the host path"
+    );
+    let sent = calls[0]["args"][2].as_str().unwrap();
+    assert!(
+        sent.starts_with("TASK T1: First\n\nBody\n\n---\n"),
+        "{sent}"
+    );
+    for line in [
+        format!("trace_id: {trace}"),
+        format!("dispatch_id: {dispatch}"),
+        "task: T1".into(),
+        format!("run: {run}"),
+    ] {
+        assert!(sent.contains(&line), "{line}: {sent}");
+    }
+
+    let scope = p.root.to_str().unwrap();
+    let list = p.telemetry(&[
+        "list",
+        "--kind",
+        "drover.task",
+        "--scope",
+        scope,
+        "--key",
+        "T1",
+    ]);
+    let traces = list["traces"].as_array().unwrap();
+    assert_eq!(traces.len(), 1, "{list}");
+    assert_eq!(traces[0]["trace_id"], trace);
+    assert_eq!(traces[0]["binding"]["run"], run);
+    let shown = p.telemetry(&["show", "--id", trace]);
+    assert_eq!(
+        shown["record"]["dispatches"][0]["kind"], "controller_handoff",
+        "{shown}"
+    );
+    let events = p.events(trace);
+    let kinds: Vec<_> = events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        kinds,
+        ["agent.send.begin", "agent.send.end", "task.transition"],
+        "{events:?}"
+    );
+    assert_eq!(events[0]["payload"]["send_kind"], "initial");
+    assert_eq!(events[0]["dispatch_id"], dispatch);
+    let message = events[0]["bodies"][0]["sha256"].as_str().unwrap();
+    let body = Command::new(env!("CARGO_BIN_EXE_saddle"))
+        .args(["telemetry", "body", "--sha256", message])
+        .env("XDG_STATE_HOME", p.path("state"))
+        .output()
+        .unwrap();
+    assert_eq!(body.stdout, sent.as_bytes(), "the whole sent text is saved");
+    let transition = &events[2]["payload"];
+    assert_eq!(
+        (&transition["from"], &transition["to"]),
+        (&json!("pending"), &json!("running"))
+    );
+    assert!(
+        transition["business_committed_at"].is_string(),
+        "{transition}"
+    );
+    assert_eq!(transition["binding"]["key"], "T1");
+
+    // Later transitions find the same run's trace by its full binding.
+    let v = p.transition(Transition::Submit, Some(&host));
+    assert_eq!(v["state"], "awaiting_release");
+    assert_eq!(v["telemetry"]["status"], "stored", "{v}");
+    assert_eq!(v["telemetry"]["trace_id"], trace);
+    let v = p.transition(Transition::Accept, Some(&host));
+    assert_eq!(v["telemetry"]["status"], "stored", "{v}");
+    let events = p.events(trace);
+    let moves: Vec<_> = events
+        .iter()
+        .filter(|e| e["kind"] == "task.transition")
+        .map(|e| {
+            (
+                e["payload"]["from"].as_str().unwrap().to_owned(),
+                e["payload"]["to"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        moves,
+        [
+            ("pending".into(), "running".into()),
+            ("running".into(), "awaiting_release".into()),
+            ("awaiting_release".into(), "done".into())
+        ]
+    );
+    assert_eq!(p.calls().len(), 1, "transitions never deliver again");
+}
+
+#[test]
+fn a_started_delivery_without_a_matching_receipt_is_unknown_and_never_resent() {
+    let other = || {
+        format!(
+            "saddle-telemetry: {}\n",
+            json!({"schema_version":1,"call_id":uuid::Uuid::new_v4().to_string(),"final":false})
+        )
+    };
+    let closing = format!(
+        "saddle-telemetry: {}\n",
+        json!({"schema_version":1,"call_id":uuid::Uuid::new_v4().to_string(),"final":true,"executed":true})
+    );
+    for stderr in [String::new(), format!("{}{closing}", other())] {
+        let p = Project::new("TELEMETRY_RECORD=on\n");
+        p.enable(true);
+        let host = p.host_without_receipt(&stderr);
+        let v = p.dispatch(None, Some(&host));
+        assert_eq!(v["telemetry"]["status"], "context", "{v}");
+        assert_eq!(v["telemetry"]["send"]["receipt"], "missing", "{v}");
+        assert_eq!(v["delivery"]["status"], "unknown", "{v}");
+        assert_eq!(
+            v["delivery"]["corral_exit_code"], 0,
+            "Corral's own result is kept"
+        );
+        assert_eq!(v["record"]["status"], "not_attempted");
+        assert_eq!(v["ok"], false);
+        assert_eq!(p.calls().len(), 1, "not resent, not sent the plain way");
+        assert!(core::list(&p.root).unwrap()["current"].is_null());
+    }
+}
+
+#[test]
+fn only_a_paired_executed_false_receipt_says_nothing_was_sent() {
+    // Saddle could not start Corral: the paired receipt says executed=false.
+    let p = Project::new("TELEMETRY_RECORD=on\n");
+    p.enable(true);
+    let host = p.host();
+    let missing = p.path("no-such-corral").display().to_string();
+    let v = p.dispatch_with(None, &missing, Some(&host), &AtomicBool::new(false));
+    assert_eq!(v["telemetry"]["send"]["receipt"], "matched", "{v}");
+    assert_eq!(v["telemetry"]["send"]["executed"], false, "{v}");
+    assert_eq!(v["delivery"]["status"], "not_executed", "{v}");
+    assert_eq!(v["record"]["status"], "not_attempted");
+    assert!(core::list(&p.root).unwrap()["current"].is_null());
+
+    // Corral itself exiting 125 or 127 is a started delivery with an unknown result.
+    for code in ["125", "127"] {
+        let p = Project::new("TELEMETRY_RECORD=on\n");
+        p.enable(true);
+        std::fs::write(p.path("code"), code).unwrap();
+        let host = p.host();
+        let v = p.dispatch(None, Some(&host));
+        assert_eq!(v["telemetry"]["send"]["receipt"], "matched", "{v}");
+        assert_eq!(v["telemetry"]["send"]["executed"], true, "{v}");
+        assert_eq!(v["delivery"]["status"], "unknown", "{code}: {v}");
+        assert_eq!(v["record"]["status"], "not_attempted");
+        assert_eq!(p.calls().len(), 1);
+    }
+}
+
+#[test]
+fn cancelling_a_recorded_delivery_stops_its_process_group_and_stays_unknown() {
+    let p = Project::new("TELEMETRY_RECORD=on\n");
+    p.enable(true);
+    std::fs::write(p.path("hang"), "").unwrap();
+    let host = p.host();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let pid_file = p.path("corral-pid");
+    let stopper = {
+        let cancel = cancel.clone();
+        std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !pid_file.exists() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+            cancel.store(true, Ordering::Relaxed);
+        })
+    };
+    let began = Instant::now();
+    let v = p.dispatch_with(None, &p.corral(), Some(&host), &cancel);
+    stopper.join().unwrap();
+    assert!(began.elapsed() < Duration::from_secs(10));
+    assert_eq!(v["delivery"]["status"], "unknown", "{v}");
+    assert_eq!(v["telemetry"]["send"]["receipt"], "missing", "{v}");
+    assert_eq!(v["record"]["status"], "not_attempted");
+    let pid: i32 = std::fs::read_to_string(p.path("corral-pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    // The Corral client, a grandchild in the entry's group, was stopped with it.
+    while unsafe { libc::kill(pid, 0) } == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "Corral client {pid} still running"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(p.calls().len(), 1);
+}
+
+#[test]
+fn task_records_and_telemetry_failures_are_reported_apart() {
+    // Telemetry turned off later: the task still moves, the transition says disabled.
+    let p = Project::new("TELEMETRY_RECORD=on\n");
+    p.enable(true);
+    let host = p.host();
+    let v = p.dispatch(None, Some(&host));
+    let trace = v["telemetry"]["trace_id"].as_str().unwrap().to_owned();
+    p.enable(false);
+    let v = p.transition(Transition::Submit, Some(&host));
+    assert_eq!(v["ok"], true);
+    assert_eq!(v["state"], "awaiting_release");
+    assert_eq!(v["record"]["status"], "recorded");
+    assert_eq!(v["telemetry"]["status"], "disabled", "{v}");
+    assert_eq!(p.events(&trace).len(), 3, "nothing appended while disabled");
+
+    // Drover cannot save the start: no transition is claimed for the trace.
+    let p = Project::new("TELEMETRY_RECORD=on\n");
+    p.enable(true);
+    let data = p.root.join("data");
+    std::fs::write(data.join(".tasks.lock"), "").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let host = p.host();
+    let v = p.dispatch(None, Some(&host));
+    std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(v["delivery"]["status"], "confirmed", "{v}");
+    assert_eq!(v["record"]["status"], "unknown", "{v}");
+    assert_eq!(
+        v["telemetry"]["transition"]["status"], "not_attempted",
+        "{v}"
+    );
+    let trace = v["telemetry"]["trace_id"].as_str().unwrap();
+    assert!(
+        p.events(trace)
+            .iter()
+            .all(|e| e["kind"] != "task.transition"),
+        "no transition for a start Drover did not save"
+    );
+    assert_eq!(p.calls().len(), 1);
+}
+
+#[test]
+fn the_project_recording_default_is_saved_in_its_configuration() {
+    let p = Project::new("CHECK_CMD=make check\n");
+    let before = std::fs::read_to_string(p.root.join(".drover.conf")).unwrap();
+    for on in [true, false] {
+        let v = core::execute_with(
+            &p.root,
+            &Operation::RecordDefault(on),
+            &p.corral(),
+            None,
+            &AtomicBool::new(false),
+            None,
+        )
+        .unwrap();
+        assert_eq!(v["ok"], true, "{v}");
+        assert_eq!(core::list(&p.root).unwrap()["record_default"], on);
+        let conf = std::fs::read_to_string(p.root.join(".drover.conf")).unwrap();
+        assert_eq!(
+            conf,
+            format!(
+                "{before}TELEMETRY_RECORD={}\n",
+                if on { "on" } else { "off" }
+            )
+        );
+    }
+    assert!(p.calls().is_empty() && !p.path("state").exists());
+}
+
+#[test]
+fn without_a_main_agent_the_context_goes_into_the_manual_text() {
+    let p = Project::new("");
+    std::fs::write(
+        p.root.join(".drover.conf"),
+        "HANDOFF_DIR=data\nTELEMETRY_RECORD=on\n",
+    )
+    .unwrap();
+    p.enable(true);
+    let host = p.host();
+    let v = p.dispatch(None, Some(&host));
+    assert_eq!(v["delivery"]["status"], "not_sent", "{v}");
+    assert_eq!(v["record"]["status"], "recorded");
+    assert_eq!(v["telemetry"]["status"], "context", "{v}");
+    assert!(v["telemetry"]["send"].is_null(), "nothing was sent");
+    assert_eq!(v["telemetry"]["transition"]["status"], "stored", "{v}");
+    let text = v["manual_text"].as_str().unwrap();
+    assert!(
+        text.starts_with("TASK T1: First\n\nBody\n\n---\n"),
+        "{text}"
+    );
+    assert!(text.contains(&format!(
+        "trace_id: {}",
+        v["telemetry"]["trace_id"].as_str().unwrap()
+    )));
+    assert!(p.calls().is_empty());
+    assert!(
+        !std::fs::read_to_string(p.path("host-calls"))
+            .unwrap()
+            .contains("agent")
+    );
+}

@@ -68,6 +68,14 @@ pub fn dispatch_click() -> KeyEvent {
 pub fn dispatch_selected_click() -> KeyEvent {
     KeyEvent::new(KeyCode::Null, KeyModifiers::SUPER)
 }
+/// The Record toggle beside Dispatch selected: click only, for that one dispatch.
+pub fn record_click() -> KeyEvent {
+    KeyEvent::new(KeyCode::Null, KeyModifiers::META)
+}
+/// The Telemetry ↗ button of a numbered task: click only.
+pub fn telemetry_click() -> KeyEvent {
+    KeyEvent::new(KeyCode::Null, KeyModifiers::HYPER)
+}
 /// Why the page cannot confirm its target now, or `None` when it can.
 pub fn confirmation_problem(confirmation: &Confirmation) -> Option<String> {
     let id = &confirmation.key.id;
@@ -155,6 +163,10 @@ pub struct Panel {
     pub(crate) locate: Option<Task>,
     /// A cancelled confirmation reason, by task id and action, for the next opening.
     pub(crate) return_draft: Option<(String, Transition, String)>,
+    /// This dispatch's recording choice when the user changed it from the project default.
+    pub record: Option<bool>,
+    /// A Telemetry ↗ press for the plugin to hand to the host, taken from the input callback.
+    pub telemetry_request: Option<saddle_plugin_sdk::protocol::TelemetryFilter>,
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -202,6 +214,8 @@ impl Panel {
                 || hit.key == return_click()
                 || hit.key == dispatch_click()
                 || hit.key == dispatch_selected_click()
+                || hit.key == record_click()
+                || hit.key == telemetry_click()
             {
                 return self.key(hit.key);
             }
@@ -579,6 +593,7 @@ impl Panel {
             self.content = None;
             self.links = Default::default();
             self.dispatch = Default::default();
+            self.record = None;
             return;
         };
         if !self.content.as_ref().is_some_and(|content| {
@@ -590,6 +605,7 @@ impl Panel {
             self.text_scroll = 0;
             self.links = Default::default();
             self.dispatch = Default::default();
+            self.record = None;
         }
     }
     fn edit(&mut self) {
@@ -844,7 +860,36 @@ impl Panel {
                 project: self.project.clone(),
                 pos,
                 token,
+                // Kept if this fails; a new task selection starts from the default again.
+                record: self.record,
             }));
+        }
+        if key == record_click() {
+            if self.dispatch_target().is_some() {
+                self.record = Some(!self.recording());
+            }
+            return None;
+        }
+        if key == telemetry_click() {
+            if let (Page::List, Some(id)) = (
+                &self.page,
+                self.content.as_ref().and_then(|c| c.task.id.clone()),
+            ) {
+                let scope = self
+                    .snapshot
+                    .as_ref()
+                    .map(|s| s.project.clone())
+                    .filter(|p| !p.is_empty())
+                    .unwrap_or_else(|| self.project.clone());
+                // Every run of the task: no run, so the page lists them all.
+                self.telemetry_request = Some(saddle_plugin_sdk::protocol::TelemetryFilter {
+                    kind: crate::telemetry::KIND.into(),
+                    scope,
+                    key: id,
+                    run: None,
+                });
+            }
+            return None;
         }
         if key == dispatch_click() {
             if matches!(self.page, Page::List) {
@@ -1169,6 +1214,21 @@ impl Panel {
                     to,
                 }));
             }
+            KeyCode::Char('R') if !self.busy && matches!(self.page, Page::List) => {
+                if self.read_error.is_some() {
+                    return None;
+                }
+                let Some(snapshot) = &self.snapshot else {
+                    self.message_failed = true;
+                    self.message = "Waiting for queue data; action not sent".into();
+                    return None;
+                };
+                let operation = Operation::RecordDefault(!snapshot.record_default);
+                self.busy = true;
+                self.message_failed = false;
+                self.message = "Saving the recording default…".into();
+                return Some(Request::Run(operation));
+            }
             KeyCode::Char('p') if !self.busy && matches!(self.page, Page::List) => {
                 if self.read_error.is_some() {
                     return None;
@@ -1199,6 +1259,12 @@ impl Panel {
         } else {
             t.agent_idle
         }
+    }
+    /// Whether the selected Pending task's dispatch will be recorded: its own choice, or the
+    /// project default.
+    fn recording(&self) -> bool {
+        self.record
+            .unwrap_or_else(|| self.snapshot.as_ref().is_some_and(|s| s.record_default))
     }
     /// A sub-page has replaced the list and content inside the popup.
     pub fn overlay_open(&self) -> bool {
@@ -1348,15 +1414,26 @@ impl Panel {
             t,
             frame,
             actions,
-            &[B::new(
-                if self.snapshot.as_ref().is_some_and(|s| s.paused) {
-                    "Resume p"
-                } else {
-                    "Pause p"
-                },
-                K::Char('p'),
-                ready,
-            )],
+            &[
+                B::new(
+                    if self.snapshot.as_ref().is_some_and(|s| s.paused) {
+                        "Resume p"
+                    } else {
+                        "Pause p"
+                    },
+                    K::Char('p'),
+                    ready,
+                ),
+                B::new(
+                    if self.snapshot.as_ref().is_some_and(|s| s.record_default) {
+                        "Record default: On R"
+                    } else {
+                        "Record default: Off R"
+                    },
+                    K::Char('R'),
+                    ready,
+                ),
+            ],
         );
         self.buttons.extend(hits);
         if below.height < 2 {
@@ -1459,11 +1536,19 @@ impl Panel {
                 ),
                 B::new("Delete x", K::Char('x'), ready).danger(),
             ]);
+            let dispatchable = ready && self.dispatch_target().is_some();
             let mut button = B::new(
-                "Dispatch selected",
+                if self.recording() {
+                    "[x] Record"
+                } else {
+                    "[ ] Record"
+                },
                 K::Null,
-                ready && self.dispatch_target().is_some(),
+                dispatchable,
             );
+            button.key = record_click();
+            controls.push(button);
+            let mut button = B::new("Dispatch selected", K::Null, dispatchable);
             button.key = dispatch_selected_click();
             controls.push(button);
         }
@@ -1602,26 +1687,29 @@ impl Panel {
         );
         let dispatch_label = format!("{} Dispatch", mark(View::Dispatch));
         let links_label = format!("{} Links", mark(View::Links));
+        let numbered = self.content.as_ref().is_some_and(|c| c.task.id.is_some());
         let draw_tabs = if outlined {
             buttons::draw_outlined_top
         } else {
             buttons::draw_compact_top
         };
-        let (mut body, hits) = draw_tabs(
-            t,
-            frame,
-            area,
-            &[
-                tab(&text_label, K::Char('t'), View::Text),
-                tab(&details_label, K::Enter, View::Details),
-                {
-                    let mut button = tab(&dispatch_label, K::Null, View::Dispatch);
-                    button.key = dispatch_click();
-                    button
-                },
-                tab(&links_label, K::Null, View::Links),
-            ],
-        );
+        let mut tabs = vec![
+            tab(&text_label, K::Char('t'), View::Text),
+            tab(&details_label, K::Enter, View::Details),
+            {
+                let mut button = tab(&dispatch_label, K::Null, View::Dispatch);
+                button.key = dispatch_click();
+                button
+            },
+            tab(&links_label, K::Null, View::Links),
+        ];
+        // Not a view: opens Saddle's Telemetry page on every run of this numbered task.
+        if numbered {
+            let mut button = B::new("Telemetry ↗", K::Null, shown);
+            button.key = telemetry_click();
+            tabs.push(button);
+        }
+        let (mut body, hits) = draw_tabs(t, frame, area, &tabs);
         // The chosen view is bold in focus colour; the other one's label is grey.
         let selected = match self.view {
             View::Text => KeyEvent::from(K::Char('t')),
@@ -2086,7 +2174,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control explicit dispatch; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll text or details\nr: Refresh; p: Pause / Resume explicit dispatch\na: Add task; A: All pending\ne: Edit pending; u / d: Move pending; x: Delete pending\nDispatch selected: explicitly send the selected Pending task\nSubmit for review: selected Running to Awaiting\nAccept: selected Awaiting to Done\nReturn to pending: Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.\nTab: Switch field; Ctrl-S: Save\nEsc: Back or close Tasks; Ctrl-]: Agents".into(),
+                    Page::Help=>"Tasks help\nTop actions control explicit dispatch; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll text or details\nr: Refresh; p: Pause / Resume explicit dispatch\na: Add task; A: All pending\ne: Edit pending; u / d: Move pending; x: Delete pending\nDispatch selected: explicitly send the selected Pending task\nR: Record default for this project; [ ] Record beside Dispatch selected changes it for that dispatch only. Saddle's Telemetry recording switch still decides.\nTelemetry ↗: Saddle's Telemetry page on every run of the selected numbered task\nSubmit for review: selected Running to Awaiting\nAccept: selected Awaiting to Done\nReturn to pending: Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.\nTab: Switch field; Ctrl-S: Save\nEsc: Back or close Tasks; Ctrl-]: Agents".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),

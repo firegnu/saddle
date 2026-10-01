@@ -866,3 +866,60 @@ fn carried_from_names_the_target_trace_or_says_why_it_cannot() {
     assert!(failed.contains("ambiguous"), "{failed}");
     assert!(!failed.contains("trace sour"), "{failed}");
 }
+
+#[test]
+fn a_prefilled_binding_with_control_characters_is_shown_escaped_and_queried_exactly() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let store = store(&root);
+    let odd = "T1\u{1b}[31m\nnext";
+    for (id, key) in [("odd", odd), ("stripped", "T1[31mnext"), ("t2", "T2")] {
+        task(&store, id, key, &format!("{id} task"));
+    }
+    let filter = |key: &str| BindingFilter {
+        kind: "drover.task".into(),
+        scope: "/synthetic/proj".into(),
+        key: key.into(),
+        run: None,
+    };
+    let mut page = Page::open(
+        Ok(Store::new(root.clone())),
+        Some(filter(odd)),
+        Some("Drover".into()),
+    );
+    let text = shown(&mut page);
+    assert!(
+        text.contains("1 trace") && text.contains("odd task"),
+        "{text}"
+    );
+    assert!(text.contains(r"key=T1\x1b[31m\nnext (from D"), "{text}");
+    // The form shows the same visible escapes and keeps the exact value.
+    press(&mut page, KeyCode::Char('f'));
+    let text = shown(&mut page);
+    let field = text
+        .lines()
+        .find(|l| l.contains("kind ") && !l.contains("Filter:"))
+        .unwrap_or_default()
+        .to_owned();
+    assert!(field.contains(r"T1\x1b[31m\nnext"), "{text}");
+    assert!(!text.contains('\u{1b}'), "{text}");
+    press(&mut page, KeyCode::Enter);
+    let text = shown(&mut page);
+    assert!(
+        text.contains("1 trace") && text.contains("odd task"),
+        "{text}"
+    );
+    assert!(!text.contains("stripped task"), "{text}");
+    // Typing into that field replaces the whole value; the others edit as before.
+    press(&mut page, KeyCode::Char('f'));
+    press(&mut page, KeyCode::Tab);
+    press(&mut page, KeyCode::Tab);
+    typed(&mut page, "T2");
+    press(&mut page, KeyCode::Enter);
+    let text = shown(&mut page);
+    assert!(
+        text.contains("1 trace") && text.contains("t2 task"),
+        "{text}"
+    );
+    assert!(text.contains("key=T2"), "{text}");
+}

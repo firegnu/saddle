@@ -7,6 +7,18 @@ pub struct BindingFilter {
     pub key: String,
     pub run: Option<String>,
 }
+impl BindingFilter {
+    /// The binding rule: kind, scope and key nonempty without NUL; run likewise when given.
+    pub fn validate(&self) -> Result<()> {
+        for value in [&self.kind, &self.scope, &self.key] {
+            model::nonempty(value)?;
+        }
+        if let Some(run) = &self.run {
+            model::nonempty(run)?;
+        }
+        Ok(())
+    }
+}
 
 pub struct EventQuery {
     pub trace_id: Option<String>,
@@ -232,12 +244,7 @@ impl Store {
 
     pub fn list_bound(&self, filter: Option<&BindingFilter>) -> Result<Value> {
         if let Some(filter) = filter {
-            for value in [&filter.kind, &filter.scope, &filter.key] {
-                model::nonempty(value)?;
-            }
-            if let Some(run) = &filter.run {
-                model::nonempty(run)?;
-            }
+            filter.validate()?;
         }
         let Some(mut conn) = self.reader()? else {
             return Ok(json!({"schema_version":1,"ok":true,"initialized":false,"traces":[]}));
