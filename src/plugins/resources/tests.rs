@@ -806,3 +806,226 @@ fn setup_files_resolve_only_to_installed_own_files() {
     );
     assert!(summary.contains("Nothing was overwritten"), "{summary}");
 }
+
+// Rework 1 (M1): names read back from the ownership record are never used as paths unchecked.
+#[test]
+fn record_file_names_are_checked_before_any_file_access() {
+    let env = Env::new();
+    env.res().apply(r1(), Trigger::Enable, true);
+    let sibling = env.home().join(".claude/skills/keep.txt");
+    fs::write(&sibling, b"skill v1").unwrap();
+    let absolute = env.dir.path().join("absolute.md");
+    fs::write(&absolute, b"skill v1").unwrap();
+    let res = env.res();
+    let mut record = res.read().unwrap();
+    for e in &mut record.targets {
+        if e.agent == "claude-code" {
+            e.files.insert("../keep.txt".into(), sha256(b"skill v1"));
+        } else {
+            e.pending = Some(Version {
+                revision: 2,
+                files: [(absolute.display().to_string(), sha256(b"skill v1"))].into(),
+            });
+        }
+    }
+    res.save(&record).unwrap();
+    for (trigger, enabled) in [
+        (Trigger::Startup, true),
+        (Trigger::Sync, true),
+        (Trigger::Remove, false),
+    ] {
+        let receipt = env.res().apply(r2(), trigger, enabled);
+        assert_eq!(fs::read(&sibling).unwrap(), b"skill v1", "{trigger:?}");
+        assert_eq!(fs::read(&absolute).unwrap(), b"skill v1", "{trigger:?}");
+        for agent in ["claude-code", "codex"] {
+            let t = result(&receipt, agent);
+            assert_eq!(
+                (t.before, t.result, t.reason.as_deref()),
+                (Class::Unreadable, Outcome::Failed, Some("invalid_record")),
+                "{agent} {trigger:?}"
+            );
+        }
+    }
+    for f in R1 {
+        assert_eq!(fs::read(env.claude().join(f.path)).unwrap(), f.bytes);
+    }
+    let status = env.res().status(r2()).unwrap();
+    assert_eq!(
+        target(&status, "claude-code").reason.as_deref(),
+        Some("invalid_record")
+    );
+}
+
+// Rework 1 (M2): links anywhere below HOME are reported, never followed.
+#[test]
+fn linked_parent_directories_are_reported_and_never_followed() {
+    let env = Env::new();
+    env.res().apply(r1(), Trigger::Enable, true);
+    // Replaced before the call, no race: Claude Code's skills and Codex's agent home.
+    let outside = env.dir.path().join("outside");
+    put(&outside.join("skill-a"), R1);
+    let skills = env.home().join(".claude/skills");
+    fs::rename(&skills, env.dir.path().join("skills.orig")).unwrap();
+    symlink(&outside, &skills).unwrap();
+    let agents = env.dir.path().join("agents.orig");
+    fs::rename(env.home().join(".agents"), &agents).unwrap();
+    symlink(&agents, env.home().join(".agents")).unwrap();
+    let before = tree(env.dir.path());
+    for (trigger, enabled) in [
+        (Trigger::Startup, true),
+        (Trigger::Sync, true),
+        (Trigger::Remove, false),
+    ] {
+        let receipt = env.res().apply(r2(), trigger, enabled);
+        for agent in ["claude-code", "codex"] {
+            let t = result(&receipt, agent);
+            assert_eq!(
+                (t.result, t.reason.as_deref()),
+                (Outcome::Conflict, Some("parent_symlink")),
+                "{agent} {trigger:?}"
+            );
+        }
+    }
+    assert_eq!(tree(env.dir.path()), before);
+    let status = env.res().status(r2()).unwrap();
+    assert_eq!(
+        target(&status, "codex").reason.as_deref(),
+        Some("parent_symlink")
+    );
+
+    // Nothing recorded: a linked agent home receives nothing either.
+    let env = Env::new();
+    let elsewhere = env.dir.path().join("elsewhere");
+    fs::create_dir(&elsewhere).unwrap();
+    fs::remove_dir(env.home().join(".agents")).unwrap();
+    symlink(&elsewhere, env.home().join(".agents")).unwrap();
+    let receipt = env.res().apply(r2(), Trigger::Enable, true);
+    let codex = result(&receipt, "codex");
+    assert_eq!(
+        (codex.before, codex.result, codex.reason.as_deref()),
+        (Class::Foreign, Outcome::Conflict, Some("parent_symlink"))
+    );
+    assert_eq!(fs::read_dir(&elsewhere).unwrap().count(), 0);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Installed);
+}
+
+// Rework 1 (M2): work continues in the verified directory even if the path changes midway.
+#[test]
+fn writes_stay_in_the_verified_directory_when_the_path_changes_midway() {
+    let env = Env::new();
+    env.res().apply(r1(), Trigger::Enable, true);
+    let outside = env.dir.path().join("outside");
+    put(&outside.join("skill-a"), R1);
+    let skills = env.home().join(".claude/skills");
+    let moved = env.dir.path().join("skills.moved");
+    let (s, m, o) = (skills.clone(), moved.clone(), outside.clone());
+    let mut done = false;
+    on_fault(move |step| {
+        if step == "write:README.md" && !done {
+            done = true;
+            fs::rename(&s, &m).unwrap();
+            symlink(&o, &s).unwrap();
+        }
+        Ok(())
+    });
+    let receipt = env.res().apply(r2(), Trigger::Sync, true);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Updated);
+    for f in R1 {
+        assert_eq!(
+            fs::read(outside.join("skill-a").join(f.path)).unwrap(),
+            f.bytes
+        );
+    }
+    for f in R2 {
+        assert_eq!(
+            fs::read(moved.join("skill-a").join(f.path)).unwrap(),
+            f.bytes
+        );
+    }
+    assert!(!moved.join("skill-a/OLD.md").exists());
+}
+
+// Rework 1 (M3): a complete pending set is written back by the next allowed write path.
+#[test]
+fn complete_pending_versions_are_persisted_by_the_next_allowed_write() {
+    let env = Env::new();
+    let path = env.claude();
+    let entry = || {
+        env.res()
+            .read()
+            .unwrap()
+            .targets
+            .into_iter()
+            .find(|e| e.path == env.claude())
+    };
+    let interrupted = |files: &[ResourceFile]| {
+        reset(&env.claude());
+        reset(&env.codex());
+        env.forget();
+        put(&env.claude(), files);
+        env.record(
+            &env.claude(),
+            "claude-code",
+            version(1, R1),
+            Some(version(2, R2)),
+        );
+    };
+
+    // A failed write-back is reported and the pending evidence stays.
+    interrupted(R2);
+    let before = fs::read(env.state().join(RECORD)).unwrap();
+    assert_eq!(claude_class(&env, r2()).0, Class::OwnedCurrent);
+    assert_eq!(
+        fs::read(env.state().join(RECORD)).unwrap(),
+        before,
+        "status stays read-only"
+    );
+    fail_once("record");
+    let receipt = env.res().apply(r2(), Trigger::Sync, true);
+    let claude = result(&receipt, "claude-code");
+    assert_eq!(
+        (claude.result, claude.reason.as_deref()),
+        (Outcome::Failed, Some("record_write"))
+    );
+    assert!(entry().unwrap().pending.is_some());
+
+    // Complete new set: finalised even though no skill file changes.
+    let receipt = env.res().apply(r2(), Trigger::Sync, true);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Unchanged);
+    let saved = entry().unwrap();
+    assert!(saved.pending.is_none());
+    assert_eq!((saved.revision, saved.files), (2, version(2, R2).files));
+    // A name only the old version had is now an ordinary user file.
+    fs::write(path.join("OLD.md"), "mine").unwrap();
+    assert_eq!(claude_class(&env, r2()).0, Class::OwnedCurrent);
+    let receipt = env.res().apply(r2(), Trigger::Remove, false);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Removed);
+    assert_eq!(fs::read(path.join("OLD.md")).unwrap(), b"mine");
+
+    // Complete old set: the pending upgrade is withdrawn, also by an older build.
+    interrupted(R1);
+    env.res().apply(r1(), Trigger::Sync, true);
+    let saved = entry().unwrap();
+    assert!(saved.pending.is_none());
+    assert_eq!(saved.revision, 1);
+
+    // Startup writes the record back too, without creating any target.
+    interrupted(R2);
+    env.res().apply(r2(), Trigger::Startup, true);
+    assert!(entry().unwrap().pending.is_none());
+    assert!(!env.codex().exists());
+}
+
+// Rework 1 (M3): a removal that deleted every own file clears its record on retry.
+#[test]
+fn a_completed_removal_clears_its_record_and_keeps_user_files() {
+    let env = Env::new();
+    let path = env.claude();
+    fs::create_dir_all(&path).unwrap();
+    fs::write(path.join("EXTRA.md"), "mine").unwrap();
+    env.record(&path, "claude-code", version(2, R2), Some(Version::none()));
+    let receipt = env.res().apply(r2(), Trigger::Remove, false);
+    assert_eq!(result(&receipt, "claude-code").result, Outcome::Removed);
+    assert!(env.res().read().unwrap().targets.is_empty());
+    assert_eq!(fs::read(path.join("EXTRA.md")).unwrap(), b"mine");
+}

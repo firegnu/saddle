@@ -5,9 +5,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
+    ffi::{CStr, CString},
     fs,
     io::{self, Read, Write},
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    os::{
+        fd::{AsRawFd, FromRawFd, OwnedFd},
+        unix::{
+            ffi::OsStrExt,
+            fs::{DirBuilderExt, PermissionsExt},
+        },
+    },
     path::{Path, PathBuf},
 };
 
@@ -81,6 +88,8 @@ pub struct TargetStatus {
     /// Files verified as this plugin's own, unmodified install.
     #[serde(skip)]
     files: Vec<String>,
+    #[serde(skip)]
+    recorded: bool,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct ResourceStatus {
@@ -192,11 +201,13 @@ impl TargetReceipt {
             Outcome::Unchanged if self.before == Class::Missing => {
                 "missing (Sync resources reinstalls)".into()
             }
+            Outcome::Unchanged if reason == "recovered" => "unchanged (record recovered)".into(),
             Outcome::Unchanged => "unchanged".into(),
             Outcome::Removed if self.detail.is_some() => "removed (your files kept)".into(),
             Outcome::Removed => "removed".into(),
             Outcome::Conflict => match reason {
                 "symlink" => "conflict (existing link kept)".into(),
+                "parent_symlink" => "conflict (linked directory kept)".into(),
                 "directory" | "exists" => "conflict (existing directory kept)".into(),
                 "file" => "conflict (existing file kept)".into(),
                 "incomplete" => "incomplete (not repaired)".into(),
@@ -211,12 +222,14 @@ impl TargetReceipt {
 impl TargetStatus {
     /// The ownership record has an entry for this target.
     pub fn recorded(&self) -> bool {
-        !matches!(
-            self.state,
-            Class::Absent | Class::Foreign | Class::Unreadable
-        )
+        self.recorded
     }
     pub fn text(&self) -> String {
+        match self.reason.as_deref() {
+            Some("parent_symlink") => return "Conflict — linked directory kept".into(),
+            Some("invalid_record") => return "Unreadable — invalid ownership record".into(),
+            _ => {}
+        }
         match self.state {
             Class::Absent if self.reason.as_deref() == Some("agent_absent") => {
                 "Not installed (agent not found)".into()
@@ -350,6 +363,7 @@ impl Resources {
                                         state: p.seen.class,
                                         detail: p.seen.detail,
                                         path: p.path,
+                                        recorded: p.recorded,
                                     })
                                     .collect()
                             }
@@ -401,22 +415,24 @@ impl Resources {
         record: &Record,
     ) -> Result<Vec<Planned>, String> {
         let home = self.home.as_ref().ok_or("home_unavailable")?;
+        let root = Dir::anchor(home).map_err(|e| format!("home_unavailable: {e}"))?;
         Ok(AGENTS
             .iter()
             .map(|agent| {
-                let agent_home = home.join(agent.home);
-                let path = agent_home.join("skills").join(r.name);
+                let path = home.join(agent.home).join("skills").join(r.name);
                 let key = Key {
                     plugin: m.id,
                     resource: r.name,
                     agent: agent.id,
                 };
                 let entry = record.find(&key, &path);
+                let (present, dirs, seen) = locate(&root, agent.home, r.name, entry, shipped);
                 Planned {
                     agent,
-                    // The agent's own home may be a link (dotfile managers); targets never are.
-                    present: fs::metadata(&agent_home).is_ok_and(|m| m.is_dir()),
-                    seen: classify(&path, entry, shipped),
+                    present,
+                    recorded: entry.is_some(),
+                    seen,
+                    dirs,
                     key,
                     path,
                 }
@@ -465,7 +481,7 @@ impl Resources {
             .iter()
             .flatten()
             .flatten()
-            .any(|p| act(trigger, p.seen.class, p.present).writes());
+            .any(|p| p.seen.settle.is_some() || act(trigger, p.seen.class, p.present).writes());
         let mut busy = false;
         let _lock = if writes {
             match self.lock() {
@@ -518,22 +534,42 @@ impl Resources {
                 let done = if busy {
                     Done::new(Outcome::Busy, Some("busy"), None)
                 } else {
-                    match act(trigger, p.seen.class, p.present) {
-                        Act::Report(outcome) => Done::new(outcome, None, None),
-                        Act::Skip => Done::new(Outcome::Skipped, Some("agent_absent"), None),
-                        Act::Install => self.install(&mut record, &p, shipped, r.files),
-                        Act::Upgrade => self.upgrade(&mut record, &p, shipped, r.files),
-                        Act::Remove => self.remove(&mut record, &p),
-                        Act::Forget => {
-                            record.set(&p.key, &p.path, None);
-                            match self.save(&record) {
-                                Ok(()) => Done::new(Outcome::Removed, None, None),
-                                Err(e) => Done::failed("record_write", e),
-                            }
+                    match self.settle(&mut record, &p) {
+                        Err(done) => done,
+                        Ok(true)
+                            if trigger == Trigger::Remove
+                                && matches!(p.seen.settle, Some(Settle::Drop)) =>
+                        {
+                            Done::new(Outcome::Removed, None, empty_away(&p))
                         }
+                        Ok(recovered) => match act(trigger, p.seen.class, p.present) {
+                            Act::Report(Outcome::Unchanged) if recovered => {
+                                Done::new(Outcome::Unchanged, Some("recovered"), None)
+                            }
+                            Act::Report(outcome) => Done::new(outcome, None, None),
+                            Act::Skip => Done::new(Outcome::Skipped, Some("agent_absent"), None),
+                            Act::Install => self.install(&mut record, &p, shipped, r.files),
+                            Act::Upgrade => self.upgrade(&mut record, &p, shipped, r.files),
+                            Act::Remove => self.remove(&mut record, &p),
+                            Act::Forget => {
+                                record.set(&p.key, &p.path, None);
+                                match self.save(&record) {
+                                    Ok(()) => Done::new(Outcome::Removed, None, None),
+                                    Err(e) => Done::failed("record_write", e),
+                                }
+                            }
+                        },
                     }
                 };
                 t.result = done.outcome;
+                // A completed write describes the target now, not its state before.
+                if matches!(
+                    done.outcome,
+                    Outcome::Installed | Outcome::Updated | Outcome::Removed
+                ) {
+                    t.reason = None;
+                    t.detail = None;
+                }
                 if let Some(reason) = done.reason {
                     t.reason = Some(reason.into());
                 }
@@ -616,9 +652,19 @@ struct Key<'a> {
 struct Planned {
     agent: &'static Agent,
     present: bool,
+    recorded: bool,
     key: Key<'static>,
     path: PathBuf,
     seen: Seen,
+    dirs: Dirs,
+}
+/// Directories opened from HOME without following links; every read, write, delete and
+/// rollback of a target goes through them.
+#[derive(Default)]
+struct Dirs {
+    agent: Option<Dir>,
+    skills: Option<Dir>,
+    target: Option<Dir>,
 }
 struct Seen {
     class: Class,
@@ -627,6 +673,14 @@ struct Seen {
     revision: Option<u32>,
     reason: Option<String>,
     detail: Option<String>,
+    /// A complete pending set the next allowed write path persists (design §6.5).
+    settle: Option<Settle>,
+}
+enum Settle {
+    /// Record this complete version, without pending.
+    Version(Version),
+    /// A removal deleted every own file: drop the entry, keep what the user has there.
+    Drop,
 }
 impl Seen {
     fn new(class: Class, reason: Option<&str>, detail: Option<String>) -> Self {
@@ -636,7 +690,21 @@ impl Seen {
             revision: None,
             reason: reason.map(Into::into),
             detail,
+            settle: None,
         }
+    }
+    fn absent(entry: Option<&Entry>) -> Self {
+        let mut seen = Self::new(
+            if entry.is_some() {
+                Class::Missing
+            } else {
+                Class::Absent
+            },
+            None,
+            None,
+        );
+        seen.revision = entry.map(|e| e.revision);
+        seen
     }
 }
 struct Done {
@@ -735,6 +803,26 @@ impl Version {
 }
 
 impl Resources {
+    /// Write back a complete pending set before acting; on failure the pending evidence
+    /// stays on disk and in memory.
+    fn settle(&self, record: &mut Record, p: &Planned) -> Result<bool, Done> {
+        let Some(settle) = &p.seen.settle else {
+            return Ok(false);
+        };
+        let previous = record.find(&p.key, &p.path).cloned();
+        let entry = match settle {
+            Settle::Version(v) => Some(Entry::new(&p.key, &p.path, v, None)),
+            Settle::Drop => None,
+        };
+        record.set(&p.key, &p.path, entry);
+        match self.save(record) {
+            Ok(()) => Ok(true),
+            Err(e) => {
+                record.set(&p.key, &p.path, previous);
+                Err(Done::failed("record_write", e))
+            }
+        }
+    }
     /// Parent check → pending record → mkdir → files (SKILL.md last) → final record.
     fn install(
         &self,
@@ -743,21 +831,32 @@ impl Resources {
         new: &Version,
         files: &[ResourceFile],
     ) -> Done {
-        let skills = p.path.parent().expect("target has a parent");
-        let created_skills = match fs::metadata(skills) {
-            Ok(m) if m.is_dir() => false,
-            Ok(_) => return Done::failed("skills_not_directory", skills.display()),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                if let Err(e) = step("skills").and_then(|()| fs::create_dir(skills)) {
+        let name = p.key.resource;
+        let agent = p.dirs.agent.as_ref().expect("agent home is present");
+        let mut created_skills = false;
+        let opened;
+        let skills = match &p.dirs.skills {
+            Some(skills) => skills,
+            None => {
+                if let Err(e) = step("skills").and_then(|()| agent.mkdir("skills")) {
                     return Done::failed("mkdir", e);
                 }
-                true
+                created_skills = true;
+                match agent.open("skills") {
+                    Ok(dir) => {
+                        opened = dir;
+                        &opened
+                    }
+                    Err(e) => {
+                        let _ = agent.rmdir("skills");
+                        return Done::failed("mkdir", e);
+                    }
+                }
             }
-            Err(e) => return Done::failed("unreadable", e),
         };
         let tidy = || {
             if created_skills {
-                let _ = fs::remove_dir(skills);
+                let _ = agent.rmdir("skills");
             }
         };
         let previous = record.find(&p.key, &p.path).cloned();
@@ -771,24 +870,33 @@ impl Resources {
             tidy();
             return Done::failed("record_write", e);
         }
-        if let Err(e) = step("mkdir").and_then(|()| fs::create_dir(&p.path)) {
-            record.set(&p.key, &p.path, previous);
-            let _ = self.save(record);
-            tidy();
-            return if e.kind() == io::ErrorKind::AlreadyExists {
-                Done::new(Outcome::Conflict, Some("exists"), None)
-            } else {
-                Done::failed("mkdir", e)
-            };
-        }
+        let target = match step("mkdir")
+            .and_then(|()| skills.mkdir(name))
+            .and_then(|()| skills.open(name))
+        {
+            Ok(target) => target,
+            Err(e) => {
+                if e.kind() != io::ErrorKind::AlreadyExists {
+                    let _ = skills.rmdir(name);
+                }
+                record.set(&p.key, &p.path, previous);
+                let _ = self.save(record);
+                tidy();
+                return if e.kind() == io::ErrorKind::AlreadyExists {
+                    Done::new(Outcome::Conflict, Some("exists"), None)
+                } else {
+                    Done::failed("mkdir", e)
+                };
+            }
+        };
         let mut written = vec![];
         for f in ordered(files) {
-            if let Err(e) = step(&format!("write:{}", f.path))
-                .and_then(|()| write_atomic(&p.path.join(f.path), f.bytes))
+            if let Err(e) =
+                step(&format!("write:{}", f.path)).and_then(|()| target.write(f.path, f.bytes))
             {
-                let kept = rollback(&p.path, &written, new, &BTreeMap::new());
+                let kept = rollback(&target, &written, new, &BTreeMap::new());
                 if kept.is_empty() {
-                    let _ = fs::remove_dir(&p.path);
+                    let _ = skills.rmdir(name);
                     record.set(&p.key, &p.path, previous);
                 }
                 // Otherwise the pending entry stays: the target reads as incomplete.
@@ -810,15 +918,11 @@ impl Resources {
         files: &[ResourceFile],
     ) -> Done {
         let old = p.seen.version.as_ref().expect("owned version");
-        let mut bytes = BTreeMap::new();
-        for (name, hash) in &old.files {
-            match read_file(&p.path.join(name)) {
-                Ok(Some(b)) if sha256(&b) == *hash => {
-                    bytes.insert(name.as_str(), b);
-                }
-                _ => return Done::new(Outcome::Conflict, Some("modified"), Some(name.clone())),
-            }
-        }
+        let target = p.dirs.target.as_ref().expect("owned target");
+        let bytes = match own_bytes(target, old) {
+            Ok(bytes) => bytes,
+            Err(name) => return Done::new(Outcome::Conflict, Some("modified"), Some(name)),
+        };
         record.set(
             &p.key,
             &p.path,
@@ -840,30 +944,30 @@ impl Resources {
         let result = (|| -> io::Result<()> {
             for f in changed.iter().filter(|f| f.path != SKILL) {
                 current = f.path;
-                unchanged(&p.path, f.path, old)?;
+                unchanged(target, f.path, old)?;
                 step(&format!("write:{}", f.path))?;
-                write_atomic(&p.path.join(f.path), f.bytes)?;
+                target.write(f.path, f.bytes)?;
                 written.push(f.path);
             }
             for name in old.files.keys().filter(|n| !new.files.contains_key(*n)) {
                 current = name;
-                unchanged(&p.path, name, old)?;
+                unchanged(target, name, old)?;
                 step(&format!("delete:{name}"))?;
-                fs::remove_file(p.path.join(name))?;
+                target.remove(name)?;
                 deleted.push(name.as_str());
             }
             for f in changed.iter().filter(|f| f.path == SKILL) {
                 current = f.path;
-                unchanged(&p.path, f.path, old)?;
+                unchanged(target, f.path, old)?;
                 step(&format!("write:{}", f.path))?;
-                write_atomic(&p.path.join(f.path), f.bytes)?;
+                target.write(f.path, f.bytes)?;
                 written.push(f.path);
             }
             Ok(())
         })();
         if let Err(e) = result {
-            let mut kept = rollback(&p.path, &written, new, &bytes);
-            kept.extend(restore(&p.path, &deleted, &bytes));
+            let mut kept = rollback(target, &written, new, &bytes);
+            kept.extend(restore(target, &deleted, &bytes));
             if kept.is_empty() {
                 record.set(
                     &p.key,
@@ -880,15 +984,11 @@ impl Resources {
     /// files; the directory only when empty. User files and foreign targets stay.
     fn remove(&self, record: &mut Record, p: &Planned) -> Done {
         let version = p.seen.version.as_ref().expect("owned version");
-        let mut bytes = BTreeMap::new();
-        for (name, hash) in &version.files {
-            match read_file(&p.path.join(name)) {
-                Ok(Some(b)) if sha256(&b) == *hash => {
-                    bytes.insert(name.as_str(), b);
-                }
-                _ => return Done::new(Outcome::Conflict, Some("modified"), Some(name.clone())),
-            }
-        }
+        let target = p.dirs.target.as_ref().expect("owned target");
+        let bytes = match own_bytes(target, version) {
+            Ok(bytes) => bytes,
+            Err(name) => return Done::new(Outcome::Conflict, Some("modified"), Some(name)),
+        };
         record.set(
             &p.key,
             &p.path,
@@ -916,15 +1016,15 @@ impl Resources {
         let result = (|| -> io::Result<()> {
             for name in &order {
                 current = name;
-                unchanged(&p.path, name, version)?;
+                unchanged(target, name, version)?;
                 step(&format!("delete:{name}"))?;
-                fs::remove_file(p.path.join(name))?;
+                target.remove(name)?;
                 deleted.push(*name);
             }
             Ok(())
         })();
         if let Err(e) = result {
-            let kept = restore(&p.path, &deleted, &bytes);
+            let kept = restore(target, &deleted, &bytes);
             if kept.is_empty() {
                 record.set(
                     &p.key,
@@ -935,13 +1035,7 @@ impl Resources {
             let _ = self.save(record);
             return Done::failed("delete", failure(current, e, &kept));
         }
-        let left = match fs::remove_dir(&p.path) {
-            Ok(()) => None,
-            Err(e) if e.kind() == io::ErrorKind::DirectoryNotEmpty => {
-                Some("directory kept with files that are not Saddle's".to_owned())
-            }
-            Err(e) => Some(format!("directory kept: {e}")),
-        };
+        let left = empty_away(p);
         record.set(&p.key, &p.path, None);
         if let Err(e) = self.save(record) {
             return Done::failed("record_write", e);
@@ -965,21 +1059,44 @@ impl Resources {
     }
 }
 
+/// Remove the target directory through the verified skills directory, only when empty.
+fn empty_away(p: &Planned) -> Option<String> {
+    let skills = p.dirs.skills.as_ref()?;
+    match skills.rmdir(p.key.resource) {
+        Ok(()) => None,
+        Err(e) if e.kind() == io::ErrorKind::DirectoryNotEmpty => {
+            Some("directory kept with files that are not Saddle's".to_owned())
+        }
+        Err(e) => Some(format!("directory kept: {e}")),
+    }
+}
+/// Every recorded file, still exactly as recorded; otherwise the first name that is not.
+fn own_bytes<'a>(dir: &Dir, version: &'a Version) -> Result<BTreeMap<&'a str, Vec<u8>>, String> {
+    let mut bytes = BTreeMap::new();
+    for (name, hash) in &version.files {
+        match dir.read(name) {
+            Ok(Some(b)) if sha256(&b) == *hash => {
+                bytes.insert(name.as_str(), b);
+            }
+            _ => return Err(name.clone()),
+        }
+    }
+    Ok(bytes)
+}
 /// Undo files this round wrote, but only those still holding this round's bytes.
 fn rollback(
-    dir: &Path,
+    dir: &Dir,
     written: &[&str],
     new: &Version,
     old: &BTreeMap<&str, Vec<u8>>,
 ) -> Vec<String> {
     let mut kept = vec![];
     for name in written.iter().rev() {
-        let path = dir.join(name);
-        let ours = hash_file(&path).ok().flatten().as_ref() == new.files.get(*name);
+        let ours = dir.hash(name).ok().flatten().as_ref() == new.files.get(*name);
         let undone = ours
             && match old.get(name) {
-                Some(bytes) => write_atomic(&path, bytes).is_ok(),
-                None => fs::remove_file(&path).is_ok(),
+                Some(bytes) => dir.write(name, bytes).is_ok(),
+                None => dir.remove(name).is_ok(),
             };
         if !undone {
             kept.push((*name).to_owned());
@@ -987,14 +1104,12 @@ fn rollback(
     }
     kept
 }
-/// Recreate files this round deleted, unless something else now occupies the path.
-fn restore(dir: &Path, deleted: &[&str], old: &BTreeMap<&str, Vec<u8>>) -> Vec<String> {
+/// Recreate files this round deleted, unless something else now occupies the name.
+fn restore(dir: &Dir, deleted: &[&str], old: &BTreeMap<&str, Vec<u8>>) -> Vec<String> {
     deleted
         .iter()
         .rev()
-        .filter(|name| {
-            exists(&dir.join(name)) || write_atomic(&dir.join(name), &old[*name]).is_err()
-        })
+        .filter(|name| dir.exists(name) || dir.write(name, &old[*name]).is_err())
         .map(|name| (*name).to_owned())
         .collect()
 }
@@ -1006,68 +1121,126 @@ fn failure(name: &str, e: io::Error, kept: &[String]) -> String {
     }
 }
 /// The file at `name` is still exactly the recorded one (or still absent).
-fn unchanged(dir: &Path, name: &str, version: &Version) -> io::Result<()> {
-    if hash_file(&dir.join(name))?.as_ref() == version.files.get(name) {
+fn unchanged(dir: &Dir, name: &str, version: &Version) -> io::Result<()> {
+    if dir.hash(name)?.as_ref() == version.files.get(name) {
         Ok(())
     } else {
         Err(io::Error::other("changed during this operation"))
     }
 }
 
-/// Design §6.3, lstat/O_NOFOLLOW only. Pending entries resolve to whichever version is
-/// complete on disk; anything else is incomplete and never repaired automatically.
-fn classify(path: &Path, entry: Option<&Entry>, shipped: &Version) -> Seen {
-    let meta = match fs::symlink_metadata(path) {
-        Ok(m) => m,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            let mut seen = Seen::new(
-                if entry.is_some() {
-                    Class::Missing
-                } else {
-                    Class::Absent
-                },
-                None,
-                None,
-            );
-            seen.revision = entry.map(|e| e.revision);
-            return seen;
-        }
-        Err(e) => return Seen::new(Class::Unreadable, Some("unreadable"), Some(e.to_string())),
-    };
-    let (kind, link) = if meta.file_type().is_symlink() {
-        let target = fs::read_link(path)
-            .map(|t| format!("-> {}", t.display()))
-            .unwrap_or_else(|e| e.to_string());
-        ("symlink", Some(target))
-    } else if meta.is_dir() {
-        ("directory", None)
-    } else {
-        ("file", None)
-    };
-    let Some(entry) = entry else {
-        return Seen::new(Class::Foreign, Some(kind), link);
-    };
-    if kind != "directory" {
-        return Seen::new(Class::Modified, Some(kind), link);
+/// Names read back from the record get the declarations' plain-name rule; an invalid
+/// record is only reported and never used as a path.
+fn invalid_names(entry: &Entry) -> Option<String> {
+    let bad: Vec<_> = entry
+        .files
+        .keys()
+        .chain(entry.pending.iter().flat_map(|p| p.files.keys()))
+        .filter(|n| !plain(n))
+        .cloned()
+        .collect();
+    (!bad.is_empty()).then(|| format!("invalid file names in record: {}", bad.join(", ")))
+}
+/// Walk HOME → agent home → skills → target without following links (design §6.3).
+/// HOME is the anchor; a link at any step below it is reported and never followed.
+fn locate(
+    root: &Dir,
+    home: &str,
+    name: &str,
+    entry: Option<&Entry>,
+    shipped: &Version,
+) -> (bool, Dirs, Seen) {
+    let mut dirs = Dirs::default();
+    if let Some(bad) = entry.and_then(invalid_names) {
+        let seen = Seen::new(Class::Unreadable, Some("invalid_record"), Some(bad));
+        return (false, dirs, seen);
     }
+    let taken = if entry.is_some() {
+        Class::Modified
+    } else {
+        Class::Foreign
+    };
+    let linked = |what: &str, to: String| {
+        Seen::new(taken, Some("parent_symlink"), Some(format!("{what} {to}")))
+    };
+    let unreadable =
+        |e: io::Error| Seen::new(Class::Unreadable, Some("unreadable"), Some(e.to_string()));
+    match root.node(home) {
+        Ok(Node::Dir) => {}
+        Ok(Node::Link(to)) => return (false, dirs, linked(home, to)),
+        // No agent home: never created on the user's behalf.
+        Ok(_) => return (false, dirs, Seen::absent(entry)),
+        Err(e) => return (false, dirs, unreadable(e)),
+    }
+    let agent = match root.open(home) {
+        Ok(agent) => agent,
+        Err(e) => return (false, dirs, unreadable(e)),
+    };
+    let skills = match agent.node("skills") {
+        Ok(Node::Absent) => {
+            dirs.agent = Some(agent);
+            return (true, dirs, Seen::absent(entry));
+        }
+        Ok(Node::Dir) => agent.open("skills"),
+        Ok(Node::Link(to)) => return (true, dirs, linked("skills", to)),
+        Ok(_) => {
+            let seen = Seen::new(Class::Unreadable, Some("skills_not_directory"), None);
+            return (true, dirs, seen);
+        }
+        Err(e) => Err(e),
+    };
+    dirs.agent = Some(agent);
+    let skills = match skills {
+        Ok(skills) => skills,
+        Err(e) => return (true, dirs, unreadable(e)),
+    };
+    let seen = match skills.node(name) {
+        Ok(Node::Absent) => Seen::absent(entry),
+        Ok(Node::Link(to)) => Seen::new(taken, Some("symlink"), Some(to)),
+        Ok(Node::Dir) => match entry {
+            None => Seen::new(Class::Foreign, Some("directory"), None),
+            Some(entry) => match skills.open(name) {
+                Ok(target) => {
+                    let seen = classify(&target, entry, shipped);
+                    dirs.target = Some(target);
+                    seen
+                }
+                Err(e) => unreadable(e),
+            },
+        },
+        Ok(_) => Seen::new(taken, Some("file"), None),
+        Err(e) => unreadable(e),
+    };
+    dirs.skills = Some(skills);
+    (true, dirs, seen)
+}
+/// Contents of a recorded target directory. Pending entries resolve to whichever version
+/// is complete on disk and are persisted by the next allowed write; anything else is
+/// incomplete and never repaired automatically.
+fn classify(dir: &Dir, entry: &Entry, shipped: &Version) -> Seen {
     let installed = Version {
         revision: entry.revision,
         files: entry.files.clone(),
     };
-    let version = match &entry.pending {
+    let (version, settle) = match &entry.pending {
         None => {
-            let problems = check(path, &installed, None);
+            let problems = check(dir, &installed, None);
             if !problems.is_empty() {
                 return Seen::new(Class::Modified, Some("modified"), Some(problems.join("; ")));
             }
-            installed
+            (installed, None)
         }
         Some(next) => {
-            let to_next = check(path, next, Some(&installed));
-            if to_next.is_empty() {
-                next.clone()
-            } else if check(path, &installed, Some(next)).is_empty() {
-                installed
+            let to_next = check(dir, next, Some(&installed));
+            if to_next.is_empty() && next.files.is_empty() {
+                // A removal deleted every own file; what is left belongs to the user.
+                let mut seen = Seen::new(Class::Foreign, Some("directory"), None);
+                seen.settle = Some(Settle::Drop);
+                return seen;
+            } else if to_next.is_empty() {
+                (next.clone(), Some(Settle::Version(next.clone())))
+            } else if !installed.files.is_empty() && check(dir, &installed, Some(next)).is_empty() {
+                (installed.clone(), Some(Settle::Version(installed)))
             } else {
                 return Seen::new(
                     Class::Incomplete,
@@ -1077,6 +1250,11 @@ fn classify(path: &Path, entry: Option<&Entry>, shipped: &Version) -> Seen {
             }
         }
     };
+    let mut seen = owned(dir, version, shipped);
+    seen.settle = settle;
+    seen
+}
+fn owned(dir: &Dir, version: Version, shipped: &Version) -> Seen {
     if version.files.is_empty() {
         return Seen::new(
             Class::Incomplete,
@@ -1089,7 +1267,7 @@ fn classify(path: &Path, entry: Option<&Entry>, shipped: &Version) -> Seen {
             let taken: Vec<_> = shipped
                 .files
                 .keys()
-                .filter(|n| !version.files.contains_key(*n) && exists(&path.join(n)))
+                .filter(|n| !version.files.contains_key(*n) && dir.exists(n))
                 .cloned()
                 .collect();
             if !taken.is_empty() {
@@ -1111,20 +1289,17 @@ fn classify(path: &Path, entry: Option<&Entry>, shipped: &Version) -> Seen {
             );
         }
     };
-    Seen {
-        class,
-        revision: Some(version.revision),
-        version: Some(version),
-        reason: None,
-        detail: None,
-    }
+    let mut seen = Seen::new(class, None, None);
+    seen.revision = Some(version.revision);
+    seen.version = Some(version);
+    seen
 }
 /// Whole-set comparison: every file of `version` is a regular file with its hash, and the
-/// paths only `other` has are absent. Returns the differences.
-fn check(dir: &Path, version: &Version, other: Option<&Version>) -> Vec<String> {
+/// names only `other` has are absent. Returns the differences.
+fn check(dir: &Dir, version: &Version, other: Option<&Version>) -> Vec<String> {
     let mut problems = vec![];
     for (name, hash) in &version.files {
-        match hash_file(&dir.join(name)) {
+        match dir.hash(name) {
             Ok(Some(h)) if h == *hash => {}
             Ok(Some(_)) => problems.push(format!("{name} changed")),
             Ok(None) => problems.push(format!("{name} missing")),
@@ -1136,7 +1311,7 @@ fn check(dir: &Path, version: &Version, other: Option<&Version>) -> Vec<String> 
         .flat_map(|o| o.files.keys())
         .filter(|n| !version.files.contains_key(*n))
     {
-        if exists(&dir.join(name)) {
+        if dir.exists(name) {
             problems.push(format!("{name} present"));
         }
     }
@@ -1196,13 +1371,6 @@ fn kind(r: &Resource) -> &'static str {
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
-fn hash_file(path: &Path) -> io::Result<Option<String>> {
-    Ok(read_file(path)?.map(|b| sha256(&b)))
-}
-/// Conservative: anything but a clean "not found" counts as occupied.
-fn exists(path: &Path) -> bool {
-    !matches!(fs::symlink_metadata(path), Err(e) if e.kind() == io::ErrorKind::NotFound)
-}
 /// SKILL.md last when writing, so an agent only sees a complete skill directory.
 fn ordered(files: &[ResourceFile]) -> impl Iterator<Item = &ResourceFile> {
     let skill = |f: &&ResourceFile| f.path == SKILL;
@@ -1211,43 +1379,134 @@ fn ordered(files: &[ResourceFile]) -> impl Iterator<Item = &ResourceFile> {
         .filter(move |f| !skill(f))
         .chain(files.iter().filter(skill))
 }
-/// Regular files only; links, FIFOs and other types are reported, never followed.
-fn read_file(path: &Path) -> io::Result<Option<Vec<u8>>> {
-    match fs::symlink_metadata(path) {
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e),
-        Ok(m) if m.file_type().is_symlink() => return Err(io::Error::other("is a link")),
-        Ok(m) if !m.is_file() => return Err(io::Error::other("is not a regular file")),
-        Ok(_) => {}
-    }
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
-    if !file.metadata()?.is_file() {
-        return Err(io::Error::other("is not a regular file"));
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_FILE + 1).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > MAX_FILE {
-        return Err(io::Error::other("is too large"));
-    }
-    Ok(Some(bytes))
+
+/// An open directory handle. Every name below it is a single plain component, looked up
+/// without following links, so a link placed into the path later cannot redirect writes.
+struct Dir(OwnedFd);
+enum Node {
+    Absent,
+    /// Carries the link text as `-> target`.
+    Link(String),
+    Dir,
+    File,
+    Other,
 }
-fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let dir = path.parent().ok_or_else(|| io::Error::other("no parent"))?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
-    // Dot-prefixed and never named SKILL.md, so a half-written file is not a skill.
-    let mut tmp = tempfile::Builder::new()
-        .prefix(&format!(".{name}."))
-        .suffix(".saddle-tmp")
-        .tempfile_in(dir)?;
-    tmp.as_file()
-        .set_permissions(fs::Permissions::from_mode(0o644))?;
-    tmp.write_all(bytes)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
+fn cname(name: &str) -> io::Result<CString> {
+    CString::new(name).map_err(|_| io::Error::other("name contains NUL"))
+}
+fn cvt(result: libc::c_int) -> io::Result<libc::c_int> {
+    if result < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(result)
+    }
+}
+impl Dir {
+    /// HOME itself is the anchor and is resolved by the system like any configured path.
+    fn anchor(path: &Path) -> io::Result<Self> {
+        let path = CString::new(path.as_os_str().as_bytes())
+            .map_err(|_| io::Error::other("path contains NUL"))?;
+        let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_CLOEXEC;
+        let fd = cvt(unsafe { libc::open(path.as_ptr(), flags) })?;
+        Ok(Self(unsafe { OwnedFd::from_raw_fd(fd) }))
+    }
+    fn fd(&self) -> libc::c_int {
+        self.0.as_raw_fd()
+    }
+    fn node(&self, name: &str) -> io::Result<Node> {
+        let c = cname(name)?;
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        if unsafe { libc::fstatat(self.fd(), c.as_ptr(), &mut st, libc::AT_SYMLINK_NOFOLLOW) } < 0 {
+            let e = io::Error::last_os_error();
+            return if e.kind() == io::ErrorKind::NotFound {
+                Ok(Node::Absent)
+            } else {
+                Err(e)
+            };
+        }
+        Ok(match st.st_mode & libc::S_IFMT {
+            libc::S_IFLNK => Node::Link(self.readlink(&c)),
+            libc::S_IFDIR => Node::Dir,
+            libc::S_IFREG => Node::File,
+            _ => Node::Other,
+        })
+    }
+    fn readlink(&self, name: &CStr) -> String {
+        let mut buf = vec![0u8; 4096];
+        let n = unsafe {
+            libc::readlinkat(self.fd(), name.as_ptr(), buf.as_mut_ptr().cast(), buf.len())
+        };
+        if n < 0 {
+            format!("-> ({})", io::Error::last_os_error())
+        } else {
+            format!("-> {}", String::from_utf8_lossy(&buf[..n as usize]))
+        }
+    }
+    /// Conservative: anything but a clean "not found" counts as occupied.
+    fn exists(&self, name: &str) -> bool {
+        !matches!(self.node(name), Ok(Node::Absent))
+    }
+    /// A directory below this one; fails on links instead of following them.
+    fn open(&self, name: &str) -> io::Result<Self> {
+        let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+        let fd = cvt(unsafe { libc::openat(self.fd(), cname(name)?.as_ptr(), flags) })?;
+        Ok(Self(unsafe { OwnedFd::from_raw_fd(fd) }))
+    }
+    fn mkdir(&self, name: &str) -> io::Result<()> {
+        cvt(unsafe { libc::mkdirat(self.fd(), cname(name)?.as_ptr(), 0o755) }).map(drop)
+    }
+    fn rmdir(&self, name: &str) -> io::Result<()> {
+        cvt(unsafe { libc::unlinkat(self.fd(), cname(name)?.as_ptr(), libc::AT_REMOVEDIR) })
+            .map(drop)
+    }
+    fn remove(&self, name: &str) -> io::Result<()> {
+        cvt(unsafe { libc::unlinkat(self.fd(), cname(name)?.as_ptr(), 0) }).map(drop)
+    }
+    /// Regular files only; links, FIFOs and other types are reported, never followed.
+    fn read(&self, name: &str) -> io::Result<Option<Vec<u8>>> {
+        match self.node(name)? {
+            Node::Absent => return Ok(None),
+            Node::Link(_) => return Err(io::Error::other("is a link")),
+            Node::File => {}
+            _ => return Err(io::Error::other("is not a regular file")),
+        }
+        let flags = libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC;
+        let fd = cvt(unsafe { libc::openat(self.fd(), cname(name)?.as_ptr(), flags) })?;
+        let file = fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+        if !file.metadata()?.is_file() {
+            return Err(io::Error::other("is not a regular file"));
+        }
+        let mut bytes = Vec::new();
+        file.take(MAX_FILE + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > MAX_FILE {
+            return Err(io::Error::other("is too large"));
+        }
+        Ok(Some(bytes))
+    }
+    fn hash(&self, name: &str) -> io::Result<Option<String>> {
+        Ok(self.read(name)?.map(|b| sha256(&b)))
+    }
+    /// Dot-prefixed temporary name in the same directory, then rename: a half-written
+    /// file is never named SKILL.md.
+    fn write(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let tmp = format!(".{name}.{}.saddle-tmp", uuid::Uuid::new_v4().simple());
+        let t = cname(&tmp)?;
+        let flags =
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+        let fd = cvt(unsafe { libc::openat(self.fd(), t.as_ptr(), flags, 0o644 as libc::c_uint) })?;
+        let mut file = fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+        let result = (|| {
+            file.set_permissions(fs::Permissions::from_mode(0o644))?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            let to = cname(name)?;
+            cvt(unsafe { libc::renameat(self.fd(), t.as_ptr(), self.fd(), to.as_ptr()) }).map(drop)
+        })();
+        if result.is_err() {
+            let _ = self.remove(&tmp);
+        }
+        result
+    }
 }
 
 #[cfg(not(test))]
