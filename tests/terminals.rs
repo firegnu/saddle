@@ -873,7 +873,7 @@ fn mascot_overlay_keeps_tabs_and_terminal_geometry() {
                     .any(|(h, c)| matches!(c, Control::NewTab) && h.area.y == 0)
             );
             let mascot = panes.mascot_area(area, &hits).unwrap();
-            assert_eq!(mascot.height, 5);
+            assert_eq!(mascot.height, 3);
             assert!(
                 hits.iter()
                     .filter(|(h, _)| h.area.y < 3)

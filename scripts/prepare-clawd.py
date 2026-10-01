@@ -1,162 +1,159 @@
 #!/usr/bin/env python3
-"""Offline asset preparation. Requires rlottie-python[full]==1.3.8.
-Usage: python scripts/prepare-clawd.py /path/to/extracted-reference
-Runtime/builds use the checked-in frames.bin and need neither Python nor Lottie.
-"""
-import collections
-import hashlib
-import itertools
+"""Build the curated, hand-timed Clawd poses. Python stdlib only; no runtime dependency."""
 import json
 from pathlib import Path
 import struct
-import sys
-from PIL import Image
-from rlottie_python import LottieAnimation
 
-SOURCE = Path(sys.argv[1])
 OUTPUT = Path(__file__).resolve().parents[1] / 'assets/clawd'
-WIDTH, HEIGHT = 32, 10
-TRANSPARENT = (0, 0, 0, 0)
-CLAY, EYES = (217, 119, 87), (20, 20, 19)
+WIDTH, HEIGHT = 32, 6
+# Transparent, clay, eyes, cup/paper, coffee, blue, light blue, muted accent.
+PALETTE = [(0, 0, 0), (217, 119, 87), (20, 20, 19), (239, 217, 179),
+           (113, 74, 54), (79, 115, 139), (139, 177, 195), (165, 157, 139)]
+BASE = [
+    '................................',
+    '................................',
+    '...........#########............',
+    '.........#############..........',
+    '...........#########............',
+    '...........#.#...#.#............',
+]
 
 
-def sample(image):
-    pixels = []
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            tile = image.crop((round(x * image.width / WIDTH), round(y * image.height / HEIGHT),
-                               round((x + 1) * image.width / WIDTH), round((y + 1) * image.height / HEIGHT)))
-            opaque = [p[:3] for p in tile.get_flattened_data() if p[3] > 200]
-            if len(opaque) < tile.width * tile.height * .5:
-                pixels.append(None)
-                continue
-            dark = [p for p in opaque if max(p) < 65]
-            chosen = dark if len(dark) > len(opaque) * .4 else opaque
-            pixels.append(collections.Counter(chosen).most_common(1)[0][0])
-    # Preserve enclosed dark eye components that fall between coarse sample cells.
-    # They otherwise disappear on walking frames as the face shifts by one source pixel.
-    dark = {(x, y) for y in range(image.height) for x in range(image.width)
-            if image.getpixel((x, y))[3] > 200 and max(image.getpixel((x, y))[:3]) < 40}
-    while dark:
-        component = [dark.pop()]
-        edge = set()
-        for x, y in component:
-            for q in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
-                if q in dark:
-                    dark.remove(q)
-                    component.append(q)
-                elif 0 <= q[0] < image.width and 0 <= q[1] < image.height:
-                    edge.add(q)
-        edge.difference_update(component)
-        if not edge or len(component) < 8:
-            continue
-        skin = sum(image.getpixel(q)[3] > 128 and image.getpixel(q)[0] > 60
-                   and image.getpixel(q)[0] > image.getpixel(q)[1] * 1.5 for q in edge)
-        xs, ys = zip(*component)
-        if skin < len(edge) * .45 or max(xs)-min(xs) > (max(ys)-min(ys)+1)*3:
-            continue
-        # Remove the coarse copy before placing the preserved eye below the forehead.
-        # Include antialiased clay in the surrounding-skin check above.
-        for sy in range(int(min(ys)*HEIGHT/image.height), min(HEIGHT, int(max(ys)*HEIGHT/image.height)+1)):
-            for sx in range(int(min(xs)*WIDTH/image.width), min(WIDTH, int(max(xs)*WIDTH/image.width)+1)):
-                c = pixels[sy*WIDTH+sx]
-                if c is not None and max(c) < 65:
-                    pixels[sy*WIDTH+sx] = CLAY
-        x = max(0, min(WIDTH-1, round((min(xs)+max(xs)+1)*WIDTH/(2*image.width)-.5)))
-        y = max(0, min(HEIGHT-1, round((min(ys)+max(ys)+1)*HEIGHT/(2*image.height)-.5)))
-        top = next((r for r in range(HEIGHT) if pixels[r*WIDTH+x] == CLAY), y)
-        y = max(y, min(HEIGHT-1, top+1))
-        if pixels[y*WIDTH+x] is not None:
-            pixels[y*WIDTH+x] = EYES
-    # The square glyph is centered in a whole cell. Keep it off the right
-    # forehead edge when the adjacent inner cell is entirely skin.
+def rect(pixels, x, y, w, h, color):
+    assert 0 <= x < x+w <= WIDTH and 0 <= y < y+h <= HEIGHT
+    for row in range(y, y+h):
+        pixels[row*WIDTH+x:row*WIDTH+x+w] = [color]*w
+
+
+def pose(kind='rest', stage=0):
+    p = [int(c == '#') for row in BASE for c in row]
+    eyes = [16, 16]
+    eye_columns = (6, 8)
+    extra = []
+    if kind in ('walking', 'swaying'):
+        # Keep the silhouette and floor fixed; alternate only the inner feet.
+        rect(p, 13, 5, 5, 1, 0)
+        for x in ((14, 17) if stage == 1 else (13, 16) if stage == 2 else (13, 17)):
+            rect(p, x, 5, 1, 1, 1)
+        if kind == 'swaying' and stage:
+            x = 9 if stage == 1 else 20
+            rect(p, x, 3, 2, 1, 0)
+            rect(p, x, 2, 2, 1, 1)
+    elif kind == 'turning' and stage:
+        # Compress into a side profile, then reopen at the same floor/centre.
+        rect(p, 9, 2, 13, 4, 0)
+        rect(p, 12, 2, 7, 3, 1)
+        rect(p, 10, 3, 11, 1, 1)
+        for x in (12, 14, 17, 18):
+            rect(p, x, 5, 1, 1, 1)
+        eyes = [16]
+        eye_columns = (8,) if stage == 1 else (7,)
+    elif kind == 'looking':
+        eye_columns = (7, 9) if stage == 2 else (6, 8)
+        if stage == 3:
+            eyes = [17, 17]
+    elif kind == 'waving':
+        rect(p, 9, 3, 2, 1, 0)
+        rect(p, 9, 2, 2, 1, 1)
+        if stage:
+            rect(p, 8 if stage == 1 else 9, 1, 2, 1, 1)
+    elif kind == 'thinking':
+        rect(p, 20, 3, 2, 1, 0)
+        rect(p, 20, 2, 2, 1, 1)
+        if stage:
+            eyes[1] = 17
+    elif kind == 'coffee':
+        y = 2 if stage else 3
+        x = 20 if stage else 22
+        rect(p, 20, 3, 2, 1, 1)
+        rect(p, x, y, 2, 2, 3)
+        rect(p, x, y, 2, 1, 4)
+        rect(p, x+2, y+1, 1, 1, 3)
+        if stage == 2:
+            eyes = [17, 17]
+            rect(p, 21, 1, 1, 1, 7)
+    elif kind == 'notebook':
+        eye_columns = (7, 9)
+        rect(p, 21, 3, 1, 1, 1)
+        rect(p, 22, 2, 4, 2, 5)
+        rect(p, 23, 2, 2, 2, 3)
+        if stage:
+            rect(p, 24, 2, 1, 2, 5)
+        if stage == 2:
+            eyes = [17, 17]
+    elif kind == 'headphones':
+        rect(p, 11, 1, 9, 1, 5)
+        rect(p, 10, 2, 1, 2, 6)
+        rect(p, 21, 3, 1, 1, 0)
+        rect(p, 20, 2, 1, 2, 6)
+        if stage:
+            eyes = [17, 17]
+            rect(p, 13 if stage == 1 else 17, 5, 1, 1, 0)
+    elif kind == 'watch':
+        eye_columns = (7, 9)
+        rect(p, 20, 3, 3, 1, 1)
+        rect(p, 22, 2, 2, 2, 5)
+        rect(p, 22, 2, 1, 1, 3)
+        if stage:
+            eyes[1] = 17
+    elif kind == 'snooze':
+        eyes = [17, 17]
+        if stage:
+            extra = [(11 if stage == 1 else 12, 0, 18, 7, 0)]
+    elif kind == 'sunglasses':
+        if stage:
+            eyes = []
+            rect(p, 12, 2, 2, 1, 2)
+            rect(p, 16, 2, 2, 1, 2)
+            extra = [(7, 1, 19, 2, 1)]
+        else:
+            rect(p, 22, 3, 4, 1, 2)
+    cells = []
     for y in range(0, HEIGHT, 2):
-        for x in range(2, WIDTH-2, 2):
-            at = [y*WIDTH+x, y*WIDTH+x+1, (y+1)*WIDTH+x, (y+1)*WIDTH+x+1]
-            colors = [pixels[i] for i in at]
-            if (colors.count(EYES) == 1 and colors.count(CLAY) == 3
-                    and pixels[y*WIDTH+x+2] is None
-                    and all(pixels[i-2] == CLAY for i in at)):
-                eye = at[colors.index(EYES)]
-                pixels[eye], pixels[eye-2] = CLAY, EYES
-    return pixels
+        for x in range(0, WIDTH, 2):
+            colors = [p[y*WIDTH+x], p[y*WIDTH+x+1], p[(y+1)*WIDTH+x], p[(y+1)*WIDTH+x+1]]
+            unique = sorted(set(colors))
+            # Shapes are aligned to the grid so a cell never needs a third color.
+            assert len(unique) <= 2, (kind, stage, x, y, colors)
+            bg, fg = (0, unique[0]) if len(unique) == 1 else unique
+            mask = sum(1 << i for i, c in enumerate(colors) if c == fg) if fg else 0
+            cells.append([mask, fg, bg])
+    for x, glyph in zip(eye_columns, eyes):
+        cells[16+x] = [glyph, 2, 1]
+    for x, y, glyph, fg, bg in extra:
+        cells[y*16+x] = [glyph, fg, bg]
+    return bytes(c for cell in cells for c in cell)
 
 
-clips, provenance = [], []
-for entry in json.loads((SOURCE / 'manifest.json').read_text()):
-    if not entry['file'].endswith('.json') or 'fps' not in entry:
-        continue
-    path = SOURCE / entry['file']
-    data = json.loads(path.read_text())
-    name = path.stem.removeprefix('clawd-').removeprefix('Clawd-').lower()
-    with LottieAnimation.from_file(str(path)) as anim:
-        frames = [sample(anim.render_pillow_frame(frame_num=f, width=274, height=184))
-                  for f in range(int(data['op'] - data['ip']))]
-    clips.append((name, frames))
-    provenance.append(dict(name=name, url=entry['url'], sha256=hashlib.sha256(path.read_bytes()).hexdigest(), frames=len(frames)))
-    print(name, len(frames), flush=True)
-
-kite = json.loads((SOURCE / 'animations/Clawd-Kite.frames.json').read_text())
-# Original page scales the character's lower body to 59.4 px, not the entire kite.
-body = [(i % kite['w']) for i, p in enumerate(kite['frames'][0])
-        if i // kite['w'] >= int(.6 * kite['h']) and p != 255]
-scale = 59.4 / (max(body) - min(body) + 1)
-frames = []
-for f in kite['frames']:
-    im = Image.new('RGBA', (kite['w'], kite['h']))
-    im.putdata([TRANSPARENT if p == 255 else (*tuple(bytes.fromhex(kite['palette'][p][1:])), 255) for p in f])
-    im = im.resize((round(kite['w'] * scale * 2), round(kite['h'] * scale * 2)), Image.Resampling.NEAREST)
-    stage = Image.new('RGBA', (274, 184))
-    stage.paste(im, ((274-im.width)//2, 184-im.height))
-    frames.append(sample(stage))
-clips.append(('kite', frames))
-provenance.append(dict(name='kite', source='https://claude.dev/_next/static/chunks/3ap3r640smdew.js',
-                       sha256=hashlib.sha256((SOURCE/'animations/Clawd-Kite.frames.json').read_bytes()).hexdigest(), frames=len(frames)))
-counts = collections.Counter(p for _, frames in clips for f in frames for p in f if p is not None)
-palette = [None, CLAY, EYES]
-palette += [p for p, _ in counts.most_common() if p not in palette][:61]
-nearest = {None: 0}
-
-def distance(a, b):
-    return sum((x-y)**2 for x, y in zip(a, b))
+# Durations are in 12 fps ticks. Each action enters and leaves the approved rest pose.
+# Stable holds make gestures legible instead of redrawing a noisy outline each tick.
+def action(kind, beats):
+    return [pose()] * 4 + [pose(kind, stage) for stage, ticks in beats for _ in range(ticks)] + [pose()] * 5
 
 
-def index(p):
-    if p not in nearest:
-        nearest[p] = min(range(1, len(palette)), key=lambda i: distance(p, palette[i]))
-    return nearest[p]
-
-
-def cell(samples):
-    # A square glyph keeps an enclosed eye small and above the half-cell baseline.
-    # This cell is already fully opaque, so its clay background preserves the head.
-    if samples.count(2) == 1 and samples.count(1) == 3:
-        return bytes([16, 2, 1])
-    colors = sorted(set(samples))
-    if len(colors) == 1:
-        return bytes([0 if colors[0] == 0 else 15, colors[0], 0])
-    # Preserve transparency. Otherwise choose the closest two colors for the 4 quadrants.
-    pairs = [(0, c) for c in colors if c] if 0 in colors else itertools.combinations(colors, 2)
-    def error(pair):
-        return sum(0 if c in pair else min(distance(palette[c], palette[v]) for v in pair if v) for c in samples)
-    bg, fg = min(pairs, key=error)
-    mask = 0
-    for bit, c in enumerate(samples):
-        if c == fg or (c != bg and (bg == 0 or distance(palette[c], palette[fg]) < distance(palette[c], palette[bg]))):
-            mask |= 1 << bit
-    return bytes([mask, fg, bg])
-
-out = bytearray(b'CLWD2') + bytes([WIDTH//2, HEIGHT//2, len(palette), len(clips)])
-for p in palette:
-    out += bytes(p or (0, 0, 0))
-for name, frames in clips:
-    out += bytes([len(name)]) + name.encode() + struct.pack('<H', len(frames))
-    for frame in frames:
-        p = list(map(index, frame))
-        for y in range(0, HEIGHT, 2):
-            for x in range(0, WIDTH, 2):
-                out += cell([p[y*WIDTH+x], p[y*WIDTH+x+1], p[(y+1)*WIDTH+x], p[(y+1)*WIDTH+x+1]])
-OUTPUT.mkdir(exist_ok=True, parents=True)
+clips = {
+    'walking': [pose('walking', stage) for stage in (0, 1, 0, 2) for _ in range(3)],
+    'turning': [pose('turning', stage) for stage, ticks in [(0, 2), (1, 3), (2, 3), (0, 4)] for _ in range(ticks)],
+    'looking': action('looking', [(1, 8), (0, 5), (2, 8), (0, 5)]),
+    'waving': action('waving', [(0, 3), (1, 4), (2, 4), (1, 4), (2, 4), (0, 3)]),
+    'thinking': action('thinking', [(0, 5), (1, 14), (0, 5)]),
+    'coffee': action('coffee', [(0, 6), (1, 5), (2, 12), (1, 5), (0, 6)]),
+    'notebook': action('notebook', [(0, 10), (1, 4), (0, 10), (2, 2), (0, 8)]),
+    'headphones': action('headphones', [(0, 5), (1, 6), (2, 6), (1, 6), (2, 6), (0, 5)]),
+    'watch': action('watch', [(0, 5), (1, 12), (0, 5)]),
+    'snooze': action('snooze', [(0, 8), (1, 8), (2, 8), (0, 8), (1, 8), (2, 8)]),
+    'sunglasses': action('sunglasses', [(0, 5), (1, 22), (0, 5)]),
+    'swaying': action('swaying', [(1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 3)]),
+}
+out = bytearray(b'CLWD3') + bytes([16, 3, len(PALETTE), len(clips)])
+for color in PALETTE:
+    out += bytes(color)
+for name, frames in clips.items():
+    out += bytes([len(name)]) + name.encode() + struct.pack('<H', len(frames)) + b''.join(frames)
 (OUTPUT/'frames.bin').write_bytes(out)
-(OUTPUT/'sources.json').write_text(json.dumps(provenance, ensure_ascii=False, indent=2)+'\n')
-print('bytes', len(out), 'clips', len(clips), flush=True)
+sources = {s['name']: s for s in json.loads((OUTPUT/'sources.json').read_text())}
+for name, frames in clips.items():
+    sources[name]['curated_frames'] = len(frames)
+    sources[name]['adaptation'] = 'Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion.'
+(OUTPUT/'sources.json').write_text(json.dumps([sources[n] for n in clips], ensure_ascii=False, indent=2)+'\n')
+print(f'{len(clips)} clips, {sum(map(len, clips.values()))} frames, {len(out)} bytes')

@@ -160,7 +160,7 @@ fn patrol_plays_colored_prop_actions_between_walks() {
     );
     assert!(
         colors.len() > 2,
-        "full reference actions must include colored props, not only the old two-color feet/blinks: {colors:?}"
+        "curated actions must include colored props, not only the old two-color feet/blinks: {colors:?}"
     );
 }
 
@@ -185,7 +185,7 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
                             );
                     }
                 }
-                painted = m.draw(f, Rect::new(0, 0, 50, 5), now, &[protected]);
+                painted = m.draw(f, Rect::new(0, 0, 50, 3), now, &[protected]);
             })
             .unwrap();
         terminal.backend().buffer().clone()
@@ -231,7 +231,7 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
 #[test]
 fn standing_eyes_are_inside_an_unbroken_forehead() {
     let mut mascot = Mascot::default();
-    let mut terminal = Terminal::new(TestBackend::new(20, 5)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(20, 3)).unwrap();
     terminal
         .draw(|f| {
             mascot.draw(f, f.area(), 0.0, &[]);
@@ -239,7 +239,7 @@ fn standing_eyes_are_inside_an_unbroken_forehead() {
         .unwrap();
     let buffer = terminal.backend().buffer();
     let mut eyes = Vec::new();
-    for y in 0..5 {
+    for y in 0..3 {
         for x in 0..20 {
             let cell = &buffer[(x, y)];
             if cell.symbol() == "▪" {
@@ -266,8 +266,8 @@ fn standing_eyes_are_inside_an_unbroken_forehead() {
         "the right eye needs a solid forehead margin toward the head edge"
     );
     assert_eq!(outside_right_eye.fg, Color::Rgb(217, 119, 87));
-    // Reach the right edge and turn: the small square glyph must survive mirroring.
-    for tick in 1..=16 {
+    // Reach the right edge and finish turning: the approved open eyes return.
+    for tick in 1..=30 {
         terminal
             .draw(|f| {
                 mascot.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
@@ -284,4 +284,37 @@ fn standing_eyes_are_inside_an_unbroken_forehead() {
             .count(),
         2
     );
+}
+
+#[test]
+fn curated_patrol_stays_above_the_agent_border() {
+    let panes = Terminals::new("unused-fake-corral".into());
+    let area = Rect::new(0, 0, 70, 16);
+    let lane = panes.mascot_area(area, &[]).unwrap();
+    let mut mascot = Mascot::default();
+    let mut terminal = Terminal::new(TestBackend::new(70, 16)).unwrap();
+    for tick in 0..7200 {
+        let mut painted = Vec::new();
+        terminal
+            .draw(|f| {
+                for x in 0..70 {
+                    f.buffer_mut()[(x, 3)].set_symbol("─");
+                    f.buffer_mut()[(x, 4)].set_symbol("A");
+                }
+                painted = mascot.draw(f, lane, f64::from(tick) / 12.0, &[]);
+            })
+            .unwrap();
+        assert!(
+            !painted.is_empty(),
+            "the mascot must not vanish between poses"
+        );
+        assert!(
+            painted.iter().all(|r| r.y < 3),
+            "animation crossed the agent border at tick {tick}"
+        );
+        for x in 0..70 {
+            assert_eq!(terminal.backend().buffer()[(x, 3)].symbol(), "─");
+            assert_eq!(terminal.backend().buffer()[(x, 4)].symbol(), "A");
+        }
+    }
 }
