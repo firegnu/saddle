@@ -30,6 +30,10 @@ arboard = { version = "3.6.1", default-features = false }
 
 tempfile = "3"
 toml_edit = "0.25"
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 
 [dev-dependencies]
 saddle-drover-plugin = { path = "plugins/drover" }
