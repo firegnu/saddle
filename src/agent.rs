@@ -288,10 +288,24 @@ fn end(
     }
 }
 
-fn rejected(code: &str) -> i32 {
-    eprintln!(
-        "saddle-telemetry: {}",
-        json!({"schema_version":1,"final":true,"executed":false,"operation_id":null,"begin":"not_requested","end":"not_requested","error":code,"gaps":[]})
+fn start_boundary(call_id: &str) -> String {
+    format!(
+        "saddle-telemetry: {}\n",
+        json!({"schema_version":1,"call_id":call_id,"final":false})
+    )
+}
+
+fn rejected(
+    code: &str,
+    call_id: &str,
+    signals: Option<&process::Signals>,
+    deadline: Option<Instant>,
+) -> i32 {
+    let receipt = json!({"schema_version":1,"call_id":call_id,"final":true,"executed":false,"operation_id":null,"begin":"not_requested","end":"not_requested","error":code,"gaps":[]});
+    process::write_receipt(
+        format!("{}saddle-telemetry: {receipt}\n", start_boundary(call_id)).as_bytes(),
+        signals,
+        deadline,
     );
     125
 }
@@ -304,15 +318,18 @@ pub fn run(args: &[OsString]) -> i32 {
         );
         return 0;
     }
+    // This transport boundary is independent of optional persisted operations. Never pass
+    // the ID to Corral, including when telemetry is disabled or invocation is rejected.
+    let call_id = uuid::Uuid::new_v4().to_string();
+    let signals = process::Signals::install().ok();
     let invocation = match Invocation::parse(args) {
         Ok(v) => v,
-        Err(e) => return rejected(e),
-    };
-    let signals = match process::Signals::install() {
-        Ok(s) => s,
-        Err(_) => return rejected("signal_setup_failed"),
+        Err(e) => return rejected(e, &call_id, signals.as_ref(), None),
     };
     let deadline = invocation.timeout.map(|d| started + d);
+    let Some(signals) = signals else {
+        return rejected("signal_setup_failed", &call_id, None, deadline);
+    };
     // Do not start a telemetry write whose 100 ms lock budget exceeds the total deadline.
     // As with Store, disk IO/fsync is not a hard real-time guarantee; the caller owns the outer timeout.
     let can_record = || {
@@ -321,7 +338,7 @@ pub fn run(args: &[OsString]) -> i32 {
                 d.saturating_duration_since(Instant::now()) >= Duration::from_millis(100)
             })
     };
-    let mut receipt = json!({"schema_version":1,"final":true,"executed":false,"operation_id":null,"begin":"not_requested","end":"not_requested","gaps":[]});
+    let mut receipt = json!({"schema_version":1,"call_id":call_id,"final":true,"executed":false,"operation_id":null,"begin":"not_requested","end":"not_requested","gaps":[]});
     let mut capture = None;
     let mut store = None;
     if invocation.context.is_some() {
@@ -332,7 +349,14 @@ pub fn run(args: &[OsString]) -> i32 {
             Ok(s)
         });
         match checked {
-            Err(e) if e.status == "invalid" => return rejected("invalid_context_or_association"),
+            Err(e) if e.status == "invalid" => {
+                return rejected(
+                    "invalid_context_or_association",
+                    &call_id,
+                    Some(&signals),
+                    deadline,
+                );
+            }
             Err(e) => {
                 receipt["begin"] = json!(e.status);
                 receipt["end"] = json!(e.status);
@@ -380,7 +404,14 @@ pub fn run(args: &[OsString]) -> i32 {
             }
         }
     }
-    let result = process::run(&invocation, capture.is_some(), &signals, deadline);
+    let boundary = start_boundary(&call_id);
+    let result = process::run(
+        &invocation,
+        capture.is_some(),
+        &signals,
+        deadline,
+        boundary.as_bytes(),
+    );
     receipt["executed"] = json!(result.executed);
     receipt["outcome"] = result.outcome.clone();
     if let Some(reason) = result.output_gap {
@@ -418,10 +449,18 @@ pub fn run(args: &[OsString]) -> i32 {
     if !result.streams_complete {
         return result.code;
     }
-    let separator = if result.stderr_terminated { "" } else { "\n" };
+    // The relay owns the start boundary after spawn. Pre-spawn failures have no business
+    // output, so emit the same ordered pair here (or a partial pair on cancellation).
+    let separator = if !result.executed {
+        boundary.as_str()
+    } else if result.stderr_terminated {
+        ""
+    } else {
+        "\n"
+    };
     process::write_receipt(
         format!("{separator}saddle-telemetry: {receipt}\n").as_bytes(),
-        &signals,
+        Some(&signals),
         deadline,
     );
     result.code

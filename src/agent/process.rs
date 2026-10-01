@@ -69,7 +69,11 @@ fn nonblocking(fd: RawFd) -> io::Result<()> {
 
 /// The final receipt shares the same output backpressure/cancellation boundary as business IO.
 /// An incomplete line is intentionally unusable as a final receipt.
-pub(super) fn write_receipt(mut bytes: &[u8], signals: &Signals, deadline: Option<Instant>) {
+pub(super) fn write_receipt(
+    mut bytes: &[u8],
+    signals: Option<&Signals>,
+    deadline: Option<Instant>,
+) {
     while !bytes.is_empty() {
         let mut ready = libc::pollfd {
             fd: libc::STDERR_FILENO,
@@ -92,7 +96,9 @@ pub(super) fn write_receipt(mut bytes: &[u8], signals: &Signals, deadline: Optio
                 return;
             }
         }
-        if signals.received() != 0 || deadline.is_some_and(|d| Instant::now() >= d) {
+        if signals.is_some_and(|s| s.received() != 0)
+            || deadline.is_some_and(|d| Instant::now() >= d)
+        {
             return;
         }
         unsafe {
@@ -106,6 +112,7 @@ pub(super) fn run(
     capture: bool,
     signals: &Signals,
     deadline: Option<Instant>,
+    boundary: &[u8],
 ) -> Result {
     let mut result = Result {
         executed: false,
@@ -148,6 +155,7 @@ pub(super) fn run(
         result.code = 1;
         result.outcome = json!({"kind":"unknown"});
         result.output_gap = Some("unreadable");
+        result.streams_complete = false;
         return result;
     }
     let mut status: Option<ExitStatus> = None;
@@ -155,7 +163,10 @@ pub(super) fn run(
     let mut timed_out = false;
     let mut pipes = [true, true];
     let mut buffer = [0; 16384];
-    let mut pending = [Vec::new(), Vec::new()];
+    // The start boundary must finish before even reading business stderr. Keeping it
+    // in this same bounded relay prevents a failed/partial start being replaced by
+    // child lookalikes, without delaying spawn or adding an unbounded preflight write.
+    let mut pending = [Vec::new(), boundary.to_vec()];
     let mut offsets = [0, 0];
     let mut sink_failed = [false, false];
     loop {
@@ -241,6 +252,7 @@ pub(super) fn run(
                     result.code = 1;
                     result.outcome = json!({"kind":"unknown"});
                     result.output_gap = Some("unreadable");
+                    result.streams_complete = false;
                     return result;
                 }
             }
@@ -250,7 +262,8 @@ pub(super) fn run(
         }
         let now = Instant::now();
         if stopping.is_none() && (signals.received() != 0 || deadline.is_some_and(|d| now >= d)) {
-            timed_out = signals.received() == 0;
+            // Output-only backpressure must not replace an already known business exit.
+            timed_out = signals.received() == 0 && status.is_none();
             stopping = Some(now);
             if status.is_none() {
                 let signal = if timed_out {

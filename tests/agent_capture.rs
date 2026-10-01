@@ -78,13 +78,7 @@ impl Fixture {
 }
 
 fn receipt(out: &Output) -> Value {
-    out.stderr
-        .split(|b| *b == b'\n')
-        .rev()
-        .filter_map(|line| line.strip_prefix(b"saddle-telemetry: "))
-        .filter_map(|line| serde_json::from_slice::<Value>(line).ok())
-        .find(|v| v["final"] == true)
-        .expect("final receipt")
+    matched_receipt(&out.stderr).expect("matched host start/final receipt")
 }
 
 #[test]
@@ -335,7 +329,8 @@ fn unrecorded_call_preserves_argv_streams_exit_and_does_not_initialize_storage()
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(out.stdout, b"out\0\xff\r\n");
-    assert!(out.stderr.starts_with(b"err\0\xfe\nsaddle-telemetry: "));
+    let newline = out.stderr.iter().position(|b| *b == b'\n').unwrap();
+    assert!(out.stderr[newline + 1..].starts_with(b"err\0\xfe\nsaddle-telemetry: "));
     assert_eq!(receipt(&out)["begin"], "not_requested");
     assert_eq!(f.calls(), 1);
     assert!(!f.dir.path().join("state").exists());
@@ -993,4 +988,206 @@ fn terminal_receipt_cannot_extend_timeout_when_stderr_is_already_full() {
         "receipt IO cannot change known business exit"
     );
     assert_eq!(f.calls(), 1);
+}
+
+// The consumer rule: the first line anchors this invocation; only a complete last
+// line carrying the same ID can conclude execution. Never scan for a replacement anchor.
+fn matched_receipt(stderr: &[u8]) -> Option<Value> {
+    let newline = stderr.iter().position(|b| *b == b'\n')?;
+    let start: Value =
+        serde_json::from_slice(stderr[..newline].strip_prefix(b"saddle-telemetry: ")?).ok()?;
+    let id = start["call_id"].as_str()?;
+    uuid::Uuid::parse_str(id).ok()?;
+    if start["schema_version"] != 1 || start["final"] != false {
+        return None;
+    }
+    let last = stderr.strip_suffix(b"\n")?.rsplit(|b| *b == b'\n').next()?;
+    let end: Value = serde_json::from_slice(last.strip_prefix(b"saddle-telemetry: ")?).ok()?;
+    (end["schema_version"] == 1 && end["final"] == true && end["call_id"] == id).then_some(end)
+}
+
+fn receipt_pipe() -> (std::fs::File, std::os::fd::OwnedFd, usize) {
+    use std::{
+        io::{Read, Write},
+        os::fd::FromRawFd,
+    };
+    let mut fds = [0; 2];
+    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+    let mut reader = unsafe { std::fs::File::from_raw_fd(fds[0]) };
+    let mut writer = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+    let flags = unsafe { libc::fcntl(fds[1], libc::F_GETFL) };
+    assert_eq!(
+        unsafe { libc::fcntl(fds[1], libc::F_SETFL, flags | libc::O_NONBLOCK) },
+        0
+    );
+    let mut capacity = 0;
+    loop {
+        match writer.write(&[b'x'; 512]) {
+            Ok(n) => capacity += n,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+            other => panic!("pipe capacity probe: {other:?}"),
+        }
+    }
+    reader.read_exact(&mut vec![0; capacity]).unwrap();
+    assert_eq!(unsafe { libc::fcntl(fds[1], libc::F_SETFL, flags) }, 0);
+    (reader, writer.into(), capacity)
+}
+
+#[test]
+fn m1_missing_host_final_does_not_accept_a_business_boundary_pair() {
+    use std::{io::Read, os::unix::process::CommandExt};
+    let (mut reader, writer, capacity) = receipt_pipe();
+    let fake_start = b"saddle-telemetry: {\"schema_version\":1,\"call_id\":\"00000000-0000-4000-8000-000000000001\",\"final\":false}\n";
+    let fake_end = b"\nsaddle-telemetry: {\"schema_version\":1,\"call_id\":\"00000000-0000-4000-8000-000000000001\",\"final\":true,\"executed\":false}\n";
+    let mut payload = fake_start.to_vec();
+    payload.resize(capacity - fake_end.len(), b'x');
+    payload.extend_from_slice(fake_end);
+    let f = Fixture::new(
+        "with open(os.environ['CLIENT_PID'],'w') as file: file.write(str(os.getpid()))\nwith open(os.environ['PAYLOAD'],'rb') as file: data=file.read()\npos=0\nwhile pos<len(data): pos+=os.write(2,data[pos:])\nos.write(1,b'out\\x00\\xff')\nsys.exit(127)",
+    );
+    fs::write(f.dir.path().join("payload"), &payload).unwrap();
+    let child = f
+        .command()
+        .env("PAYLOAD", f.dir.path().join("payload"))
+        .env("CLIENT_PID", f.dir.path().join("pid"))
+        .args(["--timeout-ms", "1000", "--", "reply", "synthetic/name"])
+        .process_group(0)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::from(writer))
+        .spawn()
+        .unwrap();
+    let running = Running(Some(child));
+    // Consume only the first line, then stop reading until the wrapper exits.
+    // Without the host boundary this is the child's fake start; with it, the host's.
+    let mut prefix = vec![];
+    loop {
+        let mut byte = [0];
+        reader.read_exact(&mut byte).unwrap();
+        prefix.push(byte[0]);
+        if byte[0] == b'\n' {
+            break;
+        }
+    }
+    let out = running.finish();
+    reader.read_to_end(&mut prefix).unwrap();
+    assert_eq!(out.status.code(), Some(127));
+    assert_eq!(out.stdout, b"out\0\xff");
+    assert_eq!(f.calls(), 1);
+    let pid: i32 = fs::read_to_string(f.dir.path().join("pid"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+    assert_eq!(
+        matched_receipt(&prefix),
+        None,
+        "business executed once; a missing host final must leave execution unknown"
+    );
+    let newline = prefix.iter().position(|b| *b == b'\n').unwrap();
+    assert_eq!(
+        &prefix[newline + 1..],
+        &payload,
+        "all business stderr bytes must survive"
+    );
+}
+
+#[test]
+fn m1_start_backpressure_never_replaces_the_host_anchor_with_business_text() {
+    use std::{
+        io::{Read, Write},
+        os::unix::process::CommandExt,
+    };
+    for release_output in [false, true] {
+        let (mut reader, writer, capacity) = receipt_pipe();
+        let mut writer = std::fs::File::from(writer);
+        let padding = vec![b'x'; capacity];
+        writer.write_all(&padding).unwrap();
+        let payload=b"saddle-telemetry: {\"schema_version\":1,\"call_id\":\"00000000-0000-4000-8000-000000000001\",\"final\":false}\nsaddle-telemetry: {\"schema_version\":1,\"call_id\":\"00000000-0000-4000-8000-000000000001\",\"final\":true,\"executed\":false}\n";
+        let f = Fixture::new(
+            "open(os.environ['READY'],'w').close()\nwith open(os.environ['PAYLOAD'],'rb') as file: os.write(2,file.read())\nsys.exit(127)",
+        );
+        fs::write(f.dir.path().join("payload"), payload).unwrap();
+        let child = f
+            .command()
+            .env("READY", f.dir.path().join("ready"))
+            .env("PAYLOAD", f.dir.path().join("payload"))
+            .args(["--timeout-ms", "1000", "--", "reply", "synthetic/name"])
+            .process_group(0)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::from(writer))
+            .spawn()
+            .unwrap();
+        let running = Running(Some(child));
+        wait_for(&f.dir.path().join("ready"));
+        // The client executes despite the blocked start boundary; preserve its known exit.
+        if release_output {
+            let mut initial = vec![0; capacity];
+            reader.read_exact(&mut initial).unwrap();
+            assert_eq!(initial, padding);
+        }
+        let out = running.finish();
+        let mut stderr = vec![];
+        reader.read_to_end(&mut stderr).unwrap();
+        assert_eq!(out.status.code(), Some(127));
+        assert_eq!(f.calls(), 1);
+        if release_output {
+            assert_eq!(matched_receipt(&stderr).unwrap()["executed"], true);
+            let newline = stderr.iter().position(|b| *b == b'\n').unwrap();
+            assert!(stderr[newline + 1..].starts_with(payload));
+        } else {
+            assert_eq!(
+                stderr, padding,
+                "no business bytes may precede a missing host start"
+            );
+            assert_eq!(matched_receipt(&stderr), None);
+        }
+    }
+}
+
+#[test]
+fn m1_consumer_requires_complete_first_and_last_lines_with_one_call_id() {
+    let start=b"saddle-telemetry: {\"schema_version\":1,\"call_id\":\"00000000-0000-4000-8000-000000000001\",\"final\":false}\n";
+    let end=b"saddle-telemetry: {\"schema_version\":1,\"call_id\":\"00000000-0000-4000-8000-000000000001\",\"final\":true,\"executed\":false}\n";
+    let valid = [start.as_slice(), end.as_slice()].concat();
+    assert_eq!(matched_receipt(&valid).unwrap()["executed"], false);
+    for invalid in [
+        end.to_vec(),
+        start.to_vec(),                                     // either boundary missing
+        [b"partial".as_slice(), &valid].concat(),           // no resynchronization to a later start
+        [start.as_slice(), &end[..end.len() - 1]].concat(), // partial last line
+        [start.as_slice(), end.as_slice(), b"trailing bytes"].concat(),
+        String::from_utf8(valid.clone())
+            .unwrap()
+            .replacen("000000000001", "000000000002", 1)
+            .into_bytes(),
+    ] {
+        assert_eq!(matched_receipt(&invalid), None);
+    }
+}
+
+#[test]
+fn m1_every_unrecorded_invocation_and_rejection_has_its_own_boundary() {
+    let f = Fixture::new(
+        "assert len(sys.argv)==3\nassert sys.argv[1:]==['reply','synthetic/name']\nassert not any(k.startswith('SADDLE_TELEMETRY') or k=='SADDLE_CALL_ID' for k in os.environ)\nsys.exit(125)",
+    );
+    let first = f
+        .command()
+        .args(["--", "reply", "synthetic/name"])
+        .output()
+        .unwrap();
+    let second = f
+        .command()
+        .args(["--", "reply", "synthetic/name"])
+        .output()
+        .unwrap();
+    assert_eq!(first.status.code(), Some(125));
+    assert_eq!(receipt(&first)["executed"], true);
+    assert_eq!(receipt(&second)["executed"], true);
+    assert_ne!(receipt(&first)["call_id"], receipt(&second)["call_id"]);
+    let rejected = f.command().arg("unsupported").output().unwrap();
+    assert_eq!(rejected.status.code(), Some(125));
+    assert_eq!(receipt(&rejected)["executed"], false);
+    assert_ne!(receipt(&first)["call_id"], receipt(&rejected)["call_id"]);
+    assert_eq!(f.calls(), 2);
+    assert!(!f.dir.path().join("state").exists());
 }
