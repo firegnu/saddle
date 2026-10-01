@@ -266,6 +266,140 @@ fn reply_without_end_is_unknown_but_not_an_unknown_delivery() {
     assert_eq!(record["unknown"], "回复查询未完成/结果未知");
 }
 
+fn assert_saved_result_summary(
+    store: &Store,
+    capture: &Capture,
+    unknown: Option<&str>,
+    delivery_unknown: bool,
+) {
+    let operation = store.show(capture.operation_id()).unwrap()["record"].clone();
+    let trace = store.show("t").unwrap();
+    let summary = trace["record"]["operations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["operation_id"] == capture.operation_id())
+        .unwrap();
+    assert_eq!(&operation, summary);
+    assert_eq!(operation["end_event_id"], capture.end_event_id());
+    assert_eq!(operation["end_missing"], false);
+    assert_eq!(operation["unknown"], json!(unknown));
+    assert_eq!(operation["delivery_result_unknown"], delivery_unknown);
+}
+
+#[test]
+fn saved_end_does_not_clear_unknown_business_result() {
+    let (_dir, store) = store();
+    for outcome in [
+        json!({"kind":"timed_out"}),
+        json!({"kind":"unknown"}),
+        json!({"kind":"signaled","signal":15}),
+        json!({"kind":"exited","exit_code":0}),
+    ] {
+        let capture = store
+            .prepare_operation(operation("agent.send"), begin(), None)
+            .unwrap();
+        store.record_begin(&capture).unwrap();
+        let mut observation = end();
+        observation.payload["outcome"] = outcome.clone();
+        store.record_end(&capture, observation).unwrap();
+        assert_eq!(
+            store.show(capture.end_event_id()).unwrap()["record"]["payload"]["outcome"],
+            outcome
+        );
+        assert_saved_result_summary(&store, &capture, Some("执行或交付结果未知"), true);
+    }
+}
+
+#[test]
+fn saved_pending_and_missing_instance_do_not_claim_known_delivery() {
+    let (_dir, store) = store();
+    let send = store
+        .prepare_operation(operation("agent.send"), begin(), None)
+        .unwrap();
+    let mut pending = end();
+    pending.payload["confirmed"] = json!(false);
+    pending.payload["pending"] = json!(true);
+    pending.payload["gaps"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|gap| gap["role"] != "confirmed" && gap["role"] != "pending");
+    store.record_end(&send, pending).unwrap();
+    assert_saved_result_summary(&store, &send, Some("执行或交付结果未知"), true);
+
+    let start=store.prepare_operation(operation("agent.start"),Observation{observed_at:Value::Null,payload:json!({"cwd":"/synthetic","agent_program":"fake","explicit_parameters":{},"labels":{},"gaps":[]}),bodies:vec![]},None).unwrap();
+    let mut result = end();
+    result.payload["name"] = json!("synthetic");
+    result.payload["gaps"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|gap| gap["role"] != "name");
+    store.record_end(&start, result).unwrap();
+    assert_saved_result_summary(&store, &start, Some("执行或交付结果未知"), true);
+}
+
+#[test]
+fn saved_known_success_and_spawn_failure_are_not_blanket_unknown() {
+    let (_dir, store) = store();
+    let send = store
+        .prepare_operation(operation("agent.send"), begin(), None)
+        .unwrap();
+    let mut confirmed = end();
+    confirmed.payload["confirmed"] = json!(true);
+    confirmed.payload["pending"] = json!(false);
+    confirmed.payload["gaps"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|gap| gap["role"] != "confirmed" && gap["role"] != "pending");
+    store.record_end(&send, confirmed).unwrap();
+    assert_saved_result_summary(&store, &send, None, false);
+
+    let start=store.prepare_operation(operation("agent.start"),Observation{observed_at:Value::Null,payload:json!({"cwd":"/synthetic","agent_program":"fake","explicit_parameters":{},"labels":{},"gaps":[]}),bodies:vec![]},None).unwrap();
+    let mut identified = end();
+    identified.payload["name"] = json!("synthetic");
+    identified.payload["instance"] = json!("synthetic-instance");
+    identified.payload["gaps"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|gap| gap["role"] != "name" && gap["role"] != "instance");
+    store.record_end(&start, identified).unwrap();
+    assert_saved_result_summary(&store, &start, None, false);
+
+    let failed = store
+        .prepare_operation(operation("agent.send"), begin(), None)
+        .unwrap();
+    let mut failure = end();
+    failure.payload["outcome"] = json!({"kind":"spawn_failed"});
+    store.record_end(&failed, failure).unwrap();
+    assert_saved_result_summary(&store, &failed, None, false);
+}
+
+#[test]
+fn saved_reply_end_keeps_query_unknown_separate_from_delivery() {
+    let (_dir, store) = store();
+    for outcome in [
+        json!({"kind":"timed_out"}),
+        json!({"kind":"unknown"}),
+        json!({"kind":"signaled","signal":15}),
+        json!({"kind":"exited","exit_code":0}),
+    ] {
+        let capture = store
+            .prepare_operation(
+                operation("agent.reply"),
+                Observation {
+                    observed_at: Value::Null,
+                    payload: json!({"target_name":"synthetic","gaps":[]}),
+                    bodies: vec![],
+                },
+                None,
+            )
+            .unwrap();
+        store.record_begin(&capture).unwrap();
+        store.record_end(&capture,Observation{observed_at:Value::Null,payload:json!({"outcome":outcome,"name":"synthetic","instance":"synthetic-instance","at":"opaque public at","association":"not_proven","gaps":[]}),bodies:vec![]}).unwrap();
+        assert_saved_result_summary(&store, &capture, Some("回复查询未完成/结果未知"), false);
+    }
+}
+
 #[test]
 fn concurrent_close_and_publication_have_one_ordered_outcome() {
     for _ in 0..12 {
@@ -540,6 +674,7 @@ fn route_and_reply_preserve_success_bodies_and_unknowns() {
         ],
     };
     store.record_end(&route, result).unwrap();
+    assert_saved_result_summary(&store, &route, None, false);
     let shown = store.show(route.end_event_id()).unwrap()["record"].clone();
     assert_eq!(shown["bodies"].as_array().unwrap().len(), 2);
     for body in shown["bodies"].as_array().unwrap() {
@@ -563,6 +698,7 @@ fn route_and_reply_preserve_success_bodies_and_unknowns() {
     let shown = store.show(reply.end_event_id()).unwrap()["record"].clone();
     assert_eq!(shown["payload"]["association"], "not_proven");
     assert_eq!(shown["payload"]["begin_missing"], true);
+    assert_saved_result_summary(&store, &reply, None, false);
 }
 
 #[test]

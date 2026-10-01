@@ -41,6 +41,38 @@ fn registration(conn: &Connection, trace: &str) -> Result<&'static str> {
     })
 }
 
+fn result_unknown(kind: &str, end: &Value) -> bool {
+    let payload = &end["payload"];
+    match payload["outcome"]["kind"].as_str() {
+        Some("spawn_failed") => false,
+        Some("exited") => {
+            let has_body = |role: &str| {
+                end["bodies"]
+                    .as_array()
+                    .is_some_and(|bodies| bodies.iter().any(|body| body["role"] == role))
+            };
+            match kind {
+                // A saved exit code alone does not identify a started instance or
+                // establish delivery. Pending is never a delivered result.
+                "agent.start" => {
+                    !payload["name"].is_string()
+                        || !payload["instance"].is_string()
+                        || payload["pending"] == true
+                }
+                "agent.send" => payload["confirmed"] != true || payload["pending"] == true,
+                "agent.reply" if payload["outcome"]["exit_code"] == 0 => !has_body("reply"),
+                "route" if payload["outcome"]["exit_code"] == 0 => {
+                    !has_body("response") || !has_body("suggestion")
+                }
+                _ => false,
+            }
+        }
+        // Includes timed_out, unknown and signaled: storing the end is not
+        // evidence that the business outcome became known.
+        _ => true,
+    }
+}
+
 fn operations(conn: &Connection, trace: &str) -> Result<Vec<Value>> {
     let mut stmt=conn.prepare("SELECT operation_id,dispatch_id,kind,producer FROM operations WHERE trace_id=? ORDER BY operation_id")?;
     let mut result = Vec::new();
@@ -54,21 +86,30 @@ fn operations(conn: &Connection, trace: &str) -> Result<Vec<Value>> {
     })? {
         let (id, dispatch, kind, producer) = row?;
         let mut phases = conn.prepare(
-            "SELECT phase,event_id FROM events WHERE operation_id=? AND phase IS NOT NULL",
+            "SELECT phase,event_id,record_json FROM events WHERE operation_id=? AND phase IS NOT NULL",
         )?;
         let mut begin = None;
         let mut end = None;
+        let mut end_result = None;
         for row in phases.query_map([&id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
         })? {
-            let (phase, event_id) = row?;
+            let (phase, event_id, record) = row?;
             if phase == "begin" {
                 begin = Some(event_id);
             } else {
                 end = Some(event_id);
+                end_result = Some(serde_json::from_str::<Value>(&record)?);
             }
         }
-        let unknown = if end.is_none() {
+        let result_unknown = end_result
+            .as_ref()
+            .is_none_or(|end| result_unknown(&kind, end));
+        let unknown = if result_unknown {
             Some(if kind == "agent.reply" {
                 "回复查询未完成/结果未知"
             } else {
@@ -79,7 +120,7 @@ fn operations(conn: &Connection, trace: &str) -> Result<Vec<Value>> {
         };
         result.push(json!({"operation_id":id,"trace_id":trace,"dispatch_id":dispatch,"kind":kind,"producer":producer,
             "begin_event_id":begin,"end_event_id":end,"begin_missing":begin.is_none(),"end_missing":end.is_none(),
-            "unknown":unknown,"delivery_result_unknown":end.is_none() && kind!="agent.reply"}));
+            "unknown":unknown,"delivery_result_unknown":result_unknown && kind!="agent.reply"}));
     }
     Ok(result)
 }
