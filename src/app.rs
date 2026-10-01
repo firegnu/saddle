@@ -1344,6 +1344,12 @@ impl App {
                     }
                     return Ok(false);
                 }
+                if matches!(mouse.kind, MouseEventKind::Down(_))
+                    && self.hits.mascot.iter().any(|area| area.contains(point))
+                {
+                    self.native_mouse = true;
+                    return Ok(false);
+                }
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
                     self.panel.confirm = None;
                     if panes.agents.contains(point) {

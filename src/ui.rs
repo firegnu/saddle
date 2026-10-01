@@ -20,6 +20,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 pub struct Hits {
     pub buttons: Vec<crate::buttons::Hit>,
     pub terminal: Vec<crate::terminals::Hit>,
+    pub mascot: Vec<Rect>,
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
@@ -211,19 +212,20 @@ pub fn draw_workspace(
             &panel.agents,
         );
         if let Some(mascot) = mascot {
-            if let (Some(area), Some(name)) = (
-                terminals.mascot_area(view.panes.viewer, &hits.terminal),
-                terminals.mascot_target(),
-            ) {
-                let agent = panel.agents.iter().find(|a| a.name == name);
-                let status = agent.map_or(Status::Unknown, |a| panel.status(a, view.now));
-                mascot.draw(
-                    frame,
-                    area,
-                    (name, agent.and_then(|a| a.instance.as_deref())),
-                    status,
-                    view.now,
-                );
+            if let Some(area) = terminals.mascot_area(view.panes.viewer, &hits.terminal) {
+                // Soften only line glyphs, leaving titles and controls readable.
+                for (_, pane) in terminals.rects(view.panes.viewer) {
+                    if pane.y >= area.y && pane.y < area.bottom() {
+                        for x in pane.x.max(area.x)..pane.right().min(area.right()) {
+                            let cell = &mut frame.buffer_mut()[(x, pane.y)];
+                            if matches!(cell.symbol(), "─" | "━") {
+                                cell.set_fg(t.dim);
+                            }
+                        }
+                    }
+                }
+                let protected: Vec<_> = hits.terminal.iter().map(|(h, _)| h.area).collect();
+                hits.mascot = mascot.draw(frame, area, view.now, &protected);
             } else {
                 mascot.hide();
             }

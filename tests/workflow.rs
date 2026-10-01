@@ -257,7 +257,9 @@ impl Harness {
         let config = dir.path().join("config.toml");
         std::fs::write(
             &config,
-            format!("corral = {corral:?}\nrefresh_ms = 100\n[queue]\ndrover = {queue:?}\n{extra}"),
+            // Text-based workflow assertions need unoccluded output. Overlay tests
+            // explicitly enable the decoration and check its permitted occlusion.
+            format!("corral = {corral:?}\nrefresh_ms = 100\nmascot_enabled = false\n[queue]\ndrover = {queue:?}\n{extra}"),
         )
         .unwrap();
         if registered {
@@ -5442,32 +5444,52 @@ fn plugin_real_diff_continuous_live_overlay_split_and_tab() {
 }
 
 #[test]
-fn clawd_animates_in_its_own_band_and_never_sends_input() {
-    let mut h = Harness::start();
+fn clawd_crosses_the_border_without_resizing_or_sending_mouse_input() {
+    let mut h = Harness::start_prepared(
+        include_str!("fixtures/drover.py"),
+        false,
+        "",
+        16384,
+        |root| {
+            let path = root.join("config.toml");
+            let text = std::fs::read_to_string(&path).unwrap();
+            std::fs::write(
+                path,
+                text.replace("mascot_enabled = false", "mascot_enabled = true"),
+            )
+            .unwrap();
+        },
+    );
+    h.see("Synthetic title");
+    h.send(b"skk");
+    h.see("┃ ○ a ");
     h.send(b"\r");
     h.see("p/a READY");
-    let left = |h: &Harness| {
-        (52..140).find(|&x| {
-            let c = h.screen.screen().cell(0, x).unwrap();
-            c.fgcolor() == vt100::Color::Rgb(217, 119, 87) && c.contents() == "▄"
-        })
+    let spot = |h: &Harness| {
+        (4..7)
+            .flat_map(|y| (75..140).map(move |x| (x, y)))
+            .find(|&(x, y)| {
+                let c = h.screen.screen().cell(y, x).unwrap();
+                c.fgcolor() == vt100::Color::Rgb(217, 119, 87)
+                    || c.bgcolor() == vt100::Color::Rgb(217, 119, 87)
+            })
     };
-    h.until(|h| left(h).is_some());
-    let start = left(&h).unwrap();
-    h.until(|h| left(h).is_some_and(|x| x != start));
+    h.until(|h| spot(h).is_some());
+    let start = spot(&h).unwrap().0;
+    h.until(|h| spot(h).is_some_and(|(x, _)| x != start));
     assert!(h.input_hex("p/a").is_empty());
-    // Click the decoration, then use a real key as an acknowledgement barrier.
-    let x = left(&h).unwrap() + 1;
-    h.send(format!("\x1b[<0;{x};2M\x1b[<0;{x};2mZ").as_bytes());
+    // The fake agent enables SGR mouse input. A click on painted body pixels must
+    // be consumed even below the pane border, then the real key acknowledges it.
+    let (x, y) = spot(&h).unwrap();
+    h.send(format!("\x1b[<0;{};{}M\x1b[<0;{};{}mZ", x + 1, y + 1, x + 1, y + 1).as_bytes());
     h.event("input p/a 5a");
     assert_eq!(h.input_hex("p/a"), "5a");
     let mut agents: serde_json::Value = serde_json::from_str(&h.log("agents.json")).unwrap();
     agents["p/a"] = serde_json::json!("blocked");
     std::fs::write(h.dir.path().join("agents.json"), agents.to_string()).unwrap();
-    h.until(|h| (52..140).any(|x| h.screen.screen().cell(0, x).unwrap().contents() == "?"));
-    let (_, title_y) = h.locate_from("Agent · p/a", 0, 52).unwrap();
-    assert_eq!(title_y, 3, "mascot must not displace the terminal");
-    assert!(left(&h).is_some(), "waiting keeps Clawd orange");
+    h.see("waiting");
+    h.until(|h| spot(h).is_some());
+    assert_eq!(h.locate_from("Agent · p/a", 0, 52).unwrap().1, 3);
     h.quit();
     assert!(!h.log("events").contains("stop "));
 }
@@ -5482,7 +5504,11 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
         |root| {
             let path = root.join("config.toml");
             let text = std::fs::read_to_string(&path).unwrap();
-            std::fs::write(path, format!("mascot_enabled = false\n{text}")).unwrap();
+            std::fs::write(
+                path,
+                text.replace("mascot_enabled = true", "mascot_enabled = false"),
+            )
+            .unwrap();
         },
     );
     h.see("Synthetic title");
@@ -5491,7 +5517,7 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
     h.send(b"\r");
     h.see("p/a READY");
     let visible = |h: &Harness| {
-        (0..3).any(|y| {
+        (0..7).any(|y| {
             (52..140).any(|x| {
                 h.screen.screen().cell(y, x).unwrap().fgcolor() == vt100::Color::Rgb(217, 119, 87)
             })

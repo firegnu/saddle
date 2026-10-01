@@ -844,7 +844,7 @@ fn history_and_copy_stay_in_normal_split_and_narrow_pane_footers() {
 }
 
 #[test]
-fn agent_mascot_never_reserves_terminal_space_or_moves_tabs() {
+fn mascot_overlay_keeps_tabs_and_terminal_geometry() {
     use saddle::terminals::{self, Control};
     let mut panes = Terminals::new("unused-fake-corral".into());
     let id = panes.active_pane().id;
@@ -854,7 +854,7 @@ fn agent_mascot_never_reserves_terminal_space_or_moves_tabs() {
     assert_eq!(
         panes.rects(area),
         vec![(id, expected)],
-        "mascot must not reduce PTY space"
+        "overlay must not reserve any terminal space"
     );
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal
@@ -873,12 +873,21 @@ fn agent_mascot_never_reserves_terminal_space_or_moves_tabs() {
                     .any(|(h, c)| matches!(c, Control::NewTab) && h.area.y == 0)
             );
             let mascot = panes.mascot_area(area, &hits).unwrap();
-            assert_eq!(mascot.y, 0);
-            assert_eq!(mascot.height, 3);
-            assert!(hits.iter().all(|(h, _)| !h.area.intersects(mascot)));
+            assert_eq!(mascot.height, 7);
+            assert!(
+                hits.iter()
+                    .filter(|(h, _)| h.area.y < 3)
+                    .all(|(h, _)| !h.area.intersects(mascot))
+            );
         })
         .unwrap();
     panes.get_mut(id).unwrap().viewer.showing = None;
+    assert_eq!(
+        panes.rects(area),
+        vec![(id, expected)],
+        "empty panes keep the same decoration geometry"
+    );
+    assert!(panes.mascot_area(area, &[]).is_some());
     assert_eq!(panes.rects(area), vec![(id, Rect::new(0, 3, 80, 27))]);
 }
 

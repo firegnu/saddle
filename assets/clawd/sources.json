@@ -1,0 +1,230 @@
+[
+  {
+    "name": "looking",
+    "url": "https://claude.dev/shared/video/clawd-looking.json",
+    "sha256": "2844f8478106985f50c43c316325ca161d5d3100a1eb6db4fea43f0768d57e01",
+    "frames": 42
+  },
+  {
+    "name": "walking",
+    "url": "https://claude.dev/shared/video/clawd-walking.json",
+    "sha256": "4ff6404404a9ad5aa12e85a8b4dc15c6e7b110444b495b79d6ff61a0f7230044",
+    "frames": 28
+  },
+  {
+    "name": "waving",
+    "url": "https://claude.dev/shared/video/clawd-waving.json",
+    "sha256": "bf254d9670db5a869249ffb8682b0d805d364a6c9208fc1fde1cbebed687b9b0",
+    "frames": 17
+  },
+  {
+    "name": "turning",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Turning.json",
+    "sha256": "ab372520e2d4305f081cf5ace9cbf322283996c59714974604bcb4a19003d109",
+    "frames": 29
+  },
+  {
+    "name": "jumping",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Jumping.json",
+    "sha256": "12fd95743d9fa46dc33dfa0b250c6ce20586b074e7a64a5a14460cb94c4a7754",
+    "frames": 21
+  },
+  {
+    "name": "phone",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Phone.json",
+    "sha256": "463aef51abc99cbc01fd7f04efec3fa345b0eba205a134415deca8e6306c7818",
+    "frames": 89
+  },
+  {
+    "name": "thinking",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Thinking.json",
+    "sha256": "446d0cd16f28422233f38e9ce2417791fddc29d9ca9ffea3154ea7a888092597",
+    "frames": 38
+  },
+  {
+    "name": "coffee",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Coffee.json",
+    "sha256": "265f906fcdbb663a2b3afb0f2f71e30a8aae35b3cbec623d7a0eed8798cc1d0d",
+    "frames": 34
+  },
+  {
+    "name": "notebook",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Notebook.json",
+    "sha256": "02e7bc52860cf77df0fb374d791f018309802008a425d84dcf9afbd289032184",
+    "frames": 81
+  },
+  {
+    "name": "meditating",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Meditating.json",
+    "sha256": "b1473753efc9e22f18e239371e59072010c000dc19fa54804cea45e8274e77f6",
+    "frames": 60
+  },
+  {
+    "name": "sunglasses",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Sunglasses.json",
+    "sha256": "d34cb4046eb021f45fea80ed25578d85f46034b2aff4b7ad3608881ab4c1602f",
+    "frames": 52
+  },
+  {
+    "name": "laptop",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Laptop.json",
+    "sha256": "0514f7df367ef9a16ff0524eabdd0a39483377bc07dba2f3cb82f357cb7417e4",
+    "frames": 43
+  },
+  {
+    "name": "desktop",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Desktop.json",
+    "sha256": "5e736e1acfa042169cd9e12047dd0e352b6f1d1815fe186457b031fdaf58455c",
+    "frames": 88
+  },
+  {
+    "name": "bubble",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Bubble.json",
+    "sha256": "129593d204b62f4d79e6dd640df87224b78d0727ba7a677dbb9d9482574dd4d6",
+    "frames": 100
+  },
+  {
+    "name": "headphones",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Headphones.json",
+    "sha256": "1c1b993a556007f7841f5267be7b1bcd9184a8005d7641b96f2206d2f39d8bc4",
+    "frames": 74
+  },
+  {
+    "name": "spark",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Spark.json",
+    "sha256": "48d30f3f83b9b59e6416ae778311236e89f1bfb134f46d0b1d95caf2b5c36052",
+    "frames": 73
+  },
+  {
+    "name": "dancing",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Dancing.json",
+    "sha256": "3a78c22ead8da91994111cacbbeca6fc8dd93b76f97de678a80b1030fe2c7591",
+    "frames": 40
+  },
+  {
+    "name": "juggling",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Juggling.json",
+    "sha256": "e2d44502476cb7579687a3fce10bc41d202e05a8553cd05709a8649f314fcbd9",
+    "frames": 54
+  },
+  {
+    "name": "watch",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Watch.json",
+    "sha256": "572a3e0b603e642a12da85412ed332e42176c579b13fa7e573aa64667628ae05",
+    "frames": 87
+  },
+  {
+    "name": "hulahoop",
+    "url": "https://claude.dev/shared/video/acts/Clawd-HulaHoop.json",
+    "sha256": "369bca364cb10240fd46b134d9e6634232fb7c49be079dc7425c0c2bb131e2a2",
+    "frames": 75
+  },
+  {
+    "name": "snooze",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Snooze.json",
+    "sha256": "10d6eac110c7f0694aecc36a2c32668fae6305a0ba47fca45c5d90133a684ef9",
+    "frames": 55
+  },
+  {
+    "name": "arcade",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Arcade.json",
+    "sha256": "8b56d4f2dae0ec77421d4ebe9ccd1c9ec8890f26d4d64289cdf433507336a00e",
+    "frames": 49
+  },
+  {
+    "name": "dancinghappy",
+    "url": "https://claude.dev/shared/video/acts/Clawd-DancingHappy.json",
+    "sha256": "a677048ed573e18084020b3415a4db1e220f116ccc16bf0e2c1884b5aa9597a2",
+    "frames": 40
+  },
+  {
+    "name": "heart",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Heart.json",
+    "sha256": "dbf98411d9327c659269b5728aca15874364e2395e7f33f4d1c19ce0bc1e8642",
+    "frames": 22
+  },
+  {
+    "name": "rainbow",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Rainbow.json",
+    "sha256": "8f071e5c3504405cc2037a06062ddea1c6f590bef2f4ad8210ce7033eb85e5e5",
+    "frames": 84
+  },
+  {
+    "name": "fishing",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Fishing.json",
+    "sha256": "bbb4c497221a6ce2718c59849f51adb24b048e397c56b77cb8683804fdb1d56d",
+    "frames": 109
+  },
+  {
+    "name": "berrypicking",
+    "url": "https://claude.dev/shared/video/acts/Clawd-BerryPicking.json",
+    "sha256": "e20eacb98055eae3221433a7d81b5229bdd3ad7de745c87910b4487da0123f69",
+    "frames": 142
+  },
+  {
+    "name": "lightbulb",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Lightbulb.json",
+    "sha256": "548fb0a8520bf7e7ffdddf8e18e4cab1e053af2b9f9685cc2281bb4814de9c1c",
+    "frames": 50
+  },
+  {
+    "name": "swaying",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Swaying.json",
+    "sha256": "1a0d5d23aec67f91f4a36f4ef4b62ea248f63f223926d4d1a09858c0a8e7ee2e",
+    "frames": 49
+  },
+  {
+    "name": "watering",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Watering.json",
+    "sha256": "ab03f851c9ab350030fa66ac67d43bf468bc2626ff4cf53f4e8791427771e694",
+    "frames": 137
+  },
+  {
+    "name": "blooming",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Blooming.json",
+    "sha256": "fd3a2e3f03dd0da69e828811439095e13ca687c673cef68690b773463f671e8d",
+    "frames": 99
+  },
+  {
+    "name": "rose",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Rose.json",
+    "sha256": "44f2ccb30aa176ce72102c670a763f549fb54f5e368c88a47717fedf18e5a586",
+    "frames": 41
+  },
+  {
+    "name": "excited",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Excited.json",
+    "sha256": "3139b34ce1268507169fea2704513475d0b1398b6e561041f43dd284b3b57447",
+    "frames": 23
+  },
+  {
+    "name": "jumpinghappy",
+    "url": "https://claude.dev/shared/video/acts/Clawd-JumpingHappy.json",
+    "sha256": "f78bd107852e1bd8f551a9a2d0c9f282f92acc6b640ea11ef6df2f07a15edaa7",
+    "frames": 21
+  },
+  {
+    "name": "confetti",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Confetti.json",
+    "sha256": "d5f9f3cf3ced0a5b42efa3a52f82deb7a0b58d685e7bbe9c7a21d3ecf6a9b093",
+    "frames": 34
+  },
+  {
+    "name": "breakdancing",
+    "url": "https://claude.dev/shared/video/acts/Clawd-BreakDancing.json",
+    "sha256": "3055826f9a91df14be4b29dcff4311fe2a1723a6140e87589b53f20d21623814",
+    "frames": 149
+  },
+  {
+    "name": "confettihappy",
+    "url": "https://claude.dev/shared/video/acts/Clawd-ConfettiHappy.json",
+    "sha256": "ef5e245201db96b35c5e6604e4783a1379e2e9afbfb4bec40f3ac32d0d7712a1",
+    "frames": 34
+  },
+  {
+    "name": "kite",
+    "source": "https://claude.dev/_next/static/chunks/3ap3r640smdew.js",
+    "sha256": "cbb5b403bbe80947749ceaf90d8047dda834fbdea54a0e56b59aefb1f185dbd1",
+    "frames": 101
+  }
+]
