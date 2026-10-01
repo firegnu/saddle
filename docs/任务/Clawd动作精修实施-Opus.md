@@ -109,3 +109,10 @@ Dispatch `4190240786d94e738c765ac187b630f5`，接续审查 `fe2b3f58445546a19f04
 - 复核素材：只改指定11段，静止与其余20段逐字节不变，31段1319帧、16×3；眼睛边距与四脚检查问题数0，摇摆全部帧的底行与静止帧一致。运行时、布局、调度和测试未改。
 - 完整测试日志核得45套件、377 passed / 0 failed / 5 ignored；Clippy通过依据实现者完成记录，主控未重复跑标准套件。diff检查通过。实际四次全量超出一次预算，记为流程偏差，不补造合规记录。
 - notebook、phone、laptop、arcade的原有右眼边缘问题保留在范围外；原版下蹲、上下看、腮红不硬塞进3行。对照图不代表实际用户终端验证，未操作或重启用户窗口。
+
+## 合并与安装（2026-10-01，主控）
+
+- main快进合并实现8194bcc及审查c4d6d46；发布构建成功，发布版Mascot 9 passed / 0 failed，日志 `/tmp/saddle-clawd-opus-release-{build,test}.log`。
+- 构建前旧版备份：`/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-opus-polish-20261001-151441`，旧SHA256 `7ae6d76083bd2aa41775d2f61162113d8a91a8dc0ae9e63291566d6c323d3e9e`。
+- 日常链接 `/Users/firegnu/.local/bin/saddle` 指向 `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`；发布检查后SHA256 `8878d329da65371bc99b62ebd8dbf3a1b5a74179a36a3eecbdbd09ad69b87d3b`，核实二进制包含当前190302字节完整素材（31段1319帧）。未重启用户窗口，新启动进程使用新版。
+- 确认agent idle、attached=0、worktree干净且分支已合并，已无force清理worktree/分支，并关闭该worktree内的自建agent。其余两个既有worktree保留。
