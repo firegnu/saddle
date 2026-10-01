@@ -102,6 +102,54 @@
     "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
   },
   {
+    "name": "phone",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Phone.json",
+    "sha256": "463aef51abc99cbc01fd7f04efec3fa345b0eba205a134415deca8e6306c7818",
+    "frames": 89,
+    "curated_frames": 49,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "laptop",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Laptop.json",
+    "sha256": "0514f7df367ef9a16ff0524eabdd0a39483377bc07dba2f3cb82f357cb7417e4",
+    "frames": 43,
+    "curated_frames": 46,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "rose",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Rose.json",
+    "sha256": "44f2ccb30aa176ce72102c670a763f549fb54f5e368c88a47717fedf18e5a586",
+    "frames": 41,
+    "curated_frames": 44,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "heart",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Heart.json",
+    "sha256": "dbf98411d9327c659269b5728aca15874364e2395e7f33f4d1c19ce0bc1e8642",
+    "frames": 22,
+    "curated_frames": 47,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "meditating",
+    "url": "https://claude.dev/shared/video/acts/Clawd-Meditating.json",
+    "sha256": "b1473753efc9e22f18e239371e59072010c000dc19fa54804cea45e8274e77f6",
+    "frames": 60,
+    "curated_frames": 63,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
+    "name": "hulahoop",
+    "url": "https://claude.dev/shared/video/acts/Clawd-HulaHoop.json",
+    "sha256": "369bca364cb10240fd46b134d9e6634232fb7c49be079dc7425c0c2bb131e2a2",
+    "frames": 75,
+    "curated_frames": 47,
+    "adaptation": "Hand-timed grid poses; original clip is a gesture reference, not a frame-for-frame conversion."
+  },
+  {
     "name": "swaying",
     "url": "https://claude.dev/shared/video/acts/Clawd-Swaying.json",
     "sha256": "1a0d5d23aec67f91f4a36f4ef4b62ea248f63f223926d4d1a09858c0a8e7ee2e",

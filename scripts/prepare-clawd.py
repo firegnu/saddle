@@ -6,9 +6,10 @@ import struct
 
 OUTPUT = Path(__file__).resolve().parents[1] / 'assets/clawd'
 WIDTH, HEIGHT = 32, 6
-# Transparent, clay, eyes, cup/paper, coffee, blue, light blue, accent, bandana.
+# Transparent, clay, eyes, paper, coffee, blues, accent, bandana, leaf, rose, hoop, blush.
 PALETTE = [(0, 0, 0), (217, 119, 87), (20, 20, 19), (239, 217, 179),
-           (113, 74, 54), (79, 115, 139), (139, 177, 195), (165, 157, 139), (159, 66, 54)]
+           (113, 74, 54), (79, 115, 139), (139, 177, 195), (165, 157, 139), (159, 66, 54),
+           (106, 151, 101), (224, 113, 139), (220, 176, 91), (244, 151, 174)]
 BASE = [
     '................................',
     '................................',
@@ -100,6 +101,74 @@ def pose(kind='rest', stage=0):
         eyes = [17, 17]
         if stage:
             extra = [(11 if stage == 1 else 12, 0, 18, 7, 0)]
+    elif kind == 'phone':
+        # Portrait screen remains outside the face; thumb taps its lower edge.
+        eye_columns = (7, 9)
+        x = 24 if stage == 0 else 22
+        rect(p, 20, 3, x-20, 1, 1)
+        rect(p, x, 3, 2, 3, 5)
+        rect(p, x, 4, 1, 1, 6)
+        if stage == 2:
+            rect(p, 20, 4, 2, 1, 1)
+            rect(p, x, 4, 1, 1, 3)
+        if stage == 3:
+            eyes = [17, 17]
+    elif kind == 'laptop':
+        eye_columns = (7, 9)
+        rect(p, 22, 4, 10, 1, 7)
+        if stage:
+            rect(p, 22, 2, 8, 2, 5)
+            rect(p, 23, 3, 6, 1, 6)
+            rect(p, 20, 3, 2, 1, 0)
+            rect(p, 20, 3 if stage == 2 else 4, 2, 1, 1)
+        if stage == 3:
+            eyes = [17, 17]
+    elif kind == 'rose':
+        # A flower held to the side: petals, green stem and a single leaf.
+        rect(p, 20, 3, 4, 1, 1)
+        rect(p, 24, 2, 1, 4, 9)
+        rect(p, 25, 4, 2, 1, 9)
+        rect(p, 24, 0, 4, 1, 10)
+        rect(p, 22, 1, 6, 1, 10)
+        rect(p, 24, 1, 2, 1, 8)
+        if stage == 1:
+            eyes = [17, 17]
+        if stage == 2:
+            eyes = [21, 21]
+            extra = [(14, 0, 22, 3, 0)]
+    elif kind == 'heart':
+        rect(p, 20, 3, 4, 1, 1)
+        if stage:
+            eyes = [21, 21]
+            extra = [(12, 1, 23, 10 if stage == 1 else 12, 0)]
+            if stage == 2:
+                extra += [(11, 0, 22, 10, 0), (13, 0, 22, 10, 0)]
+    elif kind == 'meditating':
+        eyes = [17, 17]
+        if stage:
+            # Palms up, tucked legs, no levitation or vertical body movement.
+            rect(p, 9, 3, 2, 1, 0)
+            rect(p, 20, 3, 2, 1, 0)
+            rect(p, 9, 4, 2, 1, 1)
+            rect(p, 20, 4, 2, 1, 1)
+            rect(p, 11, 5, 9, 1, 0)
+            rect(p, 12, 5, 3, 1, 1)
+            rect(p, 16, 5, 3, 1, 1)
+            if stage == 2:
+                rect(p, 8, 4, 1, 1, 1)
+                rect(p, 22, 4, 1, 1, 1)
+    elif kind == 'hulahoop':
+        # A shallow ellipse behind the waist, never covering the face or feet.
+        if stage == 0:
+            extra = [(11, 2, 24, 11, 0), (12, 2, 19, 11, 0), (13, 2, 25, 11, 0)]
+        else:
+            left, right = (3, 11) if stage == 1 else (2, 12)
+            extra = [(left, 2, 24, 11, 0), (right, 2, 25, 11, 0)]
+            extra += [(x, 2, 19, 11, 0) for x in range(left+1, 5)]
+            extra += [(x, 2, 19, 11, 0) for x in range(10, right)]
+            rect(p, 13, 5, 5, 1, 0)
+            for x in ((13, 17) if stage == 1 else (14, 16)):
+                rect(p, x, 5, 1, 1, 1)
     elif kind == 'pirate':
         rect(p, 11, 1, 9, 1, 8)
         rect(p, 9, 1, 2, 1, 8)
@@ -173,6 +242,12 @@ clips = {
     'sunglasses': action('sunglasses', [(0, 5), (1, 22), (0, 5)]),
     'pirate': action('pirate', [(0, 5), (1, 7), (2, 8), (3, 3), (2, 7), (4, 8), (1, 5), (0, 4)]),
     'excited': action('excited', [(0, 3), (1, 3), (2, 4), (1, 3), (2, 4), (1, 3), (2, 5), (0, 5)]),
+    'phone': action('phone', [(0, 5), (1, 8), (2, 3), (1, 7), (2, 3), (3, 3), (1, 6), (0, 5)]),
+    'laptop': action('laptop', [(0, 5), (1, 6), (2, 3), (1, 3), (2, 3), (1, 3), (3, 3), (1, 6), (0, 5)]),
+    'rose': action('rose', [(0, 8), (1, 9), (0, 5), (2, 8), (0, 5)]),
+    'heart': action('heart', [(0, 5), (1, 6), (2, 5), (1, 6), (2, 5), (1, 6), (0, 5)]),
+    'meditating': action('meditating', [(0, 5), (1, 8), (2, 10), (1, 8), (2, 10), (1, 8), (0, 5)]),
+    'hulahoop': action('hulahoop', [(0, 7), (1, 4), (2, 4), (1, 4), (2, 4), (1, 4), (2, 4), (0, 7)]),
     'swaying': action('swaying', [(1, 5), (0, 3), (2, 5), (0, 3), (1, 5), (0, 3), (2, 5), (0, 3)]),
 }
 out = bytearray(b'CLWD3') + bytes([16, 3, len(PALETTE), len(clips)])
