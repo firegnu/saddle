@@ -172,7 +172,7 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 下一步先核ureq官方资料、再形成03C串行实施任务，接入可选dispatch业务及skill资源。03C尚未派发。UI已确认，不重问；需改Corral或依赖反转先停告知。无release/安装/真实数据队列/消费者切换/04或05；旧设计review/t38/t55保留，设计Claude已关闭。
 
 
-## 20. 当前：03C dispatch插件实施已派发
+## 20. 03C dispatch插件实施（独立审查见第21节）
 
 - 用户要求“继续吧”。03C任务docs/任务/遥测03C-dispatch插件.md；官方ureq文档及3.4.2发行源码已静态核实，选择精确3.4.2/default-features=false/rustls，具体传输阶段注意与未验证项见docs/调研/03C-ureq接口核对-2026-10-02.md。旧Corral HEAD与四资源哈希均未变化，没有改其仓库或真实技能。
 - JEV重/交叉审查要/碰要害，主控采纳，已dlog记录实际决定；dispatch556e907c030040bea59cb9e0572a4e1e。此调用是主控正常任务评估，不是产品JEV迁移验证。
@@ -180,3 +180,14 @@ D1后续已获用户同意：停用保留skill及项目规则，仅停用插件�
 - 本轮仅03C可选dispatch：Rust路由/ureq传输、受控Recorder映射、skill与模板资源、插件说明与组装根登记。不改项目规则、不把JEV放宿主；必要框架缺口先报告，需改Corral或反向依赖先停告知。03B S1功能暂不改，只收窄文档过宽提示承诺，非原子目录清理边界保留。
 - 收提醒先status，working重挂；idle后经dlog reply取完整DONE。主控核增量/有效RED-GREEN与一次标准test/clippy，再新开重档Codex独立审查03C及阶段03集成；返工原实现者，仅目标/直接回归，不重复标准，每轮挂提醒。不能把开发回复当通过。
 - 03A/03B原实施审查四个agent和worktree全部保留，03C集成审查通过后整个阶段共同合并推送/清理/关闭相应自建agent/空提交/HANDOFF。功能仍未合main；不release/安装/真实JEV产品调用/真实数据队列/消费者切换/04或05。UI已确认；设计review/t38/t55保留，设计Claude已关闭。
+
+
+## 21. 当前：03C及阶段03集成独立审查
+
+- 原实现者3583e0bc626b已idle/attached0，dlog取完整DONE，候选1692be22eb1c516a433dcc1a774c683486766822，分支telemetry-dispatch-plugin，基线32b34fd21022cec62f3449dfad365d21c096d4e7。21文件增量、完成记录、运行期RED/GREEN及资源差异已核；模板逐字节一致，skill只改指定路由区，无Corral/框架代码修改或依赖反转。
+- **主控标准检查未全绿**：cargo test --all-targets一次179通过1失败1忽略exit101，在tests/plugins.rs:90的registration_defaults_disabled_and_concurrent_edit_is_not_overwritten报registry busy后中止，后续target未跑；获准精确单项复跑一次通过。Clippy一次通过。隔离HOME/全部XDG、真实工具链、移除真实TYPESAFE_API_KEY、共享target、stdin=/dev/null。日志 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-controller-xtk9ap9d。
+- 实现者标准96通过1失败为另一个core_plugins管理用例busy，单项通过；最终插件14+集成3目标通过。两轮同类消息不能认同根因或已修；初始RED五组日志与相关补丁已核但未独立重放，编译/超限非阻塞fixture失败不算行为RED。成功HTTP集成为同源码测试宿主假传输，真实ureq仅回环；未真实JEV/TLS/代理验证。合并前仍需裁定标准未完成覆盖，不能用独立目标绿测豁免。
+- 新独立审查者saddle/dev-telemetry-dispatch-review-1，instancea6e4e4014bbf，Codex gpt-6-astra/xhigh、role=reviewer；审查dispatch223d0cfcdeb941c79053e6641d8e93d5，parent556e907c030040bea59cb9e0572a4e1e，JEV重/交叉审查要/碰要害。detached ../saddle-worktrees/review-telemetry-dispatch-plugin固定1692be2。
+- 唯一可写主仓库docs/任务/遥测03C-独立交叉审查.md末尾，代码测试只读不提交；限定插件、dispatch_plugin、core_plugins、plugin_resources四目标各一次，不plugins/全套/clippy。主控记录dlog review/实际决定及任务快照，after提醒pending=true实例相符。
+- 收提醒先status，working重挂；idle后经dlog reply取完整DONE，逐项判断实际意见与验证限制。必须改交原实现者，返工仅目标/直接回归，更新干净detached后原审查者限定复核，每轮提醒，最多两轮未收敛报告用户。主控不写功能。
+- 功能未合并；03A/03B及03C全部实施审查会话worktree保留，整阶段通过后共同合并推送清理/关闭相应自建agent/空提交/HANDOFF。03B S1非阻断提示遗漏仍不修功能，文档已收窄，非原子目录清理边界保留。需改Corral或反向依赖先停告知。不release/安装/真实数据队列/JEV产品请求/消费者切换/04或05；设计review/t38/t55保留，设计Claude已关闭。
