@@ -20,3 +20,9 @@
 - 新增预览 `saddle-six-actions.mp4`/`.gif`、`saddle-six-actions-keyframes.png`，全部20段总览 `saddle-curated-20.mp4`/`.gif`/`-poses.png`，公开绘制巡游 `saddle-twenty-patrol.mp4`，均在原Downloads预览目录。预览为字符栅格化，不是用户窗口截图；已用既有授权打开目录。
 - 首次全量检查在现有插件背压测试等待Running的3秒超时处失败；单独重跑通过（0.49秒），未修改插件代码或测试。日志 `/tmp/saddle-clawd-six-all.log`、`/tmp/saddle-clawd-six-plugin-retry.log`。
 - 第二轮全量 `cargo test --all-targets`：377 passed / 0 failed / 5 ignored；Clippy、fmt、diff检查通过。最终日志 `/tmp/saddle-clawd-six-all-final.log`、`/tmp/saddle-clawd-six-clippy.log`。
+
+## 安装
+
+实现 `f825ad9` 已快进合并main；发布构建及9项发布版Mascot检查通过。日志 `/tmp/saddle-clawd-six-release-{build,test}.log`。
+
+日常链接 `~/.local/bin/saddle` 指向 `/Users/firegnu/Developer/personal_projs/saddle-worktrees/.target/release/saddle`，SHA256 `cd17f0e33449e7963270dfa33cac46ba5ca7826b589b065a4bb235d44535df57`，已核对内含本次完整素材。构建前备份 `/Users/firegnu/Library/Application Support/saddle-release-backups/clawd-six-actions-20261001-134141`，旧SHA256 `b3d9a307f1a2a8e8ee63410202d09375f2495f0fc55d1750c5d067852521cf74`。未重启用户窗口，下次启动使用新版。
