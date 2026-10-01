@@ -130,3 +130,54 @@ TLS 测试使用 `plugins/dispatch/tests/fixtures/tls-{cert,key}.pem`，来源�
 - **标准测试未全绿的缺口仍独立保留**：实施首轮96通过/1失败，主控179通过/1失败/1忽略，分别在两个不同既有用例报 registry busy；单项通过不能证明根因修复，也不能将两者认定同根因。前文“锁竞争”措辞不代表已确认根因。本轮17+3项目标通过不替代标准全套，不自行豁免主控合并前裁定。
 - 本轮未跑全套、Clippy、core_plugins、plugin_resources 或 plugins；没有历史 registry busy 扩查、重复绿测、额外覆盖矩阵或重建历史 RED。没有修改主仓库审查文档、其他 worktree、外部库源码或 Corral，没有再开 agent。
 - 仅在原 `telemetry-dispatch-plugin` 分支提交本修复和记录；不合并/推送/清理/关闭，不 release/安装/启动日常 Saddle，不动真实遥测/队列、消费者、04/05。等待主控限定复核及独立处理标准验证缺口。
+
+## 合并前集成验证限定修正完成记录（2026-10-02）
+
+### 基线、范围与锁修正
+
+- 已读主仓库 `遥测03C-集成验证修正.md`、标准验证缺口核查末尾主控裁定及独立交叉审查的补跑结果。从本分支干净 `6691200c7af1001c60fd50fc6bcc77bda6682596` 起步；M1保持关闭。本轮生产改动仅 `src/plugins/registry.rs`，另改局部锁测试、两个原失败用例、10项workflow的公共定位 helper/必要步骤及本记录；未改主仓库任务文件。
+- Registry 成功取得原非阻塞排他锁后建立局部 `RegistryLock` guard。成功提交及 baseline/read/落盘等错误退出时，guard先调用 `LOCK_UN`，文件随后关闭，避免正常事务结束后仍被fork子进程的继承引用延长持有。稳定lock文件、baseline检查、临时文件/sync/persist和内存提交顺序均保留；未增加等待/重试、删除锁文件或通用锁框架。
+- 解锁采用Drop中的最小best-effort调用，保持原写入结果，不把已持久化成功重新判为失败，不覆盖原业务错误；文件close仍随后发生。未新增对外解锁错误返回承诺，也不宣称极端系统错误/真实竞争从此不会busy。申请失败立即保存真实系统错误：仅 `ErrorKind::WouldBlock` 保留原busy文案，其他失败保留 `io::Error` 原因及固定上下文，不读取/打印配置内容。
+- `tests/plugins.rs` 的stale add及过时remove、`tests/core_plugins.rs` 的stale core_enabled改为精确检查 `plugin registry changed; refresh first`。手工持锁仍精确验证busy，结束时显式 `LOCK_UN` 再drop；没有用串行测试或延时掩盖竞争。
+- 新测试通过实际 `Registry::core_enabled → write` 验证成功/错误退出。唯一测试接缝是 `#[cfg(test)]`、线程局部且一次性消费的锁后hook，用本次真实锁fd启动自建 `/usr/bin/true`，以带5秒上限的屏障固定fork后的exec前窗口。父事务返回后、子进程尚未exec时再调用实际Registry写入，随后放行并等待子进程结束；不是在复制锁算法上GREEN。非busy分类测试对同一申请函数执行真实 `flock(-1)`，验证保留EBADF，不构造非法File/OwnedFd。
+
+### 10项workflow逐项判断与适配
+
+已逐项读取主控原 `saddle-03c-gap-controller-f9e9h7xt/saddle.log` 的失败位置/屏幕，并对照 Palette、管理页和窗口保护调用。下列均是过时测试假设或文本定位问题；限定目标验证后未发现必须修改生产UI的证据。Dispatch仍默认停用并正常显示，未隐藏注册项、跳过用例或放宽生命周期/布局断言。
+
+| 目标 | 原失败原因与最小适配 | 保留的保护 / 最终结果 |
+|---|---|---|
+| `drover_plugin_opens_in_a_split_and_closes_only_its_view` | split picker/重开时默认首项成为Dispatch，Enter去管理页；明确选择公开action标题 `Tasks` 后Enter。 | 分屏两pane、关闭仅恢复原布局、合成队列不变、随后可重开overlay；通过。 |
+| `drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli` | 关闭任务视图后再开palette，原先默认首项可直接重开Drover的假设失效；选择 `Tasks`。 | 表单输入、退出后后台生命周期、旧CLI无业务写入断言全部保留；通过。 |
+| `plugin_entry_opens_overlay_without_changing_layout_and_keeps_process` | 默认选中Dispatch而非fixture；`open_fixture_palette` 按可见标题选择Fixture Counter并等待选中标记。 | overlay几何/边框、focus、原tabs、保留键及只启动一次/计数状态保留；首轮通过。 |
+| `plugin_manager_details_follow_the_visible_entries` | 原鼠标定位先命中Dispatch说明里的“Manage plugins”，不是footer按钮；先明确选择fixture，说明消失，再点原按钮。 | 管理页跟随所选ID，详情与最后可见entry相差2行的原断言保留；首轮通过。 |
+| `plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings_cursor` | 最后一次打开管理页也误点同一说明文字；同一窄helper修正。 | 管理页隐藏cursor、目录输入显示cursor、返回Settings恢复cursor；首轮通过。 |
+| `plugin_overlay_protects_host_actions_and_restores_viewer_focus` | 原Enter激活默认Dispatch；明确选择fixture。 | overlay期间ctl布局动作返回busy、宿主按键/点击受阻，Esc恢复viewer与active pane/tabs；首轮通过。 |
+| `plugin_palette_empty_and_settings_are_not_replaced` | 无外部视图不再等于无注册项；明确检查Dispatch及Built-in Disabled，使用无匹配查询验证Enter不打开视图、focus/tabs不变，再走管理入口。 | Settings不能被背后Plugins替换、搜索/Enter不泄漏到agent终端、Esc恢复viewer；通过。 |
+| `plugin_palette_switches_overlays_and_blocks_background_layout_writes` | 初始Enter误选Dispatch；先定位fixture，后续Other/Fixture搜索切换保留。 | palette期间ctl busy、关闭恢复原overlay、两个进程各启动一次、点击计数/原tabs保留、管理页跟随所选ID；首轮通过。 |
+| `plugin_split_picker_cancels_opens_and_moves_one_live_view` | 默认首项假设，以及“当前pane不可再分到自身”时列表必为空的假设过时；明确选择fixture，当前视图已被过滤时查询 `test.entry` 并验证无匹配/Enter保持palette与原tabs。 | 取消不改布局、Move复用同一pane/进程、计数保留、关闭恢复agent输入、默认重开overlay；通过。 |
+| `plugin_workspace_palette_reuses_panel_and_disable_blocks_open` | 默认首项及F5管理页默认行假设失效；明确选择fixture和管理页中的Entry fixture行，避开背景同名tab，停用后再次选择该项验证Enter不打开。 | 复用原panel/tabs、进程只启动一次、停用后不能打开；通过。 |
+
+公共 `open_fixture_palette` 只被本轮失败目标使用；没有改整个Harness的点击规则。管理页行定位限定在Settings边框内，选择不依赖“第一行”。空搜索框的占位文字与非空查询分开判断，非空时检查无匹配状态、palette焦点及布局不变。
+
+### 实际RED/GREEN、失败保留与限定回归
+
+证据目录：`/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-03c-integration-fix-jodmed7i/`。含 `baseline.txt`、前台 `run.py`、各命令完整 `.json/.log`、RED补丁、`workflow-first.patch`、最终diff与汇总。每条命令等待退出；隔离HOME/全部五个XDG、保留真实CARGO_HOME/RUSTUP_HOME、固定共享target、stdin=/dev/null、外层移除TYPESAFE_API_KEY。仅合成材料、假Corral和自建短命进程。
+
+| 检查 / 证据 | 实际结果 |
+|---|---|
+| 成功退出有效RED：`red-lock-lifecycle.log/.patch` | 未修实现的实际Registry成功返回后，子进程仍在exec前，第二次写返回busy，目标失败。首次并行运行共2失败；其中stale用例在夹具初始化的更早锁窗口报busy，**不将这条早期断言失败冒称错误退出的目标RED**。 |
+| 错误退出有效RED：`red-lock-stale.log/.patch` | 夹具改为直接合成外部编辑以失效baseline，避免先取一个额外锁；只精确运行stale目标一次。确认首写返回changed后，下一次实际Registry写入仍因继承引用busy而失败，exit101。这是目标RED，没有用反复碰运气替代定位。 |
+| 生命周期GREEN：`green-lock-lifecycle.log/.json` | 两个新目标2通过，均在子进程exec前完成下一次实际写入，确认最终状态及lock文件仍在。该RED/GREEN的 `cargo test --lib plugins::registry::tests::` 默认workspace命令也列出其他lib harness，但它们实际执行0项；随后所有命令显式 `-p saddle`，没有跑其他套件用例。 |
+| 错误分类RED→GREEN：`red-lock-error.log/.patch`、`green-lock-error.log` | 将原申请代码机械提取为局部函数后，真实EBADF在旧逻辑被折叠为busy，缺失预期errno9，exit101；最小分类修正后该目标1通过。原WouldBlock文案由后面的手工持锁直接回归验证。 |
+| 原plugins失败用例：`green-registry-original-plugins.log/.json` | `cargo test -p saddle --test plugins registration_defaults_disabled_and_concurrent_edit_is_not_overwritten -- --exact`：1通过，仅一轮。 |
+| 原core_plugins失败用例：`green-registry-original-core.log/.json` | `cargo test -p saddle --test core_plugins management_switches_preserve_external_entries_and_enforce_reserved_ids_and_baseline -- --exact`：1通过，仅一轮。 |
+| 10项workflow首轮：`workflow-ten.log/.json`、`workflow-first.patch` | 通过libtest多个完整名称加 `--exact`，仅选定10项，94项过滤；5通过/5失败，exit101。5个新失败分别来自本轮定位/期望错误：两项使用Drover名称而实际action标题为Tasks，两项有查询文字后仍等Search plugins占位符，一项点击背景同名tab而非管理页行。原始日志完整保留，不算新的生产UI缺陷。 |
+| 修正后仅5项：`workflow-five-corrected.log/.json` | 对上述具体错误改定位/断言后，只选这5项精确运行一次，5通过/0失败，99项过滤。已通过的另5项未重跑；最终10项各有通过结果，没有workflow整套或无改动循环重跑。 |
+| 静态核对 | 限定Rust文件rustfmt检查、`git diff --check`通过；dispatch/M1、生产UI/Palette/App及其他模块diff为空。 |
+
+### 结论、未知与交付边界
+
+- 本轮独立目标最终通过：新增锁目标3项、两个原用例2项、workflow指定10项，共15个不同目标。作用域解锁关闭的是已实证的继承引用窗口；原开发/主控两次busy没有历史errno/持锁者证据，**仍不能宣称原两次已证明同因**，尤其core_plugins原次原因继续按未知保留。
+- 主控原补跑290通过/10失败/4忽略和原标准exit101均是保留的历史事实；本轮限定修正结果不篡改它们为原运行全绿，也不宣称重新执行了标准全套。未跑Clippy、标准全套、workflow整套或额外覆盖矩阵，未重开M1或已接受设计。
+- 没有修改生产UI、dispatch传输、Corral/外部库、Drover业务、依赖方向、遥测schema及主仓库文档；没有发布/安装、真实服务/数据/队列、消费者切换、04/05、合并推送、清理worktree/agent。仅原分支提交，交主控和原独立审查者限定复核后再裁定合并。

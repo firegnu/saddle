@@ -4580,6 +4580,11 @@ fn open_fixture_palette(h: &mut Harness) {
     h.click("Plugins");
     h.see("Search plugins");
     h.until(|h| h.contents().contains("Background") || h.contents().contains("View open"));
+    // Built-ins precede process plugins; select the fixture, not the first row.
+    // This also removes the built-in explanation containing "Manage plugins",
+    // so later clicks address the actual footer button rather than that prose.
+    h.click("Fixture Counter");
+    h.see("› Fixture Counter");
 }
 
 fn plugin_entry_harness(placement: &str) -> Harness {
@@ -4604,6 +4609,8 @@ fn plugin_split_picker_cancels_opens_and_moves_one_live_view() {
     h.click("Right →");
     h.click_in("Open content on the right", "Plugin…");
     h.see("Background");
+    h.click("Fixture Counter");
+    h.see("› Fixture Counter");
     h.send(b"\r");
     h.see("Clicks: 0");
     h.see("p/b READY");
@@ -4626,9 +4633,15 @@ fn plugin_split_picker_cancels_opens_and_moves_one_live_view() {
     h.click("Split ▾");
     h.click("Left ←");
     h.click_in("Open content on the left", "Plugin…");
-    h.see("No plugins available here");
+    // Dispatch can be managed here, but the current pane's view cannot be split
+    // into itself. Query that view explicitly instead of assuming an empty list.
+    h.see("Dispatch");
+    h.send(b"test.entry");
+    h.see("No matching plugins");
     h.send(b"\r");
-    h.see("Search plugins");
+    h.settle();
+    assert!(h.contents().contains("No matching plugins"));
+    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
     assert_eq!(h.ctl(&["inspect"])["tabs"], moved["tabs"]);
     h.send(b"\x1b");
     h.until(|h| h.ctl(&["inspect"])["focus"] != "plugin_palette");
@@ -4642,6 +4655,8 @@ fn plugin_split_picker_cancels_opens_and_moves_one_live_view() {
     h.click("Below ↓");
     h.click_in("Open content below", "Plugin…");
     h.see("Move");
+    h.click("Fixture Counter");
+    h.see("› Fixture Counter");
     h.send(b"\r");
     h.see("Clicks: 1");
     assert_eq!(h.ctl(&["inspect"])["active_pane"], plugin_pane);
@@ -4867,6 +4882,8 @@ fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
     assert_eq!(h.log("plugin/starts").lines().count(), 1);
     h.send(b"\x1d,\x1b[15~");
     h.see("Running");
+    h.click_in("Settings ━", "Entry fixture"); // Not the background workspace tab title.
+    h.see("ID: test.entry");
     h.click("Disable");
     h.see("Disabled");
     h.send(b"\x1b");
@@ -4876,6 +4893,8 @@ fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
     h.click("Plugins");
     h.see("Fixture Counter");
     h.see("Disabled");
+    h.click("Fixture Counter");
+    h.see("› Fixture Counter");
     h.send(b"\r");
     h.see("Search plugins");
     assert_eq!(h.log("plugin/starts").lines().count(), 1);
@@ -4990,12 +5009,21 @@ fn plugin_palette_switches_overlays_and_blocks_background_layout_writes() {
 #[test]
 fn plugin_palette_empty_and_settings_are_not_replaced() {
     let mut h = Harness::start();
+    let tabs = h.ctl(&["inspect"])["tabs"].clone();
     h.click("Plugins");
-    h.see("No plugins registered");
+    // No external views are registered; the disabled built-in remains visible.
+    h.see("Dispatch");
+    h.see("Built-in · Disabled");
+    h.send(b"no-view");
+    h.see("No matching plugins");
     h.send(b"\r");
-    h.see("Search plugins");
+    h.settle();
+    assert!(h.contents().contains("No matching plugins"));
+    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
+    assert_eq!(h.ctl(&["inspect"])["tabs"], tabs);
     h.click("Manage plugins");
     h.see("Changes here apply immediately.");
+    h.see("ID: dispatch");
     h.send(b"\x1b");
     h.until(|h| !h.contents().contains("Changes here apply immediately."));
     h.click("Plugins"); // fixed host entry remains behind Settings; cannot replace it
@@ -5010,8 +5038,10 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     h.see("READY");
     let before = h.log("events");
     h.click("Plugins");
-    h.see("No plugins registered");
+    h.see("Dispatch");
+    h.see("Built-in · Disabled");
     h.send(b"not-terminal-input");
+    h.see("No matching plugins");
     h.send(b"\r");
     h.send(b"\x1b");
     h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
@@ -5226,6 +5256,8 @@ fn drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli() {
     h.see("Input ▸ Agents");
     h.click("Plugins");
     h.see("Background");
+    h.click("Tasks");
+    h.see("› Tasks");
     h.send(b"\r");
     h.see("Native queue task");
     h.send(b"\x1b");
@@ -5253,6 +5285,8 @@ fn drover_plugin_opens_in_a_split_and_closes_only_its_view() {
     h.click("Below ↓");
     h.click_in("Open content below", "Plugin…");
     h.see("Background");
+    h.click("Tasks");
+    h.see("› Tasks");
     h.send(b"\r");
     h.see("Native queue task");
     let opened = h.ctl(&["inspect"]);
@@ -5263,6 +5297,8 @@ fn drover_plugin_opens_in_a_split_and_closes_only_its_view() {
     assert_eq!(h.native_queue(), queue);
     h.click("Plugins");
     h.see("Background");
+    h.click("Tasks");
+    h.see("› Tasks");
     h.send(b"\r");
     h.see("Native queue task");
     assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");

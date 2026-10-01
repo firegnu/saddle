@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::{Read, Write},
+    os::fd::AsRawFd,
     path::{Component, Path, PathBuf},
 };
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +138,26 @@ pub struct Registry {
     baseline: Option<Vec<u8>>,
     pub error: Option<String>,
 }
+struct RegistryLock<'a>(&'a fs::File);
+impl Drop for RegistryLock<'_> {
+    fn drop(&mut self) {
+        // Closing our fd alone may leave a forked child's reference holding the
+        // lock until exec. Best-effort unlock preserves the original write result
+        // (including an already persisted success); closing the file still follows.
+        unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+fn acquire_lock(fd: std::os::fd::RawFd) -> Result<()> {
+    if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        let error = std::io::Error::last_os_error();
+        ensure!(
+            error.kind() != std::io::ErrorKind::WouldBlock,
+            "plugin registry busy; refresh and retry"
+        );
+        return Err(error).context("could not lock plugin registry");
+    }
+    Ok(())
+}
 impl Registry {
     pub fn open(path: PathBuf) -> Self {
         Self::with_reserved(path, std::iter::empty::<&str>())
@@ -244,11 +265,10 @@ impl Registry {
             .read(true)
             .write(true)
             .open(self.path.with_extension("lock"))?;
-        use std::os::fd::AsRawFd;
-        ensure!(
-            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-            "plugin registry busy; refresh and retry"
-        );
+        acquire_lock(lock.as_raw_fd())?;
+        let _unlock = RegistryLock(&lock);
+        #[cfg(test)]
+        tests::after_lock(lock.as_raw_fd());
         ensure!(
             read(&self.path)? == self.baseline,
             "plugin registry changed; refresh first"
@@ -281,3 +301,6 @@ fn read(path: &Path) -> Result<Option<Vec<u8>>> {
         Err(e) => Err(e.into()),
     }
 }
+
+#[cfg(test)]
+mod tests;

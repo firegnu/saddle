@@ -85,10 +85,16 @@ fn registration_defaults_disabled_and_concurrent_edit_is_not_overwritten() {
     let mut stale = Registry::open(path.clone());
     first.add(&plugin, &manifest).unwrap();
     assert!(!first.entries[0].enabled);
-    assert!(stale.add(&plugin, &manifest).is_err());
+    assert_eq!(
+        stale.add(&plugin, &manifest).unwrap_err().to_string(),
+        "plugin registry changed; refresh first"
+    );
     stale.refresh().unwrap();
     stale.enabled("demo.other", true).unwrap();
-    assert!(first.remove("demo.other").is_err());
+    assert_eq!(
+        first.remove("demo.other").unwrap_err().to_string(),
+        "plugin registry changed; refresh first"
+    );
     assert!(Registry::open(path).entries[0].enabled);
     assert!(plugin.join("entry").exists());
 }

@@ -615,7 +615,13 @@ fn management_switches_preserve_external_entries_and_enforce_reserved_ids_and_ba
     let mut stale = Registry::with_reserved(path.clone(), ["test.core"]);
     manager.core_enabled("test.core", true).unwrap();
     assert_eq!(manager.core_state("test.core"), Some(State::Enabled));
-    assert!(stale.core_enabled("test.core", false).is_err());
+    assert_eq!(
+        stale
+            .core_enabled("test.core", false)
+            .unwrap_err()
+            .to_string(),
+        "plugin registry changed; refresh first"
+    );
     stale.refresh().unwrap();
     let lock = fs::OpenOptions::new()
         .create(true)
@@ -628,14 +634,15 @@ fn management_switches_preserve_external_entries_and_enforce_reserved_ids_and_ba
         unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
         0
     );
-    assert!(
+    assert_eq!(
         stale
             .core_enabled("test.core", false)
             .unwrap_err()
-            .to_string()
-            .contains("busy")
+            .to_string(),
+        "plugin registry busy; refresh and retry"
     );
     assert!(Registry::open(path.clone()).core["test.core"].enabled);
+    assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_UN) }, 0);
     drop(lock);
     stale.core_enabled("test.core", false).unwrap();
     assert!(!Registry::open(path.clone()).core["test.core"].enabled);
