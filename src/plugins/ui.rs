@@ -13,13 +13,17 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
-    widgets::{Clear, Paragraph, Wrap},
+    style::{Modifier, Style},
+    widgets::{
+        Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
+    },
 };
 use unicode_width::UnicodeWidthStr;
 #[derive(Default)]
 pub struct Page {
     selected: usize,
+    detail_scroll: usize,
+    detail_area: Rect,
     focus: usize,
     pub message: String,
     adding: Option<Adding>,
@@ -76,6 +80,7 @@ impl Page {
     pub fn select_plugin(&mut self, id: &str, m: &Manager) {
         let rows = rows(m);
         // An external registration holding a built-in ID is what the palette listed.
+        self.detail_scroll = 0;
         self.selected = rows
             .iter()
             .position(|r| matches!(r, Row::External(e) if e.id == id))
@@ -209,9 +214,18 @@ impl Page {
         self.selected = self.selected.min(count.saturating_sub(1));
         let stops = self.actions(m).len() + 1;
         self.focus = self.focus.min(stops - 1);
+        let before = self.selected;
         let action = match event {
             Event::Key(k) => match k.code {
                 KeyCode::Esc => return Outcome::Back,
+                KeyCode::PageUp => {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(5);
+                    None
+                }
+                KeyCode::PageDown => {
+                    self.detail_scroll = self.detail_scroll.saturating_add(5);
+                    None
+                }
                 KeyCode::Up => {
                     self.selected = self.selected.saturating_sub(1);
                     None
@@ -231,6 +245,20 @@ impl Page {
                 KeyCode::Enter if self.focus > 0 => Some(self.focus - 1),
                 _ => None,
             },
+            Event::Mouse(mouse)
+                if self.detail_area.contains((mouse.column, mouse.row).into())
+                    && matches!(
+                        mouse.kind,
+                        MouseEventKind::ScrollDown | MouseEventKind::ScrollUp
+                    ) =>
+            {
+                self.detail_scroll = if mouse.kind == MouseEventKind::ScrollDown {
+                    self.detail_scroll.saturating_add(3)
+                } else {
+                    self.detail_scroll.saturating_sub(3)
+                };
+                None
+            }
             Event::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
                 let p = (mouse.column, mouse.row).into();
                 if let Some((_, i)) = self.rows.iter().find(|(r, _)| r.contains(p)) {
@@ -246,6 +274,9 @@ impl Page {
             }
             _ => None,
         };
+        if self.selected != before {
+            self.detail_scroll = 0;
+        }
         let Some(action) = action else {
             return Outcome::Stay;
         };
@@ -336,30 +367,11 @@ impl Page {
         settings: &crate::settings::Settings,
     ) {
         let rows = rows(m);
-        let selected_core = match rows.get(self.selected) {
-            Some(Row::Core(c)) if self.adding.is_none() => Some(*c),
-            _ => None,
-        };
-        // Built-in details may need more than the external summary's five rows.
-        let width = usize::from(frame.area().width.min(76).saturating_sub(4));
-        let full = selected_core.map(|c| core_detail(m, c, true));
-        let extra = full
-            .as_ref()
-            .map_or(0, |d| wrapped(d, width).saturating_sub(5)) as u16;
-        // Its longer action labels can also wrap the button bar to another row.
-        let bar = if full.is_some() {
-            let labels: Vec<_> = self.actions(m).iter().map(|a| a.1).collect();
-            bar_rows(&labels, width) as u16 - 1
-        } else {
-            0
-        };
-        // Keep the existing details/footer room; only reserve rows for actual entries.
-        let height = if self.adding.is_some() {
-            28
-        } else {
-            19 + rows.len().clamp(1, 12) as u16 + extra + bar
-        };
-        let area = crate::theme::centered(frame.area(), 76, height);
+        let area = crate::theme::centered(
+            frame.area(),
+            if self.adding.is_some() { 80 } else { 108 },
+            if self.adding.is_some() { 24 } else { 34 },
+        );
         frame.render_widget(Clear, area);
         frame.render_widget(
             t.block(
@@ -380,6 +392,7 @@ impl Page {
             ..inside
         };
         self.rows.clear();
+        self.detail_area = Rect::default();
         self.hits.clear();
         self.tabs.clear();
         let choices: Vec<_> = if let Some(add) = &self.adding {
@@ -415,14 +428,19 @@ impl Page {
             })
             .collect();
         if let Some(add) = &mut self.adding {
-            add.field = Rect::new(body.x, body.y.saturating_add(2), body.width, 1);
-            add.input
-                .draw(frame, add.field, add.focus == 0, "Plugin directory", t);
+            let field_area = Rect::new(body.x, body.y, body.width, body.height.min(3));
+            let field = t.block(" Plugin directory ", add.focus == 0);
+            add.field = field.inner(field_area);
+            frame.render_widget(field, field_area);
             let preview=add.preview.as_ref().map(|p|format!("{}  {} · {}\nProgram: {}\n\nRuns with your user permissions when enabled.\nAdding does not start the plugin.",p.name,p.version,p.id,p.program(&crate::config::expand_home(&add.input.text)).map(|p|p.display().to_string()).unwrap_or_default())).unwrap_or_else(||"Enter a directory, then Read manifest.".into());
             frame.render_widget(
-                Paragraph::new(format!("Directory\n\n\n\n{preview}\n\n{}", self.message))
-                    .wrap(Wrap { trim: false }),
-                body,
+                Paragraph::new(format!("{preview}\n\n{}", self.message)).wrap(Wrap { trim: false }),
+                Rect::new(
+                    body.x,
+                    body.y + 4.min(body.height),
+                    body.width,
+                    body.height.saturating_sub(4),
+                ),
             );
             add.input
                 .draw(frame, add.field, add.focus == 0, "Plugin directory", t);
@@ -434,22 +452,80 @@ impl Page {
                 .map(|hit| (crate::input::Focus::Agents, hit))
                 .collect();
             self.pointer.paint(t, frame, &self.tabs);
-            let header =
-                "Changes here apply immediately.\n\n  Name                     Enabled  Runtime";
-            frame.render_widget(Paragraph::new(header), body);
-            let count = usize::from(body.height.saturating_sub(13 + extra)).max(1);
-            let start = self.selected.saturating_sub(count - 1);
-            for (row, (i, entry)) in rows.iter().enumerate().skip(start).take(count).enumerate() {
-                let r = Rect::new(body.x, body.y + 3 + row as u16, body.width, 1);
-                if r.y >= body.bottom() {
-                    break;
-                }
+            let mut body = body;
+            if body.height > 0 {
+                frame.render_widget(
+                    Paragraph::new("Changes apply immediately.")
+                        .style(Style::default().fg(t.muted)),
+                    Rect::new(body.x, body.y, body.width, 1),
+                );
+                body.y += 1;
+                body.height -= 1;
+            }
+            if body.height > 0 {
+                frame.render_widget(
+                    Paragraph::new(
+                        "↑↓ Select · Tab Focus · Enter Activate · PgUp/PgDn Details · Esc Back",
+                    )
+                    .style(Style::default().fg(t.muted)),
+                    Rect::new(body.x, body.bottom() - 1, body.width, 1),
+                );
+                body.height -= 1;
+            }
+            let message = m.registry.error.as_deref().unwrap_or(&self.message);
+            if !message.is_empty() && body.height > 2 {
+                let height = (wrapped(message, body.width as usize) as u16)
+                    .min(3)
+                    .min(body.height - 1);
+                frame.render_widget(
+                    Paragraph::new(message)
+                        .wrap(Wrap { trim: false })
+                        .style(Style::default().fg(t.focus)),
+                    Rect::new(body.x, body.bottom() - height, body.width, height),
+                );
+                body.height -= height;
+            }
+            let (list, detail) = if body.width >= 96 {
+                let left = Rect::new(body.x, body.y, 38, body.height);
+                frame.render_widget(
+                    Block::new()
+                        .borders(Borders::LEFT)
+                        .border_style(Style::default().fg(t.border)),
+                    Rect::new(left.right(), body.y, 1, body.height),
+                );
+                (
+                    left,
+                    Rect::new(left.right() + 2, body.y, body.width - 40, body.height),
+                )
+            } else {
+                let height = (rows.len().min(7) as u16 + 2).min(body.height / 2);
+                (
+                    Rect { height, ..body },
+                    Rect::new(body.x, body.y + height, body.width, body.height - height),
+                )
+            };
+            let name_width = usize::from(list.width).saturating_sub(21).clamp(6, 24);
+            if list.height > 0 {
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "  {} On   Runtime",
+                        crate::ui::pad("Plugin", name_width)
+                    ))
+                    .style(Style::default().fg(t.muted)),
+                    Rect { height: 1, ..list },
+                );
+            }
+            let count = usize::from(list.height.saturating_sub(2));
+            let start = self.selected.saturating_sub(count.saturating_sub(1));
+            for (offset, (i, entry)) in rows.iter().enumerate().skip(start).take(count).enumerate()
+            {
+                let r = Rect::new(list.x, list.y + 1 + offset as u16, list.width, 1);
                 let (name, enabled, runtime) = match entry {
                     Row::Core(c) => (
                         c.name.to_owned(),
                         match m.core_state(c.id) {
                             Some(State::Enabled) => "Yes",
-                            Some(State::Conflict) => "Conflict",
+                            Some(State::Conflict) => "!",
                             _ => "No",
                         },
                         "Built-in".to_owned(),
@@ -462,72 +538,142 @@ impl Page {
                         m.state(&e.id),
                     ),
                 };
-                let text = format!(
-                    "{} {:24} {:8} {}",
-                    if i == self.selected { ">" } else { " " },
-                    crate::ui::clip(&name, 24),
-                    enabled,
-                    runtime
-                );
                 frame.render_widget(
-                    Paragraph::new(text).style(Style::default().fg(if i == self.selected {
-                        t.focus
+                    Paragraph::new(format!(
+                        "{} {} {:4} {}",
+                        if i == self.selected { "›" } else { " " },
+                        crate::ui::pad(&crate::ui::clip(&name, name_width), name_width),
+                        enabled,
+                        runtime
+                    ))
+                    .style(if i == self.selected {
+                        Style::default()
+                            .fg(t.focus)
+                            .bg(t.agent_selected)
+                            .add_modifier(Modifier::BOLD)
                     } else {
-                        t.text
-                    })),
+                        Style::default().fg(t.text)
+                    }),
                     r,
                 );
                 self.rows.push((r, i));
             }
-            let top = body.y + 3 + count as u16;
-            let r = Rect::new(
-                body.x,
-                top.min(body.bottom()),
-                body.width,
-                body.bottom().saturating_sub(top),
-            );
-            let detail = match rows.get(self.selected) {
-                // Short windows keep the switch and resource summary; the long setup note
-                // and paths stay available through the read-only status command.
-                Some(Row::Core(c)) => full
-                    .filter(|d| wrapped(d, usize::from(r.width)) + 3 <= usize::from(r.height))
-                    .unwrap_or_else(|| core_detail(m, c, false)),
-                Some(Row::External(e)) => format!(
-                    "ID: {}\nDirectory: {}\nProgram: {}\n{}\n{}",
-                    e.id,
-                    e.directory.display(),
-                    m.program(&e.id)
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_else(|| "Unavailable".into()),
-                    if e.enabled != m.enabled_here(&e.id) {
-                        "Registry differs from this instance. Enable/Disable here explicitly."
-                    } else {
-                        "Remove deletes registration only; files are kept."
-                    },
-                    m.note(&e.id)
+            if rows.is_empty() && list.height > 1 {
+                frame.render_widget(
+                    Paragraph::new("No plugins registered").style(Style::default().fg(t.muted)),
+                    Rect::new(list.x, list.y + 1, list.width, 1),
+                );
+            }
+            if rows.len() > count && list.height > 1 {
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "{}–{} / {}",
+                        start + 1,
+                        (start + count).min(rows.len()),
+                        rows.len()
+                    ))
+                    .style(Style::default().fg(t.muted)),
+                    Rect::new(list.x, list.bottom() - 1, list.width, 1),
+                );
+            }
+            let (name, text) = match rows.get(self.selected) {
+                Some(Row::Core(c)) => (c.name.to_owned(), core_detail(m, c)),
+                Some(Row::External(e)) => (
+                    m.manifest(&e.id)
+                        .map(|p| p.name)
+                        .unwrap_or_else(|_| e.id.clone()),
+                    format!(
+                        "{} · {}\nID: {}\n\nTechnical details\nDirectory\n{}\n\nProgram\n{}\n\n{}\n{}",
+                        if e.enabled { "Enabled" } else { "Disabled" },
+                        m.state(&e.id),
+                        e.id,
+                        e.directory.display(),
+                        m.program(&e.id)
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_else(|| "Unavailable".into()),
+                        if e.enabled != m.enabled_here(&e.id) {
+                            "Registry differs from this instance. Enable/Disable here explicitly."
+                        } else {
+                            "Remove deletes registration only; files are kept."
+                        },
+                        m.note(&e.id)
+                    ),
                 ),
-                None => "No plugins registered. Add a local directory to begin.".into(),
+                None => (
+                    "Plugin details".into(),
+                    "Add a local directory to begin.".into(),
+                ),
             };
+            let block = Block::new()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(t.border))
+                .title(ratatui::text::Line::styled(
+                    format!(" {name} "),
+                    Style::default().fg(t.focus).add_modifier(Modifier::BOLD),
+                ));
+            let viewport = block.inner(detail);
+            frame.render_widget(block, detail);
+            self.detail_area = viewport;
+            let width = viewport.width.saturating_sub(1);
+            let total = wrapped(&text, width as usize);
+            self.detail_scroll = self
+                .detail_scroll
+                .min(total.saturating_sub(viewport.height as usize));
+            let lines: Vec<_> = text
+                .lines()
+                .map(|line| {
+                    ratatui::text::Line::styled(
+                        line.to_owned(),
+                        if matches!(
+                            line,
+                            "Resources"
+                                | "Setup"
+                                | "Technical details"
+                                | "Directory"
+                                | "Program"
+                                | "Setup files"
+                        ) {
+                            Style::default().fg(t.muted).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(t.text)
+                        },
+                    )
+                })
+                .collect();
             frame.render_widget(
-                Paragraph::new(format!(
-                    "\n{detail}\n{}\n↑↓ Select · Tab Focus · Enter Activate · Esc Back",
-                    m.registry.error.as_deref().unwrap_or(&self.message)
-                ))
-                .wrap(Wrap { trim: false }),
-                r,
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: false })
+                    .scroll((self.detail_scroll.min(u16::MAX as usize) as u16, 0)),
+                Rect { width, ..viewport },
             );
+            if total > viewport.height as usize && !viewport.is_empty() {
+                frame.render_stateful_widget(
+                    Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                        .begin_symbol(None)
+                        .end_symbol(None)
+                        .thumb_style(Style::default().fg(t.muted)),
+                    viewport,
+                    &mut ScrollbarState::new(total.saturating_sub(viewport.height as usize) + 1)
+                        .position(self.detail_scroll),
+                );
+            }
         }
     }
 }
 
 /// The host renders only plugin-provided text and resolved paths; it never parses them.
-fn core_detail(m: &Manager, c: &saddle_core_plugin::Manifest, full: bool) -> String {
+fn core_detail(m: &Manager, c: &saddle_core_plugin::Manifest) -> String {
     let state = match m.core_state(c.id) {
         Some(State::Enabled) => "Enabled",
         Some(State::Conflict) => "Conflict",
         _ => "Disabled",
     };
-    let mut lines = vec![format!("ID: {} · Built-in · {state}", c.id)];
+    let mut lines = vec![
+        format!("Built-in · {state}"),
+        format!("ID: {}", c.id),
+        String::new(),
+        "Resources".into(),
+    ];
     if state == "Conflict" {
         lines.push("An external plugin uses this ID; built-in commands are refused.".into());
     }
@@ -555,19 +701,14 @@ fn core_detail(m: &Manager, c: &saddle_core_plugin::Manifest, full: bool) -> Str
         }
     }
     let result = m.core_receipt(c.id).map(|r| r.summary());
-    if !full {
-        lines.extend(result);
-        if !c.setup_note.is_empty() || !c.setup_files.is_empty() {
-            lines.push(format!(
-                "Setup note and paths: saddle plugin status {}",
-                c.id
-            ));
-        }
-        return lines.join("\n");
-    }
     if !c.setup_note.is_empty() || !c.setup_files.is_empty() {
         lines.push(String::new());
+        lines.push("Setup".into());
         lines.extend(c.setup_note.lines().map(str::to_owned));
+        if !c.setup_files.is_empty() {
+            lines.push(String::new());
+            lines.push("Setup files".into());
+        }
         for (i, f) in c.setup_files.iter().enumerate() {
             let paths = status
                 .and_then(|s| s.setup_files.get(i))
@@ -591,19 +732,6 @@ fn core_detail(m: &Manager, c: &saddle_core_plugin::Manifest, full: bool) -> Str
         lines.push(result);
     }
     lines.join("\n")
-}
-/// Rows of the compact button bar (same greedy rule as `buttons::draw_compact`).
-fn bar_rows(labels: &[&str], width: usize) -> usize {
-    let (mut rows, mut x) = (1, 0);
-    for label in labels {
-        let w = (label.width() + 2).min(width);
-        if x > 0 && x + w > width {
-            rows += 1;
-            x = 0;
-        }
-        x += w + 1;
-    }
-    rows
 }
 /// Rows a word-wrapped paragraph needs, plus one spare so the result line is never cut.
 fn wrapped(text: &str, width: usize) -> usize {
