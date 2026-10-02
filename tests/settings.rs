@@ -619,3 +619,25 @@ fn removing_the_last_color_override_keeps_the_comment_lines_above_it() {
     );
     assert!(saddle::config::Config::parse(&text).is_ok(), "{text}");
 }
+
+#[test]
+fn settings_offers_lagoon_between_tide_and_terminal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut settings = Settings::open(path, true);
+    press(&mut settings, KeyCode::F(2));
+    let mut seen = vec![settings.value("theme").unwrap().to_owned()];
+    for _ in 0..3 {
+        press(&mut settings, KeyCode::Right);
+        seen.push(settings.value("theme").unwrap().to_owned());
+    }
+    assert_eq!(seen, ["dune", "tide", "lagoon", "terminal"]);
+    press(&mut settings, KeyCode::Left);
+    assert_eq!(settings.value("theme"), Some("lagoon"));
+    assert_eq!(settings.value("colors.bg"), Some("#0c1616"));
+    assert!(
+        settings.message().contains("Lagoon"),
+        "{}",
+        settings.message()
+    );
+}
