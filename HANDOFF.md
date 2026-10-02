@@ -44,7 +44,7 @@
 
 ## 保留项
 
-- `saddle/claude-1`（instance `cb7fea1096b7`）公开核对为 idle、attached=0，cwd 为主仓库；最后回复“等你切完再开我”，图片版留待新会话。用户本轮已授权确认无用途后关闭：先提交推送交接，再复核身份并关闭，实际结果随后补记。没有宠物遗留分支/worktree，不删除主仓库目录。
+- `saddle/claude-1`（instance `cb7fea1096b7`）已按用户本轮授权关闭：交接提交 `803e8b3` 推送后，再核同实例 idle、attached=0，公开 stop 返回 ok、stopped_by=SIGHUP、exit_code=129；随后 status 返回 not_found。最后回复“等你切完再开我”，图片版留待用户换内核后新开会话，不恢复旧会话。没有宠物遗留分支/worktree，没有删除主仓库目录或停止其他 agent。
 - 保留用户所有既有 agent。保留 `review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow`；没有修改原 Corral 仓库。
 - 单任务遥测规则仍是一次明确授权对应一条新 trace，完整交付后正式 close；下一任务不自动续记。不要复用旧Theme上下文。本任务没有记录选择。
 - 既有资源失败提示/Tasks降级文案等历史非阻断项没有扩修；详见先前审查记录。
