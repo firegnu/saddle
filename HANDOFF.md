@@ -2,6 +2,13 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
+## 最新：Plugins 入口弹窗整理已安装
+
+- 用户明确主控直接实现、不委派、不遥测；按已批准线框只调整 Plugins 弹窗，未改管理页或业务流程。搜索边界、名称/状态/操作分列、Built-in 跟随名称、暖色选中底色、尖括号按钮、一行说明和紧凑高度已落地；窄屏保留键盘操作。
+- 功能 f1807f2，合并 ce62879 已推送。标准首次415过/1败/5忽略，唯一失败是workflow旧版连写 Built-in · Disabled 的预期；更新后单项通过，补余下122项及examples通过，共538个不同用例通过5忽略，不能称一次全套绿。全量Clippy及变更后workflow定向Clippy通过。详见docs/任务/Plugins弹窗布局.md、/tmp/saddle-palette-*.log。
+- **宿主已安装**：候选SHA256 7bc87dfd2f558cbe5f352e8c6ae040393fc87e85b889cc68de3695208513dc58，原子替换日常宿主且哈希/--help核对通过。备份 ~/.local/share/saddle/backups/plugins-palette-20261002-165514；记录 /tmp/saddle-palette-install.json。Drover包/技能/配置未改，未关闭运行界面或agent；用户重开Saddle看效果，真实界面复看待用户。
+- plugins-palette-layout工作区/分支已清理，无自建agent；空提交收尾完成。保留既有设计review/t38/t55。下一步等用户逐个界面反馈，不自行开始Run details新改版或Corral迁移。
+
 ## 最新：两项验收问题已修复合并并安装，可重开 Saddle
 
 - 用户授权主控直接修复，不委派。功能9f8630a、候选记录b757804，合并55201bf已推送。Run details 增加本次run审查/收尾报告，经宿主公开遥测查询；通用task.transition允许可选reason正文，Drover在退回业务落盘后采集原因并由现有正文查看器展示。任务状态机/人工Submit-Accept-Return不变，不改Corral、不反向依赖、不自动补写旧事件。
