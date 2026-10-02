@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-02。当前main；阶段04已通过审查、合并并完成工作区/会话清理。未发布或安装，未启动05。
+更新：2026-10-02。当前main；阶段04已通过审查、合并并完成工作区/会话清理。未发布或安装；05已获用户批准，05A现已派发。
 
 ## 本次完成
 
@@ -28,7 +28,7 @@
 
 ## 下一步与硬边界
 
-- 04已收尾，等待用户下一步指示。计划下一阶段05才切消费者、退役旧dispatch-log入口；本次不自动派发05。旧Drover Dispatch/dlog视图仍在，不导入旧日志、不恢复旧Drover独立服务。
+- 04已收尾。用户明确“好的，那就开始吧”，05获准启动；先05A仓库内替换，后备份/安装/技能与指引切换，再核消费者退役旧工具。旧数据不导入不删除，不恢复旧Drover独立服务。
 - 遥测归宿主SQLite，dispatch为可选路由插件，Drover经通用公开接口关联；无需dispatch/Drover也可用独立遥测。具体设计与理由以docs/DESIGN.md及契约为准，不重新讨论已批准布局/记录选择。
 - **需改Corral或发现依赖反转，先停相关部分告知用户，不能先改后报。** Corral迁移仍最后。Saddle不管理项目是否采用主控分派，不自动改项目AGENTS。
 - 主控不写功能代码；按AGENTS/corral-dispatch和../dispatch-log/USAGE.md记录路由/派发/审查。合并、release、任务登记、队列放行/派发是不同授权。
@@ -42,3 +42,12 @@
 - 04B开发证据：/private/tmp/claude-501/-Users-firegnu-Developer-personal-projs-saddle-worktrees-telemetry-drover-integration/8944a1f9-783a-4263-bfe7-f2942911793c/scratchpad。
 - 本次清理原始记录：/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-04-close-hmxm_ybf/actions.json。
 - dlog：04A f4e92b504dec41f59ce2062a5e83f571；04B 936889ea33ad4146bd967c25da4ae6d9；04B独立审查0a1223662d11441ba1b703e6dc3f71e5。裁定已记录，实际收尾在推送完成后另记。
+
+## 当前派发：05A仓库消费者替换
+
+- saddle/dev-telemetry-consumers-1，instance0e03c0c56e19，Codex gpt-6-astra/high、role=implementer；分支telemetry-consumer-cutover，worktree ../saddle-worktrees/telemetry-consumer-cutover，基线b6bfb04。任务docs/任务/遥测05A-仓库消费者替换.md，dlog13dc01e67825482d86390ad956ef6c3f。
+- JEV三项null，主控常规/交叉审查不要/改行为：删旧只读消费者，按已有契约组合技能记录流程，不改模型或核心采集。先核目标RED/GREEN与diff/取舍，主控一次标准test/clippy；不自动扩成独立审计，发现具体要害才说明原因调整。主控不写功能代码。
+- 目标：移除Drover旧Dispatch日志视图和dlog执行链，保留Dispatch selected动作与Telemetry跳转；旧--dispatch-log值接受但弃用不执行以兼容清单；随dispatch分发同版本遥测操作指引并更新revision。没有新增UI布局，无需再确认布局。
+- 本轮不改AGENTS/全局skill/真实安装，仍由现用dlog记录本阶段。两个全局链接现指向Corral/corral-dispatch-skill，后续只迁移链接本身不写Corral源码。顶层项目指引盘点另外命中已归档Drover和dispatch-log本仓库，不能据此声称所有外部会话停止旧采集；不自动改用户项目或关用户agent。
+- 回来先status，working重挂；idle经dlog reply取完整DONE，核完成记录与一次标准。返工交原实现者，仅定向直接回归，每轮挂提醒。需改Corral或依赖反转先停告知。
+- 05A不release/build --release/package安装/真实遥测或队列/产品JEV/外部归档，不动当前日常版本；审查后主控按已批05顺序另做备份切换与退役，不把05A源码完成说成05全部完成。04B S1/03B S1不顺手扩修，旧设计review/t38/t55保留。
