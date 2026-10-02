@@ -3,25 +3,16 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
-## 最新：单任务遥测边界设计通过，准备实施
+## 最新：单任务遥测边界已审查合并收尾，尚未部署
 
-- **最新：已进入独立交叉审查**。2c29d91旧Theme目标适配已核DONE/diff/原始目标1绿；主控补上次中断后24个未执行targets（root两examples+其余六成员22targets）128通过0失败0忽略。日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-boundary-omitted-zfvmdl6z；未重跑全套或Clippy，原441/1/5失败保留，历史Drover预算根因仍未知。
-- 新审查者saddle/dev-telemetry-boundary-review-1 instance3459f08440da，Codex gpt-6-astra/xhigh、role=reviewer，detached review-telemetry-task-boundary固定2c29d91。唯一意见追加主仓库docs/任务/遥测单任务边界-独立交叉审查.md；结束先status、working重挂，idle普通reply确认DONE。逐项裁定，必须改交原实现者f99302444ec2，不主控写功能；限定复审最多两轮，每轮提醒。尚未合并/安装，两个实施审查worktree及会话保留；通过才合并推送清理、目录删后关对应自建agent、空提交及HANDOFF。不采集本轮、不沿用Theme上下文、不动真实库/配置/技能/队列。
-
-- **最新实施状态覆盖下方早期记录**：候选4ed00b0已核DONE，示例Theme漏参修正及一次example check通过。主控一次标准test为441过1败5忽略exit101，Clippy通过；日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-telemetry-boundary-controller-ewzabu30。唯一失败是旧workflow默认viewer颜色断言仍Default，而已批准Theme行为为配置#abcdef/#102030。原实现者获准仅适配这一个测试默认色断言，保留显式ANSI/RGB检查，只跑一项目标，不改功能/超时、不重复全套。
-- 原Drover预算失败本轮14项全过，但更细根因仍未知；唯一探针仅定位shell入口后到宿主首回执前，不宣称修复。主控标准在workflow后中断，metadata已存同日志目录，后续需补未执行目标（root examples及其他默认workspace成员），不可将本次称为全套绿。
-- 独立审查任务docs/任务/遥测单任务边界-独立交叉审查.md为草稿，尚未开review agent/worktree。待目标适配和遗漏覆盖核完，更新候选/真实标准证据后再派重档Codex。原实施agent/worktree继续保留；仍不采集本轮、不安装或操作真实库/技能/队列。
-
-- 用户明确要求：本次任务从委派到完成收尾均记录，随后自动停止；下一项任务未再次要求则不记录，再要求新trace。规则已写docs/DESIGN.md末尾，替代下面“尚无新增授权”的旧状态。
-- 本轮先核定结束接口/写入边界/旧库兼容及Tasks人工验收衔接，任务docs/任务/遥测单任务边界-设计.md，仅设计无实现。路由一次重/交叉null/看得见，采用Claude opus[1m]/xhigh，主控静态审查，不测试构建扩审计。产品边界已批准，不重复问；实质新取舍另报。
-- 本项工作本身未要求记录，不复用Theme trace、不操作真实遥测/队列。当前功能尚未改变；不得把closure说明称为已封闭。
-- 已派saddle/dev-telemetry-boundary-design-1，instance7f019dd5dae6，分支/worktree telemetry-task-boundary-design，基线24c04bd。结束先status再公开corral reply确认DONE；working重挂提醒。交付docs/遥测单任务边界设计.md及完成记录，主控核后再形成实施任务；现有保留目录及用户agent不动。
-- 首稿14b0eeb已核完整DONE，未通过；集中修订已交原设计者。主仓库docs/任务/遥测单任务边界-主控核对.md：M1只读policy不能拒绝closed、错误优先级/无库/合法context边界；M2区间现无条件end=null，不会自然截止，需按结束事件限定；M3审查等待/会话生命周期/保留材料表述及Tasks既有记录选择。I1–I8主控裁定在该文档；不采纳自动改Return后Record默认值，不重问既有项目默认、不操作旧trace。仅文档静态及diff check，无测试构建；未派实现、未安装。
-- **最新覆盖上两条设计状态**：修订1074b3a已核完整DONE及增量，M1–M3关闭，定稿b572717，已合并推送；只静态核对，未执行功能验证。原设计工作区/分支已安全删除，确认idle/attached0后关闭对应7f019dd5dae6，空提交2749553；迟到not_found忽略勿恢复。
-- 实施任务docs/任务/遥测单任务边界-实施.md：同分支依次完成宿主schema v2/close/查询、Drover收尾调用、技能revision3与直接文档。JEV重/交叉要/碰要害，主控照用Codex gpt-6-astra/xhigh；使用合成数据验证，主控标准后独立审查。尚未安装或迁移真实库，Tasks记录选择保持原样，不采集本次工作。
-- 已派saddle/dev-telemetry-boundary-1，instancef99302444ec2，分支/worktree telemetry-task-boundary，基线374fe80。结束先status、working重挂；idle后普通corral reply取完整DONE，不能带Theme记录上下文。核diff/完成记录/有效RED-GREEN和一次标准，再新开重档Codex独立交叉审查。必须改交原实现者，每轮提醒，返工仅目标直接回归。通过才合并推送清理、成功删目录后关自建agent、空提交及HANDOFF；本轮不安装、不迁移真实库，部署另行处理。
-- **实施首轮13ded7a待核，不通过**：主控已核diff/完成记录与真实迁移/close/Drover RED-GREEN、直接回归日志；开发标准test及Clippy均在基线examples/ui_preview.rs:104漏Theme参数编译失败，未全套运行；后续既有Drover disabled场景两次budget_exhausted，根因未知。主控一次标准尚未跑，先修已知编译阻断，避免必败重复。原证据/private/tmp/saddle-telemetry-boundary-kG9SxA。
-- 已交原实现者限定继续：主仓库docs/任务/遥测单任务边界-实施核对.md仅授权示例一处参数适配、一次example check；预算失败只读静态/日志及最多一个合成探针，不改生产逻辑/超时/断言、不反复测试。回后核具体证据再跑主控一次标准与独立审查；每轮提醒，不扩审计。所有实施工作区/agent保留，未合并未安装，真实库未动。
+- 用户批准一次口头授权覆盖当前任务自委派至完成收尾，随后自动结束；下一独立任务未要求不记录，再要求新trace。方案和理由见docs/DESIGN.md与docs/遥测单任务边界设计.md；本项开发本身未选遥测，未沿用Theme上下文。
+- 功能候选2c29d91，主控及独立Codex重档审查通过（必须改0、建议改0），合并d8e31f6，审查记录62f0a65已推送；收尾空提交9231309。本次交接提交与收尾空提交随后推送，以最终公开Git结果为准。
+- 实现schema v2/事务close/关闭后拒绝新记录与合法旧context业务一次执行、v1只读兼容、查询有限区间及ended标识；Drover Accept/Return业务落盘和transition尝试后close；技能revision3明确任务授权范围。Tasks原记录默认/本次覆盖不改，无Corral修改或反向依赖。
+- 主控标准原441过1败5忽略/Clippy通过；旧Theme测试两处默认色严格预期适配后1绿，补遗漏24targets128过0败；独立定向13过0败。分段证据不称一次全量绿。历史Drover两次budget_exhausted根因未知，本次主控14绿不称修复；取消独立只静态核对。
+- 证据：docs/任务/遥测单任务边界-实施核对.md、遥测单任务边界-独立交叉审查.md；主控日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-telemetry-boundary-controller-ewzabu30，补遗漏saddle-boundary-omitted-zfvmdl6z；独立/private/tmp/saddle-boundary-review-_ys2oc22。设计1074b3a/定稿b572717及设计M1-M3已通过，不重开取舍。
+- 实施telemetry-task-boundary与detached review-telemetry-task-boundary均确认干净、候选已并入main，安全删除目录/分支后关闭自建saddle/dev-telemetry-boundary-1 instancef99302444ec2和review-1 instance3459f08440da。原设计7f019dd5dae6此前已清理。迟到提醒not_found忽略，不恢复。
+- 保留review-telemetry-design、t38-dispatch-study、t55-notification-flow及用户corral/main、e2e/main、saddle/main；未关闭用户agent。
+- **尚未安装/发布新版、迁移或关闭真实trace/库、同步真实技能或修改配置/队列。当前运行版本仍是下方Lagoon安装版本，不能声称新结束边界已在日常环境生效。** 后续部署另行处理：先备份真实SQLite及日常产物，成套宿主/Drover包先于技能revision3；不自动关闭旧Theme或其他历史trace，不在本轮实施部署。
 
 ## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
