@@ -1423,3 +1423,7 @@ Claude 独立设计审查首轮修订（2026-10-01，待复审）：补齐事件
 ## 2026-10-02 Tasks 展示语言纠正
 
 用户指出仅授权UI调整，未授权更改展示语言。上一版Tasks页签及运行概览新增中文属实施越界，现恢复英文展示：Task text / Run details / Links / Telemetry及所有新增节点文案使用英文，保留已批准布局和只读摘要。用户任务正文、报告及原因原文不翻译。后续纯UI调整沿用现有展示语言，不能将中文讨论/线框示意当作切换语言的授权。
+
+## 2026-10-02 Run details 顶部主状态
+
+用户要求一眼看出任务是否需要人工处理，现有详情不丢。保持英文，在标题下添加高对比主状态与直接操作提示，后面节点、报告、历史与参考不删。根据已读任务状态显示AWAITING YOUR ACCEPTANCE / ACCEPTED / PENDING DISPATCH等；Running本次有可读收尾报告时显示YOUR REVIEW NEEDED（仅说明报告可审阅，不代表执行成功），否则COMPLETION UNCONFIRMED。加载/刷新失败不能用旧报告显示待批准，明确CHECKING STATUS / STATUS UNAVAILABLE。不解析报告正文判断成功，不增加查询、不修改状态机、通知或采集。

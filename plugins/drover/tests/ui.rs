@@ -1246,6 +1246,7 @@ fn run_overview_keeps_key_nodes_and_manual_steps_on_the_first_screen() {
     let wide = render_queue(&mut q, 180, 44);
     let output = text(&wide);
     for label in [
+        "YOUR REVIEW NEEDED",
         "Key events · this run",
         "Controller declared: passed",
         "Report recorded",
@@ -1255,6 +1256,20 @@ fn run_overview_keeps_key_nodes_and_manual_steps_on_the_first_screen() {
     ] {
         assert!(output.contains(label), "missing {label}: {output}");
     }
+    let (banner_x, banner_y) = find(&wide, "YOUR REVIEW NEEDED").unwrap();
+    assert_eq!(
+        wide[(banner_x, banner_y)].fg,
+        saddle::theme::Theme::default().focus
+    );
+    assert_eq!(
+        wide[(banner_x, banner_y)].bg,
+        saddle::theme::Theme::default().agent_selected
+    );
+    assert!(
+        wide[(banner_x, banner_y)]
+            .modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    );
     let (jump_x, jump_y) = find(&wide, "Telemetry ↗").unwrap();
     let (links_x, links_y) = find(&wide, "Links").unwrap();
     assert_eq!(jump_y, links_y);
