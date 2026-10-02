@@ -1617,12 +1617,16 @@ impl Panel {
         let shown = self.read_error.is_none() && self.content.is_some();
         let numbered = self.content.as_ref().is_some_and(|c| c.task.id.is_some());
         let mut tabs = vec![
-            ("任务说明 t", KeyEvent::from(K::Char('t')), Some(View::Text)),
-            ("运行概览", KeyEvent::from(K::Enter), Some(View::Details)),
-            ("关联资料", KeyEvent::from(K::Null), Some(View::Links)),
+            (
+                "Task text t",
+                KeyEvent::from(K::Char('t')),
+                Some(View::Text),
+            ),
+            ("Run details", KeyEvent::from(K::Enter), Some(View::Details)),
+            ("Links", KeyEvent::from(K::Null), Some(View::Links)),
         ];
         if numbered {
-            tabs.push(("打开遥测 ↗", telemetry_click(), None));
+            tabs.push(("Telemetry ↗", telemetry_click(), None));
         }
         let (mut x, mut y) = (area.x, area.y);
         for (label, key, view) in tabs {

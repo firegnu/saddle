@@ -142,17 +142,17 @@ struct Out<'a> {
 }
 impl Out<'_> {
     fn overview(&mut self, task: &Task, reports: &crate::telemetry::Reports) {
-        self.heading("本次关键节点");
+        self.heading("Key events · this run");
         let missing = match reports.state.as_str() {
-            "available" => "未记录（不代表未执行）",
-            "not_recorded" => "本次未记录遥测；结果未知",
-            _ => "遥测查询不可用；结果未知",
+            "available" => "Not recorded (may have occurred)",
+            "not_recorded" => "No trace for this run; result unknown",
+            _ => "Telemetry unavailable; result unknown",
         };
         for (stage, label) in [
-            ("agent.send", "消息交付"),
-            ("route", "路由建议"),
-            ("agent.start", "Agent 启动"),
-            ("agent.reply", "Agent 回复"),
+            ("agent.send", "Delivery"),
+            ("route", "Routing"),
+            ("agent.start", "Agent start"),
+            ("agent.reply", "Agent reply"),
         ] {
             let value = reports
                 .observations
@@ -161,14 +161,17 @@ impl Out<'_> {
                 .filter(|_| reports.state == "available")
                 .map(|n| {
                     format!(
-                        "{} · seq {} · {} · 共{}条",
+                        "{} · seq {} · {} · {} events",
                         n.status, n.seq, n.recorded_at, n.count
                     )
                 })
                 .unwrap_or_else(|| missing.into());
             self.field(label, &[(value, self.t.text)]);
         }
-        for (kind, label) in [("review.recorded", "审查"), ("controller.note", "收尾")] {
+        for (kind, label) in [
+            ("review.recorded", "Review"),
+            ("controller.note", "Closure"),
+        ] {
             let report = reports
                 .entries
                 .iter()
@@ -181,12 +184,12 @@ impl Out<'_> {
                         "{} · seq {} · {}{}",
                         r.verdict
                             .as_ref()
-                            .map(|v| format!("主控声明：{v}"))
-                            .unwrap_or_else(|| "已有主控报告（非成功判定）".into()),
+                            .map(|v| format!("Controller declared: {v}"))
+                            .unwrap_or_else(|| "Report recorded (not proof of success)".into()),
                         r.seq,
                         r.recorded_at,
                         if r.text.is_none() {
-                            " · 正文不可用"
+                            " · Body unavailable"
                         } else {
                             ""
                         }
@@ -197,50 +200,50 @@ impl Out<'_> {
         }
         for (label, at, empty, recorded) in [
             (
-                "人工提交",
+                "Submission",
                 &task.t1,
-                "尚未提交",
+                "Not submitted",
                 matches!(task.status.as_deref(), Some("awaiting_release" | "done")),
             ),
             (
-                "人工验收",
+                "Acceptance",
                 &task.t2,
-                "尚未验收",
+                "Not accepted",
                 task.status.as_deref() == Some("done"),
             ),
         ] {
             let text = at
                 .as_ref()
                 .and_then(|v| v.as_f64())
-                .map(|v| format!("已记录 · {}", clock(v)))
+                .map(|v| format!("Recorded · {}", clock(v)))
                 .unwrap_or_else(|| {
                     if at.is_some() {
-                        "记录时间不可识别".into()
+                        "Recorded time unreadable".into()
                     } else if recorded {
-                        "已完成此流转（时间未记录）".into()
+                        "Transition completed (time not recorded)".into()
                     } else {
                         empty.into()
                     }
                 });
             self.field(label, &[(text, self.t.text)]);
         }
-        self.note("各类仅显示最新记录，不代表整阶段成功；审查/收尾是主控声明。完整报告见下方，完整链路见遥测。");
+        self.note("Latest event per category, not overall success. Review/closure are controller reports. Full reports below; full chain in Telemetry.");
         let count: usize = reports.observations.iter().map(|n| n.count).sum();
         if count > reports.observations.len() || reports.entries.len() > 2 {
-            self.note("含多条事件/报告：不同委派或迟到事件可能交错，请在遥测核对完整顺序。");
+            self.note("Multiple events/reports may span dispatches or arrive late. Check the full order in Telemetry.");
         }
         let next = match task.status.as_deref() {
             Some("running") => {
-                "核对下方审查和收尾报告；确认后手工 Submit for review。记录不足时先查看主控。"
+                "Check review and closure reports before Submit for review. If evidence is missing, check the controller."
             }
             Some("awaiting_release") => {
-                "等待人工验收；通过后 Accept，需要返工则 Return to pending。"
+                "Awaiting manual acceptance. Accept if satisfied, or Return to pending for rework."
             }
-            Some("done") => "任务已验收，无需继续推进。",
-            Some("pending") => "任务待派发；若有退回，先核对下方历史原因。",
-            _ => "按任务当前状态处理，不根据遥测记录自动推进。",
+            Some("done") => "Task accepted; no further transition needed.",
+            Some("pending") => "Pending dispatch. Check any previous return reason below.",
+            _ => "Follow the task status; telemetry does not advance it automatically.",
         };
-        self.field("下一步", &[(next.into(), self.t.focus)]);
+        self.field("Next step", &[(next.into(), self.t.focus)]);
     }
 
     fn reports(&mut self, reports: &crate::telemetry::Reports) {
@@ -612,7 +615,7 @@ mod report_tests {
             "evidence":{"scope":"repository_reference","controls_transition":false,"observed_at":0,
                 "git":{"state":"available"},"last_check":{"state":"unknown"}},
             "reports":{"state":"available","observations":[
-                {"stage":"route","count":3,"seq":9,"kind":"route.begin","recorded_at":"NOW","status":"已记录开始；结果未知"}],
+                {"stage":"route","count":3,"seq":9,"kind":"route.begin","recorded_at":"NOW","status":"Start recorded; result unknown"}],
                 "entries":[{"event_id":"r","seq":10,"kind":"review.recorded","dispatch_id":"d","recorded_at":"NOW","verdict":"failed","text":"NEEDS REWORK"}]}
         })).unwrap();
         let mut view = TaskDetail::new("Current", data.task.clone());
@@ -623,14 +626,14 @@ mod report_tests {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("本次关键节点"), "{text}");
-        assert!(text.contains("已记录开始；结果未知"), "{text}");
-        assert!(text.contains("主控声明：failed"), "{text}");
+        assert!(text.contains("Key events · this run"), "{text}");
+        assert!(text.contains("Start recorded; result unknown"), "{text}");
+        assert!(text.contains("Controller declared: failed"), "{text}");
         assert!(
-            text.contains("尚未提交") && text.contains("尚未验收"),
+            text.contains("Not submitted") && text.contains("Not accepted"),
             "{text}"
         );
-        assert!(text.find("本次关键节点").unwrap() < text.find("Run records").unwrap());
+        assert!(text.find("Key events · this run").unwrap() < text.find("Run records").unwrap());
         assert!(text.contains("OLD RETURN REASON"), "{text}");
         assert_eq!(
             view.data.as_ref().unwrap().task.status.as_deref(),

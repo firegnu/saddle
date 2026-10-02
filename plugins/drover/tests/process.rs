@@ -490,7 +490,7 @@ fn telemetry_link_asks_the_host_for_every_run_of_the_task_and_shows_a_refusal() 
     let mut p = Running::start();
     // The opening frame already shows the selected T1 with its link.
     let b = buffer(p.frame.as_ref().unwrap()).unwrap();
-    let label: Vec<String> = "打开遥测 ↗".chars().map(String::from).collect();
+    let label: Vec<String> = "Telemetry ↗".chars().map(String::from).collect();
     let (x, y) = (0..b.area.height)
         .find_map(|y| {
             (0..b.area.width.saturating_sub(label.len() as u16))
@@ -566,7 +566,7 @@ fn legacy_log_argument_is_ignored_and_no_log_consumer_runs() {
         !screen.contains("○ Dispatch") && !screen.contains("● Dispatch"),
         "{screen}"
     );
-    assert!(screen.contains("打开遥测 ↗"), "{screen}");
+    assert!(screen.contains("Telemetry ↗"), "{screen}");
     p.key("q");
     loop {
         let m = p.receive();
