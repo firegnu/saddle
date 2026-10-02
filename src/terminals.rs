@@ -972,7 +972,7 @@ pub fn draw(
                 .screen
                 .lock()
                 .unwrap()
-                .render(inside, frame.buffer_mut());
+                .render(inside, frame.buffer_mut(), t);
             if focused
                 && active
                 && pane.input_session().is_some()

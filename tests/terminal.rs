@@ -4,6 +4,7 @@ use alacritty_terminal::{
     vte::ansi::{Color, Rgb},
 };
 use saddle::terminal::{Screen, Size};
+use saddle::theme::{Preset, Theme};
 #[test]
 fn screen_preserves_split_utf8_color_modes_and_replies_to_terminal_queries() {
     let mut screen = Screen::new(Size { rows: 6, cols: 20 });
@@ -45,7 +46,7 @@ fn terminal_rendering_offsets_cells_styles_and_cursor_inside_its_pane() {
     let mut screen = Screen::new(Size { rows: 4, cols: 10 });
     screen.process("\x1b[38;2;12;34;56m中\x1b[38;5;196mA".as_bytes());
     let mut buffer = Buffer::empty(Rect::new(0, 0, 30, 10));
-    let cursor = screen.render(Rect::new(5, 2, 10, 4), &mut buffer);
+    let cursor = screen.render(Rect::new(5, 2, 10, 4), &mut buffer, &Theme::default());
     assert_eq!(buffer[(5, 2)].symbol(), "中");
     assert_eq!(buffer[(5, 2)].fg, C::Rgb(12, 34, 56));
     assert_eq!(buffer[(7, 2)].symbol(), "A");
@@ -53,13 +54,52 @@ fn terminal_rendering_offsets_cells_styles_and_cursor_inside_its_pane() {
     assert_eq!(buffer[(4, 2)].symbol(), " ");
     assert_eq!(cursor, Some((8, 2)));
     screen.process(b"\x1b[?25l");
-    assert_eq!(screen.render(Rect::new(5, 2, 10, 4), &mut buffer), None);
+    assert_eq!(
+        screen.render(Rect::new(5, 2, 10, 4), &mut buffer, &Theme::default()),
+        None
+    );
+}
+
+#[test]
+fn terminal_default_colors_follow_the_theme_and_set_colors_are_kept() {
+    use ratatui::{buffer::Buffer, layout::Rect, style::Color as C};
+    let mut screen = Screen::new(Size { rows: 2, cols: 10 });
+    screen.process(b"a\x1b[38;5;196;48;2;1;2;3mb\x1b[0m\x1b[7mc");
+    let draw = |screen: &Screen, theme: &Theme| {
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 10, 2));
+        screen.render(Rect::new(0, 0, 10, 2), &mut buffer, theme);
+        buffer
+    };
+    let tide = Preset::Tide.theme();
+    let buffer = draw(&screen, &tide);
+    assert_eq!((buffer[(0, 0)].fg, buffer[(0, 0)].bg), (tide.text, tide.bg));
+    assert_eq!((buffer[(9, 1)].fg, buffer[(9, 1)].bg), (tide.text, tide.bg));
+    assert_eq!(
+        (buffer[(1, 0)].fg, buffer[(1, 0)].bg),
+        (C::Indexed(196), C::Rgb(1, 2, 3))
+    );
+    // Inverse keeps its meaning: the themed colors are swapped when drawn.
+    assert_eq!((buffer[(2, 0)].fg, buffer[(2, 0)].bg), (tide.text, tide.bg));
+    assert!(
+        buffer[(2, 0)]
+            .modifier
+            .contains(ratatui::style::Modifier::REVERSED)
+    );
+    // A background the program set through the palette wins over the theme.
+    screen.process(b"\x1b]11;rgb:10/20/30\x07");
+    assert_eq!(draw(&screen, &tide)[(0, 0)].bg, C::Rgb(0x10, 0x20, 0x30));
+    assert_eq!(draw(&screen, &tide)[(0, 0)].fg, tide.text);
+    // Back on the default theme, the unset colors are the terminal's own again.
+    screen.process(b"\x1b]111\x07");
+    let buffer = draw(&screen, &Theme::default());
+    assert_eq!((buffer[(0, 0)].fg, buffer[(0, 0)].bg), (C::Reset, C::Reset));
+    assert_eq!(buffer[(1, 0)].fg, C::Indexed(196));
 }
 
 fn history_rows(screen: &Screen, rows: u16, cols: u16) -> Vec<(String, String)> {
     use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
     let mut buffer = Buffer::empty(Rect::new(0, 0, cols, rows));
-    screen.render(Rect::new(0, 0, cols, rows), &mut buffer);
+    screen.render(Rect::new(0, 0, cols, rows), &mut buffer, &Theme::default());
     (0..rows)
         .map(|y| {
             let text: String = (0..cols).map(|x| buffer[(x, y)].symbol()).collect();

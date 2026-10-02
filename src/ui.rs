@@ -484,7 +484,7 @@ fn draw_terminal(frame: &mut Frame, area: Rect, title: &str, view: &View<'_>) {
     let area = inner(area);
     if let Some(session) = view.viewer {
         let screen = session.screen.lock().unwrap();
-        let cursor = screen.render(area, frame.buffer_mut());
+        let cursor = screen.render(area, frame.buffer_mut(), t);
         if focused && let Some(cursor) = cursor {
             frame.set_cursor_position(cursor);
         }

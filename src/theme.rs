@@ -118,11 +118,13 @@ pub fn deserialize_overrides<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
-/// Cool blue-gray neutrals over the terminal's own background, which the Viewer shares; the
+/// Cool blue-gray neutrals on a cool background, which the terminal's default colors share; the
 /// status, danger and agent-type hues keep their Dune roles.
 fn tide() -> Theme {
     let rgb = |v: u32| Color::Rgb((v >> 16) as u8, (v >> 8) as u8, v as u8);
     Theme {
+        bg: rgb(0x151b23),
+        text: rgb(0xdce4ee),
         selected: rgb(0x243244),
         agent_selected: rgb(0x212b38),
         agent_working: rgb(0x7fa8f0),
