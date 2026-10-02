@@ -5,6 +5,9 @@
 
 ## 最新：单任务遥测边界设计通过，准备实施
 
+- **最新：已进入独立交叉审查**。2c29d91旧Theme目标适配已核DONE/diff/原始目标1绿；主控补上次中断后24个未执行targets（root两examples+其余六成员22targets）128通过0失败0忽略。日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-boundary-omitted-zfvmdl6z；未重跑全套或Clippy，原441/1/5失败保留，历史Drover预算根因仍未知。
+- 新审查者saddle/dev-telemetry-boundary-review-1 instance3459f08440da，Codex gpt-6-astra/xhigh、role=reviewer，detached review-telemetry-task-boundary固定2c29d91。唯一意见追加主仓库docs/任务/遥测单任务边界-独立交叉审查.md；结束先status、working重挂，idle普通reply确认DONE。逐项裁定，必须改交原实现者f99302444ec2，不主控写功能；限定复审最多两轮，每轮提醒。尚未合并/安装，两个实施审查worktree及会话保留；通过才合并推送清理、目录删后关对应自建agent、空提交及HANDOFF。不采集本轮、不沿用Theme上下文、不动真实库/配置/技能/队列。
+
 - **最新实施状态覆盖下方早期记录**：候选4ed00b0已核DONE，示例Theme漏参修正及一次example check通过。主控一次标准test为441过1败5忽略exit101，Clippy通过；日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-telemetry-boundary-controller-ewzabu30。唯一失败是旧workflow默认viewer颜色断言仍Default，而已批准Theme行为为配置#abcdef/#102030。原实现者获准仅适配这一个测试默认色断言，保留显式ANSI/RGB检查，只跑一项目标，不改功能/超时、不重复全套。
 - 原Drover预算失败本轮14项全过，但更细根因仍未知；唯一探针仅定位shell入口后到宿主首回执前，不宣称修复。主控标准在workflow后中断，metadata已存同日志目录，后续需补未执行目标（root examples及其他默认workspace成员），不可将本次称为全套绿。
 - 独立审查任务docs/任务/遥测单任务边界-独立交叉审查.md为草稿，尚未开review agent/worktree。待目标适配和遗漏覆盖核完，更新候选/真实标准证据后再派重档Codex。原实施agent/worktree继续保留；仍不采集本轮、不安装或操作真实库/技能/队列。
