@@ -3,6 +3,14 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Theme已放行，Claude正在做简短设计
+
+- 用户要求主控自行委派并记录遥测，不建Drover任务；最新指定当前主题名Dune。需求：预置几种theme、选择后Colors跟随、允许逐项覆盖。已记录用户原话，不把覆盖切换策略/线框建议当批准。
+- 任务docs/任务/UI主题-设计.md；theme-design分支/worktree ../saddle-worktrees/theme-design，基线ad67337；Claude opus[1m]/high，saddle/dev-theme-design-1 instance97aab938485b。JEV档位null、交叉不要、影响看得见，主控默认常规。此轮仅方案/文字线框和静态接口核对，不实现、不跑测试构建；完成后主控核实并展示具体推荐，再进入实现。
+- 遥测trace e72bb30e-3fc2-4f69-b910-36c20ee77636；design dispatch a432a56c-dc95-4d92-a098-1e90c59ea6b3。目录/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-telemetry-qtk_rdga（指针/tmp/saddle-theme-telemetry-path）保存ids、route/start/reply上下文、完整回执。route和start均begin/end stored，route前无任务书的brief gap及Corral无公开字段gap如实保留。用户现有colors已单独提取为只含颜色的设计快照；未改真实配置。
+- 已挂corral send --after提醒；回调先status，working重挂，idle用上述reply-context经saddle agent reply取完整DONE，不把idle当完成。设计者只提交自己的设计分支，不合并推送安装。旧设计review/t38/t55与用户agent保留。当前界面仍是上轮已安装版，本轮无安装或队列操作。
+
+
 ## 最新：Settings → Plugins 整理已安装
 
 - 本轮主控直接纯UI调整，不委派不遥测，保持英文。宽屏插件列表与详情左右分栏，窄屏上下分区；列表状态对齐、选中高亮，详情按资源/接入说明/技术路径分组且可滚动，底部操作固定。Add local路径字段加框。原按钮顺序/可用条件/插件生命周期和资源操作逻辑不改。
