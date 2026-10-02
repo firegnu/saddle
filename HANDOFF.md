@@ -5,6 +5,8 @@
 
 ## 最新：单任务遥测边界部署已授权，产物已备好，等待用户退出
 
+- **最新覆盖：用户已退出，宿主/Drover文件已实际替换，已通知可重开。** 公开无实例/精确进程检查通过，SQLite一致性备份已完成，版本1/integrity ok；实际入口help与新宿主/插件哈希通过，配置未变，真实库仍v1。等待用户重开后核Drover运行与技能两目标revision3，不称部署全验完。证据为暂存installed.json/preflight.json和备份database-backup.json。
+
 - 用户明确“开始这个替换部署流程”，已构建暂存宿主和Drover、隔离smoke3项通过、备份旧产物/配置/技能；尚未替换或迁移真实库。部署记录docs/任务/遥测单任务边界-部署记录.md。
 - 暂存路径/tmp/saddle-boundary-deploy-path → /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-boundary-deploy-7tjwbixl；备份/Users/firegnu/.local/share/saddle/backups/telemetry-boundary-20261002-234002。真实库快照等退出后再做。
 - 已异步请用户退出Saddle并确认无在途记录调用，等待明确答复；之后公开再核无实例/进程，SQLite backup一致性快照→成套替换→核哈希→通知重开→核技能revision3。不关闭Corral agent、不动队列/历史trace、不同步用户修改的技能，不为验证写真实库。
