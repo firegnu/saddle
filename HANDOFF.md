@@ -2,12 +2,13 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。没有待执行的开发派发、提醒或安装步骤；不要自行开始Corral迁移。
 
-## 最新：顶部入口两行布局已安装
+## 最新：顶部入口同行对齐已安装
 
-- 用户选定Telemetry上一行、Plugins / Settings下一行，并要求主控直接实现；没有新开agent、调用路由或启用遥测。正常宽度固定两行，极窄侧栏保留换行保护，原右对齐/快捷键不改。
-- 实现139dc27，合并1aee2ff已推送；现有UI目标27项通过，diff --check通过，未重跑全仓标准/Clippy。完成记录docs/任务/界面入口两行布局.md。
-- Release构建成功，日常宿主已原子替换，SHA256 78a6a6d2327d586781fc483a1dda3f9aa787f1de588c232fe703b83cd2ff1f84，--help退出0。旧宿主备份~/.local/share/saddle/backups/header-actions-20261002-111023；未改Drover包或用户配置，未关闭运行中的Saddle。用户需重开界面看到布局。
-- header-actions-layout工作区/分支已清理，空提交ca4c9dc；本交接随后推送。无本任务agent需关闭，既有保留worktree和用户agent不动。
+- 用户截图指出首版额外占两行、Telemetry过低；确认修订为Agents同行右侧Telemetry，Attention同行右侧Plugins / Settings，两行右边缘一致，宽度不够才换行。不是全部左对齐。主控应用户要求直接修正，没有分派agent、路由或开启采集。
+- 修正dde5504，合并de54a11已推送；现有UI目标27项通过，含两侧同行/右对齐及窄栏临界，diff --check通过，未重跑全仓标准/Clippy。详情docs/任务/界面入口两行布局.md。
+- 首次合并遇短暂index.lock失败，锁随后自行消失，未删除锁；确认main未改变后合并成功。失败后那次构建仍旧代码，不作新产物证据；真正合并后release重新构建成功。
+- 日常宿主已原子替换，SHA256 c361a08d3ce49c0f7e6c3fa7d0bf45ccded143e0d1cbf88bc1ead1c670de79f7，--help退出0。备份~/.local/share/saddle/backups/header-align-20261002-111624；未改Drover包或用户配置，未关闭运行中Saddle。用户重开界面即可看到修正。
+- header-actions-align工作区/分支已清理，空提交ca25adf；本交接随后推送。既有保留worktree和用户agent不动。
 
 ## 本次完成
 
