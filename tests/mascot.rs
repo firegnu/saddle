@@ -401,7 +401,7 @@ fn patrol_includes_excited_cheering_above_the_border() {
                     .filter(|c| c.symbol() == "^")
                     .all(|c| c.bg == Color::Rgb(217, 119, 87))
             );
-            sparkles |= (0..64).any(|x| buffer[(x, 0)].symbol() == "*");
+            sparkles |= (0..64).any(|x| buffer[(x, 0)].symbol() == "▪");
         }
         if cheering && sparkles {
             return;

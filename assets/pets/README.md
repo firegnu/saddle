@@ -30,4 +30,4 @@ The approved rest pose is kept in every action: actions enter and leave it, the 
 
 ## Cat (`cat.toml`)
 
-An original design for saddle: a small gray cat with a large head, a face turned to the viewer and a pink nose. It is drawn facing right and mirrored. The sleeping pose rounds its back with eighth blocks and breathes.
+An original design for saddle: a small gray cat with a large head, a face turned to the viewer and a pink nose. It is drawn facing right and mirrored. The sleeping pose rounds its back with eighth blocks and breathes. Its actions: sit, groom, look, stretch, yarn and sleep.
