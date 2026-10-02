@@ -35,7 +35,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 /// Events per page; later pages keep the first page's upper bound.
 const PAGE: i64 = 100;
 /// Windows at least this wide put the event detail beside the timeline.
-const WIDE: u16 = 140;
+const WIDE: u16 = 132;
 
 pub enum Outcome {
     Stay,
@@ -155,6 +155,8 @@ struct Detail {
     /// A `carried_from` target of the selected event, outside the loaded events: its event
     /// ID and the read of where it is.
     target: Option<(String, Load<Value>)>,
+    technical: bool,
+    preview: Option<(String, Load<Vec<u8>>)>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
@@ -178,6 +180,13 @@ struct Reader {
     height: usize,
 }
 
+struct Picker {
+    project: bool,
+    values: Vec<Option<String>>,
+    selected: usize,
+    top: usize,
+}
+
 pub struct Page {
     store: Result<Arc<Store>, Failure>,
     sender: Sender<Reply>,
@@ -186,6 +195,11 @@ pub struct Page {
     settings: Load<Value>,
     filter: Option<BindingFilter>,
     source: Option<String>,
+    project: Option<String>,
+    origin: Option<String>,
+    search: Input,
+    search_edit: Option<String>,
+    picker: Option<Picker>,
     list: Load<Value>,
     selected: usize,
     top: usize,
@@ -217,6 +231,11 @@ impl Page {
             settings: Load::Pending(0),
             filter,
             source,
+            project: None,
+            origin: None,
+            search: Input::new(String::new()),
+            search_edit: None,
+            picker: None,
             list: Load::Pending(0),
             selected: 0,
             top: 0,
@@ -240,6 +259,7 @@ impl Page {
             self.absorb(reply);
         }
         self.sync_target();
+        self.sync_preview();
     }
     /// Whether a read is still running for what is open.
     pub fn loading(&self) -> bool {
@@ -247,6 +267,7 @@ impl Page {
             matches!(d.summary, Load::Pending(_))
                 || matches!(d.page, Some(Load::Pending(_)))
                 || matches!(d.target, Some((_, Load::Pending(_))))
+                || matches!(d.preview, Some((_, Load::Pending(_))))
                 || d.reader
                     .as_ref()
                     .is_some_and(|r| matches!(r.load, Load::Pending(_)))
@@ -414,6 +435,18 @@ impl Page {
             };
             return;
         }
+        if let Some((_, preview)) = &mut d.preview
+            && preview.waits(token)
+        {
+            *preview = Load::Done {
+                at,
+                result: result.map(|data| match data {
+                    Data::Bytes(b) => b,
+                    Data::Value(_) => Vec::new(),
+                }),
+            };
+            return;
+        }
         if let Some(reader) = &mut d.reader
             && reader.load.waits(token)
         {
@@ -433,16 +466,89 @@ impl Page {
         }
     }
 
-    fn traces(&self) -> &[Value] {
+    fn all_traces(&self) -> &[Value] {
         self.list
             .ready()
             .and_then(|l| l["traces"].as_array())
             .map_or(&[], Vec::as_slice)
     }
 
+    fn traces(&self) -> Vec<&Value> {
+        let query = self.search.text.to_lowercase();
+        self.all_traces()
+            .iter()
+            .filter(|trace| {
+                self.project
+                    .as_ref()
+                    .is_none_or(|p| trace["binding"]["scope"].as_str().unwrap_or("") == p)
+                    && self
+                        .origin
+                        .as_ref()
+                        .is_none_or(|o| trace["origin"].as_str() == Some(o))
+                    && (query.is_empty()
+                        || [
+                            trace["label"].as_str(),
+                            trace["binding"]["key"].as_str(),
+                            trace["binding"]["run"].as_str(),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .any(|s| s.to_lowercase().contains(&query)))
+            })
+            .collect()
+    }
+    fn choose_filter(&mut self, project: bool) {
+        let mut values: Vec<String> = self
+            .all_traces()
+            .iter()
+            .map(|t| {
+                if project {
+                    t["binding"]["scope"].as_str().unwrap_or("")
+                } else {
+                    t["origin"].as_str().unwrap_or("")
+                }
+                .to_owned()
+            })
+            .collect();
+        values.sort();
+        values.dedup();
+        // Unbound operations remain available without being treated as a project.
+        values.sort_by_key(|v| v.is_empty());
+        let values: Vec<_> = std::iter::once(None)
+            .chain(values.into_iter().map(Some))
+            .collect();
+        let current = if project { &self.project } else { &self.origin };
+        let selected = values.iter().position(|v| v == current).unwrap_or(0);
+        self.picker = Some(Picker {
+            project,
+            values,
+            selected,
+            top: 0,
+        });
+    }
+    fn sync_preview(&mut self) {
+        let wanted = self
+            .detail
+            .as_ref()
+            .and_then(|d| d.events.get(d.selected))
+            .and_then(|e| e["bodies"][0]["sha256"].as_str())
+            .map(str::to_owned);
+        let Some(d) = &self.detail else {
+            return;
+        };
+        if d.preview.as_ref().map(|(hash, _)| hash) == wanted.as_ref() {
+            return;
+        }
+        let token = wanted
+            .clone()
+            .map(|hash| self.start(move |s| s.body(&hash).map(Data::Bytes)));
+        self.detail.as_mut().unwrap().preview = wanted.zip(token.map(Load::Pending));
+    }
+
     pub fn event(&mut self, event: &Event) -> Outcome {
         let outcome = self.handle(event);
         self.sync_target();
+        self.sync_preview();
         outcome
     }
     /// Reads where the selected event's `carried_from` target lives, only for a target
@@ -475,7 +581,11 @@ impl Page {
                 self.key(*key)
             }
             Event::Paste(text) => {
-                if let Some(form) = &mut self.form
+                if self.search_edit.is_some() && text.len() + self.search.text.len() <= 4096 {
+                    self.search.insert(text, false);
+                    self.selected = 0;
+                    self.top = 0;
+                } else if let Some(form) = &mut self.form
                     && text.len() <= 65536
                 {
                     form.exact[form.focus] = None;
@@ -504,6 +614,12 @@ impl Page {
         }
     }
     fn click(&mut self, point: Position) {
+        if let Some(picker) = &mut self.picker {
+            if let Some((_, i)) = self.rows.iter().find(|(r, _)| r.contains(point)) {
+                picker.selected = *i;
+            }
+            return;
+        }
         if let Some(form) = &mut self.form {
             if let Some(i) = form.areas.iter().position(|a| a.contains(point)) {
                 form.focus = i;
@@ -551,6 +667,44 @@ impl Page {
     }
 
     fn key(&mut self, key: KeyEvent) -> Outcome {
+        if let Some(picker) = &mut self.picker {
+            match key.code {
+                KeyCode::Esc => self.picker = None,
+                KeyCode::Up => picker.selected = picker.selected.saturating_sub(1),
+                KeyCode::Down => {
+                    picker.selected =
+                        (picker.selected + 1).min(picker.values.len().saturating_sub(1))
+                }
+                KeyCode::Enter => {
+                    let picker = self.picker.take().unwrap();
+                    let value = picker.values[picker.selected].clone();
+                    if picker.project {
+                        self.project = value;
+                    } else {
+                        self.origin = value;
+                    }
+                    self.selected = 0;
+                    self.top = 0;
+                }
+                _ => {}
+            }
+            return Outcome::Stay;
+        }
+        if self.search_edit.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.search = Input::new(self.search_edit.take().unwrap());
+                }
+                KeyCode::Enter => self.search_edit = None,
+                code if self.search.text.len() < 4096 || !matches!(code, KeyCode::Char(_)) => {
+                    self.search.key(code, false);
+                }
+                _ => {}
+            }
+            self.selected = 0;
+            self.top = 0;
+            return Outcome::Stay;
+        }
         if self.detail.is_some() {
             return self.detail_key(key);
         }
@@ -598,7 +752,7 @@ impl Page {
             KeyCode::Home => self.selected = 0,
             KeyCode::End => self.selected = count.saturating_sub(1),
             KeyCode::Enter => {
-                if let Some(trace) = self.traces().get(self.selected).cloned() {
+                if let Some(trace) = self.traces().get(self.selected).map(|t| (*t).clone()) {
                     self.detail = Some(Detail {
                         trace,
                         summary: Load::Pending(0),
@@ -616,11 +770,16 @@ impl Page {
                         message: String::new(),
                         reader: None,
                         target: None,
+                        technical: false,
+                        preview: None,
                     });
                     self.read_summary();
                     self.read_events();
                 }
             }
+            KeyCode::Char('p') => self.choose_filter(true),
+            KeyCode::Char('t') => self.choose_filter(false),
+            KeyCode::Char('/') => self.search_edit = Some(self.search.text.clone()),
             KeyCode::Char('f') => {
                 let f = self.filter.as_ref();
                 let values = [
@@ -648,6 +807,9 @@ impl Page {
                 });
             }
             KeyCode::Char('F') => {
+                self.project = None;
+                self.origin = None;
+                self.search.clear();
                 self.filter = None;
                 self.source = None;
                 self.selected = 0;
@@ -742,7 +904,7 @@ impl Page {
                         d.message = if gaps.is_empty() {
                             "This event has no body.".into()
                         } else {
-                            format!("Not captured: {gaps}")
+                            format!("采集缺项 / Not captured: {gaps}")
                         };
                     }
                     1 => self.open_body(0),
@@ -775,6 +937,10 @@ impl Page {
                 d.selected = 0;
                 d.top = 0;
                 self.read_events();
+            }
+            KeyCode::Char('v') => {
+                d.technical = !d.technical;
+                d.panel_top = 0;
             }
             KeyCode::Char('o') => {
                 d.panel = if d.panel == Panel::Ops {
@@ -838,6 +1004,17 @@ impl Page {
     }
 
     pub fn draw(&mut self, t: &Theme, frame: &mut Frame, area: Rect) {
+        let reading = self.detail.as_ref().is_some_and(|d| d.reader.is_some());
+        let area = if reading {
+            area
+        } else {
+            let height = if self.detail.is_some() {
+                36
+            } else {
+                (self.all_traces().len().min(18) as u16 + 13).max(16)
+            };
+            crate::theme::centered(area, 160, height)
+        };
         self.rows.clear();
         self.controls.clear();
         self.list_area = Rect::default();
@@ -890,7 +1067,90 @@ impl Page {
             Some(_) => self.draw_detail(t, frame, body),
         }
         self.draw_help(t, frame, bar, &help);
+        if self.picker.is_some() {
+            self.draw_picker(t, frame, area);
+        }
         self.pointer.paint(t, frame, &self.controls);
+    }
+    fn draw_picker(&mut self, t: &Theme, frame: &mut Frame, outer: Rect) {
+        let picker = self.picker.as_mut().unwrap();
+        let area = crate::theme::centered(
+            outer,
+            92,
+            (picker.values.len() as u16).saturating_add(3).min(15),
+        );
+        self.controls.clear();
+        self.rows.clear();
+        frame.render_widget(Clear, area);
+        frame.render_widget(
+            t.block(
+                if picker.project {
+                    " 项目 / 关联范围 "
+                } else {
+                    " 链路类型 "
+                },
+                true,
+            )
+            .style(t.base().bg(t.overlay)),
+            area,
+        );
+        let inside = crate::ui::inner(area);
+        let list = Rect {
+            height: inside.height.saturating_sub(1),
+            ..inside
+        };
+        self.list_area = list;
+        picker.top = follow(picker.top, picker.selected, usize::from(list.height).max(1));
+        for (row, (i, value)) in picker
+            .values
+            .iter()
+            .enumerate()
+            .skip(picker.top)
+            .take(list.height as usize)
+            .enumerate()
+        {
+            let label = match value {
+                None => {
+                    if picker.project {
+                        "全部项目".into()
+                    } else {
+                        "全部类型".into()
+                    }
+                }
+                Some(v) if picker.project && v.is_empty() => "未关联项目".into(),
+                Some(v) if picker.project => inert(v),
+                Some(v) => origin_label(v).into(),
+            };
+            let chosen = i == picker.selected;
+            let rect = Rect::new(list.x, list.y + row as u16, list.width, 1);
+            frame.render_widget(
+                Paragraph::new(clip(
+                    &format!("{} {label}", if chosen { "▸" } else { " " }),
+                    list.width as usize,
+                ))
+                .style(t.base().bg(if chosen {
+                    t.agent_selected
+                } else {
+                    t.overlay
+                })),
+                rect,
+            );
+            self.rows.push((rect, i));
+        }
+        self.draw_help(
+            t,
+            frame,
+            Rect {
+                y: list.bottom(),
+                height: inside.height - list.height,
+                ..inside
+            },
+            &[
+                ("↑↓", "选择", None),
+                ("Enter", "应用", Some(KeyCode::Enter)),
+                ("Esc", "取消", Some(KeyCode::Esc)),
+            ],
+        );
     }
     fn recording(&self) -> String {
         match &self.settings {
@@ -908,6 +1168,12 @@ impl Page {
     fn help(&self) -> Vec<(&'static str, &'static str, Option<KeyCode>)> {
         use KeyCode as K;
         let Some(d) = &self.detail else {
+            if self.search_edit.is_some() {
+                return vec![
+                    ("Enter", "完成搜索", Some(K::Enter)),
+                    ("Esc", "取消", Some(K::Esc)),
+                ];
+            }
             if self.form.is_some() {
                 return vec![
                     ("Tab", "Field", Some(K::Tab)),
@@ -918,7 +1184,7 @@ impl Page {
             return vec![
                 ("↑↓", "Select", None),
                 ("↵", "Open", Some(K::Enter)),
-                ("f", "Filter", Some(K::Char('f'))),
+                ("f", "高级筛选", Some(K::Char('f'))),
                 ("F", "Clear", Some(K::Char('F'))),
                 ("r", "Refresh", Some(K::Char('r'))),
                 ("Esc", "Close", Some(K::Esc)),
@@ -953,21 +1219,28 @@ impl Page {
         if d.picking.is_some() {
             return vec![
                 ("↑↓", "Select", None),
-                ("↵", "Read", Some(K::Enter)),
+                ("↵", "阅读正文", Some(K::Enter)),
                 ("Esc", "Cancel", Some(K::Esc)),
             ];
         }
-        vec![
-            ("↑↓", "Select", None),
-            ("↵", "Read", Some(K::Enter)),
-            ("Tab", "Dispatch", Some(K::Tab)),
+        let mut keys = vec![
+            ("↑↓", "选择事件", None),
+            ("Tab", "切换派发", Some(K::Tab)),
             ("J/K", "Detail", None),
-            ("o", "Ops", Some(K::Char('o'))),
-            ("i", "Intervals", Some(K::Char('i'))),
+            ("o", "‹操作摘要›", Some(K::Char('o'))),
+            ("i", "‹记录区间›", Some(K::Char('i'))),
             ("n", "More", Some(K::Char('n'))),
             ("r", "Refresh", Some(K::Char('r'))),
             ("Esc", "Back", Some(K::Esc)),
-        ]
+        ];
+        if d.panel == Panel::Event
+            && d.events
+                .get(d.selected)
+                .is_some_and(|e| e["bodies"].as_array().is_some_and(|b| !b.is_empty()))
+        {
+            keys.insert(1, ("↵", "查看全文", Some(K::Enter)));
+        }
+        keys
     }
     fn draw_help(
         &mut self,
@@ -1005,8 +1278,82 @@ impl Page {
     }
 
     fn draw_list(&mut self, t: &Theme, frame: &mut Frame, area: Rect) {
+        let toolbar = Rect::new(area.x, area.y, area.width, area.height.min(2));
+        let project = format!(
+            "‹项目: {} ▾ p›",
+            self.project
+                .as_deref()
+                .map(scope_label)
+                .unwrap_or_else(|| "全部项目".into())
+        );
+        let origin = format!(
+            "‹类型: {} ▾ t›",
+            self.origin.as_deref().map(origin_label).unwrap_or("全部")
+        );
+        let half = toolbar.width / 2;
+        control(
+            &mut self.controls,
+            t,
+            frame,
+            Rect::new(toolbar.x, toolbar.y, half, toolbar.height.min(1)),
+            &project,
+            KeyCode::Char('p'),
+        );
+        control(
+            &mut self.controls,
+            t,
+            frame,
+            Rect::new(
+                toolbar.x + half,
+                toolbar.y,
+                toolbar.width - half,
+                toolbar.height.min(1),
+            ),
+            &origin,
+            KeyCode::Char('t'),
+        );
+        if toolbar.height > 1 {
+            let field = Rect::new(toolbar.x, toolbar.y + 1, toolbar.width, 1);
+            if self.search_edit.is_some() {
+                self.search.draw(
+                    frame,
+                    field,
+                    true,
+                    "搜索任务或链路 · Enter 完成 / Esc 取消",
+                    t,
+                );
+            } else {
+                let label = if self.search.text.is_empty() {
+                    "‹搜索任务或链路… /›".into()
+                } else {
+                    format!("‹搜索: {} /›", inert(&self.search.text))
+                };
+                control(
+                    &mut self.controls,
+                    t,
+                    frame,
+                    field,
+                    &label,
+                    KeyCode::Char('/'),
+                );
+            }
+        }
+        if self.form.is_some() || self.search_edit.is_some() {
+            self.controls.clear();
+        }
+        let area = Rect {
+            y: area.y + toolbar.height,
+            height: area.height.saturating_sub(toolbar.height),
+            ..area
+        };
         let width = usize::from(area.width);
         let filter = match &self.filter {
+            None if self.project.is_some()
+                || self.origin.is_some()
+                || !self.search.text.is_empty() =>
+            {
+                "列表筛选：仅显示匹配链路".into()
+            }
             None => "Filter: all traces".to_string(),
             Some(f) => {
                 let mut text = format!(
@@ -1080,7 +1427,7 @@ impl Page {
                 let height = self.list_height;
                 self.top = follow(self.top, self.selected, height);
                 let wide = area.width >= 120;
-                let traces = self.traces().to_vec();
+                let traces: Vec<_> = self.traces().into_iter().cloned().collect();
                 for (row, (i, trace)) in traces
                     .iter()
                     .enumerate()
@@ -1168,7 +1515,8 @@ impl Page {
             return;
         }
         put(frame, bottom, 0, rule(t, "selected", width));
-        let Some(trace) = self.traces().get(self.selected) else {
+        let traces = self.traces();
+        let Some(trace) = traces.get(self.selected) else {
             return;
         };
         let binding = &trace["binding"];
@@ -1232,12 +1580,7 @@ impl Page {
                 Style::default().fg(if failed { t.danger } else { t.text }),
             ),
         );
-        put(
-            frame,
-            area,
-            1,
-            sides(&counts, t.text, "o Ops", t.muted, width),
-        );
+        put(frame, area, 1, Line::raw(clip(&counts, width)));
         let mut spans = vec![Span::raw("Dispatch: ")];
         let known = summary.map(dispatches).unwrap_or_default();
         let names = std::iter::once("All".to_string()).chain(known.iter().map(|x| {
@@ -1294,7 +1637,7 @@ impl Page {
                     )
                 })
                 .collect();
-            ("Choose a body".to_string(), lines)
+            ("选择要阅读的正文".to_string(), lines)
         } else {
             match d.panel {
                 Panel::Ops => (
@@ -1325,7 +1668,7 @@ impl Page {
                     {
                         lines.push(format!("dispatch {} · loading…", inert(id)));
                     }
-                    if let Some(x) = selected {
+                    if let Some(x) = selected.filter(|_| d.technical || d.events.is_empty()) {
                         lines.push(format!(
                             "dispatch {} · {}",
                             text(&x["dispatch_id"]),
@@ -1347,6 +1690,8 @@ impl Page {
                             operations,
                             &at,
                             d.target.as_ref(),
+                            d.technical,
+                            d.preview.as_ref().map(|(_, load)| load),
                         )),
                         None if d.dispatch.is_none() => lines.push("No event selected.".into()),
                         None => {}
@@ -1364,7 +1709,7 @@ impl Page {
         };
         let wide = area.width >= WIDE;
         let (timeline, panel) = if wide {
-            let left = area.width * 3 / 5;
+            let left = area.width / 2;
             (
                 Rect {
                     width: left,
@@ -1382,7 +1727,7 @@ impl Page {
                 .iter()
                 .map(|l| crate::ui::wrap_text(l, rest.width).len())
                 .sum::<usize>()
-                + 1
+                + 3
                 + usize::from(!d.message.is_empty());
             let bottom = if d.panel == Panel::Event && d.picking.is_none() {
                 (needed as u16)
@@ -1415,7 +1760,10 @@ impl Page {
             timeline,
             1,
             Line::styled(
-                clip("  seq recorded  disp kind                   src notes", tw),
+                clip(
+                    "  序号  时间      事件                  来源       正文 / 采集缺项",
+                    tw,
+                ),
                 Style::default().fg(t.muted),
             ),
         );
@@ -1462,18 +1810,13 @@ impl Page {
         {
             let chosen = i == d.selected && d.picking.is_none();
             let line = format!(
-                "{}{:>5} {:9} {:4} {:22} {}   {}",
+                "{}{:>5} {:9} {} {} {}",
                 if chosen { "▸ " } else { "  " },
                 text(&event["seq"]),
                 clock_of(&event["recorded_at"]),
-                if event["dispatch_id"].is_null() {
-                    "·".into()
-                } else {
-                    short(&event["dispatch_id"], 4)
-                },
-                clip(&inert(event["kind"].as_str().unwrap_or("")), 22),
-                source_letter(event),
-                notes(event)
+                padded(&event_name(event), 22),
+                source_label(event),
+                concise_notes(event)
             );
             put(
                 frame,
@@ -1481,11 +1824,15 @@ impl Page {
                 row as u16,
                 Line::styled(
                     clip(&line, tw),
-                    Style::default().fg(if chosen { t.focus } else { t.text }),
+                    Style::default()
+                        .fg(if chosen { t.focus } else { t.text })
+                        .bg(if chosen { t.agent_selected } else { t.overlay }),
                 ),
             );
-            self.rows
-                .push((Rect::new(list.x, list.y + row as u16, list.width, 1), i));
+            if d.picking.is_none() {
+                self.rows
+                    .push((Rect::new(list.x, list.y + row as u16, list.width, 1), i));
+            }
             shown = row + 1;
         }
         if let Some(footer) = footer {
@@ -1498,22 +1845,86 @@ impl Page {
         }
 
         let pw = usize::from(panel.width);
+        let action_rows = if d.panel == Panel::Event {
+            (if d.picking.is_some() { 2 } else { 3 }).min(panel.height)
+        } else {
+            1.min(panel.height)
+        };
+        if d.panel == Panel::Event && panel.height > 1 {
+            let count = d
+                .events
+                .get(d.selected)
+                .and_then(|e| e["bodies"].as_array())
+                .map_or(0, Vec::len);
+            let rect = Rect::new(panel.x, panel.y + 1, panel.width, 1);
+            if d.picking.is_some() {
+                control(
+                    &mut self.controls,
+                    t,
+                    frame,
+                    rect,
+                    "‹阅读选中正文 · Enter›",
+                    KeyCode::Enter,
+                );
+            } else if count > 0 {
+                control(
+                    &mut self.controls,
+                    t,
+                    frame,
+                    rect,
+                    if count == 1 {
+                        "‹查看全文 · Enter›"
+                    } else {
+                        "‹选择正文 · Enter›"
+                    },
+                    KeyCode::Enter,
+                );
+            } else {
+                put(
+                    frame,
+                    panel,
+                    1,
+                    Line::styled("此事件没有正文", Style::default().fg(t.muted)),
+                );
+            }
+            if panel.height > 2 && d.picking.is_none() {
+                control(
+                    &mut self.controls,
+                    t,
+                    frame,
+                    Rect::new(panel.x, panel.y + 2, panel.width, 1),
+                    if d.technical {
+                        "‹收起技术详情 · v›"
+                    } else {
+                        "‹技术详情 · v›"
+                    },
+                    KeyCode::Char('v'),
+                );
+            }
+        }
         let body = Rect {
-            y: panel.y + 1.min(panel.height),
+            y: panel.y + action_rows,
             height: panel
                 .height
-                .saturating_sub(1 + u16::from(!d.message.is_empty())),
+                .saturating_sub(action_rows + u16::from(!d.message.is_empty())),
             ..panel
         };
         self.panel_area = body;
         self.panel_height = usize::from(body.height).max(1);
-        let rows: Vec<Line<'static>> = lines
+        let rows: Vec<(usize, Line<'static>)> = lines
             .iter()
-            .flat_map(|l| crate::ui::wrap_text(l, body.width))
+            .enumerate()
+            .flat_map(|(i, l)| {
+                crate::ui::wrap_text(l, body.width)
+                    .into_iter()
+                    .map(move |line| (i, line))
+            })
             .collect();
         let height = usize::from(body.height);
-        let skip = if d.picking.is_some() {
-            0
+        let skip = if let Some(choice) = d.picking {
+            let at = rows.iter().position(|(i, _)| *i == choice).unwrap_or(0);
+            d.panel_top = follow(d.panel_top, at, height.max(1));
+            d.panel_top
         } else {
             d.panel_top = d.panel_top.min(rows.len().saturating_sub(height));
             d.panel_top
@@ -1530,7 +1941,7 @@ impl Page {
             title
         };
         put(frame, panel, 0, rule(t, &title, pw));
-        for (row, line) in rows
+        for (row, (index, line)) in rows
             .into_iter()
             .skip(skip)
             .take(usize::from(body.height))
@@ -1539,7 +1950,7 @@ impl Page {
             put(frame, body, row as u16, line);
             if d.picking.is_some() {
                 self.rows
-                    .push((Rect::new(body.x, body.y + row as u16, body.width, 1), row));
+                    .push((Rect::new(body.x, body.y + row as u16, body.width, 1), index));
             }
         }
         if !d.message.is_empty() {
@@ -1768,6 +2179,106 @@ fn clock_of(value: &Value) -> String {
         _ => text(value),
     }
 }
+fn scope_label(scope: &str) -> String {
+    if scope.is_empty() {
+        "未关联项目".into()
+    } else {
+        inert(
+            scope
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(scope),
+        )
+    }
+}
+fn origin_label(origin: &str) -> &str {
+    match origin {
+        "task" => "任务",
+        "ad_hoc" => "临时操作",
+        other => other,
+    }
+}
+fn control(
+    controls: &mut Vec<(Focus, Hit)>,
+    t: &Theme,
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    code: KeyCode,
+) {
+    let label = clip(label, area.width as usize);
+    let rect = Rect {
+        width: (label.width() as u16).min(area.width),
+        ..area
+    };
+    frame.render_widget(
+        Paragraph::new(label).style(t.base().fg(t.focus).add_modifier(Modifier::BOLD)),
+        rect,
+    );
+    if !rect.is_empty() {
+        controls.push((
+            Focus::Agents,
+            Hit {
+                area: rect,
+                danger: false,
+                key: KeyEvent::new(code, KeyModifiers::NONE),
+            },
+        ));
+    }
+}
+fn padded(value: &str, width: usize) -> String {
+    let value = clip(value, width);
+    format!("{value}{}", " ".repeat(width.saturating_sub(value.width())))
+}
+fn event_name(event: &Value) -> String {
+    let name = event["kind"].as_str().unwrap_or("");
+    inert(match name {
+        "agent.send.begin" => "开始发送任务",
+        "agent.send.end" => "任务发送结束",
+        "agent.start.begin" => "开始创建实现者",
+        "agent.start.end" => "创建实现者结束",
+        "agent.reply.begin" => "开始读取回复",
+        "agent.reply.end" => "回复读取结束",
+        "route.begin" => "开始路由请求",
+        "route.end" => "路由请求结束",
+        "requirement.recorded" => "记录原始需求",
+        "authorization.recorded" => "记录授权原文",
+        "proposal.recorded" => "记录提案",
+        "controller.summary" => "主控需求摘要",
+        "controller.decision" => "主控路由决定",
+        "brief.snapshot" => "任务书快照",
+        "review.recorded" => "审查记录",
+        "controller.note" => "主控记录",
+        "task.transition" => "任务状态流转",
+        other => other,
+    })
+}
+fn source_label(event: &Value) -> &'static str {
+    match event["evidence_kind"].as_str() {
+        Some("execution_observed") => "宿主观测",
+        Some("system_control") => "系统控制",
+        Some("controller_statement") => "主控声明",
+        Some("plugin_statement") => "插件声明",
+        _ => "来源未知",
+    }
+}
+fn concise_notes(event: &Value) -> String {
+    let count = event["bodies"].as_array().map_or(0, Vec::len);
+    let gaps = event["payload"]["gaps"].as_array().map_or(0, Vec::len);
+    let mut parts = Vec::new();
+    if count > 0 {
+        parts.push(format!("正文 {count} ↵"));
+    }
+    if gaps > 0 {
+        parts.push(format!("缺项 {gaps}"));
+    }
+    if event["late_submission"] == true {
+        parts.push("晚交".into());
+    }
+    parts.join(" · ")
+}
 fn trace_row(trace: &Value, wide: bool) -> (String, String) {
     let created = trace["coverage_start"].as_str().unwrap_or("");
     let time = if created.len() >= 19 && created.is_char_boundary(19) {
@@ -1781,26 +2292,6 @@ fn trace_row(trace: &Value, wide: bool) -> (String, String) {
     };
     let origin = trace["origin"].as_str().unwrap_or("");
     let binding = &trace["binding"];
-    let main = if binding.is_object() {
-        if wide {
-            format!(
-                "{} · {} · {} · run {}",
-                text(&binding["kind"]),
-                text(&binding["scope"]),
-                text(&binding["key"]),
-                text(&binding["run"])
-            )
-        } else {
-            format!(
-                "{} · {} · run {}",
-                text(&binding["kind"]),
-                text(&binding["key"]),
-                short(&binding["run"], 6)
-            )
-        }
-    } else {
-        inert(trace["label"].as_str().unwrap_or(""))
-    };
     let paused = trace["capture_enabled"] != true;
     let right = match (binding.is_object(), paused) {
         (true, false) => text(&trace["registration"]),
@@ -1808,7 +2299,21 @@ fn trace_row(trace: &Value, wide: bool) -> (String, String) {
         (false, true) => "trace paused".into(),
         (false, false) => String::new(),
     };
-    (format!("{time}  {:6}  {main}", inert(origin)), right)
+    let label = inert(trace["label"].as_str().unwrap_or(""));
+    let scope = binding["scope"]
+        .as_str()
+        .map(scope_label)
+        .unwrap_or_else(|| "未关联项目".into());
+    let main = if binding.is_object() {
+        format!(
+            "{label} · {scope} · {} · run {}",
+            text(&binding["key"]),
+            short(&binding["run"], 6)
+        )
+    } else {
+        format!("{label} · {scope}")
+    };
+    (format!("{time}  {}  {main}", origin_label(origin)), right)
 }
 fn binding_text(record: &Value) -> String {
     let b = &record["binding"];
@@ -1845,7 +2350,7 @@ fn counts_text(record: &Value) -> String {
         }
     }
     format!(
-        "recording {} ({off} off interval{}) · gaps {gaps} · ops {}{}",
+        "recording {} ({off} off interval{}) · 采集缺项 {gaps} · 操作 {}{}",
         if on { "on" } else { "off" },
         if off == 1 { "" } else { "s" },
         ops.len(),
@@ -1855,15 +2360,6 @@ fn counts_text(record: &Value) -> String {
             format!(": {}", parts.join(", "))
         }
     )
-}
-fn source_letter(event: &Value) -> &'static str {
-    match event["evidence_kind"].as_str() {
-        Some("execution_observed") => "E",
-        Some("system_control") => "S",
-        Some("controller_statement") => "C",
-        Some("plugin_statement") => "P",
-        _ => "?",
-    }
 }
 fn source_text(event: &Value) -> String {
     match event["evidence_kind"].as_str() {
@@ -1883,30 +2379,6 @@ fn gaps(event: &Value) -> String {
         })
         .unwrap_or_default()
 }
-fn notes(event: &Value) -> String {
-    let mut parts = Vec::new();
-    if event["late_submission"] == true {
-        parts.push("late".to_string());
-    }
-    for body in event["bodies"].as_array().into_iter().flatten() {
-        parts.push(format!(
-            "{} {}",
-            text(&body["role"]),
-            size(body["bytes"].as_u64().unwrap_or(0))
-        ));
-    }
-    for gap in event["payload"]["gaps"].as_array().into_iter().flatten() {
-        parts.push(format!(
-            "gap {}:{}",
-            text(&gap["role"]),
-            text(&gap["reason"])
-        ));
-    }
-    if let Some(kind) = event["payload"]["outcome"]["kind"].as_str() {
-        parts.push(inert(kind));
-    }
-    parts.join(" · ")
-}
 /// What a body is, kept apart: the brief snapshot, the message actually sent, declared text.
 fn body_label(event: &Value, body: &Value) -> String {
     match (
@@ -1918,6 +2390,11 @@ fn body_label(event: &Value, body: &Value) -> String {
         ("requirement.recorded", "text") => "需求原文（声明来源）".into(),
         ("authorization.recorded", "text") => "授权原文（声明来源）".into(),
         ("proposal.recorded", "text") => "提案原文（声明来源）".into(),
+        ("agent.reply.end", "reply") => "实现者回复".into(),
+        ("controller.decision", "reason") => "主控路由决定依据".into(),
+        ("review.recorded", "text") => "审查记录".into(),
+        ("controller.note", "text") => "主控记录".into(),
+        ("task.transition", "reason") => "退回原因".into(),
         (_, role) => format!("{} body", inert(role)),
     }
 }
@@ -1927,29 +2404,65 @@ fn event_lines(
     operations: Option<&Vec<Value>>,
     at: &str,
     resolved: Option<&(String, Load<Value>)>,
+    technical: bool,
+    preview: Option<&Load<Vec<u8>>>,
 ) -> Vec<String> {
     let mut lines = Vec::new();
-    let mut head = format!("{} · {}", text(&event["kind"]), source_text(event));
+    let mut head = format!(
+        "{} · {}",
+        if technical {
+            text(&event["kind"])
+        } else {
+            event_name(event)
+        },
+        if technical {
+            source_text(event)
+        } else {
+            source_label(event).to_owned()
+        }
+    );
     let operation = event["operation_id"]
         .as_str()
         .and_then(|id| operations.and_then(|ops| ops.iter().find(|o| o["operation_id"] == id)));
-    if event["operation_id"].is_string() {
+    if technical && event["operation_id"].is_string() {
         let kind = operation.map_or(String::new(), |o| format!(" {}", text(&o["kind"])));
         let _ = write!(head, " · op {}{kind}", short(&event["operation_id"], 4));
     }
     lines.push(head);
     if event["source_description"].is_string() {
         lines.push(text(&event["source_description"]));
+        if !technical {
+            lines.push(format!("声明者：{}", text(&event["producer"])));
+        }
     }
-    lines.push(format!(
-        "event {} · trace {} · dispatch {}",
-        text(&event["event_id"]),
-        text(&event["trace_id"]),
-        text(&event["dispatch_id"])
-    ));
+    if technical {
+        lines.push(format!(
+            "event {} · trace {} · dispatch {}",
+            text(&event["event_id"]),
+            text(&event["trace_id"]),
+            text(&event["dispatch_id"])
+        ));
+    }
     let payload = &event["payload"];
+    if !technical {
+        if payload["from"].is_string() && payload["to"].is_string() {
+            lines.push(format!(
+                "状态流转：{} → {}",
+                text(&payload["from"]),
+                text(&payload["to"])
+            ));
+        }
+        if payload["outcome"].is_object() {
+            lines.push(format!(
+                "命令结果：{} · 退出码 {}",
+                text(&payload["outcome"]["kind"]),
+                text(&payload["outcome"]["exit_code"])
+            ));
+            lines.push("命令结果不代表任务已完成或通过验收。".into());
+        }
+    }
     // The recorded payload as stored; gaps are listed under Not captured.
-    if let Some(fields) = payload.as_object() {
+    if technical && let Some(fields) = payload.as_object() {
         for (key, value) in fields.iter().filter(|(k, _)| *k != "gaps") {
             fields_of(key, value, &mut lines);
         }
@@ -1961,16 +2474,46 @@ fn event_lines(
         } else {
             lines.push(label);
         }
-        lines.push(format!(
-            "body {} · {} B · sha256 {}… · ↵ Read",
-            text(&body["role"]),
-            grouped(body["bytes"].as_u64().unwrap_or(0)),
-            short(&body["sha256"], 8)
-        ));
+        if technical {
+            lines.push(format!(
+                "body {} · {} B · sha256 {}…",
+                text(&body["role"]),
+                grouped(body["bytes"].as_u64().unwrap_or(0)),
+                short(&body["sha256"], 8)
+            ));
+        } else {
+            lines.push(format!(
+                "{} · {}",
+                text(&body["role"]),
+                size(body["bytes"].as_u64().unwrap_or(0))
+            ));
+        }
+    }
+    if !technical && let Some(preview) = preview {
+        lines.push("── 正文预览（首份材料）".into());
+        match preview {
+            Load::Pending(_) => lines.push("正在读取…".into()),
+            Load::Done { result: Err(f), .. } => {
+                lines.push(format!("{} · 预览不可用，不是空正文", f.text()))
+            }
+            Load::Done {
+                result: Ok(bytes), ..
+            } if bytes.is_empty() => lines.push("空正文（校验通过）".into()),
+            Load::Done {
+                result: Ok(bytes), ..
+            } => {
+                match std::str::from_utf8(bytes) {
+                    Ok(text) => lines.extend(text.lines().take(2).map(|l| {
+                        clip(&escape_body(&l.chars().take(160).collect::<String>()), 100)
+                    })),
+                    Err(_) => lines.push("非 UTF-8 正文，请打开全文查看十六进制。".into()),
+                }
+            }
+        }
     }
     let gaps = gaps(event);
     if !gaps.is_empty() {
-        lines.push(format!("Not captured: {gaps}"));
+        lines.push(format!("采集缺项 / Not captured: {gaps}"));
     }
     // The operation as the current summary has it, not as of the event list's bound.
     if let Some(op) = operation {
