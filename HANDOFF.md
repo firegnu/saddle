@@ -5,6 +5,10 @@
 
 ## 最新：单任务遥测边界设计通过，准备实施
 
+- **最新实施状态覆盖下方早期记录**：候选4ed00b0已核DONE，示例Theme漏参修正及一次example check通过。主控一次标准test为441过1败5忽略exit101，Clippy通过；日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-telemetry-boundary-controller-ewzabu30。唯一失败是旧workflow默认viewer颜色断言仍Default，而已批准Theme行为为配置#abcdef/#102030。原实现者获准仅适配这一个测试默认色断言，保留显式ANSI/RGB检查，只跑一项目标，不改功能/超时、不重复全套。
+- 原Drover预算失败本轮14项全过，但更细根因仍未知；唯一探针仅定位shell入口后到宿主首回执前，不宣称修复。主控标准在workflow后中断，metadata已存同日志目录，后续需补未执行目标（root examples及其他默认workspace成员），不可将本次称为全套绿。
+- 独立审查任务docs/任务/遥测单任务边界-独立交叉审查.md为草稿，尚未开review agent/worktree。待目标适配和遗漏覆盖核完，更新候选/真实标准证据后再派重档Codex。原实施agent/worktree继续保留；仍不采集本轮、不安装或操作真实库/技能/队列。
+
 - 用户明确要求：本次任务从委派到完成收尾均记录，随后自动停止；下一项任务未再次要求则不记录，再要求新trace。规则已写docs/DESIGN.md末尾，替代下面“尚无新增授权”的旧状态。
 - 本轮先核定结束接口/写入边界/旧库兼容及Tasks人工验收衔接，任务docs/任务/遥测单任务边界-设计.md，仅设计无实现。路由一次重/交叉null/看得见，采用Claude opus[1m]/xhigh，主控静态审查，不测试构建扩审计。产品边界已批准，不重复问；实质新取舍另报。
 - 本项工作本身未要求记录，不复用Theme trace、不操作真实遥测/队列。当前功能尚未改变；不得把closure说明称为已封闭。
