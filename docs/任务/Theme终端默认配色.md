@@ -35,3 +35,9 @@ worktree /Users/firegnu/Developer/personal_projs/saddle-worktrees/theme-terminal
 
 ## 做完
 本文件末尾写完成记录：改动、实际验证、取舍、未完成事项。命令前台完成，回复最后一行DONE。主控审查后再构建安装供用户体验。
+
+## 主控审查（2026-10-02）：通过
+
+候选ec84452，status idle/attached0，公开reply末行DONE，采集首尾配对stored。已核全部diff及完成记录：仅四个指定源文件、直接测试和任务完成记录；两个绘制入口逐帧传当前Theme，显式RGB/索引/动态调色板优先，默认Foreground/Background才回退bg/text。解析、ColorRequest/default_rgb、PTY、输入及生命周期未改。diff --check通过。
+公开corral read输出已核terminal六项通过，含默认空白格/显式颜色/反色/OSC背景优先和复位后Dune；原文存/tmp/saddle-theme-terminal-public-read.txt。主控按看得见预算不重跑套件、全量或Clippy。额外fmt check只读，无新增改动。
+接受Tide共享bg/text让其他base区域同步变冷，这是复用现有主题语义的预期；Cursor及Dim/Bright默认名保持旧回退，不扩终端调色协议。无阻断，无交叉审查。实际终端体验留用户重开后检查；本结论不冒充桌面截图验收。
