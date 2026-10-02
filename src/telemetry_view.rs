@@ -1006,7 +1006,13 @@ impl Page {
     pub fn draw(&mut self, t: &Theme, frame: &mut Frame, area: Rect) {
         let reading = self.detail.as_ref().is_some_and(|d| d.reader.is_some());
         let area = if reading {
-            area
+            let width = area
+                .width
+                .saturating_sub(if area.width >= 40 { 4 } else { 0 });
+            let height = area
+                .height
+                .saturating_sub(if area.height >= 12 { 2 } else { 0 });
+            crate::theme::centered(area, width.min(160), height)
         } else {
             let height = if self.detail.is_some() {
                 36
