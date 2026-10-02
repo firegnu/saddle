@@ -8,6 +8,7 @@
 - 用户明确要求：本次任务从委派到完成收尾均记录，随后自动停止；下一项任务未再次要求则不记录，再要求新trace。规则已写docs/DESIGN.md末尾，替代下面“尚无新增授权”的旧状态。
 - 本轮先核定结束接口/写入边界/旧库兼容及Tasks人工验收衔接，任务docs/任务/遥测单任务边界-设计.md，仅设计无实现。路由一次重/交叉null/看得见，采用Claude opus[1m]/xhigh，主控静态审查，不测试构建扩审计。产品边界已批准，不重复问；实质新取舍另报。
 - 本项工作本身未要求记录，不复用Theme trace、不操作真实遥测/队列。当前功能尚未改变；不得把closure说明称为已封闭。
+- 已派saddle/dev-telemetry-boundary-design-1，instance7f019dd5dae6，分支/worktree telemetry-task-boundary-design，基线24c04bd。结束先status再公开corral reply确认DONE；working重挂提醒。交付docs/遥测单任务边界设计.md及完成记录，主控核后再形成实施任务；现有保留目录及用户agent不动。
 
 ## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
