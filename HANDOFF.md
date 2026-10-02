@@ -2,6 +2,14 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
+## 最新：正文阅读窗口已留边，主题功能仅记待办
+
+- 用户确认全文也使用居中大窗口；主控直接修改绘制区域，最多160列，正常尺寸左右至少2列、上下1行留边，极小尺寸收起对应留边。阅读、滚动、换行、校验和返回逻辑未改；不委派、不遥测。
+- 功能e8c2db2、合并af99633；既有Telemetry界面17项通过，必要release构建及diff check通过，未跑全仓测试/Clippy。日志/tmp/saddle-reader-layout-{test,build}.log。
+- 日常宿主已原子更新，SHA256 91b7a465ba651aa060f90824c6fdd25c358e29c4dd676a70463ce2bc0e898645；哈希/--help通过。备份~/.local/share/saddle/backups/telemetry-reader-20261002-173523，安装记录/tmp/saddle-reader-layout-install.json。未关闭Saddle或agent、未改插件/数据/配置；用户重开查看。
+- 本轮worktree和分支已清理，空提交73d55fd；保留设计review/t38/t55。
+- 用户新需求记在docs/任务/UI主题预置与颜色覆盖.md：预置几种主题，选择时下方Colors随主题变化，允许逐项覆盖。**等全部UI调整完成后再做，目前仅记录，未实现**；下一步继续等用户UI反馈，不自行开始主题或Corral迁移。
+
 ## 最新：Telemetry 查询界面已整理并安装
 
 - 用户批准按展示建议直接改UI，不委派、不遥测、不改变业务逻辑；纯UI只做直接相关验证。功能ae171cb，合并ccd6360已推送。生产仅改src/telemetry_view.rs；采集/SQLite/命令接口/Drover/Corral未改，真实任务数据未操作。
