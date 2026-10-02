@@ -2,6 +2,14 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
+## 最新：Telemetry 查询界面已整理并安装
+
+- 用户批准按展示建议直接改UI，不委派、不遥测、不改变业务逻辑；纯UI只做直接相关验证。功能ae171cb，合并ccd6360已推送。生产仅改src/telemetry_view.rs；采集/SQLite/命令接口/Drover/Corral未改，真实任务数据未操作。
+- 列表/详情最大160×36居中，列表随条目收缩；项目(scope)/类型选择、任务或链路搜索只筛选已加载记录，原精确binding查询保留。事件可读名称、来源与选中底色；正文按钮醒目、首份正文两行预览、无正文明确提示，技术详情v展开原字段。多正文、全文阅读、固定事件上限/当前摘要分别标时、返回与控制字符安全显示保留。
+- 20个不同的直接相关检查通过（展示17、模态入口/插件返回2、异步过期结果1），必要release构建及diff check通过；没有跑全仓测试或Clippy。新增筛选/正文入口有效RED后GREEN；旧文案/全屏位置/默认展开字段断言按批准UI更新，语义检查保留。证据docs/任务/Telemetry查询界面整理.md、/tmp/saddle-telemetry-ui-*.log。
+- **日常宿主已安装**，SHA256 2a23c69a0f95fa3ffb7eba45f7c751a81122c4eb55a4bd99ec93aeceecd2c064；哈希与--help核验通过。备份~/.local/share/saddle/backups/telemetry-ui-20261002-172441，记录/tmp/saddle-telemetry-ui-install.json。未关闭运行中Saddle或agent，未改插件包/技能/配置；用户重开界面看效果，真实终端复看待用户。
+- telemetry-ui-layout工作区/分支已清理，无自建agent，空提交收尾完成；设计review/t38/t55保留。下一步等用户UI反馈，不自行扩大到Run details或Corral迁移。
+
 ## 最新：Plugins 入口弹窗整理已安装
 
 - 用户明确主控直接实现、不委派、不遥测；按已批准线框只调整 Plugins 弹窗，未改管理页或业务流程。搜索边界、名称/状态/操作分列、Built-in 跟随名称、暖色选中底色、尖括号按钮、一行说明和紧凑高度已落地；窄屏保留键盘操作。
