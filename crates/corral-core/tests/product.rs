@@ -115,7 +115,14 @@ impl Product {
             let v = self.json(&self.host, &["ctl", "instances"]);
             if let Some(v) = v["instances"].as_array().and_then(|a| a.first())
                 && v["instance"].is_string()
-                && (!agent || v.to_string().contains("product/main"))
+                && (!agent
+                    || v["tabs"].as_array().into_iter().flatten().any(|tab| {
+                        tab["panes"].as_array().into_iter().flatten().any(|pane| {
+                            pane["agent"] == "product/main"
+                                && pane["state"] == "running"
+                                && pane["corral_instance"].is_string()
+                        })
+                    }))
             {
                 return v.clone();
             }

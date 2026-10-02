@@ -49,7 +49,7 @@
 
 最终限定复核 `/tmp/saddle-corral-pinned-targeted.log`：原两项 ready 超时目标2通过，最终软链接宿主选择1通过；没有增超时、放宽断言或修改遥测生产路径。最终核心 `/tmp/saddle-corral-core-verified.log`：单元4、生命周期8、协议/身份10，合计22通过。插件路径直接回归2通过，最终 Clippy 通过。原次时间敏感失败根因未确定，不声称修好；显式假Corral路径逻辑未变且相关复核通过，主控将此作为已记录验证限制，不扩大本项为旧测试调度修复。
 
-三项独立互操作检查分别通过：`/tmp/saddle-corral-compat.log`、`/tmp/saddle-corral-events-compat.log`、`/tmp/saddle-corral-attach-compat-green.log`。release 产品生命周期检查通过 `/tmp/saddle-corral-release-product.log`；后续最终提交的包再作一次同项确认。依赖图 `/tmp/saddle-corral-dependency-tree.log` 不含上层包。`git diff --check` 和打包脚本语法检查通过。原始失败保留，不改写为一次标准全绿。
+三项独立互操作检查分别通过：`/tmp/saddle-corral-compat.log`、`/tmp/saddle-corral-events-compat.log`、`/tmp/saddle-corral-attach-compat-green.log`。release 产品生命周期检查通过 `/tmp/saddle-corral-release-product.log`；最终源码 `820fda2` 的干净 release 包同项确认通过 `/tmp/saddle-corral-final-product-ready.log`。确认中曾发现测试在恢复尚为 attaching 时即读取 instance；只把夹具就绪条件收紧到该 pane 为 running 且有 corral_instance，沿用原8秒上限，没有改生产逻辑或降低身份断言。原失败保留 `/tmp/saddle-corral-final-product.log`。依赖图 `/tmp/saddle-corral-dependency-tree.log` 不含上层包。`git diff --check` 和打包脚本语法检查通过。原始失败保留，不改写为一次标准全绿。
 
 主控核对结论：本项源码功能通过，允许按仓库规则合并；真实安装和真实agent验收仍另行进行。没有另外派发审查者。
 
@@ -60,3 +60,16 @@
 - 未修改原 Corral 仓库、用户现有 pen、真实 CORRAL_HOME、配置、技能链接、任务队列或 SQLite，也未更换日常安装/发布远端 release。
 - 包内版本目录不得原地覆盖；存活 pen/hook 所引用版本保留。旧 Python 会话保持原状，用户部署后自行重开主控、读取已有 HANDOFF。
 - 现有独立 Corral 未来版本不在本次无条件兼容承诺内。协议/事件版本不认识时拒绝，不调用旧 Python 回退。
+
+## 最终构建产物（未安装）
+
+构建源码 `820fda28d52028ef66c1a0d2953410e5b4a94900`，working-tree clean，macOS arm64。目录 `/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`；构建日志 `/tmp/saddle-corral-package-final.log`。这是临时验证产物，若被系统清理可按打包脚本重建；不要把临时目录当日常安装路径。
+
+| 文件 | SHA256 |
+|---|---|
+| bin/saddle | b90f9e1b45e9678bfa6609be32b91ffaa1c8e66938edd2ea34c7adf5bf0b7083 |
+| bin/corral | 6c52fe4cc4e0f521e3921ff822582bbf82bc5e56e195c294716cad00741d6dfa |
+| plugins/drover/bin/saddle-drover | 9a3b138b2d60abe6d032cf6f1d16e26a2088be72fe49e70e73c84798cda38256 |
+| plugins/diff/bin/saddle-diff | d661e34cf2b7f7523216d67ba7070bfe48d0ed076450875440b03b44ba2a82ba |
+
+已核两入口为 Mach-O arm64；`corral --version` 返回 contract 1；包内无 Python 文件。重复指定已有产品目录退出1且拒绝覆盖，未触发再次构建或安装。后续仅测试/核验文档提交不改变以上生产源码。
