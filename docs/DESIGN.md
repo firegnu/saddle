@@ -1381,3 +1381,5 @@ Claude 独立设计审查首轮修订（2026-10-01，待复审）：补齐事件
 ## 2026-10-02 Agents 顶部入口两行布局
 
 用户认为Telemetry / Plugins / Settings排成一行别扭，选择“Telemetry；下一行Plugins / Settings”，并明确要求主控直接实施。工作区入口固定在Attention之后：Telemetry一行，Plugins和Settings下一行；极窄侧栏放不下两个完整名称时保留换行兜底，不与标题/Attention/列表重叠。保持已有入口、快捷键与业务含义，只更新显示位置及同源点击区域。
+
+用户看过日常截图后指出左右两组没有同行、Telemetry过低，确认修订为：左侧Agents/Attention两行对应右侧Telemetry及Plugins / Settings两行，右侧共用右边缘；宽度不足以容纳两组及间距时才移到下方换行。不采用全体左对齐。
