@@ -402,6 +402,12 @@ while True:
     fn see(&mut self, text: &str) {
         self.until(|h| h.screen.screen().contents().contains(text));
     }
+    fn see_task_tab(&mut self, label: &str) {
+        self.until(|h| {
+            h.locate(label, 0)
+                .is_some_and(|(x, y)| h.screen.screen().cell(y, x).unwrap().underline())
+        });
+    }
     fn settle(&mut self) {
         // A visible label may arrive before the rest of a process-plugin/PTY frame.
         let end = Instant::now() + Duration::from_millis(120);
@@ -824,10 +830,10 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     assert!(!h.log("events").contains("stop "));
     h.open_tasks();
     h.see("detail line 0");
-    h.click("Run details ↵");
-    h.see("Run records");
-    h.click("Task text t");
-    h.until(|h| !h.contents().contains("Run records"));
+    h.click("运行概览");
+    h.see("本次关键节点");
+    h.click("任务说明 t");
+    h.until(|h| !h.contents().contains("本次关键节点"));
     h.click("Add task a");
     h.see("Ctrl-S");
     h.send("鼠标新增".as_bytes());
@@ -867,8 +873,8 @@ fn native_queue_help_details_form_and_actions_use_plugin_storage() {
     h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
     h.see("Native queue task");
     h.send(b"\r");
-    h.see("● Run details ↵");
-    h.see("Run records");
+    h.see_task_tab("运行概览");
+    h.see("本次关键节点");
     h.send(b"t");
     h.see("detail line 0");
     h.send(b"\x1b[6~\x1b[6~\x1b[6~\x1b[6~\x1b[6~\x1b[6~");
@@ -1240,7 +1246,7 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
         h.settle();
     }
     h.send(b"\r");
-    h.see("● Run details ↵"); // Barrier: all four wheel events have been processed.
+    h.see_task_tab("运行概览"); // Barrier: all four wheel events have been processed.
     assert!(!list(&h).contains("History-39"), "{}", list(&h));
     // Keep scrolling over the actual list after the overlay has moved.
     for _ in 0..45 {
@@ -1385,22 +1391,22 @@ fn task_edit_from_run_details_saves_and_returns_to_the_same_view() {
     let mut h = Harness::start_tasks();
     h.open_tasks();
     h.see("T1 Native queue task");
-    h.click("Run details ↵");
-    h.see("● Run details ↵");
-    h.see("Run records");
+    h.click("运行概览");
+    h.see_task_tab("运行概览");
+    h.see("本次关键节点");
     h.click("Edit e");
     h.see("Edit task");
     h.send(b" revised\x13");
     h.until(|h| !h.screen.screen().contents().contains("Edit task"));
-    h.see("● Run details ↵");
+    h.see_task_tab("运行概览");
     h.see("Native queue task revised");
-    h.click("Task text t");
-    h.until(|h| !h.contents().contains("Run details  "));
+    h.click("任务说明 t");
+    h.see_task_tab("任务说明 t");
     h.click("Edit e");
     h.see("Edit task");
     h.click("Cancel Esc");
     h.until(|h| !h.contents().contains("Edit task"));
-    h.see("Task text t");
+    h.see("任务说明 t");
     h.see("T1 Native queue task revised");
     h.quit();
     let events = h.log("queue-events");
@@ -1450,9 +1456,17 @@ else:
     h.click("Detail target");
     h.see("list body");
     assert_eq!(shows(&h), 0, "Task text needs no show");
-    h.click("Run details ↵");
+    h.click("运行概览");
+    h.see("本次关键节点");
+    h.see_task_tab("运行概览");
+    for _ in 0..10 {
+        if h.contents().contains("Repository reference") {
+            break;
+        }
+        h.send(b"\x1b[6~");
+        h.settle();
+    }
     h.see("Repository reference");
-    h.see("● Run details ↵");
     h.until(|h| shows(h) >= 1);
     // Scroll keys stay in Tasks while an agent is attached in Viewer.
     h.send(b"\x1b[6~\x1b[5~");
@@ -4022,9 +4036,9 @@ fn task_links_open_explicit_file_and_return_without_terminal_input() {
     h.see("Synthetic title");
     h.open_tasks();
     h.see("Link task");
-    h.click("Links");
+    h.click("关联资料");
     h.see("Files");
-    h.see("Task text");
+    h.see("任务说明");
     h.send(b"\r");
     h.see("SYNTHETIC DELIVERY");
     h.send(b"\x1b");
@@ -4057,7 +4071,7 @@ fn task_links_validate_original_instance_before_attach_and_before_existing_navig
     );
     h.see("Synthetic title");
     h.open_tasks();
-    h.click("Links");
+    h.click("关联资料");
     h.see("› p/a");
     h.send(b"\r");
     h.see("p/a READY");
@@ -4116,7 +4130,7 @@ fn task_links_switching_task_during_status_never_opens_the_old_agent() {
     );
     h.see("Synthetic title");
     h.open_tasks();
-    h.click("Links");
+    h.click("关联资料");
     h.see("› p/a");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.send(b"\r");
@@ -4154,7 +4168,7 @@ fn task_links_attach_failure_stays_in_tasks_and_unknown_identity_is_disabled() {
     );
     h.see("Synthetic title");
     h.open_tasks();
-    h.click("Links");
+    h.click("关联资料");
     h.see("› p/a");
     h.send(b"\r");
     h.see("Agent unavailable");
@@ -4204,7 +4218,7 @@ sys.exit(7)
     h.click_in("Open content in a new tab", "Terminal");
     h.see("SHELL READY");
     h.open_tasks();
-    h.click("Links");
+    h.click("关联资料");
     h.see("› recovery.txt");
     let before = h.ctl(&["inspect"]);
     h.send(b"\x1b[B\r");
@@ -5567,7 +5581,7 @@ fn drover_telemetry_link_opens_the_host_page_on_that_task_and_returns_to_drover(
     h.see("Synthetic title");
     h.open_tasks();
     h.see("Dispatch task");
-    h.click("Telemetry ↗");
+    h.click("打开遥测 ↗");
     h.see("Input ▸ Telemetry");
     h.see("(from Drover)");
     h.see("key=T38");
@@ -5579,7 +5593,7 @@ fn drover_telemetry_link_opens_the_host_page_on_that_task_and_returns_to_drover(
     // An unnumbered task has nothing to link.
     h.send(b"j");
     h.see("Loose idea");
-    h.until(|h| !h.contents().contains("Telemetry ↗"));
+    h.until(|h| !h.contents().contains("打开遥测 ↗"));
     h.quit();
 }
 
@@ -5618,12 +5632,12 @@ fn a_recorded_dispatch_goes_once_through_the_host_agent_entry_and_is_queryable()
     h.send(b"\x1b");
     h.see("Close Esc");
     // Run details read the task again; press against the settled frame.
-    h.see("Run records");
+    h.see("本次关键节点");
     let end = Instant::now() + Duration::from_millis(300);
     while Instant::now() < end {
         h.pump();
     }
-    h.click("Telemetry ↗");
+    h.click("打开遥测 ↗");
     h.see("Input ▸ Telemetry");
     h.see("1 trace");
     h.send(b"\x1b");

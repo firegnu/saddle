@@ -122,8 +122,9 @@ impl TaskDetail {
                 time_of_day(data.evidence.observed_at)
             ));
         }
-        out.records(task);
+        out.overview(task, &data.reports);
         out.reports(&data.reports);
+        out.records(task);
         for (index, run) in task.previous_runs.iter().enumerate() {
             out.heading(&format!("Previous run {}", index + 1));
             out.records(run);
@@ -140,6 +141,108 @@ struct Out<'a> {
     rows: Vec<Line<'static>>,
 }
 impl Out<'_> {
+    fn overview(&mut self, task: &Task, reports: &crate::telemetry::Reports) {
+        self.heading("本次关键节点");
+        let missing = match reports.state.as_str() {
+            "available" => "未记录（不代表未执行）",
+            "not_recorded" => "本次未记录遥测；结果未知",
+            _ => "遥测查询不可用；结果未知",
+        };
+        for (stage, label) in [
+            ("agent.send", "消息交付"),
+            ("route", "路由建议"),
+            ("agent.start", "Agent 启动"),
+            ("agent.reply", "Agent 回复"),
+        ] {
+            let value = reports
+                .observations
+                .iter()
+                .find(|n| n.stage == stage)
+                .filter(|_| reports.state == "available")
+                .map(|n| {
+                    format!(
+                        "{} · seq {} · {} · 共{}条",
+                        n.status, n.seq, n.recorded_at, n.count
+                    )
+                })
+                .unwrap_or_else(|| missing.into());
+            self.field(label, &[(value, self.t.text)]);
+        }
+        for (kind, label) in [("review.recorded", "审查"), ("controller.note", "收尾")] {
+            let report = reports
+                .entries
+                .iter()
+                .filter(|r| r.kind == kind)
+                .max_by_key(|r| r.seq)
+                .filter(|_| reports.state == "available");
+            let value = report
+                .map(|r| {
+                    format!(
+                        "{} · seq {} · {}{}",
+                        r.verdict
+                            .as_ref()
+                            .map(|v| format!("主控声明：{v}"))
+                            .unwrap_or_else(|| "已有主控报告（非成功判定）".into()),
+                        r.seq,
+                        r.recorded_at,
+                        if r.text.is_none() {
+                            " · 正文不可用"
+                        } else {
+                            ""
+                        }
+                    )
+                })
+                .unwrap_or_else(|| missing.into());
+            self.field(label, &[(value, self.t.text)]);
+        }
+        for (label, at, empty, recorded) in [
+            (
+                "人工提交",
+                &task.t1,
+                "尚未提交",
+                matches!(task.status.as_deref(), Some("awaiting_release" | "done")),
+            ),
+            (
+                "人工验收",
+                &task.t2,
+                "尚未验收",
+                task.status.as_deref() == Some("done"),
+            ),
+        ] {
+            let text = at
+                .as_ref()
+                .and_then(|v| v.as_f64())
+                .map(|v| format!("已记录 · {}", clock(v)))
+                .unwrap_or_else(|| {
+                    if at.is_some() {
+                        "记录时间不可识别".into()
+                    } else if recorded {
+                        "已完成此流转（时间未记录）".into()
+                    } else {
+                        empty.into()
+                    }
+                });
+            self.field(label, &[(text, self.t.text)]);
+        }
+        self.note("各类仅显示最新记录，不代表整阶段成功；审查/收尾是主控声明。完整报告见下方，完整链路见遥测。");
+        let count: usize = reports.observations.iter().map(|n| n.count).sum();
+        if count > reports.observations.len() || reports.entries.len() > 2 {
+            self.note("含多条事件/报告：不同委派或迟到事件可能交错，请在遥测核对完整顺序。");
+        }
+        let next = match task.status.as_deref() {
+            Some("running") => {
+                "核对下方审查和收尾报告；确认后手工 Submit for review。记录不足时先查看主控。"
+            }
+            Some("awaiting_release") => {
+                "等待人工验收；通过后 Accept，需要返工则 Return to pending。"
+            }
+            Some("done") => "任务已验收，无需继续推进。",
+            Some("pending") => "任务待派发；若有退回，先核对下方历史原因。",
+            _ => "按任务当前状态处理，不根据遥测记录自动推进。",
+        };
+        self.field("下一步", &[(next.into(), self.t.focus)]);
+    }
+
     fn reports(&mut self, reports: &crate::telemetry::Reports) {
         self.heading("Controller reports · this run");
         self.note("Recorded declarations, not task acceptance. Submit / Accept remain manual.");
@@ -157,9 +260,6 @@ impl Out<'_> {
                 return;
             }
         }
-        if let Some(trace) = &reports.trace_id {
-            self.field("Trace", &[(trace.clone(), self.t.text)]);
-        }
         if reports.entries.is_empty() {
             self.note("No review or closure report recorded for this run.");
         }
@@ -174,17 +274,6 @@ impl Out<'_> {
                 "{label} · seq {} · {}",
                 report.seq, report.recorded_at
             ));
-            self.field("Event", &[(report.event_id.clone(), self.t.text)]);
-            self.field(
-                "Dispatch",
-                &[(
-                    report
-                        .dispatch_id
-                        .clone()
-                        .unwrap_or_else(|| "trace-level".into()),
-                    self.t.text,
-                )],
-            );
             if let Some(verdict) = &report.verdict {
                 self.field("Declared verdict", &[(verdict.clone(), self.t.text)]);
             }
@@ -200,6 +289,20 @@ impl Out<'_> {
                         .unwrap_or("Body unavailable; open Telemetry."),
                 ),
             }
+            self.field("Event", &[(report.event_id.clone(), self.t.text)]);
+            self.field(
+                "Dispatch",
+                &[(
+                    report
+                        .dispatch_id
+                        .clone()
+                        .unwrap_or_else(|| "trace-level".into()),
+                    self.t.text,
+                )],
+            );
+        }
+        if let Some(trace) = &reports.trace_id {
+            self.field("Trace", &[(trace.clone(), self.t.text)]);
         }
     }
     fn evidence(&mut self, evidence: &crate::drover::Evidence) {
@@ -496,6 +599,39 @@ mod report_tests {
             "{text}"
         );
         assert!(text.contains("not task acceptance"), "{text}");
+        assert_eq!(
+            view.data.as_ref().unwrap().task.status.as_deref(),
+            Some("running")
+        );
+    }
+    #[test]
+    fn overview_puts_current_run_nodes_and_manual_steps_before_raw_records() {
+        let data: Detail = serde_json::from_value(json!({"project":"/synthetic", "task":{
+            "id":"T1","run_id":"r2","status":"running","title":"Example","t0":1,
+            "previous_runs":[{"run_id":"r1","t1":2,"t2":3,"return_history":[{"reason":"OLD RETURN REASON"}]}]},
+            "evidence":{"scope":"repository_reference","controls_transition":false,"observed_at":0,
+                "git":{"state":"available"},"last_check":{"state":"unknown"}},
+            "reports":{"state":"available","observations":[
+                {"stage":"route","count":3,"seq":9,"kind":"route.begin","recorded_at":"NOW","status":"已记录开始；结果未知"}],
+                "entries":[{"event_id":"r","seq":10,"kind":"review.recorded","dispatch_id":"d","recorded_at":"NOW","verdict":"failed","text":"NEEDS REWORK"}]}
+        })).unwrap();
+        let mut view = TaskDetail::new("Current", data.task.clone());
+        view.data = Some(Box::new(data));
+        let text = view
+            .lines(&Theme::default(), None, true, 120)
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("本次关键节点"), "{text}");
+        assert!(text.contains("已记录开始；结果未知"), "{text}");
+        assert!(text.contains("主控声明：failed"), "{text}");
+        assert!(
+            text.contains("尚未提交") && text.contains("尚未验收"),
+            "{text}"
+        );
+        assert!(text.find("本次关键节点").unwrap() < text.find("Run records").unwrap());
+        assert!(text.contains("OLD RETURN REASON"), "{text}");
         assert_eq!(
             view.data.as_ref().unwrap().task.status.as_deref(),
             Some("running")
