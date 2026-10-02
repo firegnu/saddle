@@ -148,9 +148,17 @@ pub fn run(
     config.colors = config.colors.for_terminal(truecolor());
     let mut app = App::new(config, path, core_catalog)?;
     let _guard = TerminalGuard::enter()?;
+    // Asked before anything reads input; terminals that do not answer keep the glyph pet.
+    if let Some(cell) = crate::kitty::probe(Duration::from_millis(500)) {
+        app.image_cell = Some(cell);
+        app.mascot = app.new_mascot(app.config.mascot);
+    }
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
     let result = app.run(&mut terminal);
+    if app.image_cell.is_some() {
+        let _ = app.images.free(&mut io::stdout());
+    }
     drop(terminal);
     drop(_guard);
     if !app.layout_store.notice.is_empty() {
@@ -185,6 +193,9 @@ struct App {
     actions: Actions,
     viewer: Terminals,
     mascot: crate::mascot::Mascot,
+    /// Pixels per cell when the terminal shows pictures; `None` draws the pet with glyphs.
+    image_cell: Option<(u16, u16)>,
+    images: crate::kitty::Images,
     layout_store: crate::layout_state::Store,
     cwd: String,
     projects: Vec<String>,
@@ -291,6 +302,8 @@ impl App {
             actions,
             viewer,
             mascot: crate::mascot::Mascot::new(config.mascot, truecolor()),
+            image_cell: None,
+            images: Default::default(),
             config,
             panel: Panel {
                 follow: true,
@@ -325,8 +338,17 @@ impl App {
         })
     }
     fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        let mut screen = (0, 0);
         loop {
             let size = terminal.size()?;
+            if self.image_cell.is_some() && (size.width, size.height) != screen {
+                screen = (size.width, size.height);
+                // A new font size changes the window's cells too.
+                if let Some(cell) = crate::kitty::cell_size() {
+                    self.image_cell = Some(cell);
+                    self.mascot.set_cell(cell);
+                }
+            }
             let panes = Panes::new(Rect::new(0, 0, size.width, size.height), &self.config);
             self.tick(panes)?;
             self.layout_store.save(&self.viewer, false);
@@ -350,6 +372,7 @@ impl App {
                 .collect();
             let items = self.attention_items();
             let loading = self.board.loading();
+            let mut sprite = None;
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
                     frame,
@@ -431,7 +454,14 @@ impl App {
                         panes.status,
                     );
                 }
+                // Last, so a popup drawn over the pet hides its picture.
+                sprite = self.mascot.sprite(frame.buffer_mut());
             })?;
+            if self.image_cell.is_some() {
+                let screen = (size.width, size.height);
+                self.images
+                    .show(&mut io::stdout(), screen, sprite, |s| self.mascot.pixels(s))?;
+            }
             if event::poll(Duration::from_millis(30))? && self.event(event::read()?, panes)? {
                 break;
             }
@@ -1610,13 +1640,19 @@ impl App {
         self.checker = None;
         self.focus = self.settings_return;
     }
+    fn new_mascot(&self, pet: crate::mascot::Pet) -> crate::mascot::Mascot {
+        match self.image_cell {
+            Some(cell) => crate::mascot::Mascot::with_images(pet, cell),
+            None => crate::mascot::Mascot::new(pet, truecolor()),
+        }
+    }
     fn apply_settings(&mut self, saved: &crate::config::Config) {
         self.config.colors = saved.colors.clone().for_terminal(truecolor());
         self.config.left_width = saved.left_width;
         self.config.mascot_enabled = saved.mascot_enabled;
         if self.config.mascot != saved.mascot {
             self.config.mascot = saved.mascot;
-            self.mascot = crate::mascot::Mascot::new(saved.mascot, truecolor());
+            self.mascot = self.new_mascot(saved.mascot);
         }
     }
     /// What saddle knows now; the command and config checks run in the background.

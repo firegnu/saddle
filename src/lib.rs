@@ -12,6 +12,7 @@ pub mod diagnostics;
 pub mod git;
 pub mod history;
 pub mod input;
+pub mod kitty;
 mod launch;
 pub mod layout;
 pub mod layout_state;

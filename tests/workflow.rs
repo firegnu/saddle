@@ -76,6 +76,7 @@ struct Harness {
     output: Receiver<Vec<u8>>,
     screen: vt100::Parser,
     cursor_answered: bool,
+    attributes_answered: bool,
     raw: Vec<u8>,
 }
 impl Harness {
@@ -356,6 +357,7 @@ while True:
             output,
             screen: vt100::Parser::new(40, 140, 0),
             cursor_answered: false,
+            attributes_answered: false,
             raw: Vec::new(),
         };
         harness.see("Agents ·");
@@ -368,6 +370,11 @@ while True:
             if !self.cursor_answered && self.raw.windows(4).any(|w| w == b"\x1b[6n") {
                 self.send(b"\x1b[1;1R");
                 self.cursor_answered = true;
+            }
+            // Like a terminal without pictures: device attributes, no graphics reply.
+            if !self.attributes_answered && self.raw.windows(3).any(|w| w == b"\x1b[c") {
+                self.send(b"\x1b[?62;22c");
+                self.attributes_answered = true;
             }
         }
     }
