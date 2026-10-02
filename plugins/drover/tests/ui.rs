@@ -556,9 +556,11 @@ fn all_pending_overlay_names_projects_reports_each_state_and_scrolls_to_the_last
     ] {
         assert!(output.contains(value), "missing {value}:\n{output}");
     }
-    // The plugin renders content without an outer popup frame. Wrapped rows
-    // joined back must still contain the complete source title.
-    let joined: String = output.lines().map(str::trim).collect();
+    // Exclude the dialog frame before joining wrapped content rows.
+    let joined: String = output
+        .lines()
+        .map(|line| line.trim().trim_matches('┃').trim())
+        .collect();
     assert!(
         joined.contains(&long),
         "long titles wrap without clipping: {joined}"
@@ -940,7 +942,14 @@ fn submit_is_a_selected_running_task_button_with_an_explicit_confirmation() {
         "run-4",
         "Cancel Esc",
     ] {
-        assert!(screen.contains(words), "{words}\n{screen}");
+        let joined: String = screen
+            .lines()
+            .map(|line| line.trim().trim_matches('┃').trim())
+            .collect();
+        assert!(
+            screen.contains(words) || joined.contains(words),
+            "{words}\n{screen}"
+        );
     }
     // Small windows still draw without panicking.
     render_queue(&mut q, 40, 12);
@@ -1290,4 +1299,49 @@ fn run_overview_keeps_key_nodes_and_manual_steps_on_the_first_screen() {
         ));
     }
     panic!("full reports remain reachable at narrow width");
+}
+
+#[test]
+fn secondary_pages_are_bounded_and_keep_their_actions_without_queue_tools() {
+    for (width, height) in [(48, 24), (80, 24), (180, 50)] {
+        let mut q = queue::Panel::default();
+        q.project = "/tmp/project-a".into();
+        for (page, action) in [
+            (queue::Page::Help, "Back Esc"),
+            (queue::Page::Feedback("Result details".into()), "Back Esc"),
+            (queue::Page::Project("/tmp/project-a".into()), "Apply"),
+            (
+                queue::Page::Add {
+                    title: queue::Input::new("Title".into()),
+                    body: queue::Input::new("Body".into()),
+                    body_focus: false,
+                },
+                "Save",
+            ),
+            (
+                queue::Page::Delete {
+                    pending: vec![Task {
+                        title: "Delete target".into(),
+                        ..Default::default()
+                    }],
+                    index: 0,
+                },
+                "Delete y",
+            ),
+            (queue::Page::AllPending, "Refresh r"),
+        ] {
+            q.page = page;
+            let buffer = render_queue(&mut q, width, height);
+            let output = text(&buffer);
+            assert!(
+                output.contains(action),
+                "{width}x{height}: {action}\n{output}"
+            );
+            assert!(!output.contains("‹Record default") && !output.contains("‹Pause p"));
+            if width == 180 {
+                assert_eq!(buffer[(0, 0)].symbol(), " ");
+                assert_eq!(buffer[(179, 49)].symbol(), " ");
+            }
+        }
+    }
 }

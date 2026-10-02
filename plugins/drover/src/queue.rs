@@ -1304,6 +1304,66 @@ impl Panel {
             self.draw_page(t, frame, body, true, false);
             return Vec::new();
         }
+        if !matches!(self.page, Page::List) {
+            let (title, width, height) = match &self.page {
+                Page::Add { .. } => ("Add task", 104, 32),
+                Page::Edit { .. } => ("Edit task", 104, 32),
+                Page::Confirm(c) => (c.action.label(), 96, 24),
+                Page::Delete { .. } => ("Delete task", 96, 24),
+                Page::Project(_) => ("Project path", 96, 12),
+                Page::Help => ("Tasks help", 96, 30),
+                Page::Feedback(_) => ("Action result", 96, 24),
+                Page::AllPending => ("All pending", 104, 32),
+                _ => unreachable!(),
+            };
+            let body = ui::dialog(t, frame, area, title, width, height);
+            let (mut body, hits) = buttons::draw_compact(t, frame, body, &self.controls());
+            self.buttons = hits;
+            if !body.is_empty() {
+                frame.render_widget(
+                    Paragraph::new(if self.busy {
+                        "Running action…".into()
+                    } else if matches!(self.page, Page::AllPending) {
+                        "All registered projects".into()
+                    } else {
+                        ui::clip(&self.project, body.width as usize)
+                    })
+                    .style(Style::default().fg(if self.busy {
+                        t.agent_working
+                    } else {
+                        t.muted
+                    })),
+                    Rect::new(body.x, body.y, body.width, 1),
+                );
+                body.y += 1;
+                body.height -= 1;
+            }
+            if !self.message.is_empty()
+                && !matches!(&self.page, Page::Feedback(text) if text == &self.message)
+                && body.height > 3
+            {
+                let lines = wrap_text(&self.message, body.width);
+                let height = (lines.len() as u16).min(body.height / 3).max(1);
+                frame.render_widget(
+                    Paragraph::new(lines).style(Style::default().fg(self.message_color(t))),
+                    Rect::new(body.x, body.bottom() - height, body.width, height),
+                );
+                body.height -= height;
+            }
+            if !matches!(
+                self.page,
+                Page::Add { .. } | Page::Edit { .. } | Page::Project(_)
+            ) && body.height > 1
+            {
+                frame.render_widget(
+                    Paragraph::new("PgUp / PgDn Scroll").style(Style::default().fg(t.muted)),
+                    Rect::new(body.x, body.bottom() - 1, body.width, 1),
+                );
+                body.height -= 1;
+            }
+            self.draw_page(t, frame, body, true, false);
+            return Vec::new();
+        }
         let inside = area.inner(ratatui::layout::Margin::new(1, 0));
         if inside.height < 4 || inside.width < 12 {
             return Vec::new();
@@ -1442,21 +1502,6 @@ impl Panel {
             );
         }
         frame.render_widget(Paragraph::new(Line::from(line)), rule);
-        if !on_list {
-            let (mut body, hits) = buttons::draw_compact(t, frame, body, &self.controls());
-            self.buttons.extend(hits);
-            if !self.message.is_empty() && body.height > 3 {
-                let lines = wrap_text(&self.message, body.width);
-                let height = (lines.len() as u16).min(body.height / 3).max(1);
-                frame.render_widget(
-                    Paragraph::new(lines).style(Style::default().fg(self.message_color(t))),
-                    Rect::new(body.x, body.bottom() - height, body.width, height),
-                );
-                body.height -= height;
-            }
-            self.draw_page(t, frame, body, true, false);
-            return Vec::new();
-        }
         // Task actions below the list and content; Close sits apart on the right.
         let close = if self.reading_link() {
             "Back Esc"
@@ -2136,7 +2181,8 @@ impl Panel {
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),
                 };
-                let wrapped = wrap_text(&text, body.width);
+                let wrapped = wrap_text(&text, body.width.saturating_sub(1));
+                let total = wrapped.len();
                 self.scroll = self
                     .scroll
                     .min(wrapped.len().saturating_sub(usize::from(body.height)));
@@ -2148,8 +2194,12 @@ impl Panel {
                     });
                 frame.render_widget(
                     paragraph.scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
-                    body,
+                    Rect {
+                        width: body.width.saturating_sub(1),
+                        ..body
+                    },
                 );
+                crate::ui::scrollbar(t, frame, body, total, self.scroll);
             }
         }
         hits
@@ -2169,7 +2219,7 @@ impl Panel {
         use ratatui::{
             layout::Rect,
             style::{Modifier, Style},
-            text::{Line, Span},
+            text::Line,
             widgets::{Block, Paragraph},
         };
         let Page::Confirm(confirmation) = &self.page else {
@@ -2180,30 +2230,32 @@ impl Panel {
             return;
         }
         let width = body.width.saturating_sub(1);
-        let muted = Style::default().fg(t.muted);
         let name = std::path::Path::new(&confirmation.key.project)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let mut lines = vec![
-            Line::from(vec![
-                Span::styled("Project  ", muted),
-                Span::styled(name, Style::default().fg(t.bright)),
-                Span::styled(
-                    format!("  {}", confirmation.key.project),
-                    Style::default().fg(t.dim),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled("Task     ", muted),
-                Span::styled(
-                    confirmation.key.id.clone(),
-                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(format!(" · {}", confirmation.title)),
-            ]),
-            Line::raw(""),
-        ];
+        let mut lines = Vec::new();
+        for (label, value, color) in [
+            (
+                "Project",
+                format!("{name} · {}", confirmation.key.project),
+                t.muted,
+            ),
+            (
+                "Task",
+                format!("{} · {}", confirmation.key.id, confirmation.title),
+                t.bright,
+            ),
+        ] {
+            lines.extend(
+                wrap_text(&format!("{label}  {value}"), width)
+                    .into_iter()
+                    .map(|line| {
+                        line.style(Style::default().fg(color).add_modifier(Modifier::BOLD))
+                    }),
+            );
+        }
+        lines.push(Line::raw(""));
         lines.extend(
             wrap_text(
                 if confirmation.action == Transition::Return {
@@ -2224,14 +2276,24 @@ impl Panel {
                 }))
             }));
         }
-        lines.push(Line::raw(format!("Run      {}", confirmation.run_id)));
-        let info = Rect::new(body.x, body.y, body.width, body.height - 3);
+        lines.extend(wrap_text(
+            &format!("Run      {}", confirmation.run_id),
+            width,
+        ));
+        let reason_height = if confirmation.action == Transition::Return {
+            3
+        } else {
+            0
+        };
+        let info = Rect::new(body.x, body.y, body.width, body.height - reason_height);
         let height = usize::from(info.height);
         self.scroll = self.scroll.min(lines.len().saturating_sub(height));
+        let total = lines.len();
         frame.render_widget(
             Paragraph::new(lines).scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
             Rect::new(info.x, info.y, width, info.height),
         );
+        crate::ui::scrollbar(t, frame, info, total, self.scroll);
         let Page::Confirm(confirmation) = &self.page else {
             return;
         };

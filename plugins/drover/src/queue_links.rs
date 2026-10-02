@@ -47,6 +47,8 @@ impl Panel {
             widgets::Paragraph,
         };
         self.links.rows.clear();
+        let viewport = area;
+        area.width = area.width.saturating_sub(1);
         if let Some(reading) = &mut self.links.reading {
             let (body, hits) = crate::buttons::draw_compact_top(
                 t,
@@ -111,6 +113,7 @@ impl Panel {
             reading.scroll = reading
                 .scroll
                 .min(lines.len().saturating_sub(area.height as usize));
+            let total = lines.len();
             frame.render_widget(
                 Paragraph::new(
                     lines
@@ -120,6 +123,17 @@ impl Panel {
                         .collect::<Vec<_>>(),
                 ),
                 area,
+            );
+            crate::ui::scrollbar(
+                t,
+                frame,
+                Rect {
+                    y: area.y,
+                    height: area.height,
+                    ..viewport
+                },
+                total,
+                reading.scroll,
             );
             return;
         }
@@ -233,9 +247,20 @@ impl Panel {
                 ));
             }
         }
+        let total = lines.len();
         frame.render_widget(
             Paragraph::new(lines.into_iter().skip(top).take(height).collect::<Vec<_>>()),
             area,
+        );
+        crate::ui::scrollbar(
+            t,
+            frame,
+            Rect {
+                height: area.height,
+                ..viewport
+            },
+            total,
+            top,
         );
     }
 }

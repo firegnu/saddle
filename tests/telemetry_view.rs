@@ -201,15 +201,15 @@ fn blob(root: &Path, store: &Store, event: &str) -> PathBuf {
 /// Moves the event selection to the row showing `kind`.
 fn select_event(page: &mut Page, kind: &str) {
     let kind = match kind {
-        "task.transition" => "任务状态流转",
-        "agent.send.begin" => "开始发送任务",
-        "agent.send.end" => "任务发送结束",
-        "requirement.recorded" => "记录原始需求",
-        "brief.snapshot" => "任务书快照",
-        "controller.decision" => "主控路由决定",
-        "authorization.recorded" => "记录授权原文",
-        "proposal.recorded" => "记录提案",
-        "controller.note" => "主控记录",
+        "task.transition" => "Task transition",
+        "agent.send.begin" => "Send started",
+        "agent.send.end" => "Send ended",
+        "requirement.recorded" => "Requirement recorded",
+        "brief.snapshot" => "Brief snapshot",
+        "controller.decision" => "Controller decision",
+        "authorization.recorded" => "Authorization recorded",
+        "proposal.recorded" => "Proposal recorded",
+        "controller.note" => "Controller note",
         other => other,
     };
     for _ in 0..200 {
@@ -314,8 +314,8 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     assert!(list.contains("Recording: Off (global)"), "{list}");
     assert!(list.contains("Filter: all traces"), "{list}");
     assert!(list.contains("2 traces"), "{list}");
-    assert!(list.contains("登记声明未核验"), "{list}");
-    assert!(list.contains("未见运行登记声明"), "{list}");
+    assert!(list.contains("Registration unverified"), "{list}");
+    assert!(list.contains("No run registration"), "{list}");
     assert!(list.contains("T57 Fix queue focus"), "{list}");
     assert!(page.status().contains("Esc Close"));
     // The newest trace is selected first; its details are below the list.
@@ -331,7 +331,7 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     assert!(page.status().contains("Esc Back"));
     assert!(detail.contains("Now (queried"), "{detail}");
     assert!(detail.contains("Events seq ≤"), "{detail}");
-    assert!(detail.contains("登记声明未核验"), "{detail}");
+    assert!(detail.contains("Registration unverified"), "{detail}");
     // Both dispatches are listed, though only one has events.
     assert!(detail.contains("Dispatch: All"), "{detail}");
     assert!(detail.contains("implementation impl"), "{detail}");
@@ -345,31 +345,31 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     ] {
         assert!(
             detail.contains(match kind {
-                "requirement.recorded" => "记录原始需求",
-                "brief.snapshot" => "任务书快照",
-                "agent.send.begin" => "开始发送任务",
-                "task.transition" => "任务状态流转",
+                "requirement.recorded" => "Requirement recorded",
+                "brief.snapshot" => "Brief snapshot",
+                "agent.send.begin" => "Send started",
+                "task.transition" => "Task transition",
                 _ => kind,
             }),
             "{kind}: {detail}"
         );
     }
     // Missing ends are not inserted into the event list as rows.
-    assert!(!detail.contains("任务发送结束"), "{detail}");
+    assert!(!detail.contains("Send ended"), "{detail}");
 
     select_event(&mut page, "requirement.recorded");
     let detail = shown(&mut page);
-    assert!(detail.contains("需求原文（声明来源）"), "{detail}");
+    assert!(detail.contains("Requirement (declared source)"), "{detail}");
     assert!(
-        detail.contains("主控声明") && detail.contains("synthetic controller"),
+        detail.contains("Controller declared") && detail.contains("synthetic controller"),
         "{detail}"
     );
     assert!(
-        detail.contains("声明的说话者/来源（未经独立核验）"),
+        detail.contains("Declared speaker/source (not independently verified)"),
         "{detail}"
     );
     assert!(
-        detail.contains("事后提交/声明时间在未采集区间或早于当前记录时段"),
+        detail.lines().map(|line| line.trim().trim_matches('┃').trim()).collect::<String>().contains("Late submission: declared time is outside recording coverage or before the current interval"),
         "{detail}"
     );
     assert!(detail.contains("late"), "{detail}");
@@ -379,24 +379,24 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     let reader = shown(&mut page);
     assert!(reader.contains("hash verified · UTF-8"), "{reader}");
     assert!(reader.contains("需求 \\x1b[31mred\\x07"), "{reader}");
-    assert!(reader.contains("需求原文（声明来源）"), "{reader}");
+    assert!(reader.contains("Requirement (declared source)"), "{reader}");
     assert!(press(&mut page, KeyCode::Esc).stay());
     let back = shown(&mut page);
-    assert!(back.contains("需求原文（声明来源）"), "{back}");
+    assert!(back.contains("Requirement (declared source)"), "{back}");
     assert!(back.contains("Events seq ≤"), "{back}");
 
     // The brief snapshot and the message actually sent are labelled separately.
     select_event(&mut page, "brief.snapshot");
     let detail = shown(&mut page);
-    assert!(detail.contains("任务书快照"), "{detail}");
-    assert!(detail.contains("宿主观测"), "{detail}");
+    assert!(detail.contains("Brief snapshot"), "{detail}");
+    assert!(detail.contains("Host observed"), "{detail}");
     assert!(detail.contains("brief.md"), "{detail}");
-    assert!(!detail.contains("实际发送内容"), "{detail}");
+    assert!(!detail.contains("Sent message"), "{detail}");
     select_event(&mut page, "agent.send.begin");
     let detail = shown(&mut page);
-    assert!(detail.contains("实际发送内容"), "{detail}");
-    let selected_detail = detail.split("‹技术详情 · v›").nth(1).unwrap();
-    assert!(!selected_detail.contains("任务书快照"), "{detail}");
+    assert!(detail.contains("Sent message"), "{detail}");
+    let selected_detail = detail.split("‹Technical details · v›").nth(1).unwrap();
+    assert!(!selected_detail.contains("Brief snapshot"), "{detail}");
     // The current operation state, marked as read now, not as part of the list.
     assert!(detail.contains("now: no end"), "{detail}");
     press(&mut page, KeyCode::Enter);
@@ -408,7 +408,10 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     press(&mut page, KeyCode::Char('o'));
     let ops = shown(&mut page);
     assert!(ops.contains("Operations now (queried"), "{ops}");
-    assert!(ops.contains("执行或交付结果未知"), "{ops}");
+    assert!(
+        ops.contains("Execution or delivery outcome unknown"),
+        "{ops}"
+    );
     assert!(ops.contains("no end"), "{ops}");
     press(&mut page, KeyCode::Char('i'));
     let intervals = shown(&mut page);
@@ -417,8 +420,8 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
         "{intervals}"
     );
     assert!(
-        intervals
-            .contains("仅描述已记录材料；未记录操作不可见，缺口原因未知，不代表任务完整历史。"),
+        intervals.chars().filter(|c| !c.is_whitespace() && *c != '┃').collect::<String>()
+            .contains(&"Recorded material only; unrecorded operations are invisible and gap causes are unknown. This is not the complete task history.".replace(' ', "")),
         "{intervals}"
     );
     assert!(intervals.contains("off"), "{intervals}");
@@ -427,11 +430,11 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     // A dispatch filters the events.
     press(&mut page, KeyCode::Tab);
     let filtered = shown(&mut page);
-    assert!(filtered.contains("开始发送任务"), "{filtered}");
-    assert!(!filtered.contains("记录原始需求"), "{filtered}");
+    assert!(filtered.contains("Send started"), "{filtered}");
+    assert!(!filtered.contains("Requirement recorded"), "{filtered}");
     press(&mut page, KeyCode::Tab);
     let empty = shown(&mut page);
-    assert!(!empty.contains("开始发送任务"), "{empty}");
+    assert!(!empty.contains("Send started"), "{empty}");
     assert!(empty.contains("parent impl-77c0"), "{empty}");
 
     assert!(press(&mut page, KeyCode::Esc).stay());
@@ -558,7 +561,7 @@ fn event_pages_keep_their_upper_bound_until_refresh() {
         press(&mut page, KeyCode::Down);
     }
     let end = shown(&mut page);
-    assert!(!end.contains("记录原始需求"), "{end}");
+    assert!(!end.contains("Requirement recorded"), "{end}");
     // Refresh rereads both: a new upper bound includes it.
     press(&mut page, KeyCode::Char('r'));
     shown(&mut page);
@@ -572,7 +575,7 @@ fn event_pages_keep_their_upper_bound_until_refresh() {
         !refreshed.contains(&format!("Events seq ≤ {upper} ")),
         "{refreshed}"
     );
-    assert!(refreshed.contains("记录原始需求"), "{refreshed}");
+    assert!(refreshed.contains("Requirement recorded"), "{refreshed}");
 }
 
 #[test]
@@ -672,15 +675,15 @@ fn narrow_and_wide_windows_keep_the_same_layers() {
     press(&mut page, KeyCode::Enter);
     settle(&mut page);
     let narrow = screen(&mut page, 80, 24);
-    assert!(narrow.contains("任务状态流转"), "{narrow}");
+    assert!(narrow.contains("Task transition"), "{narrow}");
     assert!(narrow.contains("Esc Back"), "{narrow}");
     let wide = screen(&mut page, 180, 40);
-    assert!(marked(&wide).contains("任务状态流转"), "{wide}");
+    assert!(marked(&wide).contains("Task transition"), "{wide}");
     // The event detail sits beside the timeline, not below it.
     let beside = wide
         .lines()
         .find_map(|l| {
-            l.find("任务状态流转 · 插件声明")
+            l.find("Task transition · Plugin declared")
                 .map(|i| l[..i].chars().count())
         })
         .unwrap_or_else(|| panic!("{wide}"));
@@ -712,13 +715,13 @@ fn refresh_keeps_the_selected_dispatch_and_its_events() {
     press(&mut page, KeyCode::Tab);
     let review = shown(&mut page);
     assert!(review.contains("parent impl-77c0"), "{review}");
-    assert!(!review.contains("开始发送任务"), "{review}");
+    assert!(!review.contains("Send started"), "{review}");
     // Refresh while the dispatch list itself is being read again.
     press(&mut page, KeyCode::Char('r'));
     let refreshed = shown(&mut page);
     assert!(refreshed.contains("parent impl-77c0"), "{refreshed}");
-    assert!(!refreshed.contains("开始发送任务"), "{refreshed}");
-    assert!(!refreshed.contains("任务书快照"), "{refreshed}");
+    assert!(!refreshed.contains("Send started"), "{refreshed}");
+    assert!(!refreshed.contains("Brief snapshot"), "{refreshed}");
     assert!(
         refreshed.contains("No events recorded for this dispatch."),
         "{refreshed}"
@@ -726,7 +729,7 @@ fn refresh_keeps_the_selected_dispatch_and_its_events() {
     // Back to the implementation dispatch: its own events only.
     press(&mut page, KeyCode::BackTab);
     let implementation = shown(&mut page);
-    assert!(implementation.contains("开始发送任务"), "{implementation}");
+    assert!(implementation.contains("Send started"), "{implementation}");
     press(&mut page, KeyCode::Char('v'));
     let implementation = shown(&mut page);
     assert!(
@@ -789,7 +792,7 @@ fn event_detail_shows_recorded_fields_and_scrolls_to_the_end_when_narrow() {
         seen = screen(&mut page, 80, 24);
     }
     assert!(seen.contains("to: running"), "{seen}");
-    assert!(marked(&seen).contains("任务状态流转"), "{seen}");
+    assert!(marked(&seen).contains("Task transition"), "{seen}");
 }
 
 #[test]
@@ -1013,7 +1016,7 @@ fn presentation_project_type_and_search_only_filter_loaded_traces() {
     )
     .unwrap();
     let mut page = open(&root);
-    assert!(shown(&mut page).contains("全部项目"));
+    assert!(shown(&mut page).contains("All projects"));
     press(&mut page, KeyCode::Char('p'));
     press(&mut page, KeyCode::Down);
     press(&mut page, KeyCode::Enter);
@@ -1073,15 +1076,15 @@ fn presentation_body_action_preview_and_technical_details_are_explicit() {
     let mut page = open(&root);
     press(&mut page, KeyCode::Enter);
     let detail = shown(&mut page);
-    assert!(detail.contains("‹查看全文 · Enter›"), "{detail}");
+    assert!(detail.contains("‹Read full body · Enter›"), "{detail}");
     assert!(detail.contains("Preview text"), "{detail}");
     assert!(!detail.contains("event req · trace"), "{detail}");
     press(&mut page, KeyCode::Char('v'));
     assert!(shown(&mut page).contains("event req · trace"));
     press(&mut page, KeyCode::Down);
     let no_body = shown(&mut page);
-    assert!(no_body.contains("此事件没有正文"), "{no_body}");
-    assert!(!no_body.contains("‹查看全文 · Enter›"), "{no_body}");
+    assert!(no_body.contains("This event has no body"), "{no_body}");
+    assert!(!no_body.contains("‹Read full body · Enter›"), "{no_body}");
 }
 
 #[test]
@@ -1128,7 +1131,7 @@ fn presentation_centered_mouse_controls_and_preview_follow_selection() {
     assert_eq!(buffer[(0, 0)].symbol(), " ", "detail is centered");
     let (x, y) = (0..50)
         .flat_map(|y| (0..180).map(move |x| (x, y)))
-        .find(|&(x, y)| buffer[(x, y)].symbol() == "‹" && buffer[(x + 1, y)].symbol() == "查")
+        .find(|&(x, y)| buffer[(x, y)].symbol() == "‹" && buffer[(x + 1, y)].symbol() == "R")
         .unwrap();
     for kind in [
         MouseEventKind::Down(MouseButton::Left),
@@ -1143,7 +1146,7 @@ fn presentation_centered_mouse_controls_and_preview_follow_selection() {
     }
     assert!(shown(&mut page).contains("hash verified · UTF-8"));
     press(&mut page, KeyCode::Esc);
-    assert!(marked(&shown(&mut page)).contains("主控记录"));
+    assert!(marked(&shown(&mut page)).contains("Controller note"));
     for (w, h) in [(1, 1), (20, 8), (40, 12), (80, 24)] {
         screen(&mut page, w, h);
     }
@@ -1168,9 +1171,9 @@ fn presentation_multiple_bodies_keep_selection_and_full_reading() {
     s.record_begin(&op).unwrap();
     let mut page = open(&root);
     press(&mut page, KeyCode::Enter);
-    assert!(shown(&mut page).contains("‹选择正文 · Enter›"));
+    assert!(shown(&mut page).contains("‹Choose body · Enter›"));
     press(&mut page, KeyCode::Enter);
-    assert!(shown(&mut page).contains("选择要阅读的正文"));
+    assert!(shown(&mut page).contains("Choose a body to read"));
     press(&mut page, KeyCode::Down);
     screen(&mut page, 40, 20);
     press(&mut page, KeyCode::Enter);
@@ -1180,5 +1183,5 @@ fn presentation_multiple_bodies_keep_selection_and_full_reading() {
         "{body}"
     );
     press(&mut page, KeyCode::Esc);
-    assert!(shown(&mut page).contains("‹选择正文 · Enter›"));
+    assert!(shown(&mut page).contains("‹Choose body · Enter›"));
 }

@@ -350,7 +350,20 @@ impl Setup {
                 Paragraph::new(safe(&label)),
                 Rect::new(body.x, body.y + 1, body.width, 1),
             );
-            let height = usize::from(body.height.saturating_sub(4));
+            f.render_widget(
+                Paragraph::new(format!(
+                    "{} / {} · ↑↓ Select",
+                    if self.choices.is_empty() {
+                        0
+                    } else {
+                        self.selected + 1
+                    },
+                    self.choices.len()
+                ))
+                .style(Style::default().fg(t.muted)),
+                Rect::new(body.x, body.y, body.width, 1),
+            );
+            let height = usize::from(body.height.saturating_sub(7));
             let top = self.selected.saturating_sub(height.saturating_sub(1));
             for (row, (i, choice)) in self
                 .choices
@@ -363,9 +376,17 @@ impl Setup {
                 let r = Rect::new(body.x, body.y + 2 + row as u16, body.width, 1);
                 let label = if choice.is_empty() {
                     "Not specified (manual handoff)".into()
+                } else if self.mode == Mode::Directories {
+                    safe(
+                        std::path::Path::new(choice)
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or(choice),
+                    )
                 } else {
                     safe(choice)
                 };
+                let label = crate::ui::clip(&label, body.width.saturating_sub(2) as usize);
                 f.render_widget(
                     Paragraph::new(format!(
                         "{} {label}",
@@ -379,6 +400,19 @@ impl Setup {
                     r,
                 );
                 self.rows.push((r, i));
+            }
+            if body.height >= 7 {
+                let selected = self
+                    .choices
+                    .get(self.selected)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                f.render_widget(
+                    Paragraph::new(safe(selected))
+                        .wrap(Wrap { trim: false })
+                        .style(Style::default().fg(t.muted)),
+                    Rect::new(body.x, body.bottom() - 5, body.width, 3),
+                );
             }
         } else {
             let fields = [
