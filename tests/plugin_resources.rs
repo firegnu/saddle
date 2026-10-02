@@ -209,15 +209,18 @@ fn management_page_runs_builtin_resource_actions_and_keeps_external_rows() {
     let settings = saddle::settings::Settings::open(env.dir.path().join("config.toml"), true);
     let mut page = saddle::plugins::ui::Page::default();
     let (text, _) = screen(&mut page, &m, &settings, (100, 48));
-    let builtin = find(&text, "Synthetic resources").expect("built-in row");
-    let ext = find(&text, "Synthetic external").unwrap_or_else(|| panic!("external row:\n{text}"));
+    // The split list clips long names; the details pane titles the selected one in full.
+    let builtin = find(&text, "› Synthetic resour").expect("built-in row");
+    let ext = find(&text, "Synthetic extern").unwrap_or_else(|| panic!("external row:\n{text}"));
     assert!(builtin.1 < ext.1, "built-in rows come first:\n{text}");
+    // Only the list column, left of the details pane.
     let row = text.lines().nth(builtin.1 as usize).unwrap();
-    assert!(
-        row.contains("> Synthetic resources") && row.contains("No") && row.contains("Built-in")
-    );
+    let row = row.split('│').next().unwrap();
+    assert!(row.contains("No") && row.contains("Built-in"), "{row}");
     for shown in [
-        "ID: test.res · Built-in · Disabled",
+        " Synthetic resources ─",
+        "Built-in · Disabled",
+        "ID: test.res",
         "Skill: skill-a",
         "Not installed",
         "Conflict — existing link kept",
@@ -254,7 +257,8 @@ fn management_page_runs_builtin_resource_actions_and_keeps_external_rows() {
     let (text, _) = screen(&mut page, &m, &settings, (100, 48));
     let template = env.claude().join("TEMPLATE.md");
     for shown in [
-        "ID: test.res · Built-in · Enabled",
+        "Built-in · Enabled",
+        "ID: test.res",
         "Installed",
         "Conflict — existing link kept",
         "Enabled. skill-a r2: Claude Code installed · Codex conflict (existing link kept).",
@@ -314,18 +318,25 @@ fn narrow_management_page_prioritizes_switch_and_resource_summary() {
     let mut page = saddle::plugins::ui::Page::default();
     let (text, _) = screen(&mut page, &m, &settings, (60, 30));
     for shown in [
+        "Disable",
         "Built-in · Enabled",
         "Codex",
         "Conflict",
-        "Enabled. skill-a r2",
-        "saddle plugin status test.res",
+        "Third line",
     ] {
         assert!(flat(&text).contains(shown), "missing {shown}:\n{text}");
     }
-    assert!(
-        !text.contains("Third line"),
-        "long note yields to status:\n{text}"
-    );
+    // Long details scroll inside the page instead of hiding the note; the switch stays put.
+    for _ in 0..4 {
+        page.event(
+            Event::Key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
+            &mut m,
+        );
+    }
+    let (text, _) = screen(&mut page, &m, &settings, (60, 30));
+    for shown in ["Enabled. skill-a r2", "Disable"] {
+        assert!(flat(&text).contains(shown), "missing {shown}:\n{text}");
+    }
     for size in [(1, 1), (10, 3), (20, 5), (40, 12)] {
         screen(&mut page, &m, &settings, size);
     }
@@ -336,7 +347,7 @@ fn narrow_management_page_prioritizes_switch_and_resource_summary() {
     click(&mut page, &mut m, &settings, "Read manifest");
     click(&mut page, &mut m, &settings, "Add disabled");
     let (text, _) = screen(&mut page, &m, &settings, (100, 48));
-    assert!(text.contains("> Synthetic external"), "{text}");
+    assert!(text.contains("› Synthetic extern"), "{text}");
 }
 
 #[test]
@@ -363,10 +374,12 @@ fn plugins_palette_lists_builtin_and_enter_opens_its_management_row() {
     let mut page = saddle::plugins::ui::Page::default();
     page.select_plugin("test.external", &m);
     let (text, _) = screen(&mut page, &m, &settings, (100, 48));
-    assert!(text.contains("> Synthetic external"), "{text}");
+    assert!(text.contains("› Synthetic extern"), "{text}");
+    assert!(text.contains(" Synthetic external ─"), "{text}");
     page.select_plugin("test.res", &m);
     let (text, _) = screen(&mut page, &m, &settings, (100, 48));
-    assert!(text.contains("> Synthetic resources"), "{text}");
+    assert!(text.contains("› Synthetic resour"), "{text}");
+    assert!(text.contains(" Synthetic resources ─"), "{text}");
 }
 
 #[test]

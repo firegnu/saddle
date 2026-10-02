@@ -1448,4 +1448,4 @@ Dispatch仅setup_note/setup_files.label展示元数据恢复英文并分段，�
 
 用户批准Colors顶部Theme选择、Dune/Tide/Terminal，选择新主题在草稿载入整套配色再逐项覆盖，Save生效/Cancel撤回，旧配置升级不变。颜色Default恢复跟随当前主题，不再将代码默认显式写回。现有英文、草稿预览/文件冲突、宿主插件依赖方向不变；新增顶层theme及可区分有无的覆盖，最终渲染Theme沿用。完整规范及插件五语义色范围见docs/UI主题设计.md，不扩大到Corral或插件业务。
 
-实施取舍（theme-presets）：Config保留有效colors供渲染与插件五色，另存theme及仅含显式键的overrides；Settings对每个颜色记“跟随/覆盖”状态，不按值相等推断。Tide的bg、overlay、text仍为default：Viewer终端格子用终端默认背景，宿主刷底色会与之割裂；冷色感来自边框、正文层次、焦点、选中、状态色和整套Agents调色板。Tide共享区RGB在非truecolor终端照原样发送，与现有for_terminal只降级Agents专用色的规则一致。删除颜色键时，其上方注释行移到下一键之上（无下一键则接在前一键之后）；表内键全部删除时这些注释不保留。
+实施取舍（theme-presets）：Config保留有效colors供渲染与插件五色，另存theme及仅含显式键的overrides；Settings对每个颜色记“跟随/覆盖”状态，不按值相等推断。Tide的bg、overlay、text仍为default：Viewer终端格子用终端默认背景，宿主刷底色会与之割裂；冷色感来自边框、正文层次、焦点、选中、状态色和整套Agents调色板。Tide共享区RGB在非truecolor终端照原样发送，与现有for_terminal只降级Agents专用色的规则一致。删除颜色键时，其上方独立注释行移到下一键之上，无下一键则接在前一键之后，表内已无键时留在表头下（[colors]可为空表）；被删键本行的行尾注释随键删除。

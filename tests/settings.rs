@@ -593,3 +593,29 @@ fn the_colors_page_shows_the_theme_first_and_marks_custom_colors() {
     let bg = rows.iter().find(|r| r.contains(" bg ")).unwrap();
     assert!(!bg.contains("custom"), "{bg}");
 }
+
+#[test]
+fn removing_the_last_color_override_keeps_the_comment_lines_above_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "left_width = 52\n\n[colors]\n# My accent tweaks.\nfocus = \"red\"  # mine\n",
+    )
+    .unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    select_focus(&mut settings);
+    ctrl(&mut settings, 'd');
+    let Outcome::Saved(config, _) = ctrl(&mut settings, 's') else {
+        panic!("not saved: {}", settings.message());
+    };
+    assert!(config.overrides.is_empty());
+    let text = read(&path);
+    // The table may end up empty; its standalone note stays, the key's own note goes with it.
+    assert!(text.contains("[colors]\n# My accent tweaks.\n"), "{text}");
+    assert!(
+        !text.contains("focus") && !text.contains("# mine"),
+        "{text}"
+    );
+    assert!(saddle::config::Config::parse(&text).is_ok(), "{text}");
+}

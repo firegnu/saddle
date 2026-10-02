@@ -68,10 +68,30 @@
 ### 取舍与未完成
 - Tide保留终端默认背景（见DESIGN）；若要宿主整体刷冷色底，需要另定Viewer默认背景如何处理。
 - Tide共享区RGB在非truecolor终端不降级（沿用现有规则）。
-- 删除颜色键时，键行自身的行尾注释随键删除；表内键全部删光时，原上方注释也不保留。
+- 删除颜色键时，键行自身的行尾注释随键删除；表内键全部删光时，原上方注释也不保留。（第一次返工已修正：表空时注释留在表头下，见下方返工记录。）
 - 保存了theme键的配置，旧版Saddle因deny_unknown_fields无法读取（设计已列为降级限制）。
 - Tasks状态色、Diff语法高亮、Viewer终端颜色仍不跟随主题（已知边界）。
 
 ### 需主控决定
 - plugin_resources 3项、workflow 9项失败是否需在main上对照确认（本任务预算内未做）。
 - Tide是否接受bg/overlay/text跟随终端的取舍。
+
+## 第一次返工完成记录（saddle/dev-theme-1，2026-10-02，基线5c06809）
+
+### M1：删除[colors]最后一个覆盖键不丢独立注释
+- 改动：src/settings.rs remove()在没有下一键、也没有前一键可附着时，返回已提取的独立注释行；apply()把它们接到该表表头之后（Table decor后缀），[colors]成为空表时注释仍在。被删键本行的行尾注释仍随键删除。未扩成通用TOML编辑。
+- 目标测试：tests/settings.rs新增removing_the_last_color_override_keeps_the_comment_lines_above_it（`[colors]`下只有`# My accent tweaks.`和`focus = "red"  # mine`，Default后保存）。
+- RED：`cargo test --test settings removing_the_last_color_override` → FAILED，tests/settings.rs:615断言`text.contains("[colors]\n# My accent tweaks.\n")`失败，保存结果只剩`[colors]`。
+- GREEN及settings回归（同一次）：`cargo test --test settings` → 20 passed; 0 failed。
+
+### 12个原失败用例的测试适配（只改tests/plugin_resources.rs、tests/workflow.rs）
+- plugin_resources（3项）：分栏列表截断长名，按`› Synthetic resour`/`Synthetic extern`前缀找行，选中符由`> `改为`›`，详情标题` Synthetic resources ─`另查全名；行内On/Runtime只在列表栏（`│`左侧）检查；原内联`ID: … · Built-in · 状态`拆成`Built-in · 状态`与`ID: test.res`两条。窄屏项：按DESIGN“Settings → Plugins 布局”不再隐藏说明、不再指向CLI，改为断言首屏有Disable、Built-in · Enabled、Codex、Conflict及Third line，PgDn滚动详情后看到`Enabled. skill-a r2`且Disable仍在；原`saddle plugin status test.res`断言随CLI退路一起移除（生产已无此文案）。其余Enable/Sync/Remove/Disable动作及收据断言不变。
+- workflow（9项）：`─ Add task`、`─ All pending ─`改为新边框标题`┏ Add task ━`、`┏ All pending ━`；`Changes here apply immediately.`改为现文案`Changes apply immediately.`，包括用其消失作异步屏障的until等待。仅这9个用例内的出现处，未改超时、未删检查。
+- 运行：`cargo test --test plugin_resources -- --exact <3项>` → 第一次2过1败（management_page：按`Synthetic resour`先命中了详情标题所在表头行，非生产问题）；修正查找后只重跑该项 → 1 passed；收紧列表栏检查后再跑该项 → 1 passed。`cargo test --test workflow -- --exact <9项>` → 9 passed。
+- 未改src/plugins、Drover或其他生产代码；未发现生产问题。
+
+### 其他
+- DESIGN与原完成记录的“表空时注释不保留”限制已改为修正后行为；Tide配色未改。
+- `git diff --check`通过。修改后对tests/settings.rs、tests/plugin_resources.rs跑了rustfmt（只改空白），格式化后未再重跑测试。
+- 证据路径：主控全量 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-controller-hek2ddkh/test.log（542过12败5忽略，exit 101）与results.json（{"test": 101, "clippy": 0}）。原实施轮的RED/GREEN及两次全套输出当时只在会话终端，没有保存成日志文件，无法补路径；不重跑旧候选补造。本轮也未存日志文件，结果即上述命令输出。
+- 未重跑全套、Clippy或构建，不声称全套已绿。原实施轮“全套失败12项”和“多跑一遍全套超预算”的事实保留在上方原记录中。

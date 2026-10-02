@@ -1434,7 +1434,21 @@ fn apply(
         ),
     };
     match (value, table.get_mut(key)) {
-        (None, _) => remove(table, key),
+        (None, _) => {
+            let kept = remove(table, key);
+            // The table's last key is gone: its comment lines stay under the table header.
+            if let Some(header) = field
+                .key
+                .split_once('.')
+                .and_then(|(table, _)| document.get_mut(table))
+                .and_then(Item::as_table_mut)
+                .filter(|_| !kept.is_empty())
+            {
+                let decor = header.decor_mut();
+                let old = decor.suffix().and_then(|s| s.as_str()).unwrap_or("");
+                decor.set_suffix(format!("{old}\n{}", kept.trim_end_matches('\n')));
+            }
+        }
         (Some(mut value), Some(item)) => {
             if let Some(old) = item.as_value() {
                 *value.decor_mut() = old.decor().clone();
@@ -1449,12 +1463,12 @@ fn apply(
 }
 
 /// Removes a key. Comment lines written above it stay in place: above the next key, or after
-/// the one before when it was the last.
-fn remove(table: &mut dyn toml_edit::TableLike, key: &str) {
+/// the one before when it was the last. Returns them when the table has no key left to keep them.
+fn remove(table: &mut dyn toml_edit::TableLike, key: &str) -> String {
     use toml_edit::Item;
     let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
     let Some(at) = keys.iter().position(|k| k == key) else {
-        return;
+        return String::new();
     };
     let above = table
         .key(key)
@@ -1477,7 +1491,7 @@ fn remove(table: &mut dyn toml_edit::TableLike, key: &str) {
         .collect();
     table.remove(key);
     if kept.is_empty() {
-        return;
+        return kept;
     }
     if let Some(mut next) = keys.get(at + 1).and_then(|k| table.key_mut(k)) {
         let decor = next.leaf_decor_mut();
@@ -1491,7 +1505,10 @@ fn remove(table: &mut dyn toml_edit::TableLike, key: &str) {
         let decor = value.decor_mut();
         let old = decor.suffix().and_then(|s| s.as_str()).unwrap_or("");
         decor.set_suffix(format!("{old}\n{}", kept.trim_end_matches('\n')));
+    } else {
+        return kept;
     }
+    String::new()
 }
 
 /// Replaces the file (through a symlink, keeping its permissions), creating missing folders. A
