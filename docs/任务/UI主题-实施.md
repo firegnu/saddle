@@ -99,3 +99,7 @@
 ## 主控审查（2026-10-02）
 
 通过，候选63e8b3c；M1注释保留与12项旧UI测试适配已关闭。主控返工定向32项通过；原一次全量542过12败5忽略、Clippy通过，原12失败现已分别补齐，不改写原运行。原始开发RED日志未保存的限制保留。Tide终端默认背景及插件五语义色边界接受；无需交叉审查。详细证据与裁定见UI主题-主控核对.md。已合并d1d5855并推送，未安装、未改真实配置。
+
+## 日常安装（主控，用户继续授权后）
+
+2026-10-02，以源0711dc4执行必要cargo build --release --bin saddle，exit0。旧程序已备份到/Users/firegnu/.local/share/saddle/backups/theme-20261002-213950；日常入口核验SHA256 1b2ec6aa845d83a7f31196ed0403ed3c8b6941448f721dd26447caf2ff315c78，--help exit0。配置前后哈希一致；不停止运行中Saddle/agent，不改插件包或任务数据。用户重开Saddle后生效。记录/tmp/saddle-theme-install.json，日志/tmp/saddle-theme-build.log；未重复全套/Clippy，真实界面体验待用户。

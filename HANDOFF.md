@@ -3,13 +3,14 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
-## 最新：Theme已合并收尾，尚未安装
+## 最新：Theme已合并收尾并安装，待用户重开
 
 - Dune/Tide/Terminal及Colors顶部Theme、整套草稿切换、单项覆盖/Default、Save/Cancel、旧配置观感兼容已实施审查通过。功能63e8b3c，合并d1d5855；文档0a991c3，清理空提交fc6f97e。具体取舍见docs/UI主题设计.md和docs/任务/UI主题-主控核对.md。
 - 主控原一次标准542过12败5忽略exit101、Clippy通过；返工M1最后颜色键独立注释保留修复，原12项旧UI测试适配后定向补齐。本轮settings20+plugin_resources3+workflow9=32通过，日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-r1-controller-eo87ijwc。未重复全套/Clippy，不称原全套绿。开发原始RED日志缺失和此前超预算重复标准的事实保留，不补造。
 - theme-presets工作区及分支已删除；确认idle/attached0且目录删除成功后，saddle/dev-theme-1 instancee641723be7ef已关闭。设计agent/worktree此前已清，不恢复。现有用户agent corral/main、saddle-e2e-20261002-113520/main、saddle/main保留；review-telemetry-design、t38、t55工作区保留。
 - trace e72bb30e-3fc2-4f69-b910-36c20ee77636；采集目录/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-telemetry-qtk_rdga。返工review ad231119-2857-415d-9281-32581f45e8e2已stored；closure.json/receipt记录实际推送及收尾结果。迟到实施提醒查not_found可忽略，不重派。
-- **尚未安装Theme版本**，日常宿主仍是下节Settings插件管理页版本；本轮无release构建/真实配置写入/队列或Corral修改。下一步用户需要体验时再进行日常构建安装，不启动新功能或Corral迁移。
+- 用户随后回复“继续啊”，已完成日常release构建安装（源0711dc4）。构建exit0、日常入口哈希与--help核验通过，SHA256 1b2ec6aa845d83a7f31196ed0403ed3c8b6941448f721dd26447caf2ff315c78；备份/Users/firegnu/.local/share/saddle/backups/theme-20261002-213950，安装记录/tmp/saddle-theme-install.json、构建日志/tmp/saddle-theme-build.log。真实配置前后哈希一致，未改插件包/队列/Corral，未停止当前Saddle或任何agent。
+- **用户重新打开Saddle后生效**：Settings → Colors → Theme选择Dune/Tide/Terminal；选不同主题会替换整套草稿覆盖，再可单项自定义，Save应用、Cancel撤回。已有配色保持，真实终端体验待用户。安装遥测见原采集目录installation-note.json/receipt。不自动开始其他功能或Corral迁移。
 
 
 ## 最新：Settings → Plugins 整理已安装
