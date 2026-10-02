@@ -44,91 +44,218 @@ pub const AGENTS_BLUE: Color = Color::Rgb(0x7f, 0xa9, 0xea);
 pub const AGENTS_YELLOW: Color = Color::Rgb(0xd9, 0xb2, 0x5f);
 pub const AGENTS_PURPLE: Color = Color::Rgb(0xa5, 0x8b, 0xdc);
 
-/// Startup palette. Queue deliberately shares the Agents status accents.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
+/// A built-in palette that `[colors]` overrides; `dune` is the original look.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Preset {
+    #[default]
+    Dune,
+    Tide,
+    Terminal,
+}
+
+impl Preset {
+    pub const ALL: [Preset; 3] = [Preset::Dune, Preset::Tide, Preset::Terminal];
+    /// How the theme is written in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::Dune => "dune",
+            Preset::Tide => "tide",
+            Preset::Terminal => "terminal",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Preset::Dune => "Dune",
+            Preset::Tide => "Tide",
+            Preset::Terminal => "Terminal",
+        }
+    }
+    pub fn parse(value: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|p| p.name() == value)
+            .ok_or_else(|| format!("unknown theme {value:?}: expected dune, tide or terminal"))
+    }
+    /// Every color of the theme.
+    pub fn theme(self) -> Theme {
+        match self {
+            Preset::Dune => Theme::default(),
+            Preset::Tide => tide(),
+            Preset::Terminal => terminal(),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Preset {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = <String as serde::Deserialize>::deserialize(deserializer)?;
+        Preset::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
+
+/// The colors written in `[colors]`, by key; every other color follows the theme.
+pub type Overrides = std::collections::BTreeMap<&'static str, Color>;
+
+pub fn deserialize_overrides<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Overrides, D::Error> {
+    let written = <std::collections::BTreeMap<String, String> as serde::Deserialize>::deserialize(
+        deserializer,
+    )?;
+    let mut names = Theme::default();
+    let names: Vec<_> = names.named_mut().into_iter().map(|(n, _)| n).collect();
+    written
+        .into_iter()
+        .map(|(key, value)| {
+            let name = names
+                .iter()
+                .find(|n| **n == key)
+                .ok_or_else(|| serde::de::Error::custom(format!("unknown color {key:?}")))?;
+            let color =
+                parse_color(&value).map_err(|e| serde::de::Error::custom(format!("{key}: {e}")))?;
+            Ok((*name, color))
+        })
+        .collect()
+}
+
+/// Cool blue-gray neutrals over the terminal's own background, which the Viewer shares; the
+/// status, danger and agent-type hues keep their Dune roles.
+fn tide() -> Theme {
+    let rgb = |v: u32| Color::Rgb((v >> 16) as u8, (v >> 8) as u8, v as u8);
+    Theme {
+        selected: rgb(0x243244),
+        agent_selected: rgb(0x212b38),
+        agent_working: rgb(0x7fa8f0),
+        agent_idle: rgb(0x93c79a),
+        agent_blocked: rgb(0xe0bd70),
+        agent_stalled: rgb(0xe39e72),
+        agent_error: rgb(0xec7f7a),
+        agent_starting: rgb(0xaa9fe2),
+        border: rgb(0x435166),
+        bright: rgb(0xe8eef6),
+        muted: rgb(0x8d9bb0),
+        dim: rgb(0x56657a),
+        focus: rgb(0x86c1e6),
+        connected: rgb(0x6ccfb4),
+        working: rgb(0x7a9cf0),
+        danger: rgb(0xe06c75),
+        unread: rgb(0xc38ae8),
+        input_text: rgb(0x0e141b),
+        reply_code: rgb(0xe2c98a),
+        reply_heading: rgb(0x7cc4e8),
+        agents_bg: rgb(0x151b23),
+        agents_border: rgb(0x4a586b),
+        agents_rule: rgb(0x2b3542),
+        agents_faint: rgb(0x323d4b),
+        agents_text: rgb(0xdce4ee),
+        agents_branch: rgb(0xbfcad8),
+        agents_dim: rgb(0x8595a9),
+        agents_dimmer: rgb(0x6b7a8f),
+        agents_accent: rgb(0x86c1e6),
+        agents_green: rgb(0x9cc98e),
+        agents_red: rgb(0xe47a74),
+        agents_blue: rgb(0x7ea2ee),
+        agents_yellow: rgb(0xdbbd6e),
+        agents_purple: rgb(0xa99ae6),
+        claude: rgb(0xe48c66),
+        codex: rgb(0x6fd3c2),
+        pi: rgb(0xeef2f7),
+        omp: rgb(0xb07cf2),
+        ..Theme::default()
+    }
+}
+
+/// Only the terminal's default and ANSI colors, so its own palette decides the look.
+fn terminal() -> Theme {
+    use Color::*;
+    Theme {
+        bg: Reset,
+        overlay: Reset,
+        selected: DarkGray,
+        agent_selected: DarkGray,
+        agent_working: Blue,
+        agent_idle: Green,
+        agent_blocked: Yellow,
+        agent_stalled: LightRed,
+        agent_error: Red,
+        agent_starting: LightMagenta,
+        border: DarkGray,
+        text: Reset,
+        bright: White,
+        muted: Gray,
+        dim: DarkGray,
+        focus: Yellow,
+        connected: Cyan,
+        working: Blue,
+        danger: Red,
+        unread: Magenta,
+        input_text: Black,
+        reply_code: Yellow,
+        reply_heading: Cyan,
+        agents_bg: Reset,
+        agents_border: DarkGray,
+        agents_rule: DarkGray,
+        agents_faint: DarkGray,
+        agents_text: Reset,
+        agents_branch: Reset,
+        agents_dim: Gray,
+        agents_dimmer: DarkGray,
+        agents_accent: Yellow,
+        agents_green: Green,
+        agents_red: Red,
+        agents_blue: Blue,
+        agents_yellow: Yellow,
+        agents_purple: Magenta,
+        claude: LightRed,
+        codex: LightCyan,
+        pi: White,
+        omp: Magenta,
+    }
+}
+
+/// The colors in effect. Queue deliberately shares the Agents status accents.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Theme {
-    #[serde(deserialize_with = "deserialize_color")]
     pub bg: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub overlay: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub selected: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_selected: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_working: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_idle: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_blocked: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_stalled: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_error: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agent_starting: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub border: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub text: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub bright: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub muted: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub dim: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub focus: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub connected: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub working: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub danger: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub unread: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub input_text: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub reply_code: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub reply_heading: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_bg: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_border: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_rule: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_faint: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_text: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_branch: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_dim: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_dimmer: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_accent: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_green: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_red: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_blue: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_yellow: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub agents_purple: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub claude: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub codex: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub pi: Color,
-    #[serde(deserialize_with = "deserialize_color")]
     pub omp: Color,
 }
 
@@ -210,11 +337,6 @@ pub fn nearest_256(color: Color) -> Color {
     } else {
         Color::Indexed(16 + 36 * ri as u8 + 6 * gi as u8 + bi as u8)
     }
-}
-
-fn deserialize_color<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Color, D::Error> {
-    let value = <String as serde::Deserialize>::deserialize(deserializer)?;
-    parse_color(&value).map_err(serde::de::Error::custom)
 }
 
 const NAMES: [(&str, Color); 16] = [
@@ -313,6 +435,15 @@ impl Theme {
             ("pi", &mut self.pi),
             ("omp", &mut self.omp),
         ]
+    }
+    /// These colors with `overrides` in place of the theme's.
+    pub fn with(mut self, overrides: &Overrides) -> Self {
+        for (name, color) in self.named_mut() {
+            if let Some(c) = overrides.get(name) {
+                *color = *c;
+            }
+        }
+        self
     }
     /// Without 24-bit color, the Agents-only colors take their nearest 256-color entries;
     /// colors shared with other areas, and ANSI names, are left as configured.

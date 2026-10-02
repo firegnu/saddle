@@ -35,7 +35,7 @@ saddle is written in Rust with [Ratatui](https://ratatui.rs/). It hosts [corral]
 
   **Dispatch selected:** select a Pending task and click **Dispatch selected** to send that task now; there is no need to move it to the top first. The button is unavailable while the queue is paused, a task is running or awaiting release, the queue is busy or could not be read, or the selected task is not Pending (Current, Awaiting and History tasks have no such button). It has no shortcut and asks for no confirmation.
 - **Attention:** waiting/error agents, new replies and items from enabled plugins. Click a row to open its source; nothing is answered or advanced. Drover publishes awaiting tasks and failed history through this same generic interface.
-- **Settings:** the `Settings` entry at the right of the Attention line (or **,** in Agents) edits the config file saddle started with, shown at the top. **General** holds the sidebar width, refresh interval; **Colors** holds every `[colors]` value, grouped, with swatches and a small preview; **Advanced** holds the corral command. Edits stay a draft until **Save / Ctrl-S**; **Cancel / Esc** leaves the file unchanged, and **Default / Ctrl-D** resets the selected value (Save still writes it). Save writes only the edited keys, keeping comments and the rest of the file, and creates the file and its folders if needed. Invalid values are reported and keep the draft. If the file changed on disk after Settings read it, nothing is saved: **Keep my edits** rereads the file under your draft, **Discard my edits** takes the file as it is. Saved colors and sidebar width apply at once (agent output keeps its own colors); settings marked `Restart required` apply on the next start.
+- **Settings:** the `Settings` entry at the right of the Attention line (or **,** in Agents) edits the config file saddle started with, shown at the top. **General** holds the sidebar width, refresh interval; **Colors** starts with the **Theme** (Dune, Tide or Terminal; ←/→, Space/Enter or click), then every color, grouped, with swatches and a small preview. Choosing another theme loads all of its colors into the draft and clears the color overrides; a color you then edit is marked `custom`, and **Default** on it makes it follow the theme again; **Advanced** holds the corral command. Edits stay a draft until **Save / Ctrl-S**; **Cancel / Esc** leaves the file unchanged, and **Default / Ctrl-D** resets the selected value (Save still writes it). Save writes only the edited keys, keeping comments and the rest of the file, and creates the file and its folders if needed. Invalid values are reported and keep the draft. If the file changed on disk after Settings read it, nothing is saved: **Keep my edits** rereads the file under your draft, **Discard my edits** takes the file as it is. Saved colors and sidebar width apply at once (agent output keeps its own colors); settings marked `Restart required` apply on the next start.
 - **Task notifications (Drover plugin):** press **N** in Drover to choose System/In Saddle, then **Ctrl-S** to save. The plugin owns both task state and notification channels; there is no independent watch. First observation and preference changes establish a baseline; existing awaiting tasks are not announced again. In-Saddle prompts keep terminal focus and can open their plugin target.
 - **New agents:** choose a project and Codex or Claude, then create an agent with an editable suggested name. Advanced settings hold the full command, first message, opening location, and exact call preview.
 - **Viewer tabs and splits:** each tab holds a group of terminals, with left/right/up/down splits. Each pane runs an owned interactive shell or a live `corral attach`, with terminal colors, Unicode, cursor rendering, mouse events, and paste support.
@@ -184,13 +184,15 @@ refresh_ms = 1000
 
 
 
-| `colors` | Optional flat table for interface and agent-type colors |
+| `theme` | Built-in palette: `dune` (default, the original look), `tide` (cool blue-gray) or `terminal` (only the terminal's default and ANSI colors) |
+| `colors` | Optional flat table of per-color overrides on top of `theme` |
 
 Command paths support `~/`. Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom corral/cwd values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). Legacy `--dispatch-log <value>` is accepted but deprecated and ignored; new manifests omit it. The plugin owns schema 2 task data and explicit actions; the host does not read Drover projects or task state.
 
-[config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above. Its defaults preserve the current appearance. For a small override, add:
+[config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above; its colors are commented out so they follow the theme. For a theme with a small override, add:
 
 ```toml
+theme = "tide"
 [colors]
 focus = "light_cyan"
 bg = "default"

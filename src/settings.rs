@@ -1,5 +1,6 @@
 //! Settings: view, edit and save the existing config file from inside saddle. Edits stay a
 //! draft until Save; Save writes only the edited keys, keeping the rest of the file as it is.
+//! Colors follow the chosen theme unless overridden; choosing another theme drops the overrides.
 //! Its Diagnostics page only reads. The telemetry recording switch on General is read from and
 //! saved to the telemetry store, never to the file.
 use crate::{
@@ -7,7 +8,7 @@ use crate::{
     config::Config,
     launch::edit::Input,
     telemetry::{SettingInput, Store},
-    theme::{Theme, color_name, parse_color},
+    theme::{Preset, Theme, color_name, parse_color},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -51,6 +52,7 @@ enum Kind {
     Bool,
     Command,
     Color,
+    Theme,
 }
 struct Field {
     /// The config key, dotted below a table (`colors.bg`).
@@ -127,6 +129,7 @@ fn fields() -> Vec<Field> {
         })
         .collect();
     colors.sort_by_key(|f| GROUPS.iter().position(|g| *g == f.group));
+    list.push(field("theme", "Theme", Page::Colors, Kind::Theme, false));
     list.extend(colors);
     list.extend([field(
         "corral",
@@ -145,10 +148,15 @@ fn value(config: &Config, field: &Field) -> String {
         "refresh_ms" => config.refresh_ms.to_string(),
         "mascot_enabled" => config.mascot_enabled.to_string(),
         "corral" => config.corral.clone(),
+        "theme" => config.theme.name().into(),
         // Off until the store says otherwise, as on a first install.
         RECORDING => "false".into(),
         key => color(&config.colors, &key["colors.".len()..]).map_or_else(String::new, color_name),
     }
+}
+/// Whether a color follows the theme rather than its own `[colors]` key.
+fn follows(config: &Config, field: &Field) -> bool {
+    field.kind == Kind::Color && !config.overrides.contains_key(&field.key["colors.".len()..])
 }
 fn color(theme: &Theme, name: &str) -> Option<Color> {
     let mut theme = theme.clone();
@@ -185,6 +193,10 @@ pub struct Settings {
     /// The values in `base`, with defaults for omitted settings.
     saved: Vec<String>,
     inputs: Vec<Input>,
+    /// Colors in the draft that follow the theme; their inputs show the theme's value.
+    follow: Vec<bool>,
+    /// Colors in `base` that follow the theme.
+    saved_follow: Vec<bool>,
     page: Page,
     selected: usize,
     top: usize,
@@ -218,11 +230,14 @@ impl Settings {
             .collect();
         let inputs = defaults.iter().map(|v| Input::new(v.clone())).collect();
         let saved = defaults.clone();
+        let follow: Vec<_> = fields.iter().map(|f| f.kind == Kind::Color).collect();
         let mut settings = Self {
             path,
             truecolor,
             inputs,
             saved,
+            saved_follow: follow.clone(),
+            follow,
             defaults,
             fields,
             base: None,
@@ -313,8 +328,81 @@ impl Settings {
     }
     fn edited(&self) -> Vec<usize> {
         (0..self.fields.len())
-            .filter(|&i| self.inputs[i].text != self.saved[i])
+            .filter(|&i| self.changed(i))
             .collect()
+    }
+    /// Whether Save writes this setting: its value, or whether the color is overridden. An
+    /// override equal to the theme's value is still an override.
+    fn changed(&self, i: usize) -> bool {
+        self.follow[i] != self.saved_follow[i]
+            || (!self.follow[i] && self.inputs[i].text != self.saved[i])
+    }
+    fn theme_index(&self) -> usize {
+        self.fields
+            .iter()
+            .position(|f| f.kind == Kind::Theme)
+            .unwrap()
+    }
+    /// The drafted theme.
+    fn preset(&self) -> Preset {
+        Preset::parse(&self.inputs[self.theme_index()].text).unwrap_or_default()
+    }
+    /// Colors that follow the theme show the drafted theme's value.
+    fn sync(&mut self) {
+        let theme = self.preset().theme();
+        for i in 0..self.fields.len() {
+            if self.follow[i] {
+                let shown = color(&theme, &self.fields[i].key["colors.".len()..])
+                    .map_or_else(String::new, color_name);
+                if self.inputs[i].text != shown {
+                    self.inputs[i] = Input::new(shown);
+                }
+            }
+        }
+    }
+    /// Another theme loads all of its colors into the draft and drops the color overrides;
+    /// the current one changes nothing.
+    fn choose(&mut self, preset: Preset) {
+        if preset == self.preset() {
+            return;
+        }
+        let i = self.theme_index();
+        self.inputs[i] = Input::new(preset.name().into());
+        for (follow, field) in self.follow.iter_mut().zip(&self.fields) {
+            *follow = field.kind == Kind::Color;
+        }
+        self.sync();
+        self.message = format!(
+            "Colors replaced by the {} theme; earlier color overrides are cleared from this draft.",
+            preset.label()
+        );
+        self.error = false;
+    }
+    fn cycle(&mut self, delta: isize) {
+        let all = Preset::ALL;
+        let at = all.iter().position(|&p| p == self.preset()).unwrap_or(0);
+        self.choose(all[(at as isize + delta).rem_euclid(all.len() as isize) as usize]);
+    }
+    /// Edits the selected input; a color typed into stops following the theme.
+    fn edit(&mut self, change: impl FnOnce(&mut Input)) {
+        let i = self.selected;
+        let before = self.inputs[i].text.clone();
+        change(&mut self.inputs[i]);
+        if self.inputs[i].text != before {
+            self.follow[i] = false;
+        }
+    }
+    /// Default: a color follows the theme again, the theme goes back to Dune.
+    fn reset(&mut self) {
+        let i = self.selected;
+        match self.fields[i].kind {
+            Kind::Theme => self.choose(Preset::Dune),
+            Kind::Color => {
+                self.follow[i] = true;
+                self.sync();
+            }
+            _ => self.inputs[i] = Input::new(self.defaults[i].clone()),
+        }
     }
     fn read(&self) -> anyhow::Result<Option<String>> {
         match fs::read_to_string(&self.path) {
@@ -344,12 +432,15 @@ impl Settings {
         };
         let edited = if keep { self.edited() } else { Vec::new() };
         self.saved = self.fields.iter().map(|f| value(&config, f)).collect();
+        self.saved_follow = self.fields.iter().map(|f| follows(&config, f)).collect();
         self.load_recording();
         for (i, input) in self.inputs.iter_mut().enumerate() {
             if !edited.contains(&i) {
                 *input = Input::new(self.saved[i].clone());
+                self.follow[i] = self.saved_follow[i];
             }
         }
+        self.sync();
         self.base = text;
         self.broken = None;
         self.conflict = false;
@@ -432,11 +523,11 @@ impl Settings {
         if ctrl {
             match key.code {
                 KeyCode::Char('s') => return self.save(),
-                KeyCode::Char('d') => {
-                    self.inputs[self.selected] = Input::new(self.defaults[self.selected].clone())
-                }
-                KeyCode::Char('u') if self.fields[self.selected].kind != Kind::Bool => {
-                    self.inputs[self.selected].clear()
+                KeyCode::Char('d') => self.reset(),
+                KeyCode::Char('u')
+                    if !matches!(self.fields[self.selected].kind, Kind::Bool | Kind::Theme) =>
+                {
+                    self.edit(Input::clear)
                 }
                 _ => {}
             }
@@ -456,8 +547,14 @@ impl Settings {
             {
                 self.toggle()
             }
-            code if self.fields[self.selected].kind != Kind::Bool => {
-                self.inputs[self.selected].key(code, false)
+            KeyCode::Left if self.fields[self.selected].kind == Kind::Theme => self.cycle(-1),
+            KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Right
+                if self.fields[self.selected].kind == Kind::Theme =>
+            {
+                self.cycle(1)
+            }
+            code if !matches!(self.fields[self.selected].kind, Kind::Bool | Kind::Theme) => {
+                self.edit(|input| input.key(code, false))
             }
             _ => {}
         }
@@ -497,9 +594,9 @@ impl Settings {
         if self.page != Page::Diagnostics
             && !self.conflict
             && self.broken.is_none()
-            && self.fields[self.selected].kind != Kind::Bool
+            && !matches!(self.fields[self.selected].kind, Kind::Bool | Kind::Theme)
         {
-            self.inputs[self.selected].insert(text, false);
+            self.edit(|input| input.insert(text, false));
         }
     }
     pub fn click(&mut self, point: Position) {
@@ -510,6 +607,9 @@ impl Settings {
             self.selected = i;
             if self.fields[i].kind == Kind::Bool {
                 self.toggle();
+            } else if self.fields[i].kind == Kind::Theme {
+                // ‹ chooses the previous theme; elsewhere on the row, the next.
+                self.cycle(if point.x == input.x { -1 } else { 1 });
             } else if input.contains(point) {
                 self.inputs[i].click(point);
             }
@@ -582,7 +682,15 @@ impl Settings {
                 // Settings stays open on the switch's draft; the written values are saved now.
                 for &i in &config {
                     self.saved[i] = value(&parsed, &self.fields[i]);
+                    self.saved_follow[i] = follows(&parsed, &self.fields[i]);
                     self.inputs[i] = Input::new(self.saved[i].clone());
+                    self.follow[i] = self.saved_follow[i];
+                }
+                // Colors following a newly saved theme now match it too.
+                for (i, field) in self.fields.iter().enumerate() {
+                    if self.follow[i] && self.saved_follow[i] {
+                        self.saved[i] = value(&parsed, field);
+                    }
                 }
                 // Both parts' results lead; the restart note follows.
                 let restart_note = if restart.is_empty() {
@@ -664,9 +772,11 @@ impl Settings {
                     .parse::<u64>()
                     .err()
                     .map(|_| format!("{} must be a whole number of milliseconds", field.label)),
+                Kind::Color if self.follow[i] => None,
                 Kind::Color => parse_color(text)
                     .err()
                     .map(|e| format!("{}: {e}", field.label)),
+                Kind::Theme => Preset::parse(text).err(),
                 Kind::Bool | Kind::Command => None,
             };
             if let Some(problem) = problem {
@@ -690,7 +800,9 @@ impl Settings {
             Err(error) => return Err(self.fail(format!("Not saved: {error}"))),
         };
         for &i in edited {
-            if let Err(error) = apply(&mut document, &self.fields[i], &self.inputs[i].text) {
+            // A color following the theme has no key.
+            let text = (!self.follow[i]).then_some(self.inputs[i].text.as_str());
+            if let Err(error) = apply(&mut document, &self.fields[i], text) {
                 return Err(self.fail(format!("Not saved: {error:#}")));
             }
         }
@@ -701,16 +813,16 @@ impl Settings {
         }
     }
 
-    /// The colors as drafted, where valid, for the preview and swatches.
+    /// The colors as drafted, where valid, over the drafted theme, for the preview and swatches.
     fn theme(&self) -> Theme {
-        let mut theme = Theme::default();
+        let mut theme = self.preset().theme();
         for (name, color) in theme.named_mut() {
             let i = self
                 .fields
                 .iter()
                 .position(|f| f.key.strip_prefix("colors.") == Some(name))
                 .unwrap();
-            if let Ok(c) = parse_color(self.inputs[i].text.trim()).or(parse_color(&self.saved[i])) {
+            if let Ok(c) = parse_color(self.inputs[i].text.trim()) {
                 *color = c;
             }
         }
@@ -763,7 +875,12 @@ impl Settings {
                 Button::control("Reload Ctrl-R", KeyCode::Char('r'), true),
             ]
         } else {
-            let custom = self.inputs[self.selected].text != self.defaults[self.selected];
+            let i = self.selected;
+            let custom = match self.fields[i].kind {
+                Kind::Color => !self.follow[i],
+                Kind::Theme => self.preset() != Preset::Dune,
+                _ => self.inputs[i].text != self.defaults[i],
+            };
             vec![
                 Button::control("Default Ctrl-D", KeyCode::Char('d'), custom),
                 Button::new("Cancel Esc", KeyCode::Esc, true),
@@ -975,7 +1092,10 @@ impl Settings {
         let page = self.page_fields();
         let unit = page
             .iter()
-            .map(|&i| unit(self.fields[i].kind).width())
+            .map(|&i| match self.fields[i].kind {
+                Kind::Color => CUSTOM.width(),
+                kind => unit(kind).width(),
+            })
             .max()
             .unwrap_or(0);
         let swatch = if self.page == Page::Colors { 3 } else { 0 };
@@ -1102,7 +1222,7 @@ impl Settings {
         let selected = i == self.selected;
         let mut spans = vec![
             Span::styled(
-                if self.inputs[i].text != self.saved[i] {
+                if self.changed(i) || self.inputs[i].text != self.saved[i] {
                     "•"
                 } else {
                     " "
@@ -1131,9 +1251,34 @@ impl Settings {
             spans.push(Span::raw(" "));
         }
         let unit = unit(field.kind);
-        let note = if field.restart { note } else { "" };
-        let used = spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+        let note = if field.restart {
+            note
+        } else if field.kind == Kind::Color && !self.follow[i] {
+            CUSTOM
+        } else {
+            ""
+        };
         let bracket = Style::default().fg(if selected { t.focus } else { t.border });
+        if field.kind == Kind::Theme {
+            // ‹ › take the place of the brackets, lined up with the color inputs.
+            spans.push(Span::raw("   "));
+            let used = spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
+            let text = format!("‹ {} ›", self.preset().label());
+            let input = Rect::new(row.x + used, row.y, text.width() as u16, 1).intersection(row);
+            spans.push(Span::styled(
+                text,
+                if selected {
+                    Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(t.text)
+                },
+            ));
+            spans.push(Span::styled(unit, Style::default().fg(t.muted)));
+            frame.render_widget(Paragraph::new(Line::from(spans)), row);
+            self.rows.push((row, input, i));
+            return;
+        }
+        let used = spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
         spans.push(Span::styled("[", bracket));
         frame.render_widget(Paragraph::new(Line::from(spans)), row);
         let input = Rect::new(row.x + used + 1, row.y, width, 1).intersection(row);
@@ -1177,9 +1322,12 @@ fn unit(kind: Kind) -> &'static str {
     match kind {
         Kind::Millis => " ms",
         Kind::Bool => " Space/Enter toggle",
+        Kind::Theme => " ←/→ choose",
         _ => "",
     }
 }
+/// Marks a color set by its own `[colors]` key rather than the theme.
+const CUSTOM: &str = " custom";
 
 /// Rows of whole words; only a word wider than the row is split.
 fn word_wrap(text: &str, width: usize) -> Vec<String> {
@@ -1252,21 +1400,29 @@ fn draw_preview(t: &Theme, p: &Theme, frame: &mut Frame, area: Rect) {
     }
 }
 
-/// Sets one setting in the document, keeping the key's place and the value's comment.
-fn apply(document: &mut toml_edit::DocumentMut, field: &Field, text: &str) -> anyhow::Result<()> {
+/// Sets one setting in the document, keeping the key's place and the value's comment; None
+/// removes the key.
+fn apply(
+    document: &mut toml_edit::DocumentMut,
+    field: &Field,
+    text: Option<&str>,
+) -> anyhow::Result<()> {
     use toml_edit::{Item, Value};
-    let value = match field.kind {
-        Kind::Columns | Kind::Millis => Some(Value::from(text.trim().parse::<i64>()?)),
-        Kind::Bool => Some(Value::from(text.parse::<bool>()?)),
-        Kind::Color => Some(Value::from(text.trim())),
-        Kind::Command => Some(Value::from(text)),
+    let value = match text {
+        None => None,
+        Some(text) => Some(match field.kind {
+            Kind::Columns | Kind::Millis => Value::from(text.trim().parse::<i64>()?),
+            Kind::Bool => Value::from(text.parse::<bool>()?),
+            Kind::Color | Kind::Theme => Value::from(text.trim()),
+            Kind::Command => Value::from(text),
+        }),
     };
     let (table, key) = match field.key.split_once('.') {
         Some((table, key)) => {
-            let item = document
-                .as_table_mut()
-                .entry(table)
-                .or_insert(toml_edit::table());
+            let item = match document.as_table_mut().entry(table) {
+                toml_edit::Entry::Vacant(_) if value.is_none() => return Ok(()),
+                entry => entry.or_insert(toml_edit::table()),
+            };
             let table = item
                 .as_table_like_mut()
                 .ok_or_else(|| anyhow::anyhow!("[{table}] is not a table"))?;
@@ -1279,7 +1435,19 @@ fn apply(document: &mut toml_edit::DocumentMut, field: &Field, text: &str) -> an
     };
     match (value, table.get_mut(key)) {
         (None, _) => {
-            table.remove(key);
+            let kept = remove(table, key);
+            // The table's last key is gone: its comment lines stay under the table header.
+            if let Some(header) = field
+                .key
+                .split_once('.')
+                .and_then(|(table, _)| document.get_mut(table))
+                .and_then(Item::as_table_mut)
+                .filter(|_| !kept.is_empty())
+            {
+                let decor = header.decor_mut();
+                let old = decor.suffix().and_then(|s| s.as_str()).unwrap_or("");
+                decor.set_suffix(format!("{old}\n{}", kept.trim_end_matches('\n')));
+            }
         }
         (Some(mut value), Some(item)) => {
             if let Some(old) = item.as_value() {
@@ -1292,6 +1460,55 @@ fn apply(document: &mut toml_edit::DocumentMut, field: &Field, text: &str) -> an
         }
     }
     Ok(())
+}
+
+/// Removes a key. Comment lines written above it stay in place: above the next key, or after
+/// the one before when it was the last. Returns them when the table has no key left to keep them.
+fn remove(table: &mut dyn toml_edit::TableLike, key: &str) -> String {
+    use toml_edit::Item;
+    let keys: Vec<String> = table.iter().map(|(k, _)| k.to_owned()).collect();
+    let Some(at) = keys.iter().position(|k| k == key) else {
+        return String::new();
+    };
+    let above = table
+        .key(key)
+        .and_then(|k| k.leaf_decor().prefix())
+        .and_then(|p| p.as_str())
+        .unwrap_or("");
+    // Lines an earlier removal left after this key's value.
+    let after = table
+        .get(key)
+        .and_then(Item::as_value)
+        .and_then(|v| v.decor().suffix())
+        .and_then(|s| s.as_str())
+        .and_then(|s| s.split_once('\n'))
+        .map_or("", |(_, rest)| rest);
+    let kept: String = above
+        .lines()
+        .chain(after.lines())
+        .filter(|line| line.trim_start().starts_with('#'))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    table.remove(key);
+    if kept.is_empty() {
+        return kept;
+    }
+    if let Some(mut next) = keys.get(at + 1).and_then(|k| table.key_mut(k)) {
+        let decor = next.leaf_decor_mut();
+        let old = decor.prefix().and_then(|p| p.as_str()).unwrap_or("");
+        decor.set_prefix(format!("{kept}{old}"));
+    } else if let Some(value) = at
+        .checked_sub(1)
+        .and_then(|before| table.get_mut(&keys[before]))
+        .and_then(Item::as_value_mut)
+    {
+        let decor = value.decor_mut();
+        let old = decor.suffix().and_then(|s| s.as_str()).unwrap_or("");
+        decor.set_suffix(format!("{old}\n{}", kept.trim_end_matches('\n')));
+    } else {
+        return kept;
+    }
+    String::new()
 }
 
 /// Replaces the file (through a symlink, keeping its permissions), creating missing folders. A

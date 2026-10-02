@@ -912,9 +912,9 @@ fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
     h.open_tasks();
     h.see("Native queue task"); // Add waits for queue data.
     h.send(b"a");
-    h.see("─ Add task");
+    h.see("┏ Add task ━");
     h.send(b"Second\tBody\x13");
-    h.until(|h| !h.screen.screen().contents().contains("─ Add task"));
+    h.until(|h| !h.screen.screen().contents().contains("┏ Add task ━"));
     h.see("Second");
     // The form title can disappear before its fields. Wait for the actual list row.
     h.see("T2 Second");
@@ -1362,7 +1362,7 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
     )
     .unwrap();
     h.click("All pending A");
-    h.see("─ All pending ─");
+    h.see("┏ All pending ━");
     h.see("Invalid task event JSON");
     h.see("Read failed");
     h.see("1 T1 Queue project-one");
@@ -1373,7 +1373,7 @@ fn all_pending_button_lists_every_registered_project_and_reports_read_failures()
     h.see("1 T1 Queue project-two");
     h.until(|h| !h.screen.screen().contents().contains("Read failed"));
     h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains("─ All pending ─"));
+    h.until(|h| !h.screen.screen().contents().contains("┏ All pending ━"));
     h.see("Queue project-one");
     h.quit();
     let events = h.log("queue-events");
@@ -4585,7 +4585,7 @@ fn plugin_split_picker_does_not_start_a_disabled_plugin() {
     h.click("Disable");
     h.see("Disabled");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes here apply immediately."));
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
     let before = h.ctl(&["inspect"])["tabs"].clone();
@@ -4791,7 +4791,7 @@ fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
     h.click("Disable");
     h.see("Disabled");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes here apply immediately."));
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
     h.click("Plugins");
@@ -4906,7 +4906,7 @@ fn plugin_palette_switches_overlays_and_blocks_background_layout_writes() {
     assert_eq!(h.ctl(&["inspect"])["tabs"], original["tabs"]);
     open_fixture_palette(&mut h);
     h.click("Manage plugins");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.see("ID: test.entry");
 }
 
@@ -4927,10 +4927,10 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
     assert_eq!(h.ctl(&["inspect"])["tabs"], tabs);
     h.click("Manage plugins");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.see("ID: dispatch");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes here apply immediately."));
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.click("Plugins"); // fixed host entry remains behind Settings; cannot replace it
     for _ in 0..3 {
         h.pump();
@@ -4962,7 +4962,7 @@ fn plugin_manager_details_follow_the_visible_entries() {
     let mut h = plugin_entry_harness("overlay");
     open_fixture_palette(&mut h);
     h.click("Manage plugins");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.see("ID: test.entry");
     let (_, entry_row) = h.locate("Entry fixture", 0).unwrap();
     let (_, detail_row) = h.locate("ID: test.entry", 0).unwrap();
@@ -4976,7 +4976,7 @@ fn plugin_settings_tabs_switch_directly_and_preserve_the_settings_draft() {
     h.see("Sidebar width");
     h.send(b"\x1560");
     h.send(b"\x1b[15~");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.settle();
     for label in [
         "General F1",
@@ -4995,19 +4995,19 @@ fn plugin_settings_tabs_switch_directly_and_preserve_the_settings_draft() {
     h.see("Interface");
     h.see("Preview");
     h.click("Plugins F5");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.send(b"\x1bOQ"); // F2
     h.see("Interface");
     h.send(b"\x1b[15~");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.click("Advanced F3");
     h.see("corral command");
     h.send(b"\x1b[15~");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.click("Diagnostics F4");
     h.see("Copy summary c");
     h.send(b"\x1b[15~");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.click("General F1");
     h.see("Sidebar width");
     h.see("60");
@@ -5024,7 +5024,7 @@ fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings
     h.settle();
     assert!(!h.screen.screen().hide_cursor());
     h.send(b"\x1b[15~"); // F5 opens plugin management over the Settings draft.
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.see("Input ▸ Plugin settings");
     h.settle();
     assert!(h.screen.screen().hide_cursor(), "{}", h.contents());
@@ -5035,7 +5035,7 @@ fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings
     h.send(b"/tmp/plugin-input-check");
     h.see("/tmp/plugin-input-check");
     h.send(b"\x1b");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.settle();
     assert!(h.screen.screen().hide_cursor());
     h.send(b"\x1b");
@@ -5046,7 +5046,7 @@ fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings
     h.see("Input ▸ Agents");
     open_fixture_palette(&mut h);
     h.click("Manage plugins");
-    h.see("Changes here apply immediately.");
+    h.see("Changes apply immediately.");
     h.settle();
     assert!(h.screen.screen().hide_cursor());
 }

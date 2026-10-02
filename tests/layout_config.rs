@@ -254,3 +254,64 @@ fn mascot_option_defaults_on_and_accepts_only_toml_booleans() {
         assert!(Config::parse(invalid).is_err());
     }
 }
+
+#[test]
+fn a_theme_supplies_every_color_and_colors_overrides_only_the_keys_written() {
+    use ratatui::style::Color;
+    use saddle::theme::{Preset, Theme};
+    // No theme key: Dune, the original look, with nothing marked as overridden.
+    let old = Config::parse("left_width = 52").unwrap();
+    assert_eq!(old.theme, Preset::Dune);
+    assert_eq!(old.colors, Theme::default());
+    assert!(old.overrides.is_empty());
+    assert_eq!(Preset::Dune.theme(), Theme::default());
+    // A value equal to the theme's is still an override.
+    let same = Config::parse("[colors]\nfocus = 'yellow'").unwrap();
+    assert_eq!(same.colors, Theme::default());
+    assert_eq!(same.overrides.get("focus"), Some(&Color::Yellow));
+    // Tide is a whole palette: shared areas and the Agents column both change.
+    let tide = Preset::Tide.theme();
+    let dune = Theme::default();
+    for (name, differs) in [
+        ("focus", tide.focus != dune.focus),
+        ("border", tide.border != dune.border),
+        ("muted", tide.muted != dune.muted),
+        ("agents_bg", tide.agents_bg != dune.agents_bg),
+        ("agents_text", tide.agents_text != dune.agents_text),
+        ("agent_selected", tide.agent_selected != dune.agent_selected),
+    ] {
+        assert!(differs, "Tide keeps Dune's {name}");
+    }
+    let chosen = Config::parse("theme = 'tide'\n[colors]\nfocus = 'red'").unwrap();
+    assert_eq!(chosen.theme, Preset::Tide);
+    assert_eq!(chosen.colors.focus, Color::Red);
+    assert_eq!(chosen.colors.agents_bg, tide.agents_bg);
+    assert_eq!(
+        chosen.overrides.keys().copied().collect::<Vec<_>>(),
+        ["focus"]
+    );
+    // Terminal uses only the terminal's default and ANSI palette.
+    let mut terminal = Preset::Terminal.theme();
+    for (name, color) in terminal.named_mut() {
+        assert!(
+            !matches!(color, Color::Rgb(..) | Color::Indexed(_)),
+            "{name} = {color:?}"
+        );
+    }
+    // The user's upgraded file reads as Dune plus exactly what it says.
+    let mine = Config::parse(
+        "[colors]\nagents_bg = 'default'\nagent_selected = '#302a23'\nclaude = '#d97757'\ncodex = '#8ed9c1'\nfocus = 'yellow'",
+    )
+    .unwrap();
+    assert_eq!(mine.theme, Preset::Dune);
+    assert_eq!(mine.colors.agents_bg, Color::Reset);
+    assert_eq!(mine.colors.claude, Color::Rgb(0xd9, 0x77, 0x57));
+    assert_eq!(mine.colors.agents_text, dune.agents_text);
+    assert_eq!(mine.overrides.len(), 5);
+    let error = format!("{:#}", Config::parse("theme = 'ocean'").unwrap_err());
+    assert!(
+        error.contains("theme") && error.contains("ocean"),
+        "{error}"
+    );
+    assert!(Config::parse("theme = 'Dune'").is_err());
+}
