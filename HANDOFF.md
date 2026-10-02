@@ -1,14 +1,20 @@
 # Saddle 交接
 
-更新：2026-10-03。安装源码 `7755bb8`，包含 Corral Rust 核心与宠物包。**文件切换及用户重开后的核验完成：新宿主和配套插件已启动，Drover 公开只读查询通过。旧主控保持，尚未创建新主控交接。**
+更新：2026-10-03。安装源码仍为 `7755bb8`。**新 Rust 主控已接续；Agents 状态计时修复已合并推送（`bc5f44e`），收尾 `3df626b`，尚未更新安装。图片版宠物及 Clawd 步态修正正在独立分支实施。**
 
 ## 当前状态
 
-用户批准把最后一层 Corral infra 真正用 Rust 迁入 Saddle；已直接实施、验证、合并并切换安装。没有委派，没有创建 Tasks 任务，没有记录本次遥测。日常新入口已是同包 Rust 核心；**运行中的旧主控仍由原 Python pen 托管，不会热转换。**
+用户批准把最后一层 Corral infra 真正用 Rust 迁入 Saddle；已直接实施、验证、合并并切换安装。该迁移没有委派、Tasks 任务或遥测。现在 `saddle/main` instance=`faec2c2b00cb`、agent_pid=99462，由成套 Rust Corral pen 托管；旧主控已不在公开列表。本会话只读核对确认当前宿主与 Corral/Drover/Diff 加载 `7755bb8`，四个程序哈希匹配 BUILD.txt，Drover 查询正常，Tasks 默认接收者仍为 `saddle/main`，无 Running/Awaiting、8 项 Pending。新主控的退出重开与外部 attach 全路径未在本会话复测。
+
+## 本轮计时修复与在办任务
+
+- Agents 状态计时：实现 `2df04b8`，主控审查 `6e44bfe`，合并 `bc5f44e`，收尾 `3df626b`。working 显示本轮时长，idle/waiting 从进入状态计时；公开状态缺可信起点时显示 `—`。主控标准复核 609 passed、0 failed、9 ignored，Clippy 通过。任务与审查见 `docs/任务/Agents状态计时.md`；未部署、未重启宿主，当前安装仍是旧计时。
+- 计时实现者 `saddle/dev-state-timer-1` 已确认 idle、attached=0 后清理 worktree/分支并关闭，stop 返回 ok、exit_code=0。没有操作真实 Tasks 或记录遥测。
+- 宠物实现者 `saddle/dev-pet-images-1`（Claude Code，opus[1m]/high，instance=`1e54868368ec`）仍在 `../saddle-worktrees/pet-images`、分支 `pet-images` 工作；任务文件 `docs/任务/图片版宠物与Clawd步态.md` 在该分支。用户已明确放行图片版，并追加像素版 Clawd 来回走时头和上身不动、只让腿动。已挂完成提醒；收到后按任务书审查，顺序集成并保留本轮计时改动。该任务未选择遥测、未创建 Tasks run。
 
 用户要求使用感觉保持一致：关闭 Saddle 不停 agent，外部仍能 `corral attach`，重开恢复同一实例；原 Corral 仓库只读保留、独立可用，不产生对宿主/插件/遥测的反向依赖。用户现有主控都有 HANDOFF，部署后由用户自行重开，不热替换旧 Python 进程，不自动关闭它们。
 
-用户此前要求等 Claude 开发收尾后再迁移；文本宠物包已收尾、Claude 已按授权关闭，图片版暂缓。用户最新同意推进部署准备和后续退出/切换/接续流程；先准备，通知用户退出界面后再切换，不因批准流程直接停止现有主控。
+此前文本宠物包已收尾，旧 Claude 已按授权关闭；迁移部署及新主控接续现已完成。图片版原暂缓要求已被本轮用户明确放行替代。后续部署仍先准备并通知用户退出界面，不直接停止现有主控。
 
 ## 已完成
 
@@ -30,7 +36,7 @@
 ## 构建产物与下一步
 
 - Corral 核验时生产源码 `820fda28d52028ef66c1a0d2953410e5b4a94900` 的临时包：`/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`。**该包不包含后来合并的宠物功能，不能直接作为最新整包安装。** 迁移前按最新 main 重新成套构建并核对 BUILD.txt；保留原核验证据，不把它当新整包已验收。
-- 新包 `~/.local/share/saddle/versions/7755bb8` 已用于两个命令入口及 Drover/Diff 注册路径；私有备份 `~/.local/share/saddle/backups/corral-rust-7755bb8-20261003-021136`。证据/哈希见 `docs/调研/Corral核心Rust部署记录-2026-10-03.md`。用户退出后切换，重开为宿主 instance=8cd013831927e964，进程加载路径已核为新包，Drover projects 只读回执 complete/ok，Dispatch 两种技能 revision3/owned_current。旧 `saddle/main` instance=4ebbecf235f8、agent_pid=72029 保持；下一步单独新主控交接，不自动停止旧主控。
+- 新包 `~/.local/share/saddle/versions/7755bb8` 已用于两个命令入口及 Drover/Diff 注册路径；私有备份 `~/.local/share/saddle/backups/corral-rust-7755bb8-20261003-021136`。历史部署证据/哈希见 `docs/调研/Corral核心Rust部署记录-2026-10-03.md`。当前宿主 instance=`97bdbda2959d903f`，新主控身份见上文；该记录中的旧主控保留状态是迁移当时的快照。
 - 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。当前全局 corral 技能已核为实际目录/文件，不是软链接；部署时重新核所有权，不强制覆盖用户资源，不写原 Corral 仓库。
 - 上轮遥测边界部署详情在 `docs/任务/遥测单任务边界-部署记录.md`；本轮已切换文件入口/插件路径，config.toml、资源所有权、真实 trace/队列未改。Corral 技能 dry-run 两处均 same，无需覆盖。原程序/插件目录保留。
 - 详细操作见 `docs/Corral新旧主控交接清单-Saddle示例.md`，已用 Typora 打开。新旧主控可不同名并存，读取 HANDOFF 核对后再停旧；新建表单 Controller 短名锁定 main，自定义主控名需用公开 CLI 创建并带 role=controller。底层/角色显示/Tasks 不要求名字为 main，Tasks 接收者需显式调整；现有 run 不自动转移。本项目 AGENTS 的 saddle/main 是项目约定。
@@ -41,7 +47,7 @@
 - 合并前分支上格式和 clippy 通过，全量 63 组通过；workflow 组 `pending_delete_button_confirms_names_the_task_and_can_be_cancelled`、`native_mouse_buttons_cover_forms_and_stop_confirmation` 两项失败，原因未查清（可能与共享 `.target/debug/saddle` 被并行构建覆盖有关，未证实）。用户决定先合并，由主控用隔离 target 复跑。
 - 部署准备时基于 `7755bb8`、显式 native target 串行限定复核上述两项，2 passed；原失败原因仍未知，不声称一次全套绿。新 release 包隔离生命周期1项通过，日志 `/tmp/saddle-rust-deploy-7755bb8/`。
 - 效果只看过离线渲染的预览图，未在真实终端核验；用户日常用 Ghostty 和 Metalterm。已随本次成套包切换安装，待用户重开体验。
-- 下一步：图片版，Kitty 图形协议，支持的终端默认用图片、其余自动退回方块版。先做猫；Clawd 用用户提供的 claude.dev 参考动画，只做 3 行高度放得下的。尚未开始：用户先切换新内核，之后重新开会话再做；宠物相关没有遗留分支或 worktree。
+- 图片版已开始：Kitty 图形协议，支持的终端默认用图片、其余自动退回方块版。先做猫；Clawd 用用户提供的 claude.dev 参考动画，只做 3 行高度放得下的。新 agent/worktree 及追加步态要求见本轮在办任务；尚未交付或合并。
 
 ## 保留项
 
