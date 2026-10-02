@@ -39,3 +39,32 @@
 
 ## 做完
 在本文件追加完成记录：方案、核对、待主控或用户决定的事。回复列出提交和简短推荐。命令都在前台跑完，全部做完后，回复最后一行写DONE。
+
+## 完成记录（2026-10-02，saddle/dev-theme-design）
+
+**方案**：见 `docs/UI主题设计.md`，是推荐方案，未经用户批准，也没有实现。
+
+- Colors 页顶部加 `Theme` 行（←/→ 切换），下面颜色字段不变。有效配色 = 预置 + `[colors]` 覆盖，行尾 `custom` 标出覆盖项。
+- 预置：Dune（等于现在的 `Theme::default()`）、Tide（冷色中性，强调色和状态色不变）、Terminal（全部用 default/ANSI）。
+- 存储：新增顶层键 `theme`，省略即 Dune；旧配置不迁移、不重写，观感不变。
+- 切换主题（推荐 A）：等于原主题值的覆盖改为跟随新主题，其余覆盖保留。只改草稿，Cancel 可撤回。
+- `Default Ctrl-D`：去掉这项覆盖，保存时删除这个键。预览、Save、Cancel、冲突处理沿用第 47 节。
+
+**核对**（只做了静态核对）：
+
+- 读了 `src/theme.rs`、`src/config.rs`、`src/settings.rs`（草稿、`defaults`/`saved`、Ctrl-D、`apply`、冲突重载）、`src/app.rs`（`apply_settings`、`plugins.theme`）、`src/plugins/mod.rs:280`、`crates/plugin-sdk`、`plugins/drover/src/plugin.rs` 的 `render`、`plugins/diff/src/app.rs`/`view.rs`、`src/terminal.rs` 的 `color`、`docs/插件协议.md`，以及 `docs/DESIGN.md` 第 8、17、18、40、47 节。
+- 用户快照共 28 键：24 项与代码默认相同，4 项不同（`agents_bg`、`agent_selected`、`claude`、`codex`）。
+- Tide 与 Dune 的 WCAG 对比度用脚本算过；Terminal 的取决于用户终端，没测。
+- 按预算跑了 `git diff --check`；没跑测试、Clippy、构建或真实终端。
+
+**待主控或用户决定**：
+
+1. 切换规则选 A 还是 B。
+2. 预置的名字和取值。
+3. 用户当前的 4 项差异是否并入 Dune（推荐不并入）。
+4. 顶层 `theme` 键的降级代价。
+5. 批准后修订 DESIGN.md 第 8 节（"不增加多主题"）和第 47 节"恢复默认"的含义。
+6. Drover 的 Tasks 状态色不跟随宿主主题，是现状，是否另立任务。
+7. 实施时把 `config.toml` 示例里的颜色改成注释。
+
+没有需要改 Corral 或反向依赖的地方。
