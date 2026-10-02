@@ -26,7 +26,7 @@ Only block glyphs and plain characters are used, so a pack looks the same in any
 
 Original character and gesture references: Anthropic, <https://claude.dev/>, extracted 2026-10-01. `clawd-sources.json` keeps the reference URLs, SHA-256 hashes and original frame counts. The poses are hand-timed grid adaptations, not frame-for-frame conversions; the pirate costume and choreography are original additions requested by the user.
 
-The approved rest pose is kept in every action: actions enter and leave it, the waist stays planted, and glances slide only the head and arm rows so a skin margin stays outside both eyes. Its eyes sit to one side of their cells, so a mirror image would not line up; walking and turning to the left are drawn as their own clips and actions are not mirrored.
+The approved rest pose is kept in every action: actions enter and leave it, the waist stays planted, and glances slide only the head and arm rows so a skin margin stays outside both eyes. Props follow the originals in scale: small, held at the hand or set by the feet, each in its own color, cut with eighth blocks where a whole brick would be too coarse. Its eyes sit to one side of their cells, so a mirror image would not line up; walking and turning to the left are drawn as their own clips and actions are not mirrored.
 
 ## Cat (`cat.toml`)
 
