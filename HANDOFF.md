@@ -3,6 +3,14 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Lagoon墨绿主题已派发
+
+- 用户图/Users/firegnu/Desktop/SCR-20261002-symr.png全部像素#0c1616，要求新增同色主题。任务docs/任务/Lagoon墨绿主题.md；新增第四预置Lagoon，顺序Dune/Tide/Lagoon/Terminal，原三套/覆盖/渲染机制保持。
+- saddle/dev-theme-lagoon-1 instanceb6bb523c6e90，Claude opus[1m]/high；theme-lagoon分支/worktree，基线d4971fc。JEV档位null/交叉不要/影响null，主控常规/看得见，只直接预置/Settings组及主要声明颜色对核算、diff check；不全套Clippy、不扩审计。主控核diff与证据，必须改交原实现者。
+- trace e72bb30e-3fc2-4f69-b910-36c20ee77636，dispatch6ebd0a70-a081-4c93-8670-d4d4102b7873，原telemetry目录lagoon-reply-context.json。route/start首尾配对stored，已挂提醒/tmp/saddle-theme-lagoon-reminder.txt。回调先status，working重挂，idle完整reply核DONE。
+- 通过后合并推送清理/目录删除后关对应自建agent/空提交/HANDOFF/实际closure，再必要备份构建安装供用户选；不自动切主题，不写真实配置/数据队列。保留设计review/t38/t55与用户agent。
+
+
 ## 最新：右侧终端默认配色已合并安装，待用户重开
 
 - 用户批准Tide右侧默认背景/文字跟随Theme。功能ec84452，合并80876ce，清理空提交62190b7；任务docs/任务/Theme终端默认配色.md含完成与主控审查。两处渲染传有效Theme，Tide bg/text为#151b23/#dce4ee；Dune/Terminal及显式索引/RGB/动态调色板颜色保留。无PTY/ColorRequest/解析器/Corral/业务改动。
