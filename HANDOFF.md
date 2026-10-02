@@ -3,6 +3,13 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Theme用户已批准，设计收尾，准备实施
+
+- 用户批准线框及“切换载入整套配色再覆盖、Save/Cancel、旧配置不变”，docs/UI主题设计.md和DESIGN已定稿。原设计2c42a0b已合并，定稿d3dcecc已推送；theme-design工作区/分支已删除，原Claude97aab938485b在idle/attached0时随目录清理关闭，收尾025c8f0。迟到提醒not_found忽略。
+- 实施任务docs/任务/UI主题-实施.md，计划新worktree/分支theme-presets；Claude opus[1m]/high。JEV常规/交叉不要/改行为，按功能变更目标+一次标准预算，不扩审计；不改Corral/插件协议/业务、不安装真实配置、不操作队列。具体实施agent及新遥测上下文见后续交接，不凭此条推定已经start。
+- 用户批准/新路由已采集到原trace e72bb30e-3fc2-4f69-b910-36c20ee77636；新implementation dispatch a4ecd4a7-056c-4771-85ca-636082089d90。目录仍/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-telemetry-qtk_rdga。
+
+
 ## 最新：Theme设计已取DONE，待用户选择后集中修订
 
 - 设计候选2c42a0b；原Claude saddle/dev-theme-design-1 instance97aab938485b idle，worktree干净，尚未合并/清理。主控只静态核对及diff check，未测试构建；核对记录docs/任务/UI主题-主控核对.md，遥测review.recorded已存。
