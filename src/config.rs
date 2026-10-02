@@ -12,6 +12,15 @@ pub struct Config {
     pub mascot_enabled: bool,
     /// Preserved for old config files; all task settings now belong to the Drover plugin.
     pub queue: Option<toml::Value>,
+    pub theme: crate::theme::Preset,
+    /// The `[colors]` keys as written, over `theme`.
+    #[serde(
+        rename = "colors",
+        deserialize_with = "crate::theme::deserialize_overrides"
+    )]
+    pub overrides: crate::theme::Overrides,
+    /// The colors in effect: `theme` with `overrides`.
+    #[serde(skip)]
     pub colors: crate::theme::Theme,
 }
 
@@ -24,13 +33,16 @@ impl Default for Config {
             refresh_ms: 1000,
             mascot_enabled: true,
             queue: None,
+            theme: Default::default(),
+            overrides: Default::default(),
             colors: crate::theme::Theme::default(),
         }
     }
 }
 impl Config {
     pub fn parse(text: &str) -> Result<Self> {
-        let config: Self = toml::from_str(text)?;
+        let mut config: Self = toml::from_str(text)?;
+        config.colors = config.theme.theme().with(&config.overrides);
         ensure!(
             config.left_split.is_finite() && config.left_split > 0.0 && config.left_split < 1.0,
             "left_split must be between 0 and 1 (exclusive)"

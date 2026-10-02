@@ -43,3 +43,35 @@
 
 ## 做完
 在本文件末尾追加完成记录：实际改动、验证结果、取舍与未完成事项。报告真实RED/GREEN和失败，不把夹具/编译失败当有效RED。写出提交与需主控决定的事项。命令在前台跑完；全部做完后回复最后一行写DONE。
+
+## 完成记录（saddle/dev-theme，2026-10-02）
+
+### 实际改动
+- src/theme.rs：新增Preset（dune/tide/terminal，未知值报错）、Overrides（只含[colors]写出的键）和Theme::with；Dune即原Theme::default()；Tide、Terminal为完整41色。Theme不再直接反序列化，[colors]由deserialize_overrides逐键校验（未知键、无效颜色均报错并带键名）。
+- src/config.rs：新增顶层theme与overrides；colors为有效配色（主题+覆盖），渲染、for_terminal及插件五色调用点不变。
+- src/settings.rs：Colors F2顶部新增Theme行（‹ Dune ›，←/→、Space/Enter、点击切换；点‹为上一个）。每个颜色记“跟随主题/显式覆盖”；输入改动即成覆盖（等于主题值仍是覆盖），覆盖行标custom。选另一主题：草稿载入整套配色、清除全部颜色覆盖、给出提示；选当前主题无变化。颜色Default=恢复跟随（保存时删[colors]键）；Theme行Default=按切换规则回Dune（已是Dune时不动）。Save只写theme及增删的颜色键；删除键时上方注释行移到相邻键。草稿标记、预览、失败草稿、Keep/Discard冲突处理沿用。
+- config.toml：增加theme = "dune"；颜色全部改成注释示例并说明只取消注释要改的项。README：Settings与配置说明各补最短用法。docs/DESIGN.md、docs/UI主题设计.md：状态改为已实施待审查，记录实施取舍。
+- 测试：tests/layout_config.rs新增1项、tests/settings.rs新增4项；改动2项旧测试（F2现在先选中Theme行需多按一次Down；colors_and_commands改用自带夹具，因示例颜色已注释掉）。
+
+### Tide关键值与核对（WCAG对比度，静态计算，非真实终端验收）
+- Agents：bg #151b23，text #dce4ee（13.50，Dune 13.09），branch #bfcad8（10.43），dim #8595a9（5.66，Dune 4.63），dimmer #6b7a8f（3.96，Dune 3.35），accent #86c1e6（8.89），选中底#212b38上text 11.16、dim 4.68。状态色在agents_bg上6.05–9.49，均不低于Dune对应项的量级。
+- 共享：border #435166，muted #8d9bb0，dim #56657a，focus #86c1e6，connected #6ccfb4，working #7a9cf0，danger #e06c75，unread #c38ae8；focus底上input_text #0e141b为9.51。bg/overlay/text保持default（理由见DESIGN）。
+- 色相：focus 203°、working 223°、connected 164°，彼此≥20°；状态/危险/agent类型保持Dune的语义色相。
+
+### 验证
+- RED（先加脚手架使测试可编译，失败均为断言失败）：layout_config新测在“等于主题值的覆盖应被记录”处失败；settings 4项新测因无theme字段（value("theme")为None）/无Theme行失败。
+- GREEN：cargo test --test settings --test layout_config 全过（19+10）；相关diagnostics、ui也全过。格式化后两项复跑仍过。
+- 布局核对：TestBackend 80×36渲染Colors页，Theme行在Interface上方、‹与颜色输入[对齐、覆盖行显示custom、切换Tide后提示两行显示，颜色输入宽度因右侧custom/提示列由40缩到36。
+- cargo clippy --all-targets -- -D warnings：通过。cargo fmt --check：通过。
+- cargo test --all-targets：失败。第一次在tests/plugin_resources.rs停下（3项失败：外部插件行“Synthetic external”、“Enabled. skill-a r2”缺失），单项复跑一次结果相同；为覆盖后续目标又以--no-fail-fast跑了全套（同一命令里误多跑了一遍以列失败名），另见tests/workflow.rs 9项失败（Drover/插件交互等待画面，如“Invalid task event JSON”、插件面板）。其余目标全过，含theme相关的startup_colors_reach_agents_queue_controls_and_leave_viewer_colors_alone。本次未改src/plugins、Drover或workflow相关代码，这12项判断与本改动无关，但未在main基线上对照验证。
+
+### 取舍与未完成
+- Tide保留终端默认背景（见DESIGN）；若要宿主整体刷冷色底，需要另定Viewer默认背景如何处理。
+- Tide共享区RGB在非truecolor终端不降级（沿用现有规则）。
+- 删除颜色键时，键行自身的行尾注释随键删除；表内键全部删光时，原上方注释也不保留。
+- 保存了theme键的配置，旧版Saddle因deny_unknown_fields无法读取（设计已列为降级限制）。
+- Tasks状态色、Diff语法高亮、Viewer终端颜色仍不跟随主题（已知边界）。
+
+### 需主控决定
+- plugin_resources 3项、workflow 9项失败是否需在main上对照确认（本任务预算内未做）。
+- Tide是否接受bg/overlay/text跟随终端的取舍。

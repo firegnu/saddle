@@ -89,9 +89,10 @@ fn invalid_values_keep_the_draft_and_the_file() {
     replace(&mut settings, "wide");
     assert!(matches!(ctrl(&mut settings, 's'), Outcome::Stay));
     assert!(settings.message().contains("Sidebar width"));
-    // A bad color is reported by name, on its own page.
+    // A bad color is reported by name, on its own page, below the theme.
     replace(&mut settings, "52");
     press(&mut settings, KeyCode::F(2));
+    press(&mut settings, KeyCode::Down);
     replace(&mut settings, "purple-ish");
     assert!(matches!(ctrl(&mut settings, 's'), Outcome::Stay));
     assert!(settings.message().contains("bg"), "{}", settings.message());
@@ -167,9 +168,11 @@ fn an_external_change_is_never_overwritten_and_reload_offers_both_choices() {
 fn colors_and_commands_edit_their_existing_keys() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    std::fs::write(&path, SAMPLE).unwrap();
+    let original = "corral = \"corral\"              # Executable name or path.\n\n[colors]\nbg = \"default\"               # Main surfaces.\nfocus = \"yellow\"\n";
+    std::fs::write(&path, original).unwrap();
     let mut settings = Settings::open(path.clone(), true);
     press(&mut settings, KeyCode::F(2));
+    press(&mut settings, KeyCode::Down);
     assert_eq!(settings.value("colors.bg"), Some("default"));
     replace(&mut settings, "#102030");
     press(&mut settings, KeyCode::F(3));
@@ -186,7 +189,7 @@ fn colors_and_commands_edit_their_existing_keys() {
     let text = read(&path);
     assert!(text.contains("corral = \"~/bin/corral\"              # Executable name"));
     assert!(text.contains("bg = \"#102030\"               # Main surfaces."));
-    assert_eq!(text.lines().count(), SAMPLE.lines().count());
+    assert_eq!(text.lines().count(), original.lines().count());
 }
 
 #[test]
@@ -422,4 +425,171 @@ fn mascot_toggle_defaults_on_saves_a_boolean_and_can_be_cancelled_or_reset() {
         toml::from_str::<toml::Value>(&read(&path)).unwrap()["mascot_enabled"].as_bool(),
         Some(true)
     );
+}
+
+fn color_name(theme: &saddle::theme::Theme, name: &str) -> String {
+    let mut theme = theme.clone();
+    let color = theme
+        .named_mut()
+        .into_iter()
+        .find(|(n, _)| *n == name)
+        .unwrap()
+        .1;
+    saddle::theme::color_name(*color)
+}
+/// Colors opens on the Theme row; Interface lists bg … focus first.
+fn select_focus(settings: &mut Settings) {
+    press(settings, KeyCode::F(2));
+    for _ in 0..9 {
+        press(settings, KeyCode::Down);
+    }
+}
+
+#[test]
+fn choosing_another_theme_loads_its_colors_and_clears_overrides_in_the_draft() {
+    use saddle::theme::Preset;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let original = "# mine\nleft_width = 52\n\n[colors]\n# Interface\nfocus = \"red\"   # was mine\nborder = \"dark_gray\"\n";
+    std::fs::write(&path, original).unwrap();
+    let tide = Preset::Tide.theme();
+    let mut settings = Settings::open(path.clone(), true);
+    press(&mut settings, KeyCode::F(2));
+    assert_eq!(settings.value("theme"), Some("dune"));
+    assert_eq!(settings.value("colors.focus"), Some("red"));
+    press(&mut settings, KeyCode::Right);
+    assert_eq!(settings.value("theme"), Some("tide"));
+    for name in ["focus", "border", "agents_bg", "claude"] {
+        assert_eq!(
+            settings.value(&format!("colors.{name}")),
+            Some(color_name(&tide, name).as_str()),
+            "{name}"
+        );
+    }
+    assert!(
+        settings.message().contains("Tide"),
+        "{}",
+        settings.message()
+    );
+    assert_eq!(read(&path), original);
+    // Then a color can be set on top of the new theme.
+    press(&mut settings, KeyCode::Down);
+    replace(&mut settings, "#102030");
+    let Outcome::Saved(config, restart) = ctrl(&mut settings, 's') else {
+        panic!("not saved: {}", settings.message());
+    };
+    assert!(restart.is_empty());
+    assert_eq!(config.theme, Preset::Tide);
+    assert_eq!(config.colors.focus, tide.focus);
+    assert_eq!(
+        config.colors.bg,
+        ratatui::style::Color::Rgb(0x10, 0x20, 0x30)
+    );
+    assert_eq!(config.overrides.keys().copied().collect::<Vec<_>>(), ["bg"]);
+    let text = read(&path);
+    assert!(
+        text.starts_with("# mine\nleft_width = 52\ntheme = \"tide\"\n"),
+        "{text}"
+    );
+    assert!(text.contains("# Interface"), "{text}");
+    assert!(
+        !text.contains("focus") && !text.contains("border"),
+        "{text}"
+    );
+    assert!(text.contains("bg = \"#102030\""), "{text}");
+}
+
+#[test]
+fn the_current_theme_keeps_overrides_and_default_makes_a_color_follow_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    // Equal to Dune's focus, but written by the user: still an override.
+    let original = "[colors]\nfocus = \"yellow\"  # mine\ntext = \"default\"\n";
+    std::fs::write(&path, original).unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    press(&mut settings, KeyCode::F(2));
+    // Default on the Theme row while already on Dune clears nothing.
+    ctrl(&mut settings, 'd');
+    assert_eq!(settings.value("theme"), Some("dune"));
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Cancel));
+    assert_eq!(read(&path), original);
+    // Default on a color stops overriding it, even when the value shown stays the same.
+    let mut settings = Settings::open(path.clone(), true);
+    select_focus(&mut settings);
+    ctrl(&mut settings, 'd');
+    assert_eq!(settings.value("colors.focus"), Some("yellow"));
+    let Outcome::Saved(config, _) = ctrl(&mut settings, 's') else {
+        panic!("not saved: {}", settings.message());
+    };
+    assert_eq!(
+        config.overrides.keys().copied().collect::<Vec<_>>(),
+        ["text"]
+    );
+    assert_eq!(read(&path), "[colors]\ntext = \"default\"\n");
+    // Leaving a theme and coming back is still an explicit choice: overrides are cleared.
+    let mut settings = Settings::open(path.clone(), true);
+    press(&mut settings, KeyCode::F(2));
+    press(&mut settings, KeyCode::Right);
+    press(&mut settings, KeyCode::Left);
+    assert_eq!(settings.value("theme"), Some("dune"));
+    assert!(matches!(ctrl(&mut settings, 's'), Outcome::Saved(..)));
+    assert!(!read(&path).contains("text ="), "{}", read(&path));
+}
+
+#[test]
+fn typing_a_color_overrides_it_and_cancel_drops_a_theme_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, SAMPLE).unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    press(&mut settings, KeyCode::F(2));
+    press(&mut settings, KeyCode::Right);
+    assert_eq!(settings.value("theme"), Some("tide"));
+    assert!(matches!(
+        press(&mut settings, KeyCode::Esc),
+        Outcome::Cancel
+    ));
+    assert_eq!(read(&path), SAMPLE);
+    // Retyping the theme's own value is an explicit override.
+    std::fs::write(&path, "left_width = 52\n").unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    select_focus(&mut settings);
+    press(&mut settings, KeyCode::Backspace);
+    press(&mut settings, KeyCode::Char('w'));
+    assert_eq!(settings.value("colors.focus"), Some("yellow"));
+    let Outcome::Saved(config, _) = ctrl(&mut settings, 's') else {
+        panic!("not saved: {}", settings.message());
+    };
+    assert!(config.overrides.contains_key("focus"));
+}
+
+#[test]
+fn the_colors_page_shows_the_theme_first_and_marks_custom_colors() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "[colors]\nfocus = \"red\"\n").unwrap();
+    let mut settings = Settings::open(path, true);
+    press(&mut settings, KeyCode::F(2));
+    let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
+    terminal
+        .draw(|frame| {
+            settings.draw(&saddle::theme::Theme::default(), frame);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let rows: Vec<String> = (0..40)
+        .map(|y| (0..80).map(|x| buffer[(x, y)].symbol()).collect())
+        .collect();
+    let theme = rows.iter().position(|r| r.contains("Theme")).unwrap();
+    assert!(rows[theme].contains("‹ Dune ›"), "{}", rows[theme]);
+    let interface = rows.iter().position(|r| r.contains("Interface")).unwrap();
+    assert!(theme < interface);
+    let focus = rows.iter().find(|r| r.contains(" focus ")).unwrap();
+    assert!(
+        focus.contains("[red") && focus.contains("custom"),
+        "{focus}"
+    );
+    let bg = rows.iter().find(|r| r.contains(" bg ")).unwrap();
+    assert!(!bg.contains("custom"), "{bg}");
 }
