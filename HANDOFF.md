@@ -65,3 +65,7 @@
 - 05B release构建及隔离公开命令烟测通过，产物在 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-05b-stage-hrgnwvmo/artifacts；详情/哈希见docs/任务/遥测05B-实际切换记录.md。备份~/.local/share/saddle/backups/telemetry-05-20261002-103248。日常安装还没改。
 - 当前待用户回答“我已退出 Saddle，可以切换”或“暂不切换”：新Drover要求telemetry.open.v1，不能让旧宿主与新清单混用。确认用户答复及公开saddle ctl instances后再替换；不要自行杀旧Saddle，不关闭Corral用户agent。不重新构建或跑标准。
 - 随后需公开管理页安装revision2技能并确认两个目标owned_current，再切本repo AGENTS（CLAUDE同链接），核旧消费者及保留旧数据的dispatch-log退役。05未整体完成，不能提前归档或称已安装；遥测开关不自行开启，Corral仓库不写。
+
+## 安装前现场检查更新
+
+用户已回答“我已退出 Saddle，可以切换”，但随后公开`saddle ctl instances`实际返回新实例afb23cbd93f401d8，显示saddle/main；旧实例14ef4e073296e36b已不在。不能把用户描述当安装时仍无实例，尚未替换任何日常文件。已再次请用户退出新实例并保持关闭到通知，当前等待该答复；已有安装授权不重复申请，只协调现场退出。下一步先公开核instances为空再执行替换，勿自行停止用户界面或agent。
