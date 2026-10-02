@@ -10,6 +10,8 @@ pub struct Config {
     pub left_split: f64,
     pub refresh_ms: u64,
     pub mascot_enabled: bool,
+    /// Which pet the mascot is.
+    pub mascot: crate::mascot::Pet,
     /// Preserved for old config files; all task settings now belong to the Drover plugin.
     pub queue: Option<toml::Value>,
     pub theme: crate::theme::Preset,
@@ -32,6 +34,7 @@ impl Default for Config {
             left_split: 0.5,
             refresh_ms: 1000,
             mascot_enabled: true,
+            mascot: Default::default(),
             queue: None,
             theme: Default::default(),
             overrides: Default::default(),

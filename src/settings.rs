@@ -7,6 +7,7 @@ use crate::{
     buttons::{self, Button},
     config::Config,
     launch::edit::Input,
+    mascot::Pet,
     telemetry::{SettingInput, Store},
     theme::{Preset, Theme, color_name, parse_color},
 };
@@ -53,6 +54,7 @@ enum Kind {
     Command,
     Color,
     Theme,
+    Pet,
 }
 struct Field {
     /// The config key, dotted below a table (`colors.bg`).
@@ -101,13 +103,8 @@ fn fields() -> Vec<Field> {
             Kind::Millis,
             true,
         ),
-        field(
-            "mascot_enabled",
-            "Clawd mascot",
-            Page::General,
-            Kind::Bool,
-            false,
-        ),
+        field("mascot_enabled", "Mascot", Page::General, Kind::Bool, false),
+        field("mascot", "Pet", Page::General, Kind::Pet, false),
         field(
             RECORDING,
             "Telemetry recording",
@@ -147,6 +144,7 @@ fn value(config: &Config, field: &Field) -> String {
         "left_width" => config.left_width.to_string(),
         "refresh_ms" => config.refresh_ms.to_string(),
         "mascot_enabled" => config.mascot_enabled.to_string(),
+        "mascot" => config.mascot.name().into(),
         "corral" => config.corral.clone(),
         "theme" => config.theme.name().into(),
         // Off until the store says otherwise, as on a first install.
@@ -379,6 +377,14 @@ impl Settings {
         self.error = false;
     }
     fn cycle(&mut self, delta: isize) {
+        if self.fields[self.selected].kind == Kind::Pet {
+            let all = Pet::ALL;
+            let now = Pet::parse(&self.inputs[self.selected].text).unwrap_or_default();
+            let at = all.iter().position(|&p| p == now).unwrap_or(0);
+            let next = all[(at as isize + delta).rem_euclid(all.len() as isize) as usize];
+            self.inputs[self.selected] = Input::new(next.name().into());
+            return;
+        }
         let all = Preset::ALL;
         let at = all.iter().position(|&p| p == self.preset()).unwrap_or(0);
         self.choose(all[(at as isize + delta).rem_euclid(all.len() as isize) as usize]);
@@ -525,7 +531,10 @@ impl Settings {
                 KeyCode::Char('s') => return self.save(),
                 KeyCode::Char('d') => self.reset(),
                 KeyCode::Char('u')
-                    if !matches!(self.fields[self.selected].kind, Kind::Bool | Kind::Theme) =>
+                    if !matches!(
+                        self.fields[self.selected].kind,
+                        Kind::Bool | Kind::Theme | Kind::Pet
+                    ) =>
                 {
                     self.edit(Input::clear)
                 }
@@ -547,13 +556,17 @@ impl Settings {
             {
                 self.toggle()
             }
-            KeyCode::Left if self.fields[self.selected].kind == Kind::Theme => self.cycle(-1),
+            KeyCode::Left if choice(self.fields[self.selected].kind) => self.cycle(-1),
             KeyCode::Char(' ') | KeyCode::Enter | KeyCode::Right
-                if self.fields[self.selected].kind == Kind::Theme =>
+                if choice(self.fields[self.selected].kind) =>
             {
                 self.cycle(1)
             }
-            code if !matches!(self.fields[self.selected].kind, Kind::Bool | Kind::Theme) => {
+            code if !matches!(
+                self.fields[self.selected].kind,
+                Kind::Bool | Kind::Theme | Kind::Pet
+            ) =>
+            {
                 self.edit(|input| input.key(code, false))
             }
             _ => {}
@@ -594,7 +607,10 @@ impl Settings {
         if self.page != Page::Diagnostics
             && !self.conflict
             && self.broken.is_none()
-            && !matches!(self.fields[self.selected].kind, Kind::Bool | Kind::Theme)
+            && !matches!(
+                self.fields[self.selected].kind,
+                Kind::Bool | Kind::Theme | Kind::Pet
+            )
         {
             self.edit(|input| input.insert(text, false));
         }
@@ -607,8 +623,8 @@ impl Settings {
             self.selected = i;
             if self.fields[i].kind == Kind::Bool {
                 self.toggle();
-            } else if self.fields[i].kind == Kind::Theme {
-                // ‹ chooses the previous theme; elsewhere on the row, the next.
+            } else if choice(self.fields[i].kind) {
+                // ‹ chooses the previous one; elsewhere on the row, the next.
                 self.cycle(if point.x == input.x { -1 } else { 1 });
             } else if input.contains(point) {
                 self.inputs[i].click(point);
@@ -777,6 +793,7 @@ impl Settings {
                     .err()
                     .map(|e| format!("{}: {e}", field.label)),
                 Kind::Theme => Preset::parse(text).err(),
+                Kind::Pet => Pet::parse(text).err(),
                 Kind::Bool | Kind::Command => None,
             };
             if let Some(problem) = problem {
@@ -841,7 +858,7 @@ impl Settings {
             34
         } else if self.page == Page::General {
             // Grows by the rows a long message wraps onto, inside the 76-column box.
-            15 + word_wrap(&self.message, 76 - 4).len().clamp(1, 3) as u16 - 1
+            16 + word_wrap(&self.message, 76 - 4).len().clamp(1, 3) as u16 - 1
         } else {
             16
         };
@@ -1259,11 +1276,17 @@ impl Settings {
             ""
         };
         let bracket = Style::default().fg(if selected { t.focus } else { t.border });
-        if field.kind == Kind::Theme {
+        if choice(field.kind) {
             // ‹ › take the place of the brackets, lined up with the color inputs.
-            spans.push(Span::raw("   "));
+            let label = match field.kind {
+                Kind::Theme => {
+                    spans.push(Span::raw("   "));
+                    self.preset().label()
+                }
+                _ => Pet::parse(&self.inputs[i].text).unwrap_or_default().label(),
+            };
             let used = spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
-            let text = format!("‹ {} ›", self.preset().label());
+            let text = format!("‹ {label} ›");
             let input = Rect::new(row.x + used, row.y, text.width() as u16, 1).intersection(row);
             spans.push(Span::styled(
                 text,
@@ -1322,9 +1345,13 @@ fn unit(kind: Kind) -> &'static str {
     match kind {
         Kind::Millis => " ms",
         Kind::Bool => " Space/Enter toggle",
-        Kind::Theme => " ←/→ choose",
+        Kind::Theme | Kind::Pet => " ←/→ choose",
         _ => "",
     }
+}
+/// A setting chosen from a fixed list with ‹ ›, not typed.
+fn choice(kind: Kind) -> bool {
+    matches!(kind, Kind::Theme | Kind::Pet)
 }
 /// Marks a color set by its own `[colors]` key rather than the theme.
 const CUSTOM: &str = " custom";
@@ -1413,7 +1440,7 @@ fn apply(
         Some(text) => Some(match field.kind {
             Kind::Columns | Kind::Millis => Value::from(text.trim().parse::<i64>()?),
             Kind::Bool => Value::from(text.parse::<bool>()?),
-            Kind::Color | Kind::Theme => Value::from(text.trim()),
+            Kind::Color | Kind::Theme | Kind::Pet => Value::from(text.trim()),
             Kind::Command => Value::from(text),
         }),
     };

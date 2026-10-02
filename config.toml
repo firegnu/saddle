@@ -5,7 +5,8 @@ corral = "corral"              # Executable name or path; ~/ is supported.
 left_width = 52               # Preferred left column width, in terminal cells.
 left_split = 0.5              # Unused: Agents fill the left column. Kept so old configs load.
 refresh_ms = 1000             # Background refresh interval, in milliseconds.
-mascot_enabled = true        # Show the animated Clawd mascot beside terminal tabs.
+mascot_enabled = true        # Show the animated mascot beside terminal tabs.
+mascot = "clawd"             # Which pet: "clawd" or "cat".
 theme = "dune"               # dune | tide | lagoon | terminal; omitted = dune. Sets every color below.
 
 # Optional tasks: install plugins/drover; legacy [queue] settings are ignored.

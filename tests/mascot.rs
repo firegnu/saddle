@@ -1,5 +1,11 @@
 use ratatui::{Terminal, backend::TestBackend, buffer::Buffer, layout::Rect, style::Color};
-use saddle::{agents::Panel, corral::Agent, mascot::Mascot, terminals::Terminals, ui};
+use saddle::{
+    agents::Panel,
+    corral::Agent,
+    mascot::{Mascot, Pet},
+    terminals::Terminals,
+    ui,
+};
 
 fn render(
     terminals: &Terminals,
@@ -212,7 +218,7 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
         assert_eq!(initial[(x, 1)].symbol(), "─");
         assert!(initial[(x, 1)].modifier.contains(Modifier::UNDERLINED));
     }
-    let mut indexed = Mascot::new(false);
+    let mut indexed = Mascot::new(Pet::Clawd, false);
     terminal
         .draw(|f| {
             indexed.draw(f, f.area(), 0.0, &[]);
@@ -231,17 +237,14 @@ fn overlay_replaces_underlying_glyphs_but_preserves_controls_and_hidden_time() {
 #[test]
 fn standing_eyes_are_inside_an_unbroken_forehead() {
     let mut mascot = Mascot::default();
-    let mut terminal = Terminal::new(TestBackend::new(20, 3)).unwrap();
-    terminal
-        .draw(|f| {
-            mascot.draw(f, f.area(), 0.0, &[]);
-        })
+    // The first walk lasts 40 ticks; the action after it opens on the standing pose.
+    let standing = play(&mut mascot, Rect::new(0, 0, 60, 3), 0..42)
+        .pop()
         .unwrap();
-    let buffer = terminal.backend().buffer();
     let mut eyes = Vec::new();
     for y in 0..3 {
-        for x in 0..20 {
-            let cell = &buffer[(x, y)];
+        for x in 0..60 {
+            let cell = &standing[(x, y)];
             if cell.symbol() == "▪" {
                 assert_eq!(cell.fg, Color::Rgb(20, 20, 19));
                 assert_eq!(
@@ -259,30 +262,44 @@ fn standing_eyes_are_inside_an_unbroken_forehead() {
         "standing eyes must be two small squares, not half-cell bars"
     );
     assert_eq!(eyes[0].1, eyes[1].1, "eyes must be level");
-    let outside_right_eye = &buffer[(eyes[1].0 + 1, eyes[1].1)];
+    for outside in [eyes[0].0 - 1, eyes[1].0 + 1] {
+        let margin = &standing[(outside, eyes[0].1)];
+        assert_ne!(margin.symbol(), " ", "skin continues outside each eye");
+        assert_eq!(margin.fg, Color::Rgb(217, 119, 87));
+    }
     assert_eq!(
-        outside_right_eye.symbol(),
+        standing[(eyes[1].0 + 1, eyes[1].1)].symbol(),
         "█",
         "the right eye needs a solid forehead margin toward the head edge"
     );
-    assert_eq!(outside_right_eye.fg, Color::Rgb(217, 119, 87));
-    // Reach the right edge and finish turning: the approved open eyes return.
-    for tick in 1..=30 {
-        terminal
-            .draw(|f| {
-                mascot.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
-            })
-            .unwrap();
+}
+
+#[test]
+fn clawd_keeps_both_eyes_while_walking_and_turning_either_way() {
+    let mut mascot = Mascot::default();
+    // Two cells of travel: it paces and turns at both ends, looking where it is going.
+    let frames = play(&mut mascot, Rect::new(0, 0, 20, 3), 0..96);
+    let mut eye_columns = std::collections::BTreeSet::new();
+    for (tick, buffer) in frames.iter().enumerate() {
+        let count = |glyph: &str| {
+            buffer
+                .content()
+                .iter()
+                .filter(|c| c.symbol() == glyph)
+                .count()
+        };
+        assert!(
+            (count("▪"), count("–")) == (2, 0) || (count("▪"), count("–")) == (0, 2),
+            "tick {tick}: two open eyes, or both shut in the blink of a turn"
+        );
+        if let Some(x) = (0..60).find(|&x| buffer[(x, 1)].symbol() == "▪") {
+            // Relative to the lane position the body is drawn at.
+            eye_columns.insert(x);
+        }
     }
-    assert_eq!(
-        terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .filter(|c| c.symbol() == "▪")
-            .count(),
-        2
+    assert!(
+        eye_columns.len() >= 3,
+        "the gaze follows the heading: {eye_columns:?}"
     );
 }
 
@@ -452,4 +469,207 @@ fn pirate_keeps_one_visible_eye_and_an_inset_patch_with_connected_strap() {
         }
     }
     panic!("patrol never displayed the pirate costume");
+}
+
+/// A tiny pack: `a` marks the left half of the bottom-left cell, `b` adds a second marker,
+/// `t` fills that cell, `c` marks cell 5 and `e` leaves the bottom of the top-left cell open.
+fn pack(mirror: bool, extra: &str) -> String {
+    let row = ".".repeat(32);
+    let art = |bottom: &str| {
+        let bottom = format!("{bottom}{}", ".".repeat(32 - bottom.len()));
+        format!(
+            "art = '''\n{}\n{}\n'''",
+            [row.as_str(); 4].join("\n"),
+            [bottom.as_str(); 2].join("\n")
+        )
+    };
+    format!(
+        "step_ticks = 4\nmirror = {mirror}\n[palette]\nA = \"#ff0000\"\nB = \"#00ff00\"\n\
+         [poses.a]\n{}\n[poses.b]\n{}\n[poses.t]\n{}\n[poses.c]\n{}\n\
+         [poses.e]\n{}\ncells = [[0, 0, \"▂\", \".\", \"A\"]]\n\
+         [[clip]]\nname = \"walking\"\nframes = [[\"a\", 2], [\"b\", 2]]\n\
+         [[clip]]\nname = \"turning\"\nframes = [[\"t\", 4]]\n\
+         [[clip]]\nname = \"act\"\nframes = [[\"e\", 4]]\n{extra}",
+        art("A"),
+        art("A.BB"),
+        art("AA"),
+        art("..........BB"),
+        art("A"),
+    )
+}
+/// The buffer after each 12 fps tick, drawing into `area` of a 60x3 screen.
+fn play(m: &mut Mascot, area: Rect, ticks: std::ops::Range<u32>) -> Vec<Buffer> {
+    let mut terminal = Terminal::new(TestBackend::new(60, 3)).unwrap();
+    ticks
+        .map(|tick| {
+            terminal
+                .draw(|f| {
+                    m.draw(f, area, f64::from(tick) / 12.0, &[]);
+                })
+                .unwrap();
+            terminal.backend().buffer().clone()
+        })
+        .collect()
+}
+const RED: Color = Color::Rgb(255, 0, 0);
+const GREEN: Color = Color::Rgb(0, 255, 0);
+fn leftmost(buffer: &Buffer, color: Color) -> Option<u16> {
+    (0..60).find(|&x| buffer[(x, 2)].fg == color)
+}
+
+#[test]
+fn walking_moves_one_cell_exactly_when_the_feet_change() {
+    let mut m = Mascot::from_pack(&pack(false, ""), true).unwrap();
+    let frames = play(&mut m, Rect::new(0, 0, 60, 3), 0..17);
+    let at: Vec<u16> = frames.iter().map(|b| leftmost(b, RED).unwrap()).collect();
+    assert_eq!(at[0], 1, "the lane starts one column in");
+    for tick in 1..17 {
+        let moved = at[tick] - at[tick - 1];
+        assert_eq!(
+            moved,
+            u16::from(tick % 4 == 0),
+            "tick {tick}: a step is one cell, only on a step tick: {at:?}"
+        );
+    }
+    // Pose `b` (the second marker) shows on ticks 2 and 3 of each four-tick cycle.
+    for (tick, buffer) in frames.iter().enumerate() {
+        assert_eq!(
+            leftmost(buffer, GREEN).is_some(),
+            tick % 4 >= 2,
+            "the pose and the position are driven by the same tick"
+        );
+    }
+}
+
+#[test]
+fn heading_left_mirrors_poses_and_the_turn_flips_halfway() {
+    let mut m = Mascot::from_pack(&pack(true, ""), true).unwrap();
+    // Twenty columns leave two cells of travel: the right edge is reached on tick 8.
+    let frames = play(&mut m, Rect::new(0, 0, 20, 3), 0..24);
+    let cell = |tick: usize, x: u16| {
+        (
+            frames[tick][(x, 2)].symbol().to_owned(),
+            frames[tick][(x, 2)].fg,
+        )
+    };
+    assert_eq!(cell(7, 2), ("▌".into(), RED), "walking right");
+    assert_eq!(cell(8, 3), ("█".into(), RED), "turning starts on arrival");
+    assert_eq!(cell(9, 3), ("█".into(), RED));
+    // Mirrored about the 16-cell canvas from the middle of the turning clip.
+    assert_eq!(cell(10, 18), ("█".into(), RED));
+    assert_eq!(
+        cell(12, 18),
+        ("▐".into(), RED),
+        "walking left shows the mirrored pose"
+    );
+    assert_eq!(
+        cell(14, 17),
+        ("█".into(), GREEN),
+        "the second marker mirrors too"
+    );
+    assert_eq!(
+        cell(16, 17),
+        ("▐".into(), RED),
+        "and steps left in time with the feet"
+    );
+    // The left edge turns it back: the second half of that turn faces right again.
+    assert_eq!(cell(21, 16), ("█".into(), RED));
+    assert_eq!(cell(23, 1), ("█".into(), RED));
+}
+
+#[test]
+fn a_left_clip_replaces_mirroring() {
+    let extra = "[[clip]]\nname = \"walking-left\"\nframes = [[\"c\", 4]]\n";
+    let mut m = Mascot::from_pack(&pack(true, extra), true).unwrap();
+    let frames = play(&mut m, Rect::new(0, 0, 20, 3), 0..14);
+    assert_eq!(
+        frames[13][(8, 2)].symbol(),
+        "█",
+        "the drawn left pose, not a mirror"
+    );
+    assert_eq!(frames[13][(8, 2)].fg, GREEN);
+    assert_eq!(leftmost(&frames[13], RED), None);
+}
+
+#[test]
+fn a_transparent_part_shows_what_is_underneath() {
+    use ratatui::style::Modifier;
+    for (under, fg, bg, reversed) in [
+        (Color::Black, Color::Black, RED, false),
+        // The terminal's own background has no color to draw with, so the cell is reversed.
+        (Color::Reset, RED, Color::Reset, true),
+    ] {
+        let mut m = Mascot::from_pack(&pack(false, ""), true).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(60, 3)).unwrap();
+        let mut seen = false;
+        for tick in 0..600 {
+            terminal
+                .draw(|f| {
+                    for x in 0..60 {
+                        f.buffer_mut()[(x, 0)].set_bg(under);
+                    }
+                    m.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            if let Some(x) = (0..60).find(|&x| buffer[(x, 0)].symbol() == "▂") {
+                let cell = &buffer[(x, 0)];
+                assert_eq!((cell.fg, cell.bg), (fg, bg));
+                assert_eq!(cell.modifier.contains(Modifier::REVERSED), reversed);
+                seen = true;
+                break;
+            }
+        }
+        assert!(seen, "the action with the open-bottomed cell never played");
+    }
+}
+
+#[test]
+fn every_built_in_pet_parses_patrols_and_stays_in_its_three_rows() {
+    assert_eq!(Pet::default(), Pet::Clawd);
+    assert_eq!(Pet::parse("cat"), Ok(Pet::Cat));
+    assert!(Pet::parse("dog").unwrap_err().contains("clawd or cat"));
+    for pet in Pet::ALL {
+        assert_eq!(Pet::parse(pet.name()), Ok(pet));
+        let mut m = Mascot::new(pet, true);
+        let mut terminal = Terminal::new(TestBackend::new(70, 6)).unwrap();
+        let mut columns = std::collections::BTreeSet::new();
+        for tick in 0..7200 {
+            let mut painted = Vec::new();
+            terminal
+                .draw(|f| {
+                    painted = m.draw(f, Rect::new(0, 0, 70, 3), f64::from(tick) / 12.0, &[]);
+                })
+                .unwrap();
+            assert!(
+                !painted.is_empty(),
+                "{} vanished at tick {tick}",
+                pet.name()
+            );
+            assert!(painted.iter().all(|r| r.y < 3));
+            columns.insert(painted.iter().map(|r| r.x).min().unwrap());
+        }
+        assert!(columns.len() > 20, "{} must travel its lane", pet.name());
+    }
+    // The two pets are told apart by their own body color.
+    let body = |pet| {
+        let mut terminal = Terminal::new(TestBackend::new(40, 3)).unwrap();
+        terminal
+            .draw(|f| {
+                Mascot::new(pet, true).draw(f, f.area(), 0.0, &[]);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let colors: std::collections::BTreeSet<_> = buffer
+            .content()
+            .iter()
+            .filter_map(|c| match c.fg {
+                Color::Rgb(r, g, b) => Some((r, g, b)),
+                _ => None,
+            })
+            .collect();
+        colors
+    };
+    assert!(body(Pet::Clawd).contains(&(217, 119, 87)));
+    assert!(!body(Pet::Cat).is_empty() && !body(Pet::Cat).contains(&(217, 119, 87)));
 }

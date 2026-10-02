@@ -427,6 +427,52 @@ fn mascot_toggle_defaults_on_saves_a_boolean_and_can_be_cancelled_or_reset() {
     );
 }
 
+#[test]
+fn mascot_choice_cycles_through_the_pets_and_saves_the_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "# keep this comment\nleft_width = 52\n").unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot"), Some("clawd"));
+    for _ in 0..3 {
+        press(&mut settings, KeyCode::Down);
+    }
+    press(&mut settings, KeyCode::Right);
+    assert_eq!(settings.value("mascot"), Some("cat"));
+    // Typing and pasting do not edit a choice.
+    settings.paste("dog");
+    press(&mut settings, KeyCode::Char('x'));
+    ctrl(&mut settings, 'u');
+    assert_eq!(settings.value("mascot"), Some("cat"));
+    press(&mut settings, KeyCode::Left);
+    assert_eq!(settings.value("mascot"), Some("clawd"));
+    press(&mut settings, KeyCode::Left);
+    assert_eq!(
+        settings.value("mascot"),
+        Some("cat"),
+        "the choice wraps around"
+    );
+    let Outcome::Saved(saved, restart) = ctrl(&mut settings, 's') else {
+        panic!("{}", settings.message())
+    };
+    assert!(restart.is_empty(), "the pet changes without a restart");
+    assert_eq!(saved.mascot, saddle::mascot::Pet::Cat);
+    let written: toml::Value = toml::from_str(&read(&path)).unwrap();
+    assert_eq!(written["mascot"].as_str(), Some("cat"));
+    assert!(read(&path).starts_with("# keep this comment\nleft_width = 52\n"));
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot"), Some("cat"));
+    for _ in 0..3 {
+        press(&mut settings, KeyCode::Down);
+    }
+    ctrl(&mut settings, 'd');
+    assert_eq!(
+        settings.value("mascot"),
+        Some("clawd"),
+        "Default goes back to Clawd"
+    );
+}
+
 fn color_name(theme: &saddle::theme::Theme, name: &str) -> String {
     let mut theme = theme.clone();
     let color = theme
