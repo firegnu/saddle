@@ -17,3 +17,9 @@
 - 补核真实宿主/插件协议上的直接入口：插件遥测跳转/拒绝1、旧log退役视图1、宿主遥测往返1，以及7个受页签选择器影响的定向workflow，共10项通过，累计63个不同目标。未跑整套workflow。已同步其余同名页签选择器，不声称执行所有相关文件的全部用例。
 - 定向workflow首次6过1败（仍点击旧Links），改为关联资料后该单项通过；旧log视图单项首次因直接拼接CJK续格导致文字多空格失败，改为读取协议文本span后通过。失败原日志保留，不声称一次全绿。日志/tmp/saddle-overview-{plugin-nav,host-nav,workflow-selectors,links-selector,legacy-view,legacy-view-final}.log。
 - 必要插件release构建完成（/tmp/saddle-overview-build.log），候选在/tmp/saddle-run-overview-stage-path指向的目录；隔离HOME/假Corral的initialize/shutdown通过。未重建或替换日常宿主；插件manifest及真实配置保持。
+
+## 展示语言纠正
+
+用户指出上版未经授权改成中文。恢复该轮改动的所有产品文案为英文，保留页签布局与只读摘要；不翻译用户正文、报告或退回原因，不改判断/查询/任务流转。纯文案纠正不制造RED，只验证直接相关展示/节点文案与必要插件构建。
+
+纠正验证：插件lib 5项、UI 22项通过（/tmp/saddle-ui-language-check.log）；首屏、窄屏、选中样式与点击保留。生产3个文件去除字符串并规范化rustfmt空白/尾逗号后与纠正前一致，无新增判断；初次未规范化尾逗号的检查失败仅为格式差异，已核diff。必要release构建通过，未重复workflow、全仓测试或Clippy。

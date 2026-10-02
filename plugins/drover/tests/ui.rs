@@ -283,7 +283,7 @@ fn queue_history_scrollbar_reaches_the_end_with_the_last_task_visible() {
 }
 
 #[test]
-fn queue_chrome_preserves_source_text_and_localized_task_tabs() {
+fn queue_chrome_is_english_and_preserves_source_text() {
     let (_, mut q) = fixture();
     q.absorb(Snapshot {
         pending: vec![Task {
@@ -305,11 +305,7 @@ fn queue_chrome_preserves_source_text_and_localized_task_tabs() {
             .replace("原始任务", "")
             .replace("原始正文", "")
             .replace("原始原因", "")
-            .replace("原始反馈", "")
-            .replace("任务说明", "")
-            .replace("运行概览", "")
-            .replace("关联资料", "")
-            .replace("打开遥测", "");
+            .replace("原始反馈", "");
         assert!(
             !chrome
                 .chars()
@@ -602,8 +598,8 @@ fn run_details_sit_beside_the_list_inside_the_popup_only() {
     let all = text(&buffer);
     for label in [
         "Repository reference",
-        "运行概览",
-        "任务说明 t",
+        "Run details",
+        "Task text t",
         "Close Esc",
     ] {
         let (x, y) = find(&buffer, label).unwrap_or_else(|| panic!("{label}: {all}"));
@@ -645,15 +641,15 @@ fn task_tabs_mark_the_chosen_view_and_details_color_structured_states() {
     for (w, h) in [(160, 48), (80, 24)] {
         q.view = queue::View::Text;
         let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
-        assert_eq!(style(&buffer, "任务说明 t", 0, 8), (theme::FOCUS, true));
-        assert_eq!(style(&buffer, "运行概览", 0, 8).0, theme::MUTED);
-        assert!(!style(&buffer, "运行概览", 0, 8).1);
+        assert_eq!(style(&buffer, "Task text t", 0, 8), (theme::FOCUS, true));
+        assert_eq!(style(&buffer, "Run details", 0, 8).0, theme::MUTED);
+        assert!(!style(&buffer, "Run details", 0, 8).1);
     }
     open_detail(&mut q, Some(show_json()));
     for (w, h) in [(160, 48), (80, 24)] {
         let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
-        assert_eq!(style(&buffer, "运行概览", 0, 8), (theme::FOCUS, true));
-        assert_eq!(style(&buffer, "任务说明 t", 0, 8).0, theme::MUTED);
+        assert_eq!(style(&buffer, "Run details", 0, 8), (theme::FOCUS, true));
+        assert_eq!(style(&buffer, "Task text t", 0, 8).0, theme::MUTED);
     }
     // Reference failures keep their semantic color and do not become completion gates.
     let buffer = render_queue(&mut q, 106, 120);
@@ -677,12 +673,12 @@ fn content_views_and_edit_keep_reading_positions() {
     q.key(KeyEvent::new(K::PageDown, KeyModifiers::NONE));
     let (before, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
     assert!(!text(&before).contains("Original body line 0 "));
-    let (x, y) = find(&before, "运行概览").expect("fixed view switch");
+    let (x, y) = find(&before, "Run details").expect("fixed view switch");
     q.click(x, y);
     let (details, _) = render(160, 48, &mut a, &mut q, Focus::Queue);
     assert_eq!(q.view, queue::View::Details);
     assert!(find(&details, "T12345").is_some());
-    let (x, y) = find(&details, "任务说明 t").unwrap();
+    let (x, y) = find(&details, "Task text t").unwrap();
     q.click(x, y);
     assert_eq!(
         text(&render(160, 48, &mut a, &mut q, Focus::Queue).0),
@@ -705,7 +701,7 @@ fn content_views_and_edit_keep_reading_positions() {
     q.absorb(fresh);
     for (w, h) in [(160, 48), (60, 24)] {
         let (buffer, _) = render(w, h, &mut a, &mut q, Focus::Queue);
-        assert!(find(&buffer, "任务说明 t").is_some());
+        assert!(find(&buffer, "Task text t").is_some());
         assert!(find(&buffer, "Edit e").is_none());
     }
 }
@@ -1207,7 +1203,7 @@ fn telemetry_link_is_offered_for_numbered_tasks_and_covers_all_their_runs() {
     q.project = "/tmp/project-a".into();
     q.absorb(recording_queue(false));
     q.select(1);
-    assert!(click_label(&mut q, "打开遥测 ↗").is_none());
+    assert!(click_label(&mut q, "Telemetry ↗").is_none());
     assert_eq!(
         q.telemetry_request.take(),
         Some(saddle_plugin_sdk::protocol::TelemetryFilter {
@@ -1221,13 +1217,13 @@ fn telemetry_link_is_offered_for_numbered_tasks_and_covers_all_their_runs() {
     q.select(2);
     let screen = text(&render_queue(&mut q, 150, 40));
     assert!(
-        screen.contains("Loose idea") && !screen.contains("打开遥测 ↗"),
+        screen.contains("Loose idea") && !screen.contains("Telemetry ↗"),
         "{screen}"
     );
     assert!(q.telemetry_request.is_none());
     // History keeps its link.
     q.select(3);
-    assert!(click_label(&mut q, "打开遥测 ↗").is_none());
+    assert!(click_label(&mut q, "Telemetry ↗").is_none());
     assert_eq!(q.telemetry_request.take().unwrap().key, "T0");
 }
 
@@ -1240,33 +1236,33 @@ fn run_overview_keeps_key_nodes_and_manual_steps_on_the_first_screen() {
     data["task"]["t1"] = serde_json::Value::Null;
     data["task"]["t2"] = serde_json::Value::Null;
     data["reports"] = json!({"state":"available","observations":[
-        {"stage":"agent.send","seq":2,"count":2,"kind":"agent.send.end","recorded_at":"2026-10-02T05:21:18Z","status":"已确认交付（非任务完成）"},
-        {"stage":"route","seq":4,"count":2,"kind":"route.end","recorded_at":"2026-10-02T05:23:10Z","status":"已保存响应与建议（非主控决定）"},
-        {"stage":"agent.start","seq":6,"count":2,"kind":"agent.start.end","recorded_at":"2026-10-02T05:24:29Z","status":"已返回 Agent 身份（非实现完成）"},
-        {"stage":"agent.reply","seq":8,"count":2,"kind":"agent.reply.end","recorded_at":"2026-10-02T05:26:50Z","status":"已读取回复（任务关联未证实）"}],
+        {"stage":"agent.send","seq":2,"count":2,"kind":"agent.send.end","recorded_at":"2026-10-02T05:21:18Z","status":"Delivery confirmed (not task completion)"},
+        {"stage":"route","seq":4,"count":2,"kind":"route.end","recorded_at":"2026-10-02T05:23:10Z","status":"Response and suggestion recorded"},
+        {"stage":"agent.start","seq":6,"count":2,"kind":"agent.start.end","recorded_at":"2026-10-02T05:24:29Z","status":"Agent identity returned (not completion)"},
+        {"stage":"agent.reply","seq":8,"count":2,"kind":"agent.reply.end","recorded_at":"2026-10-02T05:26:50Z","status":"Reply read; task association unproven"}],
         "entries":[{"event_id":"r","seq":9,"kind":"review.recorded","dispatch_id":"d","recorded_at":"2026-10-02T05:27:40Z","verdict":"passed","text":"REVIEW REPORT BODY"},
         {"event_id":"c","seq":10,"kind":"controller.note","dispatch_id":"d","recorded_at":"2026-10-02T05:29:10Z","text":"CLOSURE REPORT BODY"}]});
     open_detail(&mut q, Some(data));
     let wide = render_queue(&mut q, 180, 44);
     let output = text(&wide);
     for label in [
-        "本次关键节点",
-        "主控声明：passed",
-        "已有主控报告",
-        "尚未提交",
-        "尚未验收",
-        "下一步",
+        "Key events · this run",
+        "Controller declared: passed",
+        "Report recorded",
+        "Not submitted",
+        "Not accepted",
+        "Next step",
     ] {
         assert!(output.contains(label), "missing {label}: {output}");
     }
-    let (jump_x, jump_y) = find(&wide, "打开遥测 ↗").unwrap();
-    let (links_x, links_y) = find(&wide, "关联资料").unwrap();
+    let (jump_x, jump_y) = find(&wide, "Telemetry ↗").unwrap();
+    let (links_x, links_y) = find(&wide, "Links").unwrap();
     assert_eq!(jump_y, links_y);
     assert!(jump_x > links_x + 15, "jump is separate from tabs");
     q.click(links_x, links_y);
     assert_eq!(q.view, queue::View::Links);
     let buffer = render_queue(&mut q, 80, 24);
-    let (x, y) = find(&buffer, "运行概览").unwrap();
+    let (x, y) = find(&buffer, "Run details").unwrap();
     q.click(x, y);
     assert_eq!(q.view, queue::View::Details);
     for _ in 0..30 {

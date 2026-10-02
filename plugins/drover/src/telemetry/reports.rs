@@ -41,31 +41,31 @@ fn observation(event: &Value) -> Option<Node> {
             .is_some_and(|b| b.iter().any(|b| b["role"] == role))
     };
     let status = if kind.ends_with(".begin") {
-        "已记录开始；结果未知".into()
+        "Start recorded; result unknown".into()
     } else if p["outcome"]["kind"] == "exited" && p["outcome"]["exit_code"] == 0 {
         match stage {
-            "agent.send" if p["pending"] == true => "已排队；交付未确认",
+            "agent.send" if p["pending"] == true => "Queued; delivery unconfirmed",
             "agent.send" if p["confirmed"] == true && p["pending"] == false => {
-                "已确认交付（非任务完成）"
+                "Delivery confirmed (not task completion)"
             }
-            "agent.start" if p["pending"] == true => "启动已排队；结果未知",
+            "agent.start" if p["pending"] == true => "Start queued; result unknown",
             "agent.start" if p["name"].is_string() && p["instance"].is_string() => {
-                "已返回 Agent 身份（非实现完成）"
+                "Agent identity returned (not completion)"
             }
-            "agent.reply" if has_body("reply") => "已读取回复（任务关联未证实）",
+            "agent.reply" if has_body("reply") => "Reply read; task association unproven",
             "route" if has_body("response") && has_body("suggestion") => {
-                "已保存响应与建议（非主控决定）"
+                "Response and suggestion recorded"
             }
-            _ => "命令退出 0；结果证据不完整",
+            _ => "Exit 0; result evidence incomplete",
         }
         .into()
     } else {
         match p["outcome"]["kind"].as_str() {
-            Some("exited") => format!("命令退出 {}", p["outcome"]["exit_code"]),
-            Some("timed_out") => "超时 timed_out；结果未知".into(),
-            Some("signaled") => "命令被信号终止；结果未知".into(),
-            Some("spawn_failed") => "命令启动失败".into(),
-            _ => "结果未知".into(),
+            Some("exited") => format!("Command exit {}", p["outcome"]["exit_code"]),
+            Some("timed_out") => "Timed out; result unknown".into(),
+            Some("signaled") => "Signaled; result unknown".into(),
+            Some("spawn_failed") => "Command failed to start".into(),
+            _ => "result unknown".into(),
         }
     };
     Some(Node {
@@ -315,7 +315,7 @@ else:
         assert_eq!(result.observations.len(), 1);
         assert_eq!(result.observations[0].count, 2);
         assert_eq!(result.observations[0].seq, 4);
-        assert!(result.observations[0].status.contains("timed_out"));
+        assert!(result.observations[0].status.contains("Timed out"));
         assert!(
             result
                 .entries
@@ -339,34 +339,39 @@ else:
             .unwrap()
             .status
         };
-        assert!(node("route.begin", json!({}), &[]).contains("结果未知"));
+        assert!(node("route.begin", json!({}), &[]).contains("result unknown"));
         for outcome in ["timed_out", "signaled", "unknown"] {
             assert!(
-                node("route.end", json!({"outcome":{"kind":outcome}}), &[]).contains("结果未知")
+                node("route.end", json!({"outcome":{"kind":outcome}}), &[])
+                    .contains("result unknown")
             );
         }
         let exited = json!({"outcome":{"kind":"exited","exit_code":0}});
-        assert!(node("agent.reply.end", exited.clone(), &[]).contains("证据不完整"));
-        assert!(node("agent.reply.end", exited.clone(), &["reply"]).contains("任务关联未证实"));
-        assert!(node("route.end", exited.clone(), &["response"]).contains("证据不完整"));
+        assert!(node("agent.reply.end", exited.clone(), &[]).contains("evidence incomplete"));
         assert!(
-            node("route.end", exited.clone(), &["response", "suggestion"]).contains("已保存响应")
+            node("agent.reply.end", exited.clone(), &["reply"])
+                .contains("task association unproven")
+        );
+        assert!(node("route.end", exited.clone(), &["response"]).contains("evidence incomplete"));
+        assert!(
+            node("route.end", exited.clone(), &["response", "suggestion"])
+                .contains("Response and suggestion recorded")
         );
         let mut pending = exited;
         pending["confirmed"] = json!(true);
         pending["pending"] = json!(true);
-        assert!(node("agent.send.end", pending.clone(), &[]).contains("交付未确认"));
+        assert!(node("agent.send.end", pending.clone(), &[]).contains("delivery unconfirmed"));
         pending["pending"] = Value::Null;
-        assert!(node("agent.send.end", pending.clone(), &[]).contains("证据不完整"));
+        assert!(node("agent.send.end", pending.clone(), &[]).contains("evidence incomplete"));
         pending["pending"] = json!(false);
-        assert!(node("agent.send.end", pending, &[]).contains("非任务完成"));
+        assert!(node("agent.send.end", pending, &[]).contains("not task completion"));
         assert!(
             node(
                 "agent.reply.end",
                 json!({"outcome":{"kind":"exited","exit_code":1}}),
                 &[]
             )
-            .contains("退出 1")
+            .contains("exit 1")
         );
     }
 }
