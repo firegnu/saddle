@@ -12,6 +12,7 @@
 - 首稿14b0eeb已核完整DONE，未通过；集中修订已交原设计者。主仓库docs/任务/遥测单任务边界-主控核对.md：M1只读policy不能拒绝closed、错误优先级/无库/合法context边界；M2区间现无条件end=null，不会自然截止，需按结束事件限定；M3审查等待/会话生命周期/保留材料表述及Tasks既有记录选择。I1–I8主控裁定在该文档；不采纳自动改Return后Record默认值，不重问既有项目默认、不操作旧trace。仅文档静态及diff check，无测试构建；未派实现、未安装。
 - **最新覆盖上两条设计状态**：修订1074b3a已核完整DONE及增量，M1–M3关闭，定稿b572717，已合并推送；只静态核对，未执行功能验证。原设计工作区/分支已安全删除，确认idle/attached0后关闭对应7f019dd5dae6，空提交2749553；迟到not_found忽略勿恢复。
 - 实施任务docs/任务/遥测单任务边界-实施.md：同分支依次完成宿主schema v2/close/查询、Drover收尾调用、技能revision3与直接文档。JEV重/交叉要/碰要害，主控照用Codex gpt-6-astra/xhigh；使用合成数据验证，主控标准后独立审查。尚未安装或迁移真实库，Tasks记录选择保持原样，不采集本次工作。
+- 已派saddle/dev-telemetry-boundary-1，instancef99302444ec2，分支/worktree telemetry-task-boundary，基线374fe80。结束先status、working重挂；idle后普通corral reply取完整DONE，不能带Theme记录上下文。核diff/完成记录/有效RED-GREEN和一次标准，再新开重档Codex独立交叉审查。必须改交原实现者，每轮提醒，返工仅目标直接回归。通过才合并推送清理、成功删目录后关自建agent、空提交及HANDOFF；本轮不安装、不迁移真实库，部署另行处理。
 
 ## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
