@@ -3,13 +3,13 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
-## 最新：单任务遥测边界部署已授权，产物已备好，等待用户退出
+## 最新：单任务遥测边界已部署并完成启动核验
 
-- **最新覆盖：用户已退出，宿主/Drover文件已实际替换，已通知可重开。** 公开无实例/精确进程检查通过，SQLite一致性备份已完成，版本1/integrity ok；实际入口help与新宿主/插件哈希通过，配置未变，真实库仍v1。等待用户重开后核Drover运行与技能两目标revision3，不称部署全验完。证据为暂存installed.json/preflight.json和备份database-backup.json。
-
-- 用户明确“开始这个替换部署流程”，已构建暂存宿主和Drover、隔离smoke3项通过、备份旧产物/配置/技能；尚未替换或迁移真实库。部署记录docs/任务/遥测单任务边界-部署记录.md。
-- 暂存路径/tmp/saddle-boundary-deploy-path → /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-boundary-deploy-7tjwbixl；备份/Users/firegnu/.local/share/saddle/backups/telemetry-boundary-20261002-234002。真实库快照等退出后再做。
-- 已异步请用户退出Saddle并确认无在途记录调用，等待明确答复；之后公开再核无实例/进程，SQLite backup一致性快照→成套替换→核哈希→通知重开→核技能revision3。不关闭Corral agent、不动队列/历史trace、不同步用户修改的技能，不为验证写真实库。
+- 用户明确授权部署并退出Saddle，公开无实例/宿主/Drover进程后备份SQLite与旧产物，再成套替换；用户已重新打开。当前实例693d73ccc278e385，Drover公开projects只读请求complete/result.ok=true，两处dispatch技能revision3/owned_current、资源逐字匹配。主控已重新读取新版指引，已有其他agent不会自动刷新旧上下文。
+- 安装源码bf056e1；宿主SHA256 5e1fecbd977ed311479abe2f9e92a451fea5b203dfec93dcb9271759d82d9c5d，Drover SHA256 58b85bffdb53314237153fdebe2c08b709b575525f3cbd8a0bcd7e998cfc765a；入口软链接和config/plugins配置保持。构建/隔离smoke/安装哈希/运行只读核验通过，无真实任务试派或队列推进。
+- 备份/Users/firegnu/.local/share/saddle/backups/telemetry-boundary-20261002-234002含旧程序/包/配置/技能/所有权及SQLite backup快照（v1/integrity ok）；证据暂存/tmp/saddle-boundary-deploy-path → /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-boundary-deploy-7tjwbixl。完整记录docs/任务/遥测单任务边界-部署记录.md。
+- 真实库当前仍v1，正常下一次写入自动迁移v2；没有为验证写库或关闭历史Theme等trace。新结束机制和技能已可用，下一独立任务未选不采集，再要求新trace。旧版不能读写v2，回退限制及快照后记录损失见部署记录；不自行回退。
+- 此部署没有新增agent/worktree，没有关闭用户会话。保留原设计review/t38/t55。部署记录提交与收尾后推送；下一步等用户需求，不扩展Corral迁移或真实业务测试。
 
 ## 单任务遥测边界已审查合并收尾
 
@@ -20,7 +20,7 @@
 - 证据：docs/任务/遥测单任务边界-实施核对.md、遥测单任务边界-独立交叉审查.md；主控日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-telemetry-boundary-controller-ewzabu30，补遗漏saddle-boundary-omitted-zfvmdl6z；独立/private/tmp/saddle-boundary-review-_ys2oc22。设计1074b3a/定稿b572717及设计M1-M3已通过，不重开取舍。
 - 实施telemetry-task-boundary与detached review-telemetry-task-boundary均确认干净、候选已并入main，安全删除目录/分支后关闭自建saddle/dev-telemetry-boundary-1 instancef99302444ec2和review-1 instance3459f08440da。原设计7f019dd5dae6此前已清理。迟到提醒not_found忽略，不恢复。
 - 保留review-telemetry-design、t38-dispatch-study、t55-notification-flow及用户corral/main、e2e/main、saddle/main；未关闭用户agent。
-- **尚未安装/发布新版、迁移或关闭真实trace/库、同步真实技能或修改配置/队列。当前运行版本仍是下方Lagoon安装版本，不能声称新结束边界已在日常环境生效。** 后续部署另行处理：先备份真实SQLite及日常产物，成套宿主/Drover包先于技能revision3；不自动关闭旧Theme或其他历史trace，不在本轮实施部署。
+- 源码实施阶段未安装或改真实数据；后续用户已授权成套部署并完成，以上最新部署状态为准。历史trace仍未自动关闭，真实队列/配置未改，未发布远端release。
 
 ## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
