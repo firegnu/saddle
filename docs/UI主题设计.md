@@ -63,7 +63,7 @@ focus = "yellow"
 
 用户现有[colors]有28项，24项与原默认相同，4项不同：agents_bg=default、agent_selected=#302a23、claude=#d97757、codex=#8ed9c1。升级只按Dune+覆盖读取，不改这4项或其他键，不把个人差异改成所有人的默认值。用户后来明确切换主题并Save时才应用上述整套替换规则。
 
-Reset/default和ANSI取决于终端；Viewer里的agent输出颜色不属于Saddle主题，保持原样。
+Reset/default和ANSI取决于终端；Viewer默认前景/背景按末尾已批准补充跟随当前Theme的text/bg，agent显式颜色保持原样。
 
 ## 宿主及插件边界
 

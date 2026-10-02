@@ -60,3 +60,7 @@ worktree /Users/firegnu/Developer/personal_projs/saddle-worktrees/theme-terminal
 候选ec84452，status idle/attached0，公开reply末行DONE，采集首尾配对stored。已核全部diff及完成记录：仅四个指定源文件、直接测试和任务完成记录；两个绘制入口逐帧传当前Theme，显式RGB/索引/动态调色板优先，默认Foreground/Background才回退bg/text。解析、ColorRequest/default_rgb、PTY、输入及生命周期未改。diff --check通过。
 公开corral read输出已核terminal六项通过，含默认空白格/显式颜色/反色/OSC背景优先和复位后Dune；原文存/tmp/saddle-theme-terminal-public-read.txt。主控按看得见预算不重跑套件、全量或Clippy。额外fmt check只读，无新增改动。
 接受Tide共享bg/text让其他base区域同步变冷，这是复用现有主题语义的预期；Cursor及Dim/Bright默认名保持旧回退，不扩终端调色协议。无阻断，无交叉审查。实际终端体验留用户重开后检查；本结论不冒充桌面截图验收。
+
+## 合并、清理及安装
+
+合并80876ce；theme-terminal-colors工作区和分支已删除，原实现者idle/attached0、目录删除成功后关闭；空提交62190b7。必要release构建成功，旧宿主备份/Users/firegnu/.local/share/saddle/backups/theme-terminal-20261002-215135，日常入口SHA256 5cf134ea847740bad8a7a7c7717160f011713e83f694aa450b9decb10e55d32b及--help通过，真实配置哈希不变。日志/tmp/saddle-theme-terminal-build.log，安装记录/tmp/saddle-theme-terminal-install.json。未停止当前Saddle或用户agent；用户重新打开Saddle体验。用户现有agent与设计review/t38/t55工作区保留。
