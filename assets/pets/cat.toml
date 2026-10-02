@@ -1,4 +1,4 @@
-# A small gray cat, drawn as block glyphs on a 16x3 cell canvas. See README.md for the format.
+# A small orange cat, drawn as block glyphs on a 16x3 cell canvas. See README.md for the format.
 # Original design for saddle. It faces right; saddle flips every pose when it walks left.
 name = "cat"
 label = "Cat"
@@ -6,7 +6,7 @@ step_ticks = 4
 mirror = true
 
 [palette]
-G = "#969ca8"  # fur
+G = "#e29646"  # fur
 P = "#f096aa"  # nose
 K = "#141413"  # eyes
 Z = "#a59d8b"  # sleep
