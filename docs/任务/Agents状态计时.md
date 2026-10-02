@@ -61,3 +61,10 @@
 - GREEN／直接回归：working 单测通过；公开状态契约单测通过；`cargo test --target aarch64-apple-darwin -p saddle --test ui` 30 项通过；`cargo test --target aarch64-apple-darwin -p corral-core --test protocol` 11 项通过。覆盖输出／动画刷新、等待与空闲的新起点、旧字段缺失、重复事件、子会话过滤、旧 cursor 重建及原有 UI 样式。公开 Client 字段消费检查随全套通过。
 - 标准检查各一次，均设置 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`：`cargo test --target aarch64-apple-darwin --all-targets` 通过（609 passed，0 failed，9 ignored）；`cargo clippy --target aarch64-apple-darwin --all-targets -- -D warnings` 通过；`git diff --check` 通过。日志：`/tmp/saddle-agent-state-timer-all-targets.log`、`/tmp/saddle-agent-state-timer-clippy.log`。所有命令前台等待结束；使用指定 target 下候选二进制，测试只用合成数据与隔离目录。
 - 取舍／边界：旧 Corral 缺少状态起点时 idle／waiting 如实未知；working 仍可使用原有公开起点。9 个既有 ignored 检查（外部旧版客户端兼容性、安装形态及独立插件示例）未额外运行，不声称已验证。没有安装切换、界面重启、真实队列／用户 agent 操作，也未改宠物分支相关内容。实现范围无未完成项；仅提交本分支，等待主控审查与集成。
+
+## 主控审查（2026-10-03）
+
+- 结论：可以合并。核对 2df04b8 的完整 diff，变更限计时展示、最小公开字段与相关文档/测试；状态判定、警示阈值、宠物和任务业务未改。
+- 同意状态变化时记录 state_started、派生 cursor 升版后重放、缺失起点显示未知的取舍；同状态事件不会重置 idle/waiting，working 始终沿用本轮 turn_started，行末与活动行一致。
+- 主控在同一候选 worktree、共享目标目录的显式 aarch64-apple-darwin target 复跑标准测试：609 passed、0 failed、9 ignored；Clippy -D warnings 与 diff 检查通过。日志 /tmp/saddle-agent-state-timer-review-all-targets.log、/tmp/saddle-agent-state-timer-review-clippy.log。
+- 未验证已忽略项，未切换安装或重启实际宿主；当前安装 7755bb8 尚不包含本修复。无阻断意见，不增加交叉审查。
