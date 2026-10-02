@@ -1273,7 +1273,7 @@ fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
 }
 
 #[test]
-fn startup_colors_reach_agents_queue_controls_and_leave_viewer_colors_alone() {
+fn startup_colors_reach_agents_queue_controls_and_viewer_defaults() {
     use vt100::Color;
     let mut h = Harness::start_with_config(
         include_str!("fixtures/drover.py"),
@@ -1329,8 +1329,8 @@ text = "#abcdef"
     h.send(b"\x1b\x1d\r");
     h.see("p/a READY");
     let viewer = label_cell(&h, "p/a READY");
-    assert_eq!(viewer.fgcolor(), Color::Default);
-    assert_eq!(viewer.bgcolor(), Color::Default);
+    assert_eq!(viewer.fgcolor(), Color::Rgb(0xab, 0xcd, 0xef));
+    assert_eq!(viewer.bgcolor(), Color::Rgb(0x10, 0x20, 0x30));
     h.send(b"C");
     h.see("AGENT COLORS");
     let colored = label_cell(&h, "AGENT COLORS");
