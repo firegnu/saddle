@@ -2,12 +2,12 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
-## 最新：两项验收问题已修复合并，候选待安装
+## 最新：两项验收问题已修复合并并安装，可重开 Saddle
 
 - 用户授权主控直接修复，不委派。功能9f8630a、候选记录b757804，合并55201bf已推送。Run details 增加本次run审查/收尾报告，经宿主公开遥测查询；通用task.transition允许可选reason正文，Drover在退回业务落盘后采集原因并由现有正文查看器展示。任务状态机/人工Submit-Accept-Return不变，不改Corral、不反向依赖、不自动补写旧事件。
 - 有效RED/GREEN已核；标准414通过1失败5忽略（workflow鼠标测试resize后超时，原因未确认），该单项复跑通过，补其余工作区122通过，合计537个不同用例通过5忽略；Clippy通过。不能称一次全套绿，未扩修旧测试。日志/tmp/saddle-e2e-fixes-*.log，详见docs/任务/遥测验收问题修复.md。
 - release宿主/Drover已构建，隔离启动检查通过；成套候选/tmp/saddle-e2e-fixes-stage-vm6scrnf，manifest.json保存候选和现有安装哈希，路径文件/tmp/saddle-e2e-fixes-stage-path。构建在共享target显式架构目录，未覆盖日常安装。宿主候选489e9743…，Drover候选fd71367f…，插件清单原样保留。
-- **尚未安装**：已异步请用户退出Saddle界面后确认。得到明确回复后，再读`saddle ctl instances`和精确进程确认，无运行宿主/Drover后备份成套替换，核哈希并通知重开。不要停止任何Corral agent；不要把候选构建说成日常生效。
+- **日常安装已完成**：用户确认退出后，ctl instances为空且无运行宿主/Drover；旧宿主和完整插件包备份 /Users/firegnu/.local/share/saddle/backups/telemetry-e2e-fixes-20261002-162434。两二进制原子替换，哈希与候选一致、插件清单未改；安装后宿主只读查询和隔离插件启动/关闭通过。记录/tmp/saddle-e2e-fixes-install.json。可通知用户重新打开Saddle，真实界面复看待用户；Corral agents和真实队列/数据未操作。旧事件原因不自动回填。
 - 实施worktree/分支已清理，无自建agent；空提交收尾已完成，后续交接提交推送以工具结果为准。保留设计review/t38/t55。
 - 本轮人工验收用户最终确认完成，原问题证据保留docs/任务/遥测人工验收问题汇总.md。测试主控收尾时T1–T4 done、T5新run仍running是历史读回，本主控未操作真实队列；不把口头验收当平台Done。用户agent/测试数据保留。下文安装时“人工端到端测试尚未开始”为旧状态，以本节为准。
 
