@@ -799,7 +799,7 @@ pub fn execute_with(
                 Transition::Return => "pending",
             };
             // After Drover saved it: declared on this run's trace, if the run was recorded.
-            let telemetry = crate::telemetry::transition(
+            let mut telemetry = crate::telemetry::transition(
                 host,
                 &crate::telemetry::binding(s.repo.to_str().unwrap_or_default(), id, run_id),
                 None,
@@ -808,6 +808,11 @@ pub fn execute_with(
                 (*action == Transition::Return).then_some(reason.as_str()),
                 cancel,
             );
+            telemetry["close"] = if matches!(action, Transition::Accept | Transition::Return) {
+                crate::telemetry::close(host, telemetry["trace_id"].as_str(), cancel)
+            } else {
+                json!({"status":"not_attempted"})
+            };
             Ok(
                 json!({"schema_version":2,"ok":true,"task_id":id,"run_id":run_id,"state":to,"record":{"status":"recorded"},"telemetry":telemetry}),
             )

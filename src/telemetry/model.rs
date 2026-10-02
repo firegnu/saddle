@@ -49,6 +49,14 @@ pub struct TraceSettingInput {
     pub actor: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TraceCloseInput {
+    pub schema_version: u32,
+    pub trace_id: String,
+    pub actor: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BodyInput {

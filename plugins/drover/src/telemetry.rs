@@ -15,6 +15,8 @@ pub const KIND: &str = "drover.task";
 pub const IDENTITY_BUDGET: Duration = Duration::from_millis(300);
 /// Finding the run's trace and appending a transition after Drover saved the task state.
 pub const FOLLOW_BUDGET: Duration = Duration::from_secs(1);
+/// Ending the resolved run's trace has a separate budget, even if transition exhausted its own.
+pub const CLOSE_BUDGET: Duration = Duration::from_millis(300);
 /// Only Drover calls the host; Corral and the agent entry never receive it.
 pub const HOST_VARIABLE: &str = "SADDLE_HOST_BIN";
 mod reports;
@@ -314,4 +316,21 @@ pub fn transition(
         Ok(status) | Err(status) => status,
     };
     json!({"status":status,"trace_id":trace})
+}
+
+/// Ends only the trace already resolved for this run; never creates or searches for one.
+pub fn close(host: Option<&Path>, trace: Option<&str>, cancel: &AtomicBool) -> Value {
+    let (Some(host), Some(trace)) = (host, trace) else {
+        return json!({"status":"not_attempted"});
+    };
+    let status = match write(
+        host,
+        &["trace", "close"],
+        &json!({"schema_version":1,"trace_id":trace,"actor":"drover"}),
+        Instant::now() + CLOSE_BUDGET,
+        cancel,
+    ) {
+        Ok(status) | Err(status) => status,
+    };
+    json!({"status":status})
 }

@@ -1263,3 +1263,48 @@ fn full_stderr_has_bounded_receipts_no_replay_and_no_final_after_failed_start() 
         assert!(!text.contains("\"final\":true"));
     }
 }
+
+#[test]
+fn ended_trace_allows_route_once_without_capture_but_still_checks_associations() {
+    let f = Fixture::new();
+    f.enable();
+    let context = f.recording();
+    f.store()
+        .close_trace(saddle::telemetry::TraceCloseInput {
+            schema_version: 1,
+            trace_id: "t".into(),
+            actor: "synthetic".into(),
+        })
+        .unwrap();
+    let before = f.events();
+    let out = f.invoke(&[
+        "run",
+        "test.core",
+        "route",
+        "--record-context",
+        context.to_str().unwrap(),
+    ]);
+    assert_eq!(out.status.code(), Some(7));
+    let r = paired(&out.stderr);
+    assert_eq!(r["executed"], true);
+    assert_eq!(r["begin"], "disabled");
+    assert_eq!(r["end"], "disabled");
+    assert_eq!(f.calls(), 1);
+    assert_eq!(f.events(), before);
+    fs::write(
+        &context,
+        json!({"schema_version":1,"trace_id":"t","dispatch_id":"missing"}).to_string(),
+    )
+    .unwrap();
+    let out = f.invoke(&[
+        "run",
+        "test.core",
+        "route",
+        "--record-context",
+        context.to_str().unwrap(),
+    ]);
+    assert_eq!(out.status.code(), Some(125));
+    assert_eq!(paired(&out.stderr)["executed"], false);
+    assert_eq!(f.calls(), 1);
+    assert_eq!(f.events(), before);
+}

@@ -25,7 +25,7 @@ static MANIFEST: Manifest = Manifest {
     resources: &[Resource {
         kind: ResourceKind::AgentSkill,
         name: "corral-dispatch",
-        revision: 2,
+        revision: 3,
         files: &[
             ResourceFile {
                 path: "SKILL.md",
@@ -117,8 +117,8 @@ mod resource_tests {
         assert_eq!(
             (resource.revision, fingerprint.as_str()),
             (
-                2,
-                "sha256:0696e3c3fdf411be50b9751f2f430e0cff016611d13cb4d631e6dd3241850f9f"
+                3,
+                "sha256:efb2ff8bef91ef8d52772c267ace1ee65b05b8f70e9098c78931b9e2219e5407"
             )
         );
         assert_eq!(

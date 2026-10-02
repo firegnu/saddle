@@ -35,6 +35,102 @@ fn setting(enabled: bool) -> Value {
     json!({"schema_version":1,"enabled":enabled,"actor":"synthetic controller"})
 }
 
+#[test]
+fn trace_close_is_irreversible_readable_and_independent_of_global_recording() {
+    let dir = tempfile::tempdir().unwrap();
+    let close = json!({"schema_version":1,"trace_id":"t1","actor":"synthetic"});
+    let missing = submit(&dir, &["trace", "close"], close.clone(), 2);
+    assert_eq!(missing["error"]["message"], "unknown trace_id");
+    assert!(!dir.path().join("state").exists());
+    submit(&dir, &["settings", "set"], setting(true), 0);
+    submit(&dir, &["trace", "create"], trace("t1"), 0);
+    let event = requirement(&dir, "u1", "t1");
+    submit(&dir, &["append"], event.clone(), 0);
+    submit(&dir, &["settings", "set"], setting(false), 0);
+    assert_eq!(
+        submit(&dir, &["trace", "close"], close.clone(), 0)["status"],
+        "stored"
+    );
+    assert_eq!(
+        submit(&dir, &["trace", "close"], close.clone(), 0)["status"],
+        "duplicate"
+    );
+    let shown = response(run(&dir, &["show", "--id", "t1"]), 0);
+    let record = &shown["record"];
+    assert!(record["closed_at"].is_string());
+    assert_eq!(record["capture_enabled"], false);
+    assert_eq!(record["generation"], 1);
+    assert_eq!(
+        response(run(&dir, &["list"]), 0)["traces"][0]["closed_at"],
+        record["closed_at"]
+    );
+    std::fs::remove_file(dir.path().join("body.bin")).unwrap();
+    for global in [false, true] {
+        submit(&dir, &["settings", "set"], setting(global), 0);
+        assert_eq!(
+            submit(&dir, &["trace", "create"], trace("t1"), 4)["error"]["code"],
+            "trace_closed"
+        );
+        assert_eq!(
+            submit(
+                &dir,
+                &["dispatch", "create"],
+                json!({"schema_version":1,"dispatch_id":"d","trace_id":"t1","kind":"implementation"}),
+                4
+            )["error"]["code"],
+            "trace_closed"
+        );
+        assert_eq!(
+            submit(&dir, &["append"], event.clone(), 4)["error"]["code"],
+            "trace_closed",
+            "do not read the removed body"
+        );
+        assert_eq!(
+            submit(
+                &dir,
+                &["trace", "set-recording"],
+                json!({"schema_version":1,"trace_id":"t1","enabled":true,"actor":"synthetic"}),
+                4
+            )["error"]["code"],
+            "trace_closed"
+        );
+        assert_eq!(
+            submit(
+                &dir,
+                &["trace", "set-recording"],
+                json!({"schema_version":1,"trace_id":"t1","enabled":false,"actor":"synthetic"}),
+                0
+            )["status"],
+            "duplicate"
+        );
+    }
+    let again = response(run(&dir, &["show", "--id", "t1"]), 0);
+    assert_eq!(
+        again, shown,
+        "later global changes cannot extend a closed trace's history"
+    );
+    let intervals = record["recording_intervals"].as_array().unwrap();
+    assert!(intervals.iter().all(|i| i["end"].is_string()));
+    assert_eq!(intervals.last().unwrap()["end"], record["closed_at"]);
+    let history = record["recording_history"].as_array().unwrap();
+    let last = history.last().unwrap();
+    assert_eq!(last["payload"]["closed"], true);
+    assert_eq!(last["payload"]["changed_at"], record["closed_at"]);
+    let stored = response(run(&dir, &["show", "--id", "u1"]), 0);
+    let body = run(
+        &dir,
+        &[
+            "body",
+            "--sha256",
+            stored["record"]["bodies"][0]["sha256"].as_str().unwrap(),
+        ],
+    );
+    assert_eq!(body.stdout, b"synthetic\0\xff\r\n");
+    let mut invalid = close;
+    invalid["enabled"] = json!(true);
+    submit(&dir, &["trace", "close"], invalid, 2);
+}
+
 fn trace(id: &str) -> Value {
     json!({"schema_version":1,"trace_id":id,"origin":"ad_hoc","label":"synthetic"})
 }

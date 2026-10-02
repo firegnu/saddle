@@ -120,6 +120,8 @@
 
 ## 4. 证据语义对照（全部来自现有 Store 输出）
 
+单任务边界补充（2026-10-02，规范见[定稿设计](遥测单任务边界设计.md)，分支已实现、未安装）：list/show(trace) 增加 closed_at。列表 `trace ended`、底部 `trace recording ended <closed_at>`、详情 `recording ended` 均按此字段判断，不能从最后区间判断。recording_history/intervals 只纳入该 trace 结束事件 seq 及之前的控制事件，终止区间无条件以 changed_at 封口，无 now 尾段；未结束算法、原始 events 查询不变，时钟回拨不改变 seq 截止。带 closed:true 的 recording.changed 显示 `Trace ended`。缺 end 仍为 no end、原因未知，结束不证明成功，不重做布局或展示语言。
+
 | 要显示的 | 来源 |
 |---|---|
 | coverage_start、开关区间、全局/链路开关 | `show(trace)` 的 coverage_start / recording_intervals / capture_enabled；`settings()` |
@@ -161,6 +163,8 @@ Drover 在 dispatch-pending 中按序（插件侧改动，宿主无业务逻辑�
 6. 操作结果保留原 `delivery`/`record`，另加 `telemetry:{status,trace_id,dispatch_id}`。采集失败不改变业务结果、不阻断交付；但它不是重发或换路径的理由。
 
 之后的提交审查/验收/退回属于契约 §7 既有的整条任务流转，不是需要另批的新需求：若属已记录的 run，Drover 用 `telemetry list --kind --scope --key --run` 找到链路再 append task.transition，不在 Drover 数据中新存 trace_id。任务执行授权仍只来自原流程；附段不构成授权。
+
+单任务边界补充：Accept/Return 业务落盘并尝试 transition（Return 带原始原因）之后，Drover 对已解析的同 run trace 调用 `telemetry trace close`，有独立300 ms预算。Submit 不 close；找不到 trace 或查询失败为 not_attempted，不新建。transition 失败仍尝试 close，结果保留 `telemetry.status/trace_id` 并增加 `telemetry.close:{status}`，分别报告失败/未尝试，不重放业务、不改变任务状态成功。遥测可能永久缺该条流转/原因，Drover 原始原因保留。项目默认/本次覆盖不变，同run返工同trace，Return后新run按既有选择；主控不提前close绑定run。宿主仍只实现通用结束接口，不识别Drover状态机。
 
 ## 6. 实施划分
 

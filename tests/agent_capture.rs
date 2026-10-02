@@ -1191,3 +1191,49 @@ fn m1_every_unrecorded_invocation_and_rejection_has_its_own_boundary() {
     assert_eq!(f.calls(), 2);
     assert!(!f.dir.path().join("state").exists());
 }
+
+#[test]
+fn ended_trace_keeps_valid_business_once_and_rejects_invalid_associations() {
+    let f = Fixture::new("print(json.dumps({'ok':True,'confirmed':True}))");
+    let context = f.recording("send");
+    let store = f.store();
+    store
+        .close_trace(TraceCloseInput {
+            schema_version: 1,
+            trace_id: "t".into(),
+            actor: "synthetic".into(),
+        })
+        .unwrap();
+    let before = f.events();
+    let out = f
+        .command()
+        .arg("--record-context")
+        .arg(&context)
+        .args(["--", "send", "synthetic/name", "synthetic message"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    let r = receipt(&out);
+    assert_eq!(r["executed"], true);
+    assert_eq!(r["begin"], "disabled");
+    assert_eq!(r["end"], "disabled");
+    assert_eq!(f.calls(), 1);
+    assert_eq!(f.events(), before);
+    fs::write(
+        &context,
+        json!({"schema_version":1,"trace_id":"t","dispatch_id":"missing","send_kind":"initial"})
+            .to_string(),
+    )
+    .unwrap();
+    let out = f
+        .command()
+        .arg("--record-context")
+        .arg(context)
+        .args(["--", "send", "synthetic/name", "synthetic message"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(125));
+    assert_eq!(receipt(&out)["executed"], false);
+    assert_eq!(f.calls(), 1);
+    assert_eq!(f.events(), before);
+}

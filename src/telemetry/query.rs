@@ -139,11 +139,16 @@ fn operations(conn: &Connection, trace: &str) -> Result<Vec<Value>> {
 
 fn trace_details(conn: &Connection, record: &mut Value) -> Result<()> {
     let id = record["trace_id"].as_str().expect("trace ID").to_owned();
-    let mut stmt=conn.prepare("SELECT event_id FROM events WHERE trace_id=? OR (trace_id IS NULL AND kind='recording.changed') ORDER BY seq")?;
+    let close_seq: Option<i64> = if record["closed_at"].is_string() {
+        conn.query_row("SELECT seq FROM events WHERE trace_id=? AND kind='recording.changed' AND json_extract(record_json,'$.payload.closed')=1", [&id], |r| r.get(0)).optional()?
+    } else {
+        None
+    };
+    let mut stmt=conn.prepare("SELECT event_id FROM events WHERE (trace_id=?1 OR (trace_id IS NULL AND kind='recording.changed')) AND (?2 IS NULL OR seq<=?2) ORDER BY seq")?;
     let mut history = Vec::new();
     let mut gaps = Vec::new();
     let mut evidence = Vec::new();
-    for row in stmt.query_map([&id], |r| r.get::<_, String>(0))? {
+    for row in stmt.query_map(params![id, close_seq], |r| r.get::<_, String>(0))? {
         let event = validate::event(conn, &row?)?.expect("stored event");
         if event["kind"] == "recording.changed" {
             history.push(event.clone());
@@ -164,6 +169,10 @@ fn trace_details(conn: &Connection, record: &mut Value) -> Result<()> {
     let mut intervals = Vec::new();
     for change in &history {
         let at = &change["payload"]["changed_at"];
+        if change["payload"]["closed"] == true {
+            intervals.push(json!({"start":start,"end":at,"enabled":global && local}));
+            break;
+        }
         let time = validate::timestamp(at)?.expect("control time");
         if time > created {
             intervals.push(json!({"start":start,"end":at,"enabled":global && local}));
@@ -179,7 +188,9 @@ fn trace_details(conn: &Connection, record: &mut Value) -> Result<()> {
                 .expect("control boolean");
         }
     }
-    intervals.push(json!({"start":start,"end":null,"enabled":global && local}));
+    if close_seq.is_none() {
+        intervals.push(json!({"start":start,"end":null,"enabled":global && local}));
+    }
     record["recording_history"] = json!(history);
     record["recording_intervals"] = json!(intervals);
     record["known_gaps"] = json!(gaps);
@@ -251,7 +262,7 @@ impl Store {
         };
         let tx = conn.transaction()?;
         let traces = {
-            let mut stmt=tx.prepare("SELECT record_json,created_at,capture_enabled,generation FROM traces WHERE (?1 IS NULL OR (binding_kind=?1 AND binding_scope=?2 AND binding_key=?3 AND (?4 IS NULL OR binding_run=?4))) ORDER BY created_at,trace_id")?;
+            let mut stmt=tx.prepare(&format!("SELECT record_json,created_at,capture_enabled,generation,{} FROM traces WHERE (?1 IS NULL OR (binding_kind=?1 AND binding_scope=?2 AND binding_key=?3 AND (?4 IS NULL OR binding_run=?4))) ORDER BY created_at,trace_id", storage::closed_column(&tx)?))?;
             let mut traces = Vec::new();
             for row in stmt.query_map(
                 params![
@@ -266,14 +277,16 @@ impl Store {
                         r.get::<_, String>(1)?,
                         r.get::<_, bool>(2)?,
                         r.get::<_, i64>(3)?,
+                        r.get::<_, Option<String>>(4)?,
                     ))
                 },
             )? {
-                let (raw, at, enabled, generation) = row?;
+                let (raw, at, enabled, generation, closed_at) = row?;
                 let mut record: Value = serde_json::from_str(&raw)?;
                 record["coverage_start"] = json!(at);
                 record["capture_enabled"] = json!(enabled);
                 record["generation"] = json!(generation);
+                record["closed_at"] = json!(closed_at);
                 record["registration"] = json!(registration(
                     &tx,
                     record["trace_id"].as_str().expect("trace ID")
@@ -362,9 +375,10 @@ impl Store {
                 )?;
                 record["created_at"] = json!(created);
                 if table == "traces" {
-                    let (enabled, generation) = storage::policy(&tx, Some(id))?;
+                    let (enabled, generation, closed_at) = storage::policy(&tx, Some(id))?;
                     record["capture_enabled"] = json!(enabled);
                     record["generation"] = json!(generation);
+                    record["closed_at"] = json!(closed_at);
                     record["coverage_start"] = json!(created);
                     trace_details(&tx, &mut record)?;
                 }

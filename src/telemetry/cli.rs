@@ -8,6 +8,7 @@ pub fn run(args: &[String]) -> i32 {
 settings get\n\
 settings set --input FILE|-\n\
 trace create|set-recording --input FILE|-\n\
+trace close --input FILE|-\n\
 dispatch create --input FILE|-\n\
 append --input FILE|-\n\
 list [--kind KIND --scope SCOPE --key KEY [--run RUN]]\n\
@@ -111,6 +112,7 @@ fn execute(args: &[String]) -> Result<Value> {
             )
         }
         ["trace", "create", "--input", path] => store.create_trace(read_input(path)?),
+        ["trace", "close", "--input", path] => store.close_trace(read_input(path)?),
         ["dispatch", "create", "--input", path] => store.create_dispatch(read_input(path)?),
         ["append", "--input", path] => store.append(read_input(path)?),
         ["show", "--id", id] => store.show(id),

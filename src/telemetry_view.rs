@@ -1541,10 +1541,12 @@ impl Page {
             format!(
                 "coverage_start {} · trace recording {}",
                 text(&trace["coverage_start"]),
-                if trace["capture_enabled"] == true {
-                    "on"
+                if trace["closed_at"].is_string() {
+                    format!("ended {}", text(&trace["closed_at"]))
+                } else if trace["capture_enabled"] == true {
+                    "on".into()
                 } else {
-                    "paused"
+                    "paused".into()
                 }
             ),
         ];
@@ -2277,6 +2279,7 @@ fn event_name(event: &Value) -> String {
         "review.recorded" => "Review recorded",
         "controller.note" => "Controller note",
         "task.transition" => "Task transition",
+        "recording.changed" if event["payload"]["closed"] == true => "Trace ended",
         other => other,
     })
 }
@@ -2318,10 +2321,15 @@ fn trace_row(trace: &Value, wide: bool) -> (String, String) {
     let origin = trace["origin"].as_str().unwrap_or("");
     let binding = &trace["binding"];
     let paused = trace["capture_enabled"] != true;
+    let state = if trace["closed_at"].is_string() {
+        "trace ended"
+    } else {
+        "trace paused"
+    };
     let right = match (binding.is_object(), paused) {
         (true, false) => description(&trace["registration"]),
-        (true, true) => format!("{} · trace paused", description(&trace["registration"])),
-        (false, true) => "trace paused".into(),
+        (true, true) => format!("{} · {state}", description(&trace["registration"])),
+        (false, true) => state.into(),
         (false, false) => String::new(),
     };
     let label = inert(trace["label"].as_str().unwrap_or(""));
@@ -2376,7 +2384,13 @@ fn counts_text(record: &Value) -> String {
     }
     format!(
         "recording {} ({off} off interval{}) · gaps {gaps} · ops {}{}",
-        if on { "on" } else { "off" },
+        if record["closed_at"].is_string() {
+            "ended"
+        } else if on {
+            "on"
+        } else {
+            "off"
+        },
         if off == 1 { "" } else { "s" },
         ops.len(),
         if parts.is_empty() {

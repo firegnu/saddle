@@ -38,6 +38,10 @@ Running → Submit for review → Awaiting release → Accept → Done。退回 
 
 有任务号的任务详情页签行右侧有 `Telemetry ↗`，在 Saddle 查询页打开该任务所有轮次（宿主需支持 telemetry.open.v1；无需 dispatch 插件）。未编号待办不显示。旧 Dispatch 日志页已移除；Task text、Run details、Links仍可切换、刷新和返回，Dispatch selected 业务动作保留。旧 dispatch-log 数据不迁移、不删除，仅保留供离线历史查看。
 
+单任务边界版本中，Accept/Return 业务落盘、尝试追加 transition 后，插件用已解析的同 run trace 调用 `saddle telemetry trace close`，独立预算300 ms；Submit 不结束。流转结果增加 `telemetry.close:{status}`，与外层 transition 的 status 分开：stored/duplicate 表示结束，失败如实报告；找不到 trace/查询失败或 Submit 为 not_attempted，不新建、不重试、不重放业务、不影响状态成功。Return 原因先随 transition 尝试写入，失败后 close 仍尝试，遥测可能永久缺这条原因；Drover 原始退回历史保留。关闭不证明任务成功，Run details 和通知语义不变。
+
+同 run 内实现/审查返工继续同 trace；Return 后新 run 按既有项目默认/本次覆盖决定是否记录。主控对绑定 Tasks run 的链路只写 closure 声明，不提前 close。宿主、Drover 和技能 revision 3 须成套交付；本次源码实施未安装或迁移真实库，部署前备份及旧二进制限制见[遥测使用](../../docs/遥测使用.md)。
+
 `N` 打开通知偏好，System/In Saddle 互斥，`Ctrl-S` 保存。系统通知由插件内的工作线程调用 macOS osascript；内部通知通过 Saddle 的通用通知接口显示。首次观察和偏好切换只建基线。Esc 返回子页面，列表 Esc/q 关闭视图，Ctrl-] 回 Agents。关联 agent 仍由宿主核实原始 instance 后打开。
 
 Run details 顶部主状态栏突出人工处理：`YOUR REVIEW NEEDED` 表示本次有可读收尾报告需你核对后提交，`AWAITING YOUR ACCEPTANCE` 表示已经提交待验收，`ACCEPTED` 表示已验收；缺少可读报告时为 `COMPLETION UNCONFIRMED`，不会推断 Agent 仍在运行。刷新失败时状态不可用，旧数据明确标注。下方全部记录保留。

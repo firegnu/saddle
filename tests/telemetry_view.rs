@@ -1185,3 +1185,37 @@ fn presentation_multiple_bodies_keep_selection_and_full_reading() {
     press(&mut page, KeyCode::Esc);
     assert!(shown(&mut page).contains("‹Choose body · Enter›"));
 }
+
+#[test]
+fn ended_trace_is_visible_even_when_its_last_interval_was_recording() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store(dir.path());
+    task(&store, "t", "T1", "Synthetic ended task");
+    store
+        .close_trace(saddle::telemetry::TraceCloseInput {
+            schema_version: 1,
+            trace_id: "t".into(),
+            actor: "synthetic".into(),
+        })
+        .unwrap();
+    let record = store.show("t").unwrap();
+    assert_eq!(
+        record["record"]["recording_intervals"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["enabled"],
+        true
+    );
+    let mut page = open(dir.path());
+    let listing = shown(&mut page);
+    assert!(listing.contains("trace ended"), "{listing}");
+    assert!(listing.contains("trace recording ended"), "{listing}");
+    press(&mut page, KeyCode::Enter);
+    let detail = shown(&mut page);
+    assert!(detail.contains("recording ended"), "{detail}");
+    assert!(detail.contains("Trace ended"), "{detail}");
+    press(&mut page, KeyCode::Char('i'));
+    let intervals = shown(&mut page);
+    assert!(!intervals.contains("→ now"), "{intervals}");
+}
