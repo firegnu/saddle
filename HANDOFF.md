@@ -3,6 +3,14 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Drover其余子页面整理、Telemetry英文已恢复
+
+- 用户将本轮只读检查改为“界面可以改，不能改任何逻辑”，随后再次指出Telemetry未经批准汉化。主控直接实现，不委派不遥测。新增/编辑任务、三种流转确认、删除、路径、Help、结果、All pending居中限宽，移除无关队列工具栏；确认身份长行折行，Help/结果/确认/Links加滚动提示；目录/接收者选择器加位置和完整选中值。主列表/Run details和业务状态/动作未改。
+- Telemetry界面中文恢复英文，用户正文/任务书/回复/退回原因不翻译；公开query返回的六类宿主中文说明仅UI显示转换，接口/存储/采集/分页不变。功能e79e553、合并1243e06已推送，完成记录docs/任务/Drover子页面检查与Telemetry语言纠正.md。
+- Drover UI23/lib7/Links1及Telemetry17个不同目标最终通过，必要宿主/插件release及diff check通过。过程保留旧边框/长句换行断言失败，调整后目标通过，不称一次全套绿。未全仓/Clippy；日志/tmp/saddle-secondary-*.log与/tmp/saddle-telemetry-english-*.log，真实桌面复看待用户。
+- 已备份并原子安装宿主dc0e36e8cb76637031d9645cc9834928ddcadd799bb5800d8b1ed60e8e9f6cb7、Drover fdd3224363fd31aaddd1f25d2e587f91bd84aaad43b259f87f7b1eb6347942e0；backup ~/.local/share/saddle/backups/drover-secondary-telemetry-english-20261002-181604，记录/tmp/saddle-secondary-ui-install.json；manifest/配置/数据未改，未关闭运行中进程。**用户需重新打开Saddle加载Telemetry英文；Drover如保留旧进程，停用再启用。**
+- 本轮worktree/分支清理、空提交收尾已完成；不自动开始主题或Corral迁移，旧设计review/t38/t55保留。之后继续纯UI窄范围、英文展示，等待用户复看。
+
 ## 最新：Projects / 项目表单 / 通知页面已整理安装
 
 - 用户截图指出少量内容铺满全屏、操作与字段分离。主控直接纯UI调整，保持英文，不委派不遥测：Projects居中限宽并移除无关队列工具栏，名称/状态接收者分列，完整路径保留；添加/设置/选择器紧凑居中，字段边框、只读标记、就近操作；通知明确单选标记与底色，Save/Cancel在底部。宿主外框与业务逻辑未改。
