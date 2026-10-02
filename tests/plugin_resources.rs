@@ -348,7 +348,7 @@ fn plugins_palette_lists_builtin_and_enter_opens_its_management_row() {
     let items = m.palette_items(&Default::default());
     assert_eq!(items[0].id, "test.res");
     assert!(items[0].builtin);
-    assert_eq!(items[0].status(), "Built-in · Disabled");
+    assert_eq!(items[0].status(), "Disabled");
     assert!(items[0].action().is_none(), "no view to open");
     assert!(!items[0].explanation().is_empty());
     let mut palette = Palette::default();

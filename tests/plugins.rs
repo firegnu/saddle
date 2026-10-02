@@ -1109,14 +1109,17 @@ fn palette_readability_compact_layout_and_scroll_position() {
         "{}",
         rows[row]
     );
-    assert_eq!(b[(1, row as u16)].bg, saddle::theme::OVERLAY);
+    assert_eq!(b[(1, row as u16)].bg, saddle::theme::AGENT_SELECTED);
     assert!(
         rows.iter()
             .any(|r| r.contains("Enter Open") && r.contains("Esc"))
     );
     let first = rows.iter().position(|r| r.contains("┏")).unwrap();
     let last = rows.iter().position(|r| r.contains("┗")).unwrap();
-    assert!(last - first < 12, "palette should fit its four entries");
+    assert!(
+        last - first <= 13,
+        "palette should fit its four entries with a bordered search"
+    );
 }
 
 #[test]
@@ -1340,4 +1343,116 @@ fn process_plugins_are_told_the_host_executable_and_nothing_else() {
         "the current host path, no record context"
     );
     runtime.stop();
+}
+
+#[test]
+fn palette_columns_highlight_and_button_hits_match_rendered_controls() {
+    use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{Terminal, backend::TestBackend, style::Modifier};
+    use saddle::plugins::palette::{Item, Outcome, Palette};
+    let theme = saddle::theme::Theme::default();
+    let mut p = Palette::default();
+    p.update(vec![
+        Item {
+            id: "dispatch".into(),
+            title: "Dispatch".into(),
+            state: "Enabled".into(),
+            note: String::new(),
+            has_view: false,
+            opened: false,
+            pid: None,
+            builtin: true,
+        },
+        Item {
+            id: "counter".into(),
+            title: "Counter".into(),
+            state: "Running".into(),
+            note: String::new(),
+            has_view: true,
+            opened: false,
+            pid: None,
+            builtin: false,
+        },
+        Item {
+            id: "disabled".into(),
+            title: "Attention demo".into(),
+            state: "Disabled".into(),
+            note: String::new(),
+            has_view: true,
+            opened: false,
+            pid: None,
+            builtin: false,
+        },
+    ]);
+    for width in [80, 54, 40] {
+        let mut t = Terminal::new(TestBackend::new(width, 24)).unwrap();
+        t.draw(|f| p.draw(f, &theme)).unwrap();
+        let b = t.backend().buffer();
+        let locate = |text: &str| {
+            (0..24)
+                .flat_map(|y| (0..width).map(move |x| (x, y)))
+                .find(|&(x, y)| {
+                    (x..width)
+                        .map(|xx| b[(xx, y)].symbol())
+                        .collect::<String>()
+                        .starts_with(text)
+                })
+                .unwrap_or_else(|| panic!("missing {text} at width {width}"))
+        };
+        let (sx, header) = locate("Status");
+        let (ex, row) = locate("Enabled");
+        assert_eq!(sx, ex);
+        assert_eq!(locate("Background"), (sx, row + 1));
+        assert_eq!(locate("Disabled"), (sx, row + 2));
+        assert_eq!(header + 1, row);
+        let (name_x, _) = locate("›");
+        assert_eq!(b[(name_x, row)].bg, theme.agent_selected);
+        assert!(b[(name_x, row)].modifier.contains(Modifier::BOLD));
+        assert_eq!(b[(sx - 1, row)].bg, theme.agent_selected);
+        assert_eq!(b[(sx, row + 2)].fg, theme.dim);
+        if width >= 54 {
+            let (ax, _) = locate("Action");
+            assert_eq!(locate("‹Manage›"), (ax, row));
+            assert_eq!(locate("‹Open›"), (ax, row + 1));
+            assert!(ax >= sx + 12 + 2);
+            if width == 80 {
+                assert_eq!(locate(" · Built-in").1, row);
+            }
+            for kind in [
+                MouseEventKind::Down(MouseButton::Left),
+                MouseEventKind::Up(MouseButton::Left),
+            ] {
+                let out = p.event(&Event::Mouse(MouseEvent {
+                    kind,
+                    column: ax + 7,
+                    row,
+                    modifiers: KeyModifiers::NONE,
+                }));
+                assert_eq!(
+                    out,
+                    if matches!(kind, MouseEventKind::Up(_)) {
+                        Outcome::Manage
+                    } else {
+                        Outcome::Stay
+                    }
+                );
+            }
+        }
+        let (x, y) = locate("‹Close›");
+        p.event(&Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: x + 6,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }));
+        assert_eq!(
+            p.event(&Event::Mouse(MouseEvent {
+                kind: MouseEventKind::Up(MouseButton::Left),
+                column: x + 6,
+                row: y,
+                modifiers: KeyModifiers::NONE
+            })),
+            Outcome::Close
+        );
+    }
 }
