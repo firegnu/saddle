@@ -19,6 +19,7 @@ const REFRESH: Duration = Duration::from_secs(2);
 type ProjectState = Option<Result<Box<drover::Snapshot>, String>>;
 pub struct Drover {
     commands: crate::api::Worker,
+    setup: Option<crate::project_setup::Setup>,
     system_notifier: notify::Notifier,
     system_notify: crate::system_notify::Worker,
     pub panel: queue::Panel,
@@ -85,6 +86,7 @@ impl Drover {
         let mut this = Self {
             lease: crate::core::PluginLease::acquire(),
             commands: crate::api::Worker::start(corral.clone()),
+            setup: None,
             system_notifier: Default::default(),
             system_notify: Default::default(),
             panel: queue::Panel {
@@ -137,6 +139,26 @@ impl Drover {
     fn reload_projects(&mut self) -> bool {
         match drover::registered_projects(&expand_home("~/.drover/projects")) {
             Ok(projects) => {
+                self.panel.project_status = projects
+                    .iter()
+                    .map(|p| {
+                        let status = match crate::core::project::inspect(std::path::Path::new(p)) {
+                            Ok(v) if v["state"] == "registered" => format!(
+                                "Added · {}",
+                                v["main_agent"]
+                                    .as_str()
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or("No receiver (manual)")
+                            ),
+                            Ok(v) => format!(
+                                "Unavailable: {}",
+                                v["error"].as_str().unwrap_or("Invalid configuration")
+                            ),
+                            Err(e) => format!("Unavailable: {e:#}"),
+                        };
+                        (p.clone(), status)
+                    })
+                    .collect();
                 self.panel.projects = projects;
                 self.panel.registry_error = None;
                 self.panel.project_selected = self
@@ -155,6 +177,15 @@ impl Drover {
     }
     pub fn request(&mut self, request: drover::Request) {
         match request {
+            drover::Request::ProjectSetup(path, settings) => {
+                if !self.panel.busy {
+                    self.setup = Some(crate::project_setup::Setup::new(
+                        self.corral.clone(),
+                        path,
+                        settings,
+                    ));
+                }
+            }
             drover::Request::Projects => {
                 self.reload_projects();
             }
@@ -171,7 +202,17 @@ impl Drover {
                 if self.panel.busy {
                     return;
                 }
-                let cwd = expand_home(&path);
+                let target = expand_home(&path);
+                if !crate::core::project::inspect(&target).is_ok_and(|v| v["state"] == "registered")
+                {
+                    self.setup = Some(crate::project_setup::Setup::new(
+                        self.corral.clone(),
+                        path,
+                        false,
+                    ));
+                    return;
+                }
+                let cwd = target;
                 let cwd = cwd.canonicalize().unwrap_or(cwd).display().to_string();
                 self.detail = None;
                 self.confirmation = None;
@@ -180,6 +221,7 @@ impl Drover {
                 self.panel = queue::Panel {
                     project: cwd,
                     projects: std::mem::take(&mut self.panel.projects),
+                    project_status: std::mem::take(&mut self.panel.project_status),
                     registry_error: self.panel.registry_error.take(),
                     view: self.panel.view,
                     ..Default::default()
@@ -376,7 +418,8 @@ impl Drover {
         Ok(())
     }
     fn open_target(&mut self, target: Target) {
-        if self.preferences
+        if self.setup.is_some()
+            || self.preferences
             || self.panel.busy
             || !matches!(
                 self.panel.page,
@@ -426,6 +469,20 @@ impl Drover {
         }
 
         let mut changed = self.observe(context)?;
+        if let Some(setup) = &mut self.setup {
+            changed |= setup.poll();
+            if let Some((project, message)) = setup.opened.take() {
+                changed = true;
+                self.setup = None;
+                self.reload_projects();
+                self.request(drover::Request::Project(project));
+                if message.starts_with("Project added, but") {
+                    self.panel.page = queue::Page::Feedback(message.clone());
+                }
+                self.panel.message = message;
+                self.survey.refresh();
+            }
+        }
         if let Some(project) = self
             .lookup
             .as_ref()
@@ -433,6 +490,7 @@ impl Drover {
         {
             let (revision, _) = self.lookup.take().unwrap();
             if revision == self.input_revision
+                && self.setup.is_none()
                 && !self.panel.busy
                 && matches!(self.panel.page, queue::Page::List)
                 && let Some(project) = project
@@ -533,6 +591,13 @@ impl Drover {
         }
     }
     fn panel_key(&mut self, key: KeyEvent) -> Option<drover::Request> {
+        if let Some(setup) = &mut self.setup {
+            setup.key(key);
+            if setup.closed {
+                self.setup = None;
+            }
+            return None;
+        }
         if self.preferences {
             self.preference_key(key);
             return None;
@@ -582,7 +647,11 @@ impl Drover {
                     return;
                 }
                 if let Some(text) = event["text"].as_str() {
-                    self.panel.paste(text);
+                    if let Some(setup) = &mut self.setup {
+                        setup.paste(text);
+                    } else {
+                        self.panel.paste(text);
+                    }
                 }
                 None
             }
@@ -623,6 +692,10 @@ impl Drover {
                     if self.preferences {
                         return;
                     }
+                    if let Some(setup) = &mut self.setup {
+                        setup.click(x, y);
+                        return;
+                    }
                     let request = self.panel.click(x, y);
                     if request.is_none()
                         && self.panel.list_area.contains((x, y).into())
@@ -633,7 +706,16 @@ impl Drover {
                     request
                 } else if event["action"] == "scroll" {
                     let delta = event["dy"].as_i64().unwrap_or(0).signum() as isize;
-                    if self.panel.overlay_open() {
+                    if self.setup.is_some() {
+                        self.panel_key(KeyEvent::new(
+                            if delta < 0 {
+                                KeyCode::Up
+                            } else {
+                                KeyCode::Down
+                            },
+                            KeyModifiers::NONE,
+                        ))
+                    } else if self.panel.overlay_open() {
                         self.panel.key(KeyEvent::new(
                             if delta < 0 {
                                 KeyCode::Up
@@ -754,7 +836,8 @@ impl Plugin for Drover {
                 }
             }
             Event::Opened(value) => {
-                if !self.panel.busy
+                if self.setup.is_none()
+                    && !self.panel.busy
                     && matches!(self.panel.page, queue::Page::List)
                     && let Some(cwd) = value["cwd"].as_str()
                 {
@@ -788,7 +871,10 @@ impl Plugin for Drover {
         }
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))?;
         terminal.draw(|frame| {
-            if self.preferences {
+            if let Some(setup) = &mut self.setup {
+                self.panel.buttons = setup.draw(&t, frame, area);
+                self.rows.clear();
+            } else if self.preferences {
                 use crate::buttons::Button as B;
                 let ready = matches!(self.preference, Some(Ok(_))) && !self.preference_saving;
                 let controls = [B::new("System s", KeyCode::Char('s'), ready), B::new("In Saddle i", KeyCode::Char('i'), ready), B::control("Save ^s", KeyCode::Char('s'), ready), B::new("Cancel Esc", KeyCode::Esc, !self.preference_saving)];
@@ -820,7 +906,8 @@ impl Plugin for Drover {
         Ok(backend.buffer().clone())
     }
     fn escape_input(&self) -> bool {
-        self.preferences
+        self.setup.is_some()
+            || self.preferences
             || !matches!(self.panel.page, queue::Page::List)
             || self.panel.reading_link()
     }
@@ -861,6 +948,7 @@ fn key(v: &Value) -> Option<KeyEvent> {
             "back_tab" => KeyCode::BackTab,
             "delete" => KeyCode::Delete,
             "insert" => KeyCode::Insert,
+            "function" => KeyCode::F(v["code"]["number"].as_u64()?.try_into().ok()?),
             _ => return None,
         }
     };

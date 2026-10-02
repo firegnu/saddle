@@ -743,7 +743,7 @@ fn failed_queue_data_request_keeps_actionable_error_visible() {
 }
 
 #[test]
-fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repository() {
+fn queue_project_can_be_corrected_by_reusing_existing_configuration_without_restarting() {
     let script = format!(
         "#!/usr/bin/env python3\nfrom pathlib import Path\nimport sys\nif Path.cwd().name != 'chosen-project':\n    print('missing project', file=sys.stderr)\n    sys.exit(2)\n{}",
         include_str!("fixtures/drover.py")
@@ -755,6 +755,8 @@ fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repositor
         &project,
         &serde_json::json!({"pending":[{"id":"T1","title":"Native queue task","body":""}]}),
     );
+    let config_before = std::fs::read(project.join(".drover.conf")).unwrap();
+    let queue_before = std::fs::read(project.join("native-data/queue.md")).unwrap();
     h.open_tasks();
     h.see("Read failed");
     h.send(b"ce");
@@ -762,7 +764,21 @@ fn queue_project_can_be_corrected_without_restarting_or_initializing_a_repositor
     h.send(b"\x15"); // Ctrl-U replaces the initial directory.
     h.send(format!("\x1b[200~{}\x1b[201~", project.display()).as_bytes());
     h.send(b"\r");
+    h.see("Existing Drover configuration found");
+    assert_eq!(
+        std::fs::read(project.join(".drover.conf")).unwrap(),
+        config_before
+    );
+    h.click("Reuse & add ^s");
     h.see("Native queue task");
+    assert_eq!(
+        std::fs::read(project.join(".drover.conf")).unwrap(),
+        config_before
+    );
+    assert_eq!(
+        std::fs::read(project.join("native-data/queue.md")).unwrap(),
+        queue_before
+    );
     assert!(!h.screen.screen().contents().contains("missing project"));
     h.send(b"p");
     h.see("Paused");

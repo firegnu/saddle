@@ -128,6 +128,7 @@ pub struct Panel {
     pub(crate) fields: Vec<(ratatui::layout::Rect, bool)>,
     pub projects: Vec<String>,
     pub project_selected: usize,
+    pub project_status: std::collections::BTreeMap<String, String>,
     pub registry_error: Option<String>,
     pub project_rows: Vec<(ratatui::layout::Rect, usize)>,
     pub project: String,
@@ -309,6 +310,8 @@ impl Panel {
             Page::Projects => vec![
                 B::new("Open ↵", K::Enter, !self.projects.is_empty()),
                 B::new("Refresh r", K::Char('r'), true),
+                B::new("Add project a", K::Char('a'), true),
+                B::new("Settings s", K::Char('s'), !self.projects.is_empty()),
                 B::new("Path e", K::Char('e'), true),
                 B::new("Back Esc", K::Esc, true),
             ],
@@ -879,6 +882,16 @@ impl Panel {
                         .get(self.project_selected)
                         .cloned()
                         .map(Request::Project);
+                }
+                KeyCode::Char('a') => {
+                    return Some(Request::ProjectSetup(self.project.clone(), false));
+                }
+                KeyCode::Char('s') => {
+                    return self
+                        .projects
+                        .get(self.project_selected)
+                        .cloned()
+                        .map(|p| Request::ProjectSetup(p, true));
                 }
                 KeyCode::Char('e') => self.page = Page::Project(self.project.clone()),
                 KeyCode::Char('r') => return Some(Request::Projects),
@@ -1962,14 +1975,24 @@ impl Panel {
                             " "
                         },
                         crate::ui::pad(&name, 16),
-                        crate::ui::clip(path, usize::from(body.width).saturating_sub(20))
+                        crate::ui::clip(
+                            &crate::project_setup::safe(&format!(
+                                "{} · {}",
+                                self.project_status
+                                    .get(path)
+                                    .map(String::as_str)
+                                    .unwrap_or("Checking…"),
+                                path
+                            )),
+                            usize::from(body.width).saturating_sub(20)
+                        )
                     );
                     lines.push((Some(index), label));
                 }
                 if self.projects.is_empty() {
-                    lines.push((None, "No registered projects · Choose Path".into()));
+                    lines.push((None, "No projects added · Add project a".into()));
                 }
-                let footer_height = body.height.min(3);
+                let footer_height = body.height.min(5);
                 let height = usize::from(body.height - footer_height);
                 let selected = lines
                     .iter()
@@ -1998,9 +2021,16 @@ impl Panel {
                     .map(String::as_str)
                     .unwrap_or(&self.project);
                 frame.render_widget(
-                    Paragraph::new(format!("{}\nClick / Enter to open · e Set path", path))
-                        .wrap(Wrap { trim: false })
-                        .style(Style::default().fg(t.muted)),
+                    Paragraph::new(crate::project_setup::safe(&format!(
+                        "{}\n{}\nClick / Enter to open · a Add · s Settings",
+                        path,
+                        self.project_status
+                            .get(path)
+                            .map(String::as_str)
+                            .unwrap_or("Checking project…")
+                    )))
+                    .wrap(Wrap { trim: false })
+                    .style(Style::default().fg(t.muted)),
                     Rect::new(
                         body.x,
                         body.bottom() - footer_height,
@@ -2094,7 +2124,7 @@ impl Panel {
             }
             _ => {
                 let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control explicit dispatch; bottom actions control the selected task.\nc: Projects; e: Set path (in Projects)\nUp/Down / j k: Select task or project\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll text or details\nr: Refresh; p: Pause / Resume explicit dispatch\na: Add task; A: All pending\ne: Edit pending; u / d: Move pending; x: Delete pending\nDispatch selected: explicitly send the selected Pending task\nR: Record default for this project; [ ] Record beside Dispatch selected changes it for that dispatch only. Saddle's Telemetry recording switch still decides.\nTelemetry ↗: Saddle's Telemetry page on every run of the selected numbered task\nSubmit for review: selected Running to Awaiting\nAccept: selected Awaiting to Done\nReturn to pending: Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.\nTab: Switch field; Ctrl-S: Save\nEsc: Back or close Tasks; Ctrl-]: Agents".into(),
+                    Page::Help=>"Tasks help\nTop actions control explicit dispatch; bottom actions control the selected task.\nc: Projects; a: Add project / s: Project settings (in Projects); e: Set path\nUp/Down / j k: Select task or project\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll text or details\nr: Refresh; p: Pause / Resume explicit dispatch\na: Add task; A: All pending\ne: Edit pending; u / d: Move pending; x: Delete pending\nDispatch selected: explicitly send the selected Pending task\nR: Record default for this project; [ ] Record beside Dispatch selected changes it for that dispatch only. Saddle's Telemetry recording switch still decides.\nTelemetry ↗: Saddle's Telemetry page on every run of the selected numbered task\nSubmit for review: selected Running to Awaiting\nAccept: selected Awaiting to Done\nReturn to pending: Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.\nTab: Switch field; Ctrl-S: Save\nEsc: Back or close Tasks; Ctrl-]: Agents".into(),
                     Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
                     Page::Feedback(text)=>text.clone(),
                     _=>unreachable!(),

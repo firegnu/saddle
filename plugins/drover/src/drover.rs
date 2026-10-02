@@ -198,6 +198,7 @@ pub enum Request {
     AllPending,
     Projects,
     Project(String),
+    ProjectSetup(String, bool),
     Run(Operation),
 }
 pub enum Update {

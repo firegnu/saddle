@@ -561,3 +561,106 @@ fn legacy_log_argument_is_ignored_and_no_log_consumer_runs() {
         p.record(&m);
     }
 }
+
+#[test]
+fn project_onboarding_ui_browses_selects_receiver_saves_and_preserves_tasks() {
+    let mut p = Running::start();
+    p.send(Message::event(
+        "panel.resize",
+        json!({"cols":80,"rows_count":24,"size_revision":2}),
+    ));
+    p.see("Native queue task");
+    common::script(
+        p.root.path(),
+        "corral",
+        "#!/bin/sh\n[ \"$1\" = ls ] || exit 99\nprintf '%s' '{\"agents\":[{\"name\":\"demo/main\"}]}'\n",
+    );
+    let repo = p.root.path().join("new-repo");
+    std::fs::create_dir(&repo).unwrap();
+    std::fs::write(repo.join("AGENTS.md"), "manual rules\n").unwrap();
+    let queue = std::fs::read(p.root.path().join("data/queue.md")).unwrap();
+    p.key("c");
+    p.see("Add project");
+    p.key("a");
+    p.see("Already added to Tasks");
+    assert!(p.frame.as_ref().unwrap().escape_input);
+    p.input(json!({"type":"key","code":{"char":"u"},"modifiers":["control"],"phase":"press"}));
+    p.see("Choose a directory, then Check");
+    p.input(json!({"type":"paste","text":repo}));
+    p.see("new-repo");
+    p.input(
+        json!({"type":"key","code":{"name":"function","number":2},"modifiers":[],"phase":"press"}),
+    );
+    p.see("Use directory F3");
+    p.input(
+        json!({"type":"key","code":{"name":"function","number":3},"modifiers":[],"phase":"press"}),
+    );
+    p.see("Not added to Tasks");
+    let preview = buffer(p.frame.as_ref().unwrap()).unwrap();
+    let text: String = preview.content.iter().map(|c| c.symbol()).collect();
+    for label in [
+        "Directory",
+        "Project short name",
+        "Default receiver",
+        "Save ^s",
+        "Cancel Esc",
+        "AGENTS.md",
+    ] {
+        assert!(text.contains(label), "missing {label} at 80x24: {text}");
+    }
+    assert!(!repo.join(".drover.conf").exists());
+    p.input(
+        json!({"type":"key","code":{"name":"function","number":4},"modifiers":[],"phase":"press"}),
+    );
+    p.see("demo/main");
+    p.input(json!({"type":"key","code":{"name":"down"},"modifiers":[],"phase":"press"}));
+    p.see("> demo/main");
+    p.input(json!({"type":"key","code":{"name":"enter"},"modifiers":[],"phase":"press"}));
+    p.see("Save ^s");
+    p.input(json!({"type":"key","code":{"char":"s"},"modifiers":["control"],"phase":"press"}));
+    p.see("Project saved; no task dispatched");
+    assert!(
+        std::fs::read_to_string(repo.join(".drover.conf"))
+            .unwrap()
+            .contains("MAIN_AGENT=demo/main\n")
+    );
+    assert_eq!(
+        std::fs::read_to_string(repo.join("AGENTS.md")).unwrap(),
+        "manual rules\n"
+    );
+    p.key("c");
+    p.see("Added · demo/main");
+    p.key("s");
+    p.see("Already added to Tasks");
+    p.input(
+        json!({"type":"key","code":{"name":"function","number":5},"modifiers":[],"phase":"press"}),
+    );
+    p.see("Not specified (manual handoff)");
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Added · demo/main");
+    assert!(
+        std::fs::read_to_string(repo.join(".drover.conf"))
+            .unwrap()
+            .contains("MAIN_AGENT=demo/main\n"),
+        "Cancel must not save the draft"
+    );
+    p.key("s");
+    p.see("Already added to Tasks");
+    p.input(
+        json!({"type":"key","code":{"name":"function","number":5},"modifiers":[],"phase":"press"}),
+    );
+    p.see("Not specified (manual handoff)");
+    p.input(json!({"type":"key","code":{"char":"s"},"modifiers":["control"],"phase":"press"}));
+    p.see("Project saved; no task dispatched");
+    assert!(
+        std::fs::read_to_string(repo.join(".drover.conf"))
+            .unwrap()
+            .contains("MAIN_AGENT=\n")
+    );
+    assert_eq!(
+        std::fs::read(p.root.path().join("data/queue.md")).unwrap(),
+        queue
+    );
+    assert!(!p.root.path().join("data/tasks.state").exists());
+    assert!(!p.root.path().join(".drover/new-repo/tasks.state").exists());
+}

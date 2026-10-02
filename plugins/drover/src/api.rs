@@ -44,6 +44,48 @@ pub fn call(corral: &str, method: &str, p: &Value, cancel: &AtomicBool) -> Resul
     }
     let project = PathBuf::from(string(p, "project")?);
     ensure!(project.is_absolute(), "project must be absolute");
+    if method == "project-browse" {
+        let path = project.canonicalize()?;
+        ensure!(path.is_dir(), "Choose a directory");
+        let mut directories = Vec::new();
+        for entry in std::fs::read_dir(&path)? {
+            let entry = entry?;
+            if entry.path().is_dir() {
+                directories.push(entry.path());
+            }
+        }
+        directories.sort();
+        return Ok(json!({"ok":true,"project":path,"directories":directories}));
+    }
+    if method == "project-agents" {
+        let output = crate::command::run_bounded(
+            corral,
+            &["ls"],
+            None,
+            &[],
+            std::time::Duration::from_secs(5),
+            cancel,
+            1024 * 1024,
+        )?;
+        ensure!(output.status.success(), "Could not list Corral agents");
+        let value: Value = serde_json::from_slice(&output.stdout)?;
+        let agents = value["agents"]
+            .as_array()
+            .context("Invalid Corral agent list")?;
+        let names: Vec<_> = agents.iter().filter_map(|a| a["name"].as_str()).collect();
+        return Ok(json!({"ok":true,"agents":names}));
+    }
+    if method == "project-info" {
+        return core::project::inspect(&project);
+    }
+    if method == "project-save" {
+        return core::project::save(
+            &project,
+            p["name"].as_str().unwrap_or(""),
+            p["main_agent"].as_str().unwrap_or(""),
+            string(p, "token")?,
+        );
+    }
     if method == "register" {
         return core::register(
             &project,

@@ -19,3 +19,5 @@ pub mod core;
 
 pub mod api;
 mod system_notify;
+
+pub mod project_setup;
