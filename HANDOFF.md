@@ -58,3 +58,10 @@
 - 原实现者0e03c0c56e19 idle但attached1，日常Saddle正显示此agent；已问用户允许清理/关闭还是暂保留，答复前不清目录或关闭。分支/worktree尚存，未空提交收尾，不能声称05A生命周期收尾完成。
 - 05B已完成备份（~/.local/share/saddle/backups/telemetry-05-20261002-103248）；正构建显式host target路径的release产物，不覆盖当前默认release/saddle。日志saddle-05b-stage-hrgnwvmo，实际切换记录docs/任务/遥测05B-实际切换记录.md。二进制/插件/技能/AGENTS都尚未实际切换，外部仓库未归档。
 - 接续先核构建与用户清理答复，再按切换记录顺序核产物/协调一次重启/资源管理页安装与owned_current核对/主控指引/旧消费者退役。不用再派功能agent、不重跑标准；需要改Corral或依赖反转先停告知。
+
+## 最新接续点：05A已真正收尾，等待退出界面进行05B安装
+
+- 用户已回答“允许清理并关闭该实现者”：05A目录/分支无force清理成功后关闭0e03c0c56e19，其他用户agent未动，空提交2e0ea6e。迟到提醒not_found忽略，不重开。05A合并5e4205d，功能候选3c1a4ae。
+- 05B release构建及隔离公开命令烟测通过，产物在 /var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-05b-stage-hrgnwvmo/artifacts；详情/哈希见docs/任务/遥测05B-实际切换记录.md。备份~/.local/share/saddle/backups/telemetry-05-20261002-103248。日常安装还没改。
+- 当前待用户回答“我已退出 Saddle，可以切换”或“暂不切换”：新Drover要求telemetry.open.v1，不能让旧宿主与新清单混用。确认用户答复及公开saddle ctl instances后再替换；不要自行杀旧Saddle，不关闭Corral用户agent。不重新构建或跑标准。
+- 随后需公开管理页安装revision2技能并确认两个目标owned_current，再切本repo AGENTS（CLAUDE同链接），核旧消费者及保留旧数据的dispatch-log退役。05未整体完成，不能提前归档或称已安装；遥测开关不自行开启，Corral仓库不写。
