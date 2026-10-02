@@ -111,6 +111,7 @@ impl Screen {
         &self,
         area: ratatui::layout::Rect,
         buffer: &mut ratatui::buffer::Buffer,
+        theme: &crate::theme::Theme,
     ) -> Option<(u16, u16)> {
         use alacritty_terminal::{
             index::{Column, Line},
@@ -140,8 +141,8 @@ impl Screen {
                     continue;
                 }
                 let mut style = Style::default()
-                    .fg(self.color(cell.fg))
-                    .bg(self.color(cell.bg));
+                    .fg(self.color(cell.fg, theme))
+                    .bg(self.color(cell.bg, theme));
                 for (flag, modifier) in [
                     (Flags::BOLD, Modifier::BOLD),
                     (Flags::DIM, Modifier::DIM),
@@ -186,8 +187,14 @@ impl Screen {
             None
         }
     }
-    fn color(&self, color: alacritty_terminal::vte::ansi::Color) -> ratatui::style::Color {
-        use alacritty_terminal::vte::ansi::Color as A;
+    /// Colors the program set are kept; only the unset default text and background follow the
+    /// theme.
+    fn color(
+        &self,
+        color: alacritty_terminal::vte::ansi::Color,
+        theme: &crate::theme::Theme,
+    ) -> ratatui::style::Color {
+        use alacritty_terminal::vte::ansi::{Color as A, NamedColor};
         use ratatui::style::Color as R;
         let index = match color {
             A::Spec(rgb) => return R::Rgb(rgb.r, rgb.g, rgb.b),
@@ -199,6 +206,10 @@ impl Screen {
         }
         if index <= 255 {
             R::Indexed(index as u8)
+        } else if index == NamedColor::Foreground as usize {
+            theme.text
+        } else if index == NamedColor::Background as usize {
+            theme.bg
         } else {
             R::Reset
         }

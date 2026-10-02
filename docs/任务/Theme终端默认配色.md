@@ -36,6 +36,25 @@ worktree /Users/firegnu/Developer/personal_projs/saddle-worktrees/theme-terminal
 ## 做完
 本文件末尾写完成记录：改动、实际验证、取舍、未完成事项。命令前台完成，回复最后一行DONE。主控审查后再构建安装供用户体验。
 
+## 完成记录（2026-10-02）
+
+改动：
+- src/terminal.rs：`Screen::render`增加当前Theme参数；渲染时仅对未被程序设定的默认前景/背景（alacritty的Foreground/Background，动态调色板为空时）回退到`theme.text`/`theme.bg`。ANSI索引、RGB、OSC 10/11等调色板设置的颜色照旧优先；反色、选中、历史等样式不变。`Screen::process`、ColorRequest/`default_rgb`回执、解析器内容与PTY均未动。
+- src/ui.rs、src/terminals.rs：两个终端绘制入口都传入当前有效Theme（每帧取，Save后的主题即重绘；普通shell同路径）。
+- src/theme.rs：Tide的bg/text设为#151b23/#dce4ee（同agents_bg/agents_text），注释同步；其他色、Dune与Terminal不变。
+- tests/terminal.rs：既有render调用补Theme参数；新增一组直接渲染检查。
+
+实际验证：
+- `git diff --check`、`cargo fmt --check`通过。
+- `cargo test --test terminal`：6 passed。新测覆盖Tide下默认前景/背景跟随（含空白格）、显式256色/RGB保留、反色仍为REVERSED、OSC 11设置的背景优先于主题、OSC 111复位后换回Dune默认得到Reset。
+- 未跑全套测试/Clippy、未录屏、未跑真实agent（按预算）。
+
+取舍：
+- 只映射Foreground/Background两个默认名；Cursor、Dim/Bright默认名等仍为原Reset回退，避免超出“默认背景和文字”。
+- Tide的bg/text是共享色，宿主其余使用`base()`的区域也会随之变为这对冷色；这是任务指定的改法，非truecolor终端下照原规则不降级共享色。
+
+未完成事项：无。主控审查后构建安装供用户体验。
+
 ## 主控审查（2026-10-02）：通过
 
 候选ec84452，status idle/attached0，公开reply末行DONE，采集首尾配对stored。已核全部diff及完成记录：仅四个指定源文件、直接测试和任务完成记录；两个绘制入口逐帧传当前Theme，显式RGB/索引/动态调色板优先，默认Foreground/Background才回退bg/text。解析、ColorRequest/default_rgb、PTY、输入及生命周期未改。diff --check通过。
