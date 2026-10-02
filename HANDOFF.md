@@ -3,6 +3,15 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Settings → Plugins 整理已安装
+
+- 本轮主控直接纯UI调整，不委派不遥测，保持英文。宽屏插件列表与详情左右分栏，窄屏上下分区；列表状态对齐、选中高亮，详情按资源/接入说明/技术路径分组且可滚动，底部操作固定。Add local路径字段加框。原按钮顺序/可用条件/插件生命周期和资源操作逻辑不改。
+- Dispatch仅setup_note和Template标签改英文；技能与模板正文、资源revision、路由/遥测/注册业务不改。功能da68f28、合并9a0f81c已推送，记录docs/任务/Settings插件管理页整理.md。
+- 两项直接UI检查通过，覆盖极小尺寸、48×24/80×24/140×44、完整说明滚动、内外部详情及Back焦点；必要release与diff check通过，未全仓/Clippy。日志/tmp/saddle-plugin-settings-{verified,build}.log，合成终端预览已检查；真实桌面复看待用户。
+- 日常宿主已备份并原子更新，SHA256 26dfc9c5568c631646c1486802738a863f538f8f818ce8442bba9ec6146d90d5；备份~/.local/share/saddle/backups/plugin-settings-20261002-183820，记录/tmp/saddle-plugin-settings-install.json，哈希/--help通过。Drover包/配置/数据未改，未关闭运行中进程。**重新打开Saddle生效。**
+- 工作区/分支已清理，空提交f75c5b1已收尾；旧设计review/t38/t55保留。等用户UI复看，不启动主题任务或扩大范围。
+
+
 ## 最新：Drover其余子页面整理、Telemetry英文已恢复
 
 - 用户将本轮只读检查改为“界面可以改，不能改任何逻辑”，随后再次指出Telemetry未经批准汉化。主控直接实现，不委派不遥测。新增/编辑任务、三种流转确认、删除、路径、Help、结果、All pending居中限宽，移除无关队列工具栏；确认身份长行折行，Help/结果/确认/Links加滚动提示；目录/接收者选择器加位置和完整选中值。主列表/Run details和业务状态/动作未改。
