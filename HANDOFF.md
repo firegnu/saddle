@@ -2,6 +2,13 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
+## 最新：已纠正Tasks展示语言，保持英文
+
+- 用户指出只要求UI调整，未授权改展示语言。上一轮把页签/节点提示改成中文属实施越界；已恢复英文Task text / Run details / Links / Telemetry及所有新增摘要文案，保留批准的布局和只读节点功能，不翻译用户正文/报告/原因。以后UI调整沿用现有语言，不能从中文讨论推定语言切换授权。
+- 功能2920cde、合并7b96b49已推送。27项相关检查通过（lib5/UI22）、必要插件release及diff check通过，未重复workflow/全仓/Clippy。生产差异仅字符串和rustfmt格式，判断与查询不变。日志/tmp/saddle-ui-language-{check,build}.log；详见Tasks运行概览与页签整理任务末尾。
+- 日常Drover二进制已备份并原子更新，SHA256 54cce20d6778e257c0af7a9fe954f873d40a85aa893c3846940e6ebb1f90b510；备份~/.local/share/saddle/backups/tasks-ui-language-20261002-175525，记录/tmp/saddle-ui-language-install.json。manifest/宿主/用户配置/真实数据未改，未关闭任何进程；用户停用再启用Drover生效，无需重启Saddle。
+- 本轮worktree/分支已清理，空提交be0cb82。等待用户复看，不新增UI范围；主题功能仍待所有UI调整完成。旧设计review/t38/t55保留。
+
 ## 最新：Tasks 页签与运行概览已安装，待用户重载 Drover
 
 - 用户批准主控直接整理右侧页签并补只读节点摘要；不委派、不遥测。功能3f619e3、合并f565244已推送。任务说明/运行概览/关联资料用下划线标选中；打开遥测独立靠右，窄屏换行。首屏展示本次各类最新消息/路由/Agent启动和回复记录、主控审查/收尾声明、人工提交/验收与下一步；下方保留完整报告、身份、运行/历史退回原因及仓库参考。
