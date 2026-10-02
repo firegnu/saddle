@@ -3,12 +3,14 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
-## 最新：Lagoon墨绿主题已派发
+## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
-- 用户图/Users/firegnu/Desktop/SCR-20261002-symr.png全部像素#0c1616，要求新增同色主题。任务docs/任务/Lagoon墨绿主题.md；新增第四预置Lagoon，顺序Dune/Tide/Lagoon/Terminal，原三套/覆盖/渲染机制保持。
-- saddle/dev-theme-lagoon-1 instanceb6bb523c6e90，Claude opus[1m]/high；theme-lagoon分支/worktree，基线d4971fc。JEV档位null/交叉不要/影响null，主控常规/看得见，只直接预置/Settings组及主要声明颜色对核算、diff check；不全套Clippy、不扩审计。主控核diff与证据，必须改交原实现者。
-- trace e72bb30e-3fc2-4f69-b910-36c20ee77636，dispatch6ebd0a70-a081-4c93-8670-d4d4102b7873，原telemetry目录lagoon-reply-context.json。route/start首尾配对stored，已挂提醒/tmp/saddle-theme-lagoon-reminder.txt。回调先status，working重挂，idle完整reply核DONE。
-- 通过后合并推送清理/目录删除后关对应自建agent/空提交/HANDOFF/实际closure，再必要备份构建安装供用户选；不自动切主题，不写真实配置/数据队列。保留设计review/t38/t55与用户agent。
+- 用户参考图精确底色#0c1616，新增第四预置Lagoon/lagoon，顺序Dune/Tide/Lagoon/Terminal；主背景和Agents背景同参考色，原三主题及覆盖/渲染机制保持。功能0b77408，合并7c55a97，审查0c77ea5，清理空提交4a869d2。任务docs/任务/Lagoon墨绿主题.md含完整配色及核对。
+- 开发记录直接主题目标2+5+1通过；公开read尾部只能核一项完整test result，主控未冒称核过所有原日志，未重跑套件/全套Clippy。正文/底色14.24、正文/选中9.76、按钮文字/焦点10.75主控独立计算一致；真实终端观感待用户。原始公开输出/tmp/saddle-lagoon-public-read.txt。
+- theme-lagoon工作区/分支已删，idle/attached0且目录删除成功后关闭自建saddle/dev-theme-lagoon-1 instanceb6bb523c6e90。用户agent、设计review/t38/t55保留；迟到not_found提醒忽略。
+- release构建及日常入口哈希/--help通过，SHA256 0fd905e605610abfb3b3a70c511b6dbcee79d372e812d4c4b53888534ad94b8a；备份/Users/firegnu/.local/share/saddle/backups/theme-lagoon-20261002-220045，安装记录/tmp/saddle-lagoon-install.json，日志/tmp/saddle-lagoon-build.log。真实配置前后哈希一致，未替用户切换主题、未动插件包/队列/Corral或停止当前进程。**重新打开Saddle → Settings → Colors → Theme → Lagoon → Save**。
+- trace e72bb30e-3fc2-4f69-b910-36c20ee77636，dispatch6ebd0a70-a081-4c93-8670-d4d4102b7873；review83473441-4ed7-4915-b1cc-9d764ca02f66已stored，原telemetry目录lagoon-closure.json/receipt记录实际收尾。
+- 遥测边界讨论尚无新增实现授权：独立新任务未显式要求则不记录；原任务补充沿原trace，新独立记录任务新trace。目前closure不是硬封存、任务边界由主控判断。本轮Theme后续沿原trace已告知用户，不自行扩展完成状态功能。
 
 
 ## 最新：右侧终端默认配色已合并安装，待用户重开
