@@ -50,3 +50,14 @@
 
 ## 做完
 在本文件末尾追加完成记录并提交：原因、改动、验证结果、取舍和未完成项。回复附提交号。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+
+## 完成记录（2026-10-03，被委派实现者）
+
+- 原因：Agents R1 行末从 `last_output` 计算无输出时长，终端持续输出会反复回到 0s／1s；DOING／ASK 原来统一从 `turn_started` 计算，导致同行与详情含义不同，waiting 也错误包含等待前的工作时间。
+- 改动：先补设计说明。working（含原 working 的 stalled 警示）使用公开 `turn_started`；idle／waiting 使用新增可空公开 `state_started`，R1 与活动行复用同一时长。没有可信起点显示 `—`。仅改 Agents 计时相关渲染和字段消费，不改 `src/agents.rs` 的状态判定、警示阈值或 app 绘制循环。
+- 底层：本仓库 corral-core 在事件归约后仅于状态实际改变时记录起点，`status` 加字段；事件格式和状态流转不变。派生 cursor 从 2 升到 3，遇到旧缓存重放原事件，防止沿用旧客户端留下的过期扩展字段；启动期公开状态覆盖为 starting 时不暴露 idle 的起点。重复 PermissionRequest／Notification／Stop、compact、子会话事件和重复读取均不重置当前状态起点。
+- RED：working 渲染回归期望 `30s`、实际 `1s`；状态公开契约期望起点 `10`、实际 null；idle／waiting 渲染回归期望 `25s`、实际 `0s`，均先于对应实现运行并因目标缺陷失败。底层初次 GREEN 尝试另发现测试误把仅列元数据的 `ls` 当作完整 status，已将该断言改为重复读取公开 status，没有扩大 ls 接口。
+- GREEN／直接回归：working 单测通过；公开状态契约单测通过；`cargo test --target aarch64-apple-darwin -p saddle --test ui` 30 项通过；`cargo test --target aarch64-apple-darwin -p corral-core --test protocol` 11 项通过。覆盖输出／动画刷新、等待与空闲的新起点、旧字段缺失、重复事件、子会话过滤、旧 cursor 重建及原有 UI 样式。公开 Client 字段消费检查随全套通过。
+- 标准检查各一次，均设置 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`：`cargo test --target aarch64-apple-darwin --all-targets` 通过（609 passed，0 failed，9 ignored）；`cargo clippy --target aarch64-apple-darwin --all-targets -- -D warnings` 通过；`git diff --check` 通过。日志：`/tmp/saddle-agent-state-timer-all-targets.log`、`/tmp/saddle-agent-state-timer-clippy.log`。所有命令前台等待结束；使用指定 target 下候选二进制，测试只用合成数据与隔离目录。
+- 取舍／边界：旧 Corral 缺少状态起点时 idle／waiting 如实未知；working 仍可使用原有公开起点。9 个既有 ignored 检查（外部旧版客户端兼容性、安装形态及独立插件示例）未额外运行，不声称已验证。没有安装切换、界面重启、真实队列／用户 agent 操作，也未改宠物分支相关内容。实现范围无未完成项；仅提交本分支，等待主控审查与集成。

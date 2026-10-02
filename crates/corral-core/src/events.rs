@@ -16,7 +16,7 @@ pub fn digest(s: &str) -> String {
     format!("{:x}", Sha256::digest(normalize(s).as_bytes()))
 }
 fn fresh(instance: &str) -> Value {
-    json!({"cursor":2,"fmt":1,"inst":instance,"offset":0,"main_session":null,"other_sessions":[],"pending":[],"state":"starting","last_tool":null,"turn_started":null,"last_event":null,"last_event_t":null,"inputs":[],"input_count":0,"last_prompt":null,"reply":null,"reply_t":null,"background_running":null})
+    json!({"cursor":3,"fmt":1,"inst":instance,"offset":0,"main_session":null,"other_sessions":[],"pending":[],"state":"starting","state_started":null,"last_tool":null,"turn_started":null,"last_event":null,"last_event_t":null,"inputs":[],"input_count":0,"last_prompt":null,"reply":null,"reply_t":null,"background_running":null})
 }
 fn string(v: &Value) -> String {
     match v {
@@ -28,6 +28,7 @@ fn string(v: &Value) -> String {
     }
 }
 fn update(s: &mut Value, e: &Value) {
+    let previous = s["state"].clone();
     let ev = e["ev"].as_str().unwrap_or("");
     s["last_event"] = e["ev"].clone();
     s["last_event_t"] = e["t"].clone();
@@ -84,6 +85,9 @@ fn update(s: &mut Value, e: &Value) {
         }
         "SessionEnd" => s["state"] = json!("exiting"),
         _ => {}
+    }
+    if s["state"] != previous {
+        s["state_started"] = e["t"].clone();
     }
 }
 fn apply(s: &mut Value, e: &Value, cwd: &Path) {
@@ -160,7 +164,7 @@ pub fn read(dir: &Path, instance: &str, cwd: &Path) -> Result<Value> {
     };
     let size = f.metadata()?.len();
     let mut s = state::read(dir.join("cursor"));
-    if s["cursor"] != 2
+    if s["cursor"] != 3
         || s["inst"] != instance
         || s["offset"].as_u64().is_none_or(|n| n > size)
         || ["pending", "other_sessions", "inputs"]

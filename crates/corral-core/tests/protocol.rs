@@ -215,6 +215,161 @@ fn events_filter_subagents_keep_full_reply_and_do_not_resend_unconfirmed_input()
     assert_eq!(lab.json(&["status", "lab/main"])["state"], "idle");
 }
 #[test]
+fn state_started_tracks_transitions_and_survives_events_and_cursor_replay() {
+    let lab = Lab::new();
+    lab.recognized();
+    let initial = lab.json(&["status", "lab/main"]);
+    assert!(initial["state_started"].is_null());
+    let dir = lab.root.path().join("pens/lab/main");
+    for (t, ev, extra, state, since, turn) in [
+        (
+            10,
+            "SessionStart",
+            json!({"cwd":"/tmp","has_transcript":true}),
+            "idle",
+            10,
+            None,
+        ),
+        (
+            20,
+            "UserPromptSubmit",
+            json!({"prompt":"first"}),
+            "working",
+            20,
+            Some(20),
+        ),
+        (
+            30,
+            "PreToolUse",
+            json!({"tool_name":"shell"}),
+            "working",
+            20,
+            Some(20),
+        ),
+        (40, "PermissionRequest", json!({}), "blocked", 40, Some(20)),
+        (50, "PermissionRequest", json!({}), "blocked", 40, Some(20)),
+        (
+            60,
+            "Notification",
+            json!({"notification_type":"permission_prompt"}),
+            "blocked",
+            40,
+            Some(20),
+        ),
+        (
+            61,
+            "SessionStart",
+            json!({"cwd":"/tmp","has_transcript":true,"source":"compact"}),
+            "blocked",
+            40,
+            Some(20),
+        ),
+        (
+            62,
+            "SessionStart",
+            json!({"session_id":"sub","cwd":"/tmp"}),
+            "blocked",
+            40,
+            Some(20),
+        ),
+        (
+            63,
+            "Stop",
+            json!({"session_id":"sub"}),
+            "blocked",
+            40,
+            Some(20),
+        ),
+        (70, "PostToolUse", json!({}), "working", 70, Some(20)),
+        (
+            80,
+            "Stop",
+            json!({"background_running":0}),
+            "idle",
+            80,
+            Some(20),
+        ),
+        (
+            85,
+            "Stop",
+            json!({"background_running":0}),
+            "idle",
+            80,
+            Some(20),
+        ),
+        (
+            90,
+            "Notification",
+            json!({"notification_type":"idle_prompt"}),
+            "idle",
+            80,
+            Some(20),
+        ),
+        (
+            100,
+            "UserPromptSubmit",
+            json!({"prompt":"next"}),
+            "working",
+            100,
+            Some(100),
+        ),
+        (
+            110,
+            "PermissionRequest",
+            json!({}),
+            "blocked",
+            110,
+            Some(100),
+        ),
+        (120, "Interrupt", json!({}), "idle", 120, Some(100)),
+        (130, "PreToolUse", json!({}), "working", 130, Some(100)),
+        (
+            140,
+            "Notification",
+            json!({"notification_type":"idle_prompt"}),
+            "idle",
+            140,
+            Some(100),
+        ),
+        (150, "StopFailure", json!({}), "idle", 140, Some(100)),
+        (160, "SessionEnd", json!({}), "exiting", 160, Some(100)),
+    ] {
+        let mut event = json!({"v":1,"inst":initial["instance"],"session_id":"main","t":t,"ev":ev});
+        event
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        writeln!(
+            fs::OpenOptions::new()
+                .append(true)
+                .open(dir.join("events"))
+                .unwrap(),
+            "{event}"
+        )
+        .unwrap();
+        for public in [
+            lab.json(&["status", "lab/main"]),
+            lab.json(&["status", "lab/main"]),
+        ] {
+            assert_eq!(public["state"], state, "{ev}");
+            assert_eq!(public["state_started"], since, "{ev}");
+            assert_eq!(public["turn_started"], json!(turn), "{ev}");
+        }
+        // Old cursors must replay even if they retain a now-stale extension field.
+        let mut cursor: Value =
+            serde_json::from_slice(&fs::read(dir.join("cursor")).unwrap()).unwrap();
+        cursor["cursor"] = json!(2);
+        cursor["state_started"] = json!(1);
+        fs::write(dir.join("cursor"), cursor.to_string()).unwrap();
+        assert_eq!(
+            lab.json(&["status", "lab/main"])["state_started"],
+            since,
+            "replay {ev}"
+        );
+    }
+}
+
+#[test]
 fn hook_is_fail_open_and_sandbox_public_commands_leave_no_state() {
     let lab = Lab::new();
     let o = lab
