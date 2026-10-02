@@ -664,7 +664,7 @@ fn task_fields_edit_at_the_cursor() {
 }
 
 #[test]
-fn dispatch_is_the_third_view_and_queries_only_explicit_task_numbers() {
+fn task_views_cycle_without_legacy_dispatch_and_keep_telemetry() {
     let mut panel = Panel::default();
     panel.project = "/tmp/project-a".into();
     panel.absorb(
@@ -674,36 +674,27 @@ fn dispatch_is_the_third_view_and_queries_only_explicit_task_numbers() {
         }))
         .unwrap(),
     );
-    let mut seen = Vec::new();
-    for _ in 0..4 {
+    for expected in [View::Details, View::Links, View::Text] {
         panel.key(key(K::Tab));
-        seen.push(panel.view);
+        assert_eq!(panel.view, expected);
     }
-    assert_eq!(
-        seen,
-        [View::Details, View::Dispatch, View::Links, View::Text]
-    );
-    panel.key(key(K::BackTab));
-    panel.key(key(K::BackTab));
-    assert_eq!(panel.view, View::Dispatch);
-    // Dispatch reads its own records, not `drover show`.
-    assert_eq!(panel.detail_key(), None);
-    let dispatch = panel.dispatch_key("dlog").unwrap();
-    assert_eq!(
-        (dispatch.project.as_str(), dispatch.task.as_str()),
-        ("/tmp/project-a", "T38")
-    );
+    for expected in [View::Links, View::Details, View::Text] {
+        panel.key(key(K::BackTab));
+        assert_eq!(panel.view, expected);
+        assert!(matches!(
+            panel.key(key(K::Char('r'))),
+            Some(Request::Refresh)
+        ));
+        panel.key(saddle_drover_plugin::queue::telemetry_click());
+        let filter = panel.telemetry_request.take().expect("numbered task jump");
+        assert_eq!(filter.key, "T38");
+        assert_eq!(filter.run, None);
+    }
     panel.select(1);
-    assert_eq!(
-        panel.dispatch_key("dlog"),
-        None,
-        "no guessing without a task number"
-    );
-    assert!(panel.key(key(K::Enter)).is_none());
-    assert_eq!(
-        panel.view,
-        View::Dispatch,
-        "Enter opens an entry, not Run details"
+    panel.key(saddle_drover_plugin::queue::telemetry_click());
+    assert!(
+        panel.telemetry_request.is_none(),
+        "unnumbered task has no jump"
     );
 }
 

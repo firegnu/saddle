@@ -851,7 +851,7 @@ fn return_to_pending_is_a_running_task_confirmation() {
         crossterm::event::KeyCode::Esc,
         crossterm::event::KeyModifiers::NONE,
     ));
-    q.view = queue::View::Dispatch;
+    q.view = queue::View::Links;
     q.key(queue::return_click());
     let key = q.confirmation_key().unwrap();
     let mut value: serde_json::Value =
@@ -877,7 +877,7 @@ fn return_to_pending_is_a_running_task_confirmation() {
     let buffer = render_queue(&mut q, 150, 40);
     let (x, y) = find_button(&buffer, "Return to pending ↵");
     let Some(saddle::drover::Request::Run(op)) = q.click(x, y) else {
-        panic!("confirmation click must submit even from Dispatch")
+        panic!("confirmation click must submit even from Links")
     };
     assert!(matches!(
         op,
