@@ -21,3 +21,5 @@
 - cargo clippy --all-targets -- -D warnings 通过；git diff --check 通过。未重复全套。所有测试使用隔离目录/HOME/假服务。
 - Release 仅构建 Drover：cargo build --release --locked --target aarch64-apple-darwin -p saddle-drover-plugin --bin saddle-drover。隔离暂存 /tmp/saddle-project-setup-package-3755yq76，二进制 sha256 896077aefbc151e01db6c681cc6be01d1e435b16e0d5dce890996d621dbe3c05；保留日常清单（无能力变更），sha256 6b059a067bfe4407da5170222c53aa3ed160e6a9910e4bef8f3ea5fd2c29a9f2。
 - 运行中的日常 Drover 尚未替换；已请用户先停用，收到答复后才备份/替换。Saddle 宿主无需更新。人工验收文档 A2 已在主仓库改为界面流程；真实人工端到端仍未执行。
+
+- 合并 8a317e6 已推送，开发工作区/分支清理，无 agent；release 隔离 initialize/shutdown 通过，日志 /tmp/saddle-project-setup-release-smoke.log。日常更新仍等待用户停用插件，未把构建等同安装。
