@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-03。安装源码 `7755bb8`，包含 Corral Rust 核心与宠物包。两项定向复核、新包隔离退出/重开验证均通过。**用户退出界面后已切换两个命令入口和 Drover/Diff 路径；已通知重开，待实际插件启动核验。旧主控保持，尚未创建新主控交接。**
+更新：2026-10-03。安装源码 `7755bb8`，包含 Corral Rust 核心与宠物包。**文件切换及用户重开后的核验完成：新宿主和配套插件已启动，Drover 公开只读查询通过。旧主控保持，尚未创建新主控交接。**
 
 ## 当前状态
 
@@ -30,7 +30,7 @@
 ## 构建产物与下一步
 
 - Corral 核验时生产源码 `820fda28d52028ef66c1a0d2953410e5b4a94900` 的临时包：`/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`。**该包不包含后来合并的宠物功能，不能直接作为最新整包安装。** 迁移前按最新 main 重新成套构建并核对 BUILD.txt；保留原核验证据，不把它当新整包已验收。
-- 新包 `~/.local/share/saddle/versions/7755bb8` 已用于两个命令入口及 Drover/Diff 注册路径；私有备份 `~/.local/share/saddle/backups/corral-rust-7755bb8-20261003-021136`。证据/哈希见 `docs/调研/Corral核心Rust部署记录-2026-10-03.md`。用户退出后核 ctl 为空、无宿主/插件进程才切换；下一步用户重开后的运行核验。旧 `saddle/main` instance=4ebbecf235f8，Rust CLI 查询保持，agent_pid=72029；不停止它。
+- 新包 `~/.local/share/saddle/versions/7755bb8` 已用于两个命令入口及 Drover/Diff 注册路径；私有备份 `~/.local/share/saddle/backups/corral-rust-7755bb8-20261003-021136`。证据/哈希见 `docs/调研/Corral核心Rust部署记录-2026-10-03.md`。用户退出后切换，重开为宿主 instance=8cd013831927e964，进程加载路径已核为新包，Drover projects 只读回执 complete/ok，Dispatch 两种技能 revision3/owned_current。旧 `saddle/main` instance=4ebbecf235f8、agent_pid=72029 保持；下一步单独新主控交接，不自动停止旧主控。
 - 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。当前全局 corral 技能已核为实际目录/文件，不是软链接；部署时重新核所有权，不强制覆盖用户资源，不写原 Corral 仓库。
 - 上轮遥测边界部署详情在 `docs/任务/遥测单任务边界-部署记录.md`；本轮已切换文件入口/插件路径，config.toml、资源所有权、真实 trace/队列未改。Corral 技能 dry-run 两处均 same，无需覆盖。原程序/插件目录保留。
 - 详细操作见 `docs/Corral新旧主控交接清单-Saddle示例.md`，已用 Typora 打开。新旧主控可不同名并存，读取 HANDOFF 核对后再停旧；新建表单 Controller 短名锁定 main，自定义主控名需用公开 CLI 创建并带 role=controller。底层/角色显示/Tasks 不要求名字为 main，Tasks 接收者需显式调整；现有 run 不自动转移。本项目 AGENTS 的 saddle/main 是项目约定。
