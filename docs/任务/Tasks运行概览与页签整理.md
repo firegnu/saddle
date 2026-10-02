@@ -23,3 +23,9 @@
 用户指出上版未经授权改成中文。恢复该轮改动的所有产品文案为英文，保留页签布局与只读摘要；不翻译用户正文、报告或退回原因，不改判断/查询/任务流转。纯文案纠正不制造RED，只验证直接相关展示/节点文案与必要插件构建。
 
 纠正验证：插件lib 5项、UI 22项通过（/tmp/saddle-ui-language-check.log）；首屏、窄屏、选中样式与点击保留。生产3个文件去除字符串并规范化rustfmt空白/尾逗号后与纠正前一致，无新增判断；初次未规范化尾逗号的检查失败仅为格式差异，已核diff。必要release构建通过，未重复workflow、全仓测试或Clippy。
+
+## 顶部主状态（2026-10-02）
+
+用户仍无法一眼看出是否需要批准，要求保留当前全部信息，只重点突出状态。Run details标题下增加高对比底色/粗体标题/直接操作提示：Running且本次最新收尾报告可读时YOUR REVIEW NEEDED，awaiting_release为AWAITING YOUR ACCEPTANCE，done为ACCEPTED，Running缺可读报告为COMPLETION UNCONFIRMED。加载/刷新失败不显示旧报告为待批准，区分CHECKING STATUS / STATUS UNAVAILABLE。所有文案英文；报告出现不代表运行成功，不根据自然语言判断成功或自动提交。其他详情全部保留，不新增查询、业务逻辑、通知或采集。
+
+状态目标实现前有效失败（/tmp/saddle-status-banner-red.log），实现后3项detail目标和22项UI通过，含首屏位置/强调色/底色/粗体、完整报告和旧轮隔离、缺报告/不可读/查询失败/刷新过期。测试仅这些直接相关检查，不跑全仓或Clippy；必要插件release构建、diff check通过。日志/tmp/saddle-status-banner-{check,ui,build}.log。安装/备份及重载要求见最新HANDOFF。

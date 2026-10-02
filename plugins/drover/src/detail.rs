@@ -65,6 +65,19 @@ impl TaskDetail {
             let (group, task) = live.unwrap_or((self.group, &self.task));
             let (status, color) = crate::queue::task_status(t, group, task.status.as_deref());
             out.header(task.id.as_deref(), status, color, None, &task.title);
+            if queried && self.error.is_none() {
+                out.banner(
+                    "CHECKING STATUS",
+                    "Waiting for current run details.",
+                    t.agent_starting,
+                );
+            } else {
+                out.banner(
+                    "STATUS UNAVAILABLE",
+                    "No current run details; check the controller.",
+                    t.agent_blocked,
+                );
+            }
             if queried {
                 match &self.error {
                     None => out.line(vec![Span::styled(
@@ -107,6 +120,7 @@ impl TaskDetail {
         };
         let (status, color) = crate::queue::task_status(t, group, task.status.as_deref());
         out.header(task.id.as_deref(), status, color, None, &task.title);
+        out.status_banner(task, &data.reports, self.error.is_some());
         if let Some(error) = &self.error {
             out.line(vec![Span::styled(
                 format!("Refresh failed: {error}"),
@@ -141,6 +155,76 @@ struct Out<'a> {
     rows: Vec<Line<'static>>,
 }
 impl Out<'_> {
+    fn banner(&mut self, title: &str, action: &str, color: Color) {
+        let first = self.rows.len();
+        self.text(1, &format!(" {title}"), bold(color));
+        self.text(1, &format!(" {action}"), Style::default().fg(self.t.bright));
+        for row in &mut self.rows[first..] {
+            row.style = Style::default().bg(self.t.agent_selected);
+        }
+    }
+
+    fn status_banner(&mut self, task: &Task, reports: &crate::telemetry::Reports, stale: bool) {
+        let closure = reports
+            .entries
+            .iter()
+            .filter(|r| r.kind == "controller.note")
+            .max_by_key(|r| r.seq);
+        let readable_closure = reports.state == "available"
+            && closure.is_some_and(|r| r.text.as_ref().is_some_and(|text| !text.trim().is_empty()));
+        let (title, action, color) = if stale {
+            (
+                "STATUS UNAVAILABLE",
+                "Refresh failed. Details below are stale; check before acting.",
+                self.t.agent_blocked,
+            )
+        } else {
+            match task.status.as_deref() {
+                Some("awaiting_release") => (
+                    "AWAITING YOUR ACCEPTANCE",
+                    "Review the result, then Accept or Return to pending.",
+                    self.t.focus,
+                ),
+                Some("done") => (
+                    "ACCEPTED",
+                    "This task has been accepted. No approval is pending.",
+                    self.t.agent_idle,
+                ),
+                Some("running") if readable_closure => (
+                    "YOUR REVIEW NEEDED",
+                    "Controller closure report available. Check it before Submit for review.",
+                    self.t.focus,
+                ),
+                Some("running") => (
+                    "COMPLETION UNCONFIRMED",
+                    "No readable closure report for this run. Check the controller.",
+                    self.t.agent_blocked,
+                ),
+                Some("pending") => (
+                    "PENDING DISPATCH",
+                    "Review the task and any return reason before dispatching.",
+                    self.t.agent_starting,
+                ),
+                Some("failed") => (
+                    "FAILED",
+                    "Check the recorded failure and reports below.",
+                    self.t.agent_error,
+                ),
+                Some("dropped") => (
+                    "DROPPED",
+                    "This task was dropped. No approval is pending.",
+                    self.t.muted,
+                ),
+                _ => (
+                    "STATUS UNKNOWN",
+                    "Check the task and controller before acting.",
+                    self.t.agent_blocked,
+                ),
+            }
+        };
+        self.banner(title, action, color);
+    }
+
     fn overview(&mut self, task: &Task, reports: &crate::telemetry::Reports) {
         self.heading("Key events · this run");
         let missing = match reports.state.as_str() {
@@ -639,5 +723,47 @@ mod report_tests {
             view.data.as_ref().unwrap().task.status.as_deref(),
             Some("running")
         );
+    }
+    #[test]
+    fn headline_distinguishes_a_report_to_review_from_acceptance_and_unknown() {
+        let mut data: Detail = serde_json::from_value(json!({"project":"/synthetic", "task":{
+            "id":"T1","run_id":"r2","status":"running","title":"Example",
+            "previous_runs":[{"run_id":"r1","status":"done","t2":3}]},
+            "evidence":{"scope":"repository_reference","controls_transition":false,"observed_at":0,
+                "git":{"state":"available"},"last_check":{"state":"unknown"}},
+            "reports":{"state":"available","entries":[
+                {"event_id":"c","seq":10,"kind":"controller.note","recorded_at":"NOW","text":"CLOSURE BODY"}]}
+        })).unwrap();
+        let render = |data: &Detail, error: Option<String>| {
+            let mut view = TaskDetail::new("Current", data.task.clone());
+            view.data = Some(Box::new(data.clone()));
+            view.error = error;
+            view.lines(&Theme::default(), None, true, 100)
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let text = render(&data, None);
+        assert!(text.contains("YOUR REVIEW NEEDED"), "{text}");
+        assert!(text.find("YOUR REVIEW NEEDED").unwrap() < text.find("Key events").unwrap());
+        assert!(text.contains("CLOSURE BODY"));
+        assert_eq!(data.task.status.as_deref(), Some("running"));
+        assert!(render(&data, Some("offline".into())).contains("STATUS UNAVAILABLE"));
+        data.task.status = Some("awaiting_release".into());
+        assert!(render(&data, None).contains("AWAITING YOUR ACCEPTANCE"));
+        data.task.status = Some("done".into());
+        assert!(render(&data, None).contains("ACCEPTED"));
+        data.task.status = Some("running".into());
+        data.reports.entries[0].text = None;
+        assert!(render(&data, None).contains("COMPLETION UNCONFIRMED"));
+        data.reports.entries[0].text = Some("Readable closure".into());
+        data.reports.state = "unavailable".into();
+        assert!(!render(&data, None).contains("YOUR REVIEW NEEDED"));
+        data.reports.state = "available".into();
+        data.reports.entries.clear();
+        assert!(render(&data, None).contains("COMPLETION UNCONFIRMED"));
+        data.reports.state = "unavailable".into();
+        assert!(!render(&data, None).contains("YOUR REVIEW NEEDED"));
     }
 }
