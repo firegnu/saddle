@@ -1376,3 +1376,8 @@ Claude 独立设计审查首轮修订（2026-10-01，待复审）：补齐事件
 ## 2026-10-02 阶段05实际切换
 
 05A已合并5e4205d并收尾2e0ea6e。用户退出日常Saddle后，05B成套替换宿主与Drover包；两处旧技能链接只移走链接本身，公开资源管理页安装revision2并验证owned_current。dispatch启用与遥测开关独立，日常遥测仍关闭且未初始化；本项目AGENTS改用同版本遥测指引，其他项目规则不改。旧dispatch-log退出操作链，保留程序与全部旧数据作离线历史，不导入新SQLite。旧已运行agent不会因更新skill自动遗忘旧上下文，不能据此宣称所有旧会话已停止使用；用户会话不操作。实际归档与部署证据见[05B记录](任务/遥测05B-实际切换记录.md)。Corral源码未改，迁移仍留最后。
+
+
+## 2026-10-02 Agents 顶部入口两行布局
+
+用户认为Telemetry / Plugins / Settings排成一行别扭，选择“Telemetry；下一行Plugins / Settings”，并明确要求主控直接实施。工作区入口固定在Attention之后：Telemetry一行，Plugins和Settings下一行；极窄侧栏放不下两个完整名称时保留换行兜底，不与标题/Attention/列表重叠。保持已有入口、快捷键与业务含义，只更新显示位置及同源点击区域。
