@@ -32,9 +32,16 @@
 - 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。现有全局 corral 技能链接受所有权保护，`install-skills` 会保守报 foreign；需在部署时单独处理链接，不写原 Corral 仓库。
 - 上轮遥测边界日常部署与备份详情仍在 `docs/任务/遥测单任务边界-部署记录.md`；本次没有改动那套安装。此前“不能自动迁移Corral”的旧交接已被本次源码实施授权替代，真实安装切换仍未授权执行。
 
+## 宠物包（由 saddle/claude-1 按用户直接布置完成，2026-10-03）
+
+- 已合并 `0761aeb` 并推送，分支和 worktree `pet-packs` 已清理。吉祥物改为可换的宠物：Clawd 加原创橘猫，Settings → General → Pet 选择，配置 `mascot = "clawd" | "cat"`。素材是 `assets/pets/*.toml` 文本宠物包，Rust 直接读；Python 生成脚本和二进制帧已删除。设计见 `docs/DESIGN.md`「宠物包与第二只宠物」，格式见 `assets/pets/README.md`。
+- 合并前分支上格式和 clippy 通过，全量 63 组通过；workflow 组 `pending_delete_button_confirms_names_the_task_and_can_be_cancelled`、`native_mouse_buttons_cover_forms_and_stop_confirmation` 两项失败，原因未查清（可能与共享 `.target/debug/saddle` 被并行构建覆盖有关，未证实）。用户决定先合并，由主控用隔离 target 复跑。
+- 效果只看过离线渲染的预览图，未在真实终端核验；用户日常用 Ghostty 和 Metalterm。未替换安装版。
+- 下一步：图片版，Kitty 图形协议，支持的终端默认用图片、其余自动退回方块版。先做猫；Clawd 用用户提供的 claude.dev 参考动画，只做 3 行高度放得下的。新分支 `pet-images`，由 saddle/claude-1 继续。
+
 ## 保留项
 
-- 用户要求只打开的 `saddle/claude-1`（此前instance cb7fea1096b7）由用户自己布置 pet-packs；其 `../saddle-worktrees/pet-packs` 继续保留，不送话、不停止、不替它合并或安装。会话身份如需操作必须先公开核对。
+- 用户直接布置给 `saddle/claude-1` 的宠物工作见下方「宠物包」；该会话仍由用户自己安排，不送话、不停止。会话身份如需操作必须先公开核对。
 - 保留用户所有既有 agent。保留 `review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow`；没有修改原 Corral 仓库。
 - 单任务遥测规则仍是一次明确授权对应一条新 trace，完整交付后正式 close；下一任务不自动续记。不要复用旧Theme上下文。本任务没有记录选择。
 - 既有资源失败提示/Tasks降级文案等历史非阻断项没有扩修；详见先前审查记录。
