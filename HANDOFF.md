@@ -13,6 +13,8 @@
 - **最新覆盖上两条设计状态**：修订1074b3a已核完整DONE及增量，M1–M3关闭，定稿b572717，已合并推送；只静态核对，未执行功能验证。原设计工作区/分支已安全删除，确认idle/attached0后关闭对应7f019dd5dae6，空提交2749553；迟到not_found忽略勿恢复。
 - 实施任务docs/任务/遥测单任务边界-实施.md：同分支依次完成宿主schema v2/close/查询、Drover收尾调用、技能revision3与直接文档。JEV重/交叉要/碰要害，主控照用Codex gpt-6-astra/xhigh；使用合成数据验证，主控标准后独立审查。尚未安装或迁移真实库，Tasks记录选择保持原样，不采集本次工作。
 - 已派saddle/dev-telemetry-boundary-1，instancef99302444ec2，分支/worktree telemetry-task-boundary，基线374fe80。结束先status、working重挂；idle后普通corral reply取完整DONE，不能带Theme记录上下文。核diff/完成记录/有效RED-GREEN和一次标准，再新开重档Codex独立交叉审查。必须改交原实现者，每轮提醒，返工仅目标直接回归。通过才合并推送清理、成功删目录后关自建agent、空提交及HANDOFF；本轮不安装、不迁移真实库，部署另行处理。
+- **实施首轮13ded7a待核，不通过**：主控已核diff/完成记录与真实迁移/close/Drover RED-GREEN、直接回归日志；开发标准test及Clippy均在基线examples/ui_preview.rs:104漏Theme参数编译失败，未全套运行；后续既有Drover disabled场景两次budget_exhausted，根因未知。主控一次标准尚未跑，先修已知编译阻断，避免必败重复。原证据/private/tmp/saddle-telemetry-boundary-kG9SxA。
+- 已交原实现者限定继续：主仓库docs/任务/遥测单任务边界-实施核对.md仅授权示例一处参数适配、一次example check；预算失败只读静态/日志及最多一个合成探针，不改生产逻辑/超时/断言、不反复测试。回后核具体证据再跑主控一次标准与独立审查；每轮提醒，不扩审计。所有实施工作区/agent保留，未合并未安装，真实库未动。
 
 ## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
