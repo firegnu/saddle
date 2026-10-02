@@ -1,12 +1,14 @@
 # Saddle 交接
 
-更新：2026-10-03。当前 main；Corral Rust 核心实现 `820fda2`，测试/产物记录 `ff58742`，合并 `2527c8f`（已推送），收尾空提交 `9020fec`。本交接提交后需确认 main 与 origin/main 同步、工作区干净。
+更新：2026-10-03。本轮核对基线 main=`419ba5f`，与远端一致；Corral Rust 核心合并 `2527c8f`，宠物包合并 `0761aeb`，均已推送。本轮仅更新交接和新旧主控交接清单，不改功能、不部署、不跑测试。
 
 ## 当前状态
 
 用户批准把最后一层 Corral infra 真正用 Rust 迁入 Saddle；主控已直接实施、验证、合并。没有委派，没有创建 Tasks 任务，没有记录本次遥测。**源码完成，真实部署尚未进行；日常使用仍是原安装和原 Corral。**
 
 用户要求使用感觉保持一致：关闭 Saddle 不停 agent，外部仍能 `corral attach`，重开恢复同一实例；原 Corral 仓库只读保留、独立可用，不产生对宿主/插件/遥测的反向依赖。用户现有主控都有 HANDOFF，部署后由用户自行重开，不热替换旧 Python 进程，不自动关闭它们。
+
+用户此前要求等 Claude 开发收尾后再迁移；现已核实文本宠物包全部合并、相关分支/worktree 已清理，图片版暂缓，待换内核后新开会话继续。本轮授权仅探测、交接、提交推送，并关闭确认已无当前工作的 Claude，不是部署授权。
 
 ## 已完成
 
@@ -27,10 +29,11 @@
 
 ## 构建产物与下一步
 
-- 最终干净生产源码 `820fda28d52028ef66c1a0d2953410e5b4a94900` 的临时包：`/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`。BUILD.txt 含各二进制 SHA256；临时目录若被清理可重建。ff58742之后只改测试/文档，不改该包生产代码。
+- Corral 核验时生产源码 `820fda28d52028ef66c1a0d2953410e5b4a94900` 的临时包：`/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`。**该包不包含后来合并的宠物功能，不能直接作为最新整包安装。** 迁移前按最新 main 重新成套构建并核对 BUILD.txt；保留原核验证据，不把它当新整包已验收。
 - 尚未更换真实 saddle/corral 命令链接、配置、技能或插件注册，未迁移/关闭真实 trace、未动队列、未发布远端 release。下一步是用户安排真实部署切换，再做自建新会话的实际体验核验。
-- 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。现有全局 corral 技能链接受所有权保护，`install-skills` 会保守报 foreign；需在部署时单独处理链接，不写原 Corral 仓库。
+- 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。当前全局 corral 技能已核为实际目录/文件，不是软链接；部署时重新核所有权，不强制覆盖用户资源，不写原 Corral 仓库。
 - 上轮遥测边界日常部署与备份详情仍在 `docs/任务/遥测单任务边界-部署记录.md`；本次没有改动那套安装。此前“不能自动迁移Corral”的旧交接已被本次源码实施授权替代，真实安装切换仍未授权执行。
+- 详细操作见 `docs/Corral新旧主控交接清单-Saddle示例.md`，已用 Typora 打开。新旧主控可不同名并存，读取 HANDOFF 核对后再停旧；新建表单 Controller 短名锁定 main，自定义主控名需用公开 CLI 创建并带 role=controller。底层/角色显示/Tasks 不要求名字为 main，Tasks 接收者需显式调整；现有 run 不自动转移。本项目 AGENTS 的 saddle/main 是项目约定。
 
 ## 宠物包（由 saddle/claude-1 按用户直接布置完成，2026-10-03）
 
@@ -41,7 +44,7 @@
 
 ## 保留项
 
-- 用户直接布置给 `saddle/claude-1` 的宠物工作见下方「宠物包」；该会话仍由用户自己安排，不送话、不停止。会话身份如需操作必须先公开核对。
+- `saddle/claude-1`（instance `cb7fea1096b7`）公开核对为 idle、attached=0，cwd 为主仓库；最后回复“等你切完再开我”，图片版留待新会话。用户本轮已授权确认无用途后关闭：先提交推送交接，再复核身份并关闭，实际结果随后补记。没有宠物遗留分支/worktree，不删除主仓库目录。
 - 保留用户所有既有 agent。保留 `review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow`；没有修改原 Corral 仓库。
 - 单任务遥测规则仍是一次明确授权对应一条新 trace，完整交付后正式 close；下一任务不自动续记。不要复用旧Theme上下文。本任务没有记录选择。
 - 既有资源失败提示/Tasks降级文案等历史非阻断项没有扩修；详见先前审查记录。
@@ -52,5 +55,6 @@
 2. `docs/Corral核心Rust集成设计.md`、`docs/调研/Corral核心Rust集成-实施核验.md`。
 3. `crates/corral-core/README.md`、`scripts/package.sh`、`src/agent_program.rs`。
 4. `docs/插件协议.md` 第19节、`plugins/drover/README.md`。
+5. `docs/Corral新旧主控交接清单-Saddle示例.md`；宠物后续见本文件「宠物包」与 `assets/pets/README.md`。
 
 后续 cargo 仍共用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。并行项目构建会覆盖同名顶层binary；需要启动固定候选时用不可变暂存包或明确隔离的target路径，不能把被覆盖的测试结果当本候选证据。
