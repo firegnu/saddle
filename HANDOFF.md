@@ -2,6 +2,13 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
+## 最新：Run details顶部主状态已安装
+
+- 用户要求一眼看出任务是否需要人工处理，现有展示不丢。英文Run details标题下新增底色/粗体主状态及动作提示：YOUR REVIEW NEEDED表示本次最新收尾报告可读需审阅，AWAITING YOUR ACCEPTANCE表示已提交待验收，ACCEPTED表示已验收，COMPLETION UNCONFIRMED表示无可读收尾报告；加载/刷新失败不拿旧报告显示待批准。没有把报告出现当作成功，也不改变人工提交/验收。
+- 生产仅加plugins/drover/src/detail.rs展示，原节点/报告/旧轮退回/仓库参考保留；不新增查询、不改业务状态/通知/采集，不委派不遥测。功能be1ba02、合并9a6ff56已推送。目标有效RED后GREEN，detail3+UI22共25项通过、必要插件构建/diff check通过；未全仓/Clippy/workflow，日志/tmp/saddle-status-banner-*.log。
+- 日常Drover二进制已原子更新，SHA256 35fa66190ba0cd83e85fd21a816ed46e8f53e7c71d06a1f525728799e27ff01b；完整包备份~/.local/share/saddle/backups/tasks-status-banner-20261002-175908，安装记录/tmp/saddle-status-banner-install.json。manifest/宿主/配置/真实任务数据未改，未关闭进程；用户需停用再启用Drover生效。
+- 本轮worktree/分支已清理，空提交d4c8ed1。等用户复看；保持英文、窄验证范围。主题仍是全部UI调整完成后的待办，旧设计review/t38/t55保留。
+
 ## 最新：已纠正Tasks展示语言，保持英文
 
 - 用户指出只要求UI调整，未授权改展示语言。上一轮把页签/节点提示改成中文属实施越界；已恢复英文Task text / Run details / Links / Telemetry及所有新增摘要文案，保留批准的布局和只读节点功能，不翻译用户正文/报告/原因。以后UI调整沿用现有语言，不能从中文讨论推定语言切换授权。
