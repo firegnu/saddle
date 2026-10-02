@@ -18,8 +18,10 @@ saddle-dispatch-plugin = { path = "plugins/dispatch" }
 saddle-plugin-protocol = { path = "crates/plugin-protocol" }
 saddle-plugin-sdk = { path = "crates/plugin-sdk" }
 anyhow = "1"
+base64 = "0.22"
 alacritty_terminal = "0.26"
 crossterm = "0.29"
+flate2 = "1"
 libc = "0.2"
 portable-pty = "0.9"
 ratatui = "0.30"

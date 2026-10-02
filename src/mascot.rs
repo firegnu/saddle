@@ -1,9 +1,10 @@
-//! A decorative pet patrolling spare tab-strip space, drawn from a text pet pack. No agent
-//! state or input.
+//! A decorative pet patrolling spare tab-strip space, drawn from a text pet pack: with block
+//! glyphs, or as pictures where the terminal shows them (see `kitty`). No agent state or input.
 use anyhow::{Context, Result, ensure};
 use ratatui::{
     Frame,
-    layout::Rect,
+    buffer::{self, Buffer},
+    layout::{Position, Rect},
     style::{Color, Modifier},
 };
 use serde::Deserialize;
@@ -62,6 +63,17 @@ impl Pet {
         });
         PACKS[self as usize].clone()
     }
+    /// The pet drawn as pixel images, parsed only when the terminal can show them.
+    fn image_pack(self) -> Arc<Pack> {
+        static PACKS: LazyLock<[Arc<Pack>; 2]> = LazyLock::new(|| {
+            [
+                include_str!("../assets/pets/clawd-image.toml"),
+                include_str!("../assets/pets/cat-image.toml"),
+            ]
+            .map(|text| Arc::new(Pack::parse(text).expect("built-in pet image pack")))
+        });
+        PACKS[self as usize].clone()
+    }
 }
 impl<'de> Deserialize<'de> for Pet {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -84,10 +96,19 @@ struct Clip {
     /// The clip drawn for heading left, when the pack has `<name>-left`.
     left: Option<usize>,
 }
+/// The poses of a pack: terminal cells, or pixel images of `width` x `height` palette indexes.
+enum Art {
+    Cells(Vec<[Cell; CELLS]>),
+    Pixels {
+        width: usize,
+        height: usize,
+        poses: Vec<Vec<u8>>,
+    },
+}
 struct Pack {
     /// Index 0 is unused: it stands for transparent.
     palette: Vec<Color>,
-    poses: Vec<[Cell; CELLS]>,
+    art: Art,
     clips: Vec<Clip>,
     walking: usize,
     turning: usize,
@@ -105,6 +126,8 @@ struct Source {
     step_ticks: usize,
     #[serde(default)]
     mirror: bool,
+    /// `[width, height]` of the pixel images, in an image pack.
+    size: Option<(usize, usize)>,
     palette: BTreeMap<char, String>,
     poses: BTreeMap<String, PoseSource>,
     clip: Vec<ClipSource>,
@@ -115,7 +138,9 @@ fn default_step() -> usize {
 #[derive(Deserialize)]
 struct PoseSource {
     /// Six rows of 32 palette letters: each cell is 2x2 "bricks", `.` is transparent.
-    art: String,
+    art: Option<String>,
+    /// `size` rows of palette letters, one per pixel, in an image pack.
+    pixels: Option<String>,
     /// `[column, row, glyph, fg, bg]` replaces one cell, for eyes and finer details.
     #[serde(default)]
     cells: Vec<(usize, usize, char, char, char)>,
@@ -149,9 +174,38 @@ impl Pack {
         };
         let mut names = BTreeMap::new();
         let mut poses = Vec::new();
+        let mut images = Vec::new();
+        if let Some((width, height)) = source.size {
+            ensure!(width > 0 && height > 0, "size must be positive");
+        }
         for (name, pose) in &source.poses {
+            names.insert(name.as_str(), names.len());
+            if let Some((width, height)) = source.size {
+                ensure!(
+                    pose.art.is_none() && pose.cells.is_empty(),
+                    "pose {name}: an image pack draws its poses as pixels"
+                );
+                let pixels = pose
+                    .pixels
+                    .as_deref()
+                    .with_context(|| format!("pose {name}: missing pixels"))?;
+                let rows: Vec<_> = pixels.lines().filter(|row| !row.is_empty()).collect();
+                ensure!(
+                    rows.len() == height && rows.iter().all(|row| row.chars().count() == width),
+                    "pose {name}: pixels must be {height} rows of {width} letters"
+                );
+                let image = rows.iter().flat_map(|row| row.chars());
+                images.push(image.map(|c| color(c, name)).collect::<Result<_>>()?);
+                continue;
+            }
+            ensure!(
+                pose.pixels.is_none(),
+                "pose {name}: pixels need the pack's size"
+            );
             let rows: Vec<Vec<char>> = pose
                 .art
+                .as_deref()
+                .with_context(|| format!("pose {name}: missing art"))?
                 .lines()
                 .filter(|row| !row.is_empty())
                 .map(|row| row.chars().collect())
@@ -207,7 +261,6 @@ impl Pack {
                     bg: color(bg, name)?,
                 };
             }
-            names.insert(name.as_str(), poses.len());
             poses.push(cells);
         }
         let mut clips = Vec::new();
@@ -252,9 +305,17 @@ impl Pack {
         for (clip, left) in clips.iter_mut().zip(lefts) {
             clip.left = left;
         }
+        let art = match source.size {
+            Some((width, height)) => Art::Pixels {
+                width,
+                height,
+                poses: images,
+            },
+            None => Art::Cells(poses),
+        };
         Ok(Self {
             palette,
-            poses,
+            art,
             clips,
             walking,
             turning,
@@ -313,7 +374,32 @@ pub struct Mascot {
     random: u64,
     recent: Vec<usize>,
     palette: Vec<Color>,
+    /// Pixels per terminal cell, for an image pack.
+    cell: Option<(u16, u16)>,
+    /// The picture drawn this frame, and the cells under it as the draw left them.
+    shown: Option<(Sprite, Vec<(Position, buffer::Cell)>)>,
 }
+/// Where a picture goes on the canvas, in pixels: the cell size, the picture size, and the
+/// picture's top-left corner.
+struct Layout {
+    cell: (u32, u32),
+    size: (u32, u32),
+    corner: (u32, u32),
+}
+/// The pet as one picture, for a terminal that shows images.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Sprite {
+    /// Tells pictures apart: the pack, the pose, and whether it is flipped.
+    pub key: (usize, usize, bool),
+    /// The cell holding the top-left corner, and the corner's pixel offset in that cell.
+    pub cell: (u16, u16),
+    pub offset: (u16, u16),
+    /// Size in pixels.
+    pub size: (u16, u16),
+}
+/// Set on the blank cells under a picture. A space never shows it, and a cell that lost it was
+/// drawn over later in the frame.
+const MARKER: Color = Color::Rgb(1, 2, 3);
 impl Default for Mascot {
     fn default() -> Self {
         Self::new(Pet::default(), true)
@@ -323,9 +409,34 @@ impl Mascot {
     pub fn new(pet: Pet, truecolor: bool) -> Self {
         Self::with(pet.pack(), truecolor)
     }
+    /// The pet as pixel images, for a terminal whose cells are `cell` pixels in size.
+    pub fn with_images(pet: Pet, cell: (u16, u16)) -> Self {
+        let mut mascot = Self::with(pet.image_pack(), true);
+        mascot.cell = Some(cell);
+        mascot
+    }
     /// A pet from pack text, as documented in `assets/pets/README.md`.
     pub fn from_pack(text: &str, truecolor: bool) -> Result<Self> {
-        Ok(Self::with(Arc::new(Pack::parse(text)?), truecolor))
+        let pack = Pack::parse(text)?;
+        ensure!(
+            matches!(pack.art, Art::Cells(_)),
+            "an image pack needs a cell size"
+        );
+        Ok(Self::with(Arc::new(pack), truecolor))
+    }
+    /// A pet from image pack text, drawn with cells of `cell` pixels.
+    pub fn from_image_pack(text: &str, cell: (u16, u16)) -> Result<Self> {
+        let pack = Pack::parse(text)?;
+        ensure!(matches!(pack.art, Art::Pixels { .. }), "not an image pack");
+        let mut mascot = Self::with(Arc::new(pack), true);
+        mascot.cell = Some(cell);
+        Ok(mascot)
+    }
+    /// Follows a change of font size; a pet drawn with glyphs ignores it.
+    pub fn set_cell(&mut self, cell: (u16, u16)) {
+        if self.cell.is_some() {
+            self.cell = Some(cell);
+        }
     }
     fn with(pack: Arc<Pack>, truecolor: bool) -> Self {
         let palette = pack
@@ -351,12 +462,15 @@ impl Mascot {
             random: 0,
             recent: Vec::new(),
             palette,
+            cell: None,
+            shown: None,
         };
         mascot.walk(3.0);
         mascot
     }
     pub fn hide(&mut self) {
         self.last = None;
+        self.shown = None;
     }
     fn random(&mut self) -> f64 {
         self.random ^= self.random << 13;
@@ -457,7 +571,7 @@ impl Mascot {
         }
     }
     /// The pose to draw and whether to flip it.
-    fn pose(&self) -> (&[Cell; CELLS], bool) {
+    fn pose(&self) -> (usize, bool) {
         let pack = &self.pack;
         let tick = self.tick();
         let (index, tick) = match self.motion {
@@ -471,7 +585,7 @@ impl Mascot {
             (false, None) => (index, pack.mirror),
         };
         let ticks = &pack.clips[index].ticks;
-        (&pack.poses[ticks[tick.min(ticks.len() - 1)]], flip)
+        (ticks[tick.min(ticks.len() - 1)], flip)
     }
     pub fn draw(
         &mut self,
@@ -489,6 +603,153 @@ impl Mascot {
         let x = area.x + 1 + self.x;
         let y = area.bottom() - HEIGHT;
         let (pose, flip) = self.pose();
+        self.shown = None;
+        let pack = self.pack.clone();
+        match &pack.art {
+            Art::Cells(poses) => self.draw_cells(frame, &poses[pose], flip, (x, y), protected),
+            Art::Pixels {
+                width,
+                height,
+                poses,
+            } => {
+                let image = (*width as u32, *height as u32, &poses[pose][..]);
+                let key = (Arc::as_ptr(&pack) as usize, pose, flip);
+                self.draw_image(frame, image, key, (x, y), protected)
+            }
+        }
+    }
+    /// Where a source picture of `width` x `height` goes: as large as fits, keeping its shape,
+    /// standing on the floor in the middle.
+    fn layout(&self, width: u32, height: u32) -> Option<Layout> {
+        let (cw, ch) = self.cell?;
+        let cell = (u32::from(cw.max(1)), u32::from(ch.max(1)));
+        let lane = (u32::from(WIDTH) * cell.0, u32::from(HEIGHT) * cell.1);
+        let scale = f64::min(
+            f64::from(lane.0) / f64::from(width),
+            f64::from(lane.1) / f64::from(height),
+        );
+        let size = (
+            ((f64::from(width) * scale) as u32).clamp(1, lane.0),
+            ((f64::from(height) * scale) as u32).clamp(1, lane.1),
+        );
+        Some(Layout {
+            cell,
+            size,
+            corner: ((lane.0 - size.0) / 2, lane.1 - size.1),
+        })
+    }
+    /// Blanks the cells a picture covers, for the picture to show through, unless one of them
+    /// is protected.
+    fn draw_image(
+        &mut self,
+        frame: &mut Frame,
+        (width, height, pixels): (u32, u32, &[u8]),
+        key: (usize, usize, bool),
+        (x, y): (u16, u16),
+        protected: &[Rect],
+    ) -> Vec<Rect> {
+        let Some(Layout { cell, size, corner }) = self.layout(width, height) else {
+            return Vec::new();
+        };
+        // Nearest neighbour: picture pixel `d` shows source pixel `d * width / size`, so source
+        // pixel `s` covers picture pixels from `ceil(s * size / width)`.
+        let span = |s: u32, source: u32, size: u32, start: u32| {
+            (start + (s * size).div_ceil(source))..(start + ((s + 1) * size).div_ceil(source))
+        };
+        let mut covered = std::collections::BTreeSet::new();
+        for sy in 0..height {
+            for sx in 0..width {
+                let source = if key.2 { width - 1 - sx } else { sx };
+                if pixels[(sy * width + source) as usize] == 0 {
+                    continue;
+                }
+                let (across, down) = (
+                    span(sx, width, size.0, corner.0),
+                    span(sy, height, size.1, corner.1),
+                );
+                if across.is_empty() || down.is_empty() {
+                    continue;
+                }
+                for row in down.start / cell.1..=(down.end - 1) / cell.1 {
+                    for col in across.start / cell.0..=(across.end - 1) / cell.0 {
+                        covered.insert(Position::new(x + col as u16, y + row as u16));
+                    }
+                }
+            }
+        }
+        if covered
+            .iter()
+            .any(|&p| protected.iter().any(|r| r.contains(p)))
+        {
+            return Vec::new();
+        }
+        let mut cells = Vec::new();
+        for &position in &covered {
+            let cell = &mut frame.buffer_mut()[position];
+            let under = cell.bg;
+            cell.reset();
+            cell.set_bg(under).set_fg(MARKER);
+            cells.push((position, cell.clone()));
+        }
+        let sprite = Sprite {
+            key,
+            cell: (
+                x + (corner.0 / cell.0) as u16,
+                y + (corner.1 / cell.1) as u16,
+            ),
+            offset: ((corner.0 % cell.0) as u16, (corner.1 % cell.1) as u16),
+            size: (size.0 as u16, size.1 as u16),
+        };
+        self.shown = Some((sprite, cells));
+        covered
+            .into_iter()
+            .map(|p| Rect::new(p.x, p.y, 1, 1))
+            .collect()
+    }
+    /// The picture for the frame just drawn into `buffer`, unless something was drawn over it.
+    pub fn sprite(&mut self, buffer: &Buffer) -> Option<Sprite> {
+        let (sprite, cells) = self.shown.take()?;
+        cells
+            .iter()
+            .all(|(position, cell)| buffer.cell(*position) == Some(cell))
+            .then_some(sprite)
+    }
+    /// The picture's pixels, as RGBA rows.
+    pub fn pixels(&self, sprite: &Sprite) -> Vec<u8> {
+        let Art::Pixels {
+            width,
+            height,
+            poses,
+        } = &self.pack.art
+        else {
+            return Vec::new();
+        };
+        let (_, pose, flip) = sprite.key;
+        let (w, h) = (*width as u32, *height as u32);
+        let (sw, sh) = (u32::from(sprite.size.0), u32::from(sprite.size.1));
+        let mut rgba = Vec::with_capacity((sw * sh * 4) as usize);
+        for dy in 0..sh {
+            let sy = dy * h / sh;
+            for dx in 0..sw {
+                let s = dx * w / sw;
+                let sx = if flip { w - 1 - s } else { s };
+                let index = poses[pose][(sy * w + sx) as usize];
+                rgba.extend(match self.pack.palette[usize::from(index)] {
+                    Color::Rgb(r, g, b) => [r, g, b, 255],
+                    _ => [0; 4],
+                });
+            }
+        }
+        rgba
+    }
+    fn draw_cells(
+        &self,
+        frame: &mut Frame,
+        pose: &[Cell; CELLS],
+        flip: bool,
+        (x, y): (u16, u16),
+        protected: &[Rect],
+    ) -> Vec<Rect> {
         let mut painted = Vec::new();
         for (i, sample) in pose.iter().enumerate() {
             let (mut col, row) = (i as u16 % WIDTH, i as u16 / WIDTH);
@@ -567,6 +828,48 @@ mod tests {
         assert!(reason(&blank, "[0, 0, \"x\", \"Z\", \".\"]", "p").contains("unknown color"));
         assert!(reason(&blank, "[0, 0, \"宽\", \"A\", \".\"]", "p").contains("one column"));
         assert!(reason(&blank, "", "q").contains("unknown pose"));
+    }
+    #[test]
+    fn broken_image_packs_are_refused_with_the_reason() {
+        let text = |size: &str, pose: &str| {
+            format!(
+                "{size}[palette]\nA = \"#ff0000\"\n[poses.p]\n{pose}\n\
+                 [[clip]]\nname = \"walking\"\nframes = [[\"p\", 4]]\n\
+                 [[clip]]\nname = \"turning\"\nframes = [[\"p\", 1]]\n\
+                 [[clip]]\nname = \"act\"\nframes = [[\"p\", 1]]\n"
+            )
+        };
+        let reason = |size: &str, pose: &str| Pack::parse(&text(size, pose)).err().unwrap();
+        let pixels = "pixels = '''\nA.\n.A\n'''";
+        assert!(Pack::parse(&text("size = [2, 2]\n", pixels)).is_ok());
+        let wrong = reason("size = [3, 2]\n", pixels).to_string();
+        assert!(wrong.contains("2 rows of 3 letters"), "{wrong}");
+        let unknown = "pixels = '''\nA.\n.Z\n'''";
+        assert!(
+            reason("size = [2, 2]\n", unknown)
+                .to_string()
+                .contains("unknown color")
+        );
+        let art = "art = 'x'";
+        assert!(
+            reason("size = [2, 2]\n", art)
+                .to_string()
+                .contains("as pixels")
+        );
+        assert!(
+            reason("", pixels)
+                .to_string()
+                .contains("need the pack's size")
+        );
+        assert!(
+            reason("size = [0, 2]\n", pixels)
+                .to_string()
+                .contains("positive")
+        );
+        // Each kind of pack goes with its own way of drawing.
+        assert!(Mascot::from_pack(&text("size = [2, 2]\n", pixels), true).is_err());
+        let blank = format!("art = '''\n{}'''", (".".repeat(32) + "\n").repeat(6));
+        assert!(Mascot::from_image_pack(&text("", &blank), (8, 16)).is_err());
     }
     #[test]
     fn left_clips_pair_with_their_clip_and_are_never_actions() {

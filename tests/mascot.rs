@@ -304,6 +304,53 @@ fn clawd_keeps_both_eyes_while_walking_and_turning_either_way() {
 }
 
 #[test]
+fn clawd_walks_with_only_its_legs_moving() {
+    const QUADRANTS: &str = " ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█";
+    let mut mascot = Mascot::default();
+    // Two cells of travel: heading right on ticks 0..8, turning, heading left on 16..24.
+    let frames = play(&mut mascot, Rect::new(0, 0, 20, 3), 0..24);
+    // Everything above the feet, relative to where the body is drawn: the top two rows,
+    // and the top half of the bottom row, whose bottom half holds the feet.
+    let split = |tick: usize, at: u16| {
+        let buffer = &frames[tick];
+        let mut upper = Vec::new();
+        let mut feet = Vec::new();
+        for col in 0..16 {
+            let x = 1 + at + col;
+            for y in 0..2 {
+                let c = &buffer[(x, y)];
+                upper.push((c.symbol().to_owned(), c.fg, c.bg));
+            }
+            let c = &buffer[(x, 2)];
+            let mask = QUADRANTS
+                .chars()
+                .position(|q| q.to_string() == c.symbol())
+                .unwrap_or_else(|| panic!("tick {tick}: {:?} is not a quadrant", c.symbol()));
+            let color = |bit: usize| if mask & bit != 0 { c.fg } else { c.bg };
+            upper.push((String::new(), color(1), color(2)));
+            feet.push((color(4), color(8)));
+        }
+        (upper, feet)
+    };
+    for (ticks, at) in [
+        (
+            0..8,
+            Box::new(|t: usize| (t / 4) as u16) as Box<dyn Fn(usize) -> u16>,
+        ),
+        (16..24, Box::new(|t: usize| 2 - ((t - 16) / 4) as u16)),
+    ] {
+        let first = split(ticks.start, at(ticks.start));
+        let mut feet = std::collections::BTreeSet::new();
+        for tick in ticks {
+            let (upper, legs) = split(tick, at(tick));
+            assert_eq!(upper, first.0, "tick {tick}: only the legs may move");
+            feet.insert(format!("{legs:?}"));
+        }
+        assert!(feet.len() > 1, "the legs step");
+    }
+}
+
+#[test]
 fn curated_patrol_stays_above_the_agent_border() {
     let panes = Terminals::new("unused-fake-corral".into());
     let area = Rect::new(0, 0, 70, 16);
@@ -672,4 +719,195 @@ fn every_built_in_pet_parses_patrols_and_stays_in_its_three_rows() {
     };
     assert!(body(Pet::Clawd).contains(&(217, 119, 87)));
     assert!(!body(Pet::Cat).is_empty() && !body(Pet::Cat).contains(&(217, 119, 87)));
+}
+
+/// A tiny image pack: a 4x2 picture whose left column is red, on top of a green right column.
+fn image_pack() -> String {
+    "size = [4, 2]\nmirror = true\n[palette]\nA = \"#ff0000\"\nB = \"#00ff00\"\n\
+     [poses.p]\npixels = '''\nA...\nA..B\n'''\n\
+     [[clip]]\nname = \"walking\"\nframes = [[\"p\", 4]]\n\
+     [[clip]]\nname = \"turning\"\nframes = [[\"p\", 2]]\n\
+     [[clip]]\nname = \"act\"\nframes = [[\"p\", 2]]\n"
+        .into()
+}
+/// Draws into a 60x3 screen and returns the painted cells, the sprite and the buffer.
+fn image_frame(
+    m: &mut Mascot,
+    now: f64,
+    protected: &[Rect],
+    over: Option<(u16, u16)>,
+) -> (Vec<Rect>, Option<saddle::mascot::Sprite>, Buffer) {
+    let mut terminal = Terminal::new(TestBackend::new(60, 3)).unwrap();
+    let mut painted = Vec::new();
+    let mut sprite = None;
+    terminal
+        .draw(|f| {
+            for x in 0..60 {
+                for y in 0..3 {
+                    f.buffer_mut()[(x, y)].set_symbol("─").set_bg(Color::Blue);
+                }
+            }
+            painted = m.draw(f, f.area(), now, protected);
+            if let Some(at) = over {
+                f.buffer_mut()[at].set_symbol("x");
+            }
+            sprite = m.sprite(f.buffer_mut());
+        })
+        .unwrap();
+    (painted, sprite, terminal.backend().buffer().clone())
+}
+
+#[test]
+fn an_image_pet_scales_to_the_lane_and_blanks_only_the_cells_it_covers() {
+    // Cells of 2x4 pixels make a 32x12 pixel lane; the 4x2 picture scales by 6 to 24x12,
+    // centred four pixels in and standing on the floor.
+    let mut m = Mascot::from_image_pack(&image_pack(), (2, 4)).unwrap();
+    let (painted, sprite, buffer) = image_frame(&mut m, 0.0, &[], None);
+    let sprite = sprite.expect("nothing drew over the picture");
+    assert_eq!(sprite.size, (24, 12));
+    assert_eq!(
+        (sprite.cell, sprite.offset),
+        ((3, 0), (0, 0)),
+        "lane starts one column in"
+    );
+    // The red column is picture pixels 0..6 (columns 4..10 of the lane, cells 2..5) on both
+    // rows; the green pixel is pixels 18..24 (cells 11..14) on the bottom row (rows 1..3).
+    let mut cells: Vec<_> = painted.iter().map(|r| (r.x - 1, r.y)).collect();
+    cells.sort();
+    let mut expected: Vec<_> = (2..5)
+        .flat_map(|x| (0..3).map(move |y| (x, y)))
+        .chain((11..14).flat_map(|x| (1..3).map(move |y| (x, y))))
+        .collect();
+    expected.sort();
+    assert_eq!(cells, expected);
+    for r in &painted {
+        let cell = &buffer[(r.x, r.y)];
+        assert_eq!(cell.symbol(), " ", "the picture shows through a blank");
+        assert_eq!(cell.bg, Color::Blue, "the blank keeps what was behind it");
+    }
+    assert_eq!(
+        buffer[(1, 0)].symbol(),
+        "─",
+        "uncovered cells are untouched"
+    );
+    let pixels = m.pixels(&sprite);
+    assert_eq!(pixels.len(), 24 * 12 * 4);
+    let at = |x: usize, y: usize| &pixels[(y * 24 + x) * 4..][..4];
+    assert_eq!(at(5, 0), [255, 0, 0, 255]);
+    assert_eq!(at(6, 0), [0, 0, 0, 0]);
+    assert_eq!(at(18, 6), [0, 255, 0, 255]);
+    assert_eq!(at(18, 5), [0, 0, 0, 0]);
+}
+
+#[test]
+fn an_image_pet_is_hidden_under_later_drawing_and_never_covers_controls() {
+    let mut m = Mascot::from_image_pack(&image_pack(), (2, 4)).unwrap();
+    let (painted, sprite, _) = image_frame(&mut m, 0.0, &[], Some((3, 1)));
+    assert!(!painted.is_empty());
+    assert_eq!(sprite, None, "a popup drew over a covered cell");
+    let (painted, sprite, _) = image_frame(&mut m, 0.0, &[], Some((40, 1)));
+    assert!(
+        !painted.is_empty() && sprite.is_some(),
+        "drawing elsewhere is fine"
+    );
+    let (painted, sprite, buffer) = image_frame(&mut m, 0.0, &[Rect::new(13, 2, 1, 1)], None);
+    assert!(
+        painted.is_empty() && sprite.is_none(),
+        "a control is in the way"
+    );
+    assert_eq!(buffer[(13, 2)].symbol(), "─");
+    m.hide();
+    assert_eq!(m.sprite(&buffer), None);
+}
+
+#[test]
+fn an_image_pet_flips_when_it_heads_left() {
+    let mut m = Mascot::from_image_pack(&image_pack(), (2, 4)).unwrap();
+    // Twenty columns leave two cells of travel; the turn's second half heads left.
+    let mut terminal = Terminal::new(TestBackend::new(20, 3)).unwrap();
+    let mut sprites = Vec::new();
+    for tick in 0..12 {
+        terminal
+            .draw(|f| {
+                m.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+                sprites.push(m.sprite(f.buffer_mut()).unwrap());
+            })
+            .unwrap();
+    }
+    let (right, left) = (sprites[0], sprites[11]);
+    assert!(!right.key.2 && left.key.2, "{right:?} {left:?}");
+    assert_ne!(
+        right.key, left.key,
+        "the flipped picture is a picture of its own"
+    );
+    let (a, b) = (m.pixels(&right), m.pixels(&left));
+    for y in 0..12 {
+        for x in 0..24 {
+            assert_eq!(a[(y * 24 + x) * 4..][..4], b[(y * 24 + 23 - x) * 4..][..4]);
+        }
+    }
+}
+
+#[test]
+fn every_built_in_pet_has_pictures_that_patrol_in_its_three_rows() {
+    for pet in Pet::ALL {
+        // Cells of 8x19 pixels, as in the user's terminal.
+        let mut m = Mascot::with_images(pet, (8, 19));
+        let mut terminal = Terminal::new(TestBackend::new(70, 6)).unwrap();
+        let mut columns = std::collections::BTreeSet::new();
+        let mut poses = std::collections::BTreeSet::new();
+        for tick in 0..7200 {
+            let mut painted = Vec::new();
+            let mut sprite = None;
+            terminal
+                .draw(|f| {
+                    painted = m.draw(f, Rect::new(0, 0, 70, 3), f64::from(tick) / 12.0, &[]);
+                    sprite = m.sprite(f.buffer_mut());
+                })
+                .unwrap();
+            let sprite = sprite.unwrap_or_else(|| panic!("{} vanished at {tick}", pet.name()));
+            assert!(!painted.is_empty() && painted.iter().all(|r| r.y < 3));
+            let bottom = u32::from(sprite.cell.1) * 19
+                + u32::from(sprite.offset.1)
+                + u32::from(sprite.size.1);
+            assert_eq!(bottom, 3 * 19, "{} stands on the floor", pet.name());
+            assert!(u32::from(sprite.size.0) <= 16 * 8);
+            columns.insert(sprite.cell.0);
+            if poses.insert(sprite.key) {
+                assert_eq!(
+                    m.pixels(&sprite).len(),
+                    usize::from(sprite.size.0) * usize::from(sprite.size.1) * 4
+                );
+            }
+        }
+        assert!(columns.len() > 20, "{} must travel its lane", pet.name());
+        assert!(poses.len() > 20, "{} animates", pet.name());
+    }
+}
+
+#[test]
+fn clawd_pictures_walk_with_only_their_legs_moving() {
+    let mut m = Mascot::with_images(Pet::Clawd, (8, 19));
+    let mut terminal = Terminal::new(TestBackend::new(70, 3)).unwrap();
+    // The first walk heads right for 40 ticks.
+    let mut uppers = std::collections::BTreeSet::new();
+    let mut legs = std::collections::BTreeSet::new();
+    for tick in 0..40 {
+        let mut sprite = None;
+        terminal
+            .draw(|f| {
+                m.draw(f, f.area(), f64::from(tick) / 12.0, &[]);
+                sprite = m.sprite(f.buffer_mut());
+            })
+            .unwrap();
+        let sprite = sprite.unwrap();
+        let pixels = m.pixels(&sprite);
+        let (width, height) = (usize::from(sprite.size.0), usize::from(sprite.size.1));
+        // The legs are the bottom four of the 23 source rows.
+        let split = (19 * height).div_ceil(23) * width * 4;
+        uppers.insert(pixels[..split].to_vec());
+        legs.insert(pixels[split..].to_vec());
+    }
+    assert_eq!(uppers.len(), 1, "head, arms and body stay put");
+    assert!(legs.len() > 2, "the legs step");
 }
