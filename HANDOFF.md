@@ -51,3 +51,10 @@
 - 本轮不改AGENTS/全局skill/真实安装，仍由现用dlog记录本阶段。两个全局链接现指向Corral/corral-dispatch-skill，后续只迁移链接本身不写Corral源码。顶层项目指引盘点另外命中已归档Drover和dispatch-log本仓库，不能据此声称所有外部会话停止旧采集；不自动改用户项目或关用户agent。
 - 回来先status，working重挂；idle经dlog reply取完整DONE，核完成记录与一次标准。返工交原实现者，仅定向直接回归，每轮挂提醒。需改Corral或依赖反转先停告知。
 - 05A不release/build --release/package安装/真实遥测或队列/产品JEV/外部归档，不动当前日常版本；审查后主控按已批05顺序另做备份切换与退役，不把05A源码完成说成05全部完成。04B S1/03B S1不顺手扩修，旧设计review/t38/t55保留。
+
+## 最新：05A已合并，05B准备中
+
+- 05A3c1a4ae已通过主控审查，无返工/额外交叉审查；主控标准528通过0失败5忽略/Clippy通过，日志saddle-05a-controller-_m4xy86k。合并5e4205d已推送。主控审查docs/任务/遥测05A-主控审查.md；开发原RED/GREEN及指南探针均已核，首轮探针夹具失败不算绿。
+- 原实现者0e03c0c56e19 idle但attached1，日常Saddle正显示此agent；已问用户允许清理/关闭还是暂保留，答复前不清目录或关闭。分支/worktree尚存，未空提交收尾，不能声称05A生命周期收尾完成。
+- 05B已完成备份（~/.local/share/saddle/backups/telemetry-05-20261002-103248）；正构建显式host target路径的release产物，不覆盖当前默认release/saddle。日志saddle-05b-stage-hrgnwvmo，实际切换记录docs/任务/遥测05B-实际切换记录.md。二进制/插件/技能/AGENTS都尚未实际切换，外部仓库未归档。
+- 接续先核构建与用户清理答复，再按切换记录顺序核产物/协调一次重启/资源管理页安装与owned_current核对/主控指引/旧消费者退役。不用再派功能agent、不重跑标准；需要改Corral或依赖反转先停告知。
