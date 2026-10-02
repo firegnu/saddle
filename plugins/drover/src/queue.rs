@@ -1601,9 +1601,8 @@ impl Panel {
         t: &Theme,
         frame: &mut ratatui::Frame,
         area: ratatui::layout::Rect,
-        outlined: bool,
+        _outlined: bool,
     ) {
-        use crate::buttons::{self, Button as B};
         use KeyCode as K;
         use ratatui::{
             layout::Rect,
@@ -1611,72 +1610,56 @@ impl Panel {
             text::{Line, Span},
             widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
         };
+        use unicode_width::UnicodeWidthStr;
         if area.is_empty() {
             return;
         }
         let shown = self.read_error.is_none() && self.content.is_some();
-        let tab = |label, code, view| {
-            let button = B::new(label, code, shown);
-            if shown && self.view == view {
-                button.primary()
-            } else {
-                button
-            }
-        };
-        let mark = |view| if self.view == view { "●" } else { "○" };
-        let text_label = format!("{} Task text t", mark(View::Text));
-        let details_label = format!(
-            "{} Run details{}",
-            mark(View::Details),
-            if self.view == View::Links { "" } else { " ↵" }
-        );
-        let links_label = format!("{} Links", mark(View::Links));
         let numbered = self.content.as_ref().is_some_and(|c| c.task.id.is_some());
-        let draw_tabs = if outlined {
-            buttons::draw_outlined_top
-        } else {
-            buttons::draw_compact_top
-        };
         let mut tabs = vec![
-            tab(&text_label, K::Char('t'), View::Text),
-            tab(&details_label, K::Enter, View::Details),
-            tab(&links_label, K::Null, View::Links),
+            ("任务说明 t", KeyEvent::from(K::Char('t')), Some(View::Text)),
+            ("运行概览", KeyEvent::from(K::Enter), Some(View::Details)),
+            ("关联资料", KeyEvent::from(K::Null), Some(View::Links)),
         ];
-        // Not a view: opens Saddle's Telemetry page on every run of this numbered task.
         if numbered {
-            let mut button = B::new("Telemetry ↗", K::Null, shown);
-            button.key = telemetry_click();
-            tabs.push(button);
+            tabs.push(("打开遥测 ↗", telemetry_click(), None));
         }
-        let (mut body, hits) = draw_tabs(t, frame, area, &tabs);
-        // The chosen view is bold in focus colour; the other one's label is grey.
-        let selected = match self.view {
-            View::Text => KeyEvent::from(K::Char('t')),
-            View::Details => KeyEvent::from(K::Enter),
-            View::Links => KeyEvent::from(K::Null),
-        };
-        for hit in &hits {
-            if hit.key == selected {
-                frame
-                    .buffer_mut()
-                    .set_style(hit.area, Style::default().add_modifier(Modifier::BOLD));
-            } else {
-                let label = Rect::new(
-                    hit.area.x + 1,
-                    hit.area.y + u16::from(outlined),
-                    hit.area.width.saturating_sub(2),
-                    1,
-                );
-                frame
-                    .buffer_mut()
-                    .set_style(label, Style::default().fg(t.muted));
+        let (mut x, mut y) = (area.x, area.y);
+        for (label, key, view) in tabs {
+            let width = (label.width() as u16 + 2).min(area.width);
+            if x > area.x && x + width > area.right() {
+                x = area.x;
+                y += 1;
             }
+            if view.is_none() {
+                x = area.right().saturating_sub(width);
+            }
+            if y >= area.bottom() {
+                break;
+            }
+            let rect = Rect::new(x, y, width, 1);
+            let selected = shown && view == Some(self.view);
+            let style = if !shown {
+                Style::default().fg(t.dim)
+            } else if selected {
+                Style::default()
+                    .fg(t.focus)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            } else {
+                Style::default().fg(if view.is_none() { t.text } else { t.muted })
+            };
+            frame.render_widget(Paragraph::new(format!(" {label} ")).style(style), rect);
+            if shown {
+                self.buttons.push(crate::buttons::Hit {
+                    area: rect,
+                    danger: false,
+                    key,
+                });
+            }
+            x += width + 1;
         }
-        self.buttons.extend(hits);
-        if body.height > 1 {
-            body.y += 1;
-            body.height -= 1;
-        }
+        let top = (y + 2).min(area.bottom());
+        let body = Rect::new(area.x, top, area.width, area.bottom() - top);
         self.content_area = body;
         if !shown {
             frame.render_widget(

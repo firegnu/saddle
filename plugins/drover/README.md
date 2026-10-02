@@ -36,11 +36,11 @@ Running → Submit for review → Awaiting release → Accept → Done。退回 
 
 选择记录时，Drover 通过 Saddle 为插件进程提供的 `SADDLE_HOST_BIN` 调用公开 `saddle telemetry`/`saddle agent`：先在 300 ms 内建立 trace 与 controller_handoff 身份；建立不成（总开关关闭、存储不可用、没有宿主路径、超预算）时在发送前照原样直接 `corral send`，并注明没有记录上下文。有上下文时，交付消息末尾附一段只含 trace_id/dispatch_id/task/run 的记录上下文（不是任务内容，也不构成授权），经 `saddle agent --corral <原程序> --record-context … -- send` 只发一次，并在独立进程组中运行以便取消。宿主回执配对且 executed=false 才算未发送；其余按 Corral 原结果映射，缺回执/超时/取消为未知；已启动后绝不改走直接发送或自动重发。先保存任务状态，再追加 task.transition；之后的提交/接受/退回按该轮完整 binding 查到 trace 后追加，没有 trace 就不补。结果的 `delivery`/`record` 不变，另有 `telemetry` 字段。细节见 [遥测使用](../../docs/遥测使用.md)。
 
-有任务号的任务详情页签行有 `Telemetry ↗`，在 Saddle 查询页打开该任务所有轮次（宿主需支持 telemetry.open.v1；无需 dispatch 插件）。未编号待办不显示。旧 Dispatch 日志页已移除；Task text、Run details、Links 仍可切换、刷新和返回，Dispatch selected 业务动作保留。旧 dispatch-log 数据不迁移、不删除，仅保留供离线历史查看。
+有任务号的任务详情页签行右侧有 `打开遥测 ↗`，在 Saddle 查询页打开该任务所有轮次（宿主需支持 telemetry.open.v1；无需 dispatch 插件）。未编号待办不显示。旧 Dispatch 日志页已移除；任务说明、运行概览、关联资料仍可切换、刷新和返回，Dispatch selected 业务动作保留。旧 dispatch-log 数据不迁移、不删除，仅保留供离线历史查看。
 
 `N` 打开通知偏好，System/In Saddle 互斥，`Ctrl-S` 保存。系统通知由插件内的工作线程调用 macOS osascript；内部通知通过 Saddle 的通用通知接口显示。首次观察和偏好切换只建基线。Esc 返回子页面，列表 Esc/q 关闭视图，Ctrl-] 回 Agents。关联 agent 仍由宿主核实原始 instance 后打开。
 
-Run details 的 **Controller reports · this run** 按当前项目、任务和 run 读取宿主遥测中已有审查/收尾报告，显示声明的结果与正文。它不判定任务成功，不自动 Submit/Accept；无记录或查询失败显示未知。退回原因在退回业务保存后随 task.transition 记录，可在 Telemetry 选中该事件后打开 reason 正文。更新前的旧遥测事件不会自动补写原因。
+运行概览（原 Run details）的 **Controller reports · this run** 按当前项目、任务和 run 读取宿主遥测中已有审查/收尾报告，显示声明的结果与正文。首屏另显示本次各类消息交付、路由、Agent启动/回复的最新记录与条数，和人工提交/验收状态、下一步提示；完整报告先于原始运行和仓库参考信息。各类最新事件可能来自不同委派或迟到结果，完整顺序到遥测核对。命令退出0、回复已读取、主控声明都不自动证明任务成功。它不判定任务成功，不自动 Submit/Accept；无记录或查询失败显示未知。退回原因在退回业务保存后随 task.transition 记录，可在 Telemetry 选中该事件后打开 reason 正文。更新前的旧遥测事件不会自动补写原因。
 
 ## 主控命令
 
