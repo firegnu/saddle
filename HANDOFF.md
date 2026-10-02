@@ -3,42 +3,13 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
-## 最新：Theme首轮核对后限定返工，未合并安装
+## 最新：Theme已合并收尾，尚未安装
 
-- 候选5c06809，原saddle/dev-theme-1 instancee641723be7ef，theme-presets工作区/分支保留。主控核对docs/任务/UI主题-主控核对.md，返工任务UI主题-第一次返工.md已通过原会话send且confirmed，已重挂提醒。
-- 必须修M1：清空最后颜色覆盖丢独立注释。另限定仅适配12项已证实旧UI测试假设（plugin_resources3/workflow9），不改无关生产UI、不删除业务断言/增超时。Tide终端背景取舍接受，主题及覆盖规则不重问。
-- 主控一次标准542通过12失败5忽略，Clippy通过；日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-controller-hek2ddkh。失败具体断言/原屏幕已核，新Theme目标通过；没有main基线重跑，不能说全套绿。开发超预算重复全套和原RED日志证据不足保留。返工只目标/直接回归，不再全套Clippy。
-- 同trace，rework dispatch4097c8bd-1c8a-425a-9ed5-885ddb89da1e；原采集目录内rework1-reply-context.json用于下一次reply。主控review和返工任务快照已保存。一次纯记录decision关联review被校验拒绝，未存事件；改为允许的需求/授权链接并用新ID存入后才首次send，未重发业务。
-- 后续先status/记录reply核DONE，再核增量；未通过交原agent，最多两轮不收敛报告用户。通过才合并推送清理/关对应agent/空提交/HANDOFF/实际closure。暂无安装，真实配置/业务不动。
-
-
-## 最新：Theme实现已派发并挂提醒
-
-- saddle/dev-theme-1 instance e641723be7ef，Claude opus[1m]/high；theme-presets分支/worktree，基线ee1fa3a。任务docs/任务/UI主题-实施.md；JEV常规/交叉不要/改行为，主控照用。本轮新增功能与持久化，按目标/相关及一次标准预算，不当成纯颜色替换，也不扩大审计。
-- 已批准整套草稿切换及Dune/Tide/Terminal，不重问；设计d3dcecc，旧设计agent/worktree已关闭清理。实现者不安装、不改真实配置/队列/Corral/插件协议。主控审查通过才合并清理，收尾前需读公开状态确认idle/附着情况。
-- trace与implementation dispatch见下一节；implementation-start/reply-context.json位于原telemetry目录。route/start均配对begin/end stored，任务书完整快照已采；缺失Corral公开字段gap保留。已挂send --after3600，/tmp/saddle-theme-implementation-reminder.txt保存续接要求。回调先status，working重挂，idle采reply核DONE再审查；不重复启动业务。
-
-
-## 最新：Theme用户已批准，设计收尾，准备实施
-
-- 用户批准线框及“切换载入整套配色再覆盖、Save/Cancel、旧配置不变”，docs/UI主题设计.md和DESIGN已定稿。原设计2c42a0b已合并，定稿d3dcecc已推送；theme-design工作区/分支已删除，原Claude97aab938485b在idle/attached0时随目录清理关闭，收尾025c8f0。迟到提醒not_found忽略。
-- 实施任务docs/任务/UI主题-实施.md，计划新worktree/分支theme-presets；Claude opus[1m]/high。JEV常规/交叉不要/改行为，按功能变更目标+一次标准预算，不扩审计；不改Corral/插件协议/业务、不安装真实配置、不操作队列。具体实施agent及新遥测上下文见后续交接，不凭此条推定已经start。
-- 用户批准/新路由已采集到原trace e72bb30e-3fc2-4f69-b910-36c20ee77636；新implementation dispatch a4ecd4a7-056c-4771-85ca-636082089d90。目录仍/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-telemetry-qtk_rdga。
-
-
-## 最新：Theme设计已取DONE，待用户选择后集中修订
-
-- 设计候选2c42a0b；原Claude saddle/dev-theme-design-1 instance97aab938485b idle，worktree干净，尚未合并/清理。主控只静态核对及diff check，未测试构建；核对记录docs/任务/UI主题-主控核对.md，遥测review.recorded已存。
-- 待用户查看Colors顶部Theme选择线框及切换规则：主控推荐选择主题在草稿载入整套新配色、再逐项覆盖，Save生效/Cancel撤回，升级不重置现有配置；并未获批准。当前设计A按值等于旧主题剔除覆盖也未批准。
-- Terminal无RGB描述与保留RGB品牌色冲突须修；Tide目前仅改Agents中性色，主控建议较完整冷色方案；收到用户答复后一次性交原设计者修订，不先派实施。插件仅五语义色跟随限制保留，不擅自扩协议。原任务上下文/trace/dispatch及路径见下节。上一轮提醒已处理，不重复取回复。
-
-
-## 最新：Theme已放行，Claude正在做简短设计
-
-- 用户要求主控自行委派并记录遥测，不建Drover任务；最新指定当前主题名Dune。需求：预置几种theme、选择后Colors跟随、允许逐项覆盖。已记录用户原话，不把覆盖切换策略/线框建议当批准。
-- 任务docs/任务/UI主题-设计.md；theme-design分支/worktree ../saddle-worktrees/theme-design，基线ad67337；Claude opus[1m]/high，saddle/dev-theme-design-1 instance97aab938485b。JEV档位null、交叉不要、影响看得见，主控默认常规。此轮仅方案/文字线框和静态接口核对，不实现、不跑测试构建；完成后主控核实并展示具体推荐，再进入实现。
-- 遥测trace e72bb30e-3fc2-4f69-b910-36c20ee77636；design dispatch a432a56c-dc95-4d92-a098-1e90c59ea6b3。目录/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-telemetry-qtk_rdga（指针/tmp/saddle-theme-telemetry-path）保存ids、route/start/reply上下文、完整回执。route和start均begin/end stored，route前无任务书的brief gap及Corral无公开字段gap如实保留。用户现有colors已单独提取为只含颜色的设计快照；未改真实配置。
-- 已挂corral send --after提醒；回调先status，working重挂，idle用上述reply-context经saddle agent reply取完整DONE，不把idle当完成。设计者只提交自己的设计分支，不合并推送安装。旧设计review/t38/t55与用户agent保留。当前界面仍是上轮已安装版，本轮无安装或队列操作。
+- Dune/Tide/Terminal及Colors顶部Theme、整套草稿切换、单项覆盖/Default、Save/Cancel、旧配置观感兼容已实施审查通过。功能63e8b3c，合并d1d5855；文档0a991c3，清理空提交fc6f97e。具体取舍见docs/UI主题设计.md和docs/任务/UI主题-主控核对.md。
+- 主控原一次标准542过12败5忽略exit101、Clippy通过；返工M1最后颜色键独立注释保留修复，原12项旧UI测试适配后定向补齐。本轮settings20+plugin_resources3+workflow9=32通过，日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-r1-controller-eo87ijwc。未重复全套/Clippy，不称原全套绿。开发原始RED日志缺失和此前超预算重复标准的事实保留，不补造。
+- theme-presets工作区及分支已删除；确认idle/attached0且目录删除成功后，saddle/dev-theme-1 instancee641723be7ef已关闭。设计agent/worktree此前已清，不恢复。现有用户agent corral/main、saddle-e2e-20261002-113520/main、saddle/main保留；review-telemetry-design、t38、t55工作区保留。
+- trace e72bb30e-3fc2-4f69-b910-36c20ee77636；采集目录/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-telemetry-qtk_rdga。返工review ad231119-2857-415d-9281-32581f45e8e2已stored；closure.json/receipt记录实际推送及收尾结果。迟到实施提醒查not_found可忽略，不重派。
+- **尚未安装Theme版本**，日常宿主仍是下节Settings插件管理页版本；本轮无release构建/真实配置写入/队列或Corral修改。下一步用户需要体验时再进行日常构建安装，不启动新功能或Corral迁移。
 
 
 ## 最新：Settings → Plugins 整理已安装
