@@ -904,7 +904,7 @@ impl Page {
                         d.message = if gaps.is_empty() {
                             "This event has no body.".into()
                         } else {
-                            format!("采集缺项 / Not captured: {gaps}")
+                            format!("Not captured: {gaps}")
                         };
                     }
                     1 => self.open_body(0),
@@ -1091,9 +1091,9 @@ impl Page {
         frame.render_widget(
             t.block(
                 if picker.project {
-                    " 项目 / 关联范围 "
+                    " Project / scope "
                 } else {
-                    " 链路类型 "
+                    " Trace type "
                 },
                 true,
             )
@@ -1118,12 +1118,12 @@ impl Page {
             let label = match value {
                 None => {
                     if picker.project {
-                        "全部项目".into()
+                        "All projects".into()
                     } else {
-                        "全部类型".into()
+                        "All types".into()
                     }
                 }
-                Some(v) if picker.project && v.is_empty() => "未关联项目".into(),
+                Some(v) if picker.project && v.is_empty() => "No project".into(),
                 Some(v) if picker.project => inert(v),
                 Some(v) => origin_label(v).into(),
             };
@@ -1152,9 +1152,9 @@ impl Page {
                 ..inside
             },
             &[
-                ("↑↓", "选择", None),
-                ("Enter", "应用", Some(KeyCode::Enter)),
-                ("Esc", "取消", Some(KeyCode::Esc)),
+                ("↑↓", "Select", None),
+                ("Enter", "Apply", Some(KeyCode::Enter)),
+                ("Esc", "Cancel", Some(KeyCode::Esc)),
             ],
         );
     }
@@ -1176,8 +1176,8 @@ impl Page {
         let Some(d) = &self.detail else {
             if self.search_edit.is_some() {
                 return vec![
-                    ("Enter", "完成搜索", Some(K::Enter)),
-                    ("Esc", "取消", Some(K::Esc)),
+                    ("Enter", "Finish search", Some(K::Enter)),
+                    ("Esc", "Cancel", Some(K::Esc)),
                 ];
             }
             if self.form.is_some() {
@@ -1190,7 +1190,7 @@ impl Page {
             return vec![
                 ("↑↓", "Select", None),
                 ("↵", "Open", Some(K::Enter)),
-                ("f", "高级筛选", Some(K::Char('f'))),
+                ("f", "Advanced filters", Some(K::Char('f'))),
                 ("F", "Clear", Some(K::Char('F'))),
                 ("r", "Refresh", Some(K::Char('r'))),
                 ("Esc", "Close", Some(K::Esc)),
@@ -1225,16 +1225,16 @@ impl Page {
         if d.picking.is_some() {
             return vec![
                 ("↑↓", "Select", None),
-                ("↵", "阅读正文", Some(K::Enter)),
+                ("↵", "Read body", Some(K::Enter)),
                 ("Esc", "Cancel", Some(K::Esc)),
             ];
         }
         let mut keys = vec![
-            ("↑↓", "选择事件", None),
-            ("Tab", "切换派发", Some(K::Tab)),
+            ("↑↓", "Select event", None),
+            ("Tab", "Switch dispatch", Some(K::Tab)),
             ("J/K", "Detail", None),
-            ("o", "‹操作摘要›", Some(K::Char('o'))),
-            ("i", "‹记录区间›", Some(K::Char('i'))),
+            ("o", "‹Operations›", Some(K::Char('o'))),
+            ("i", "‹Recording intervals›", Some(K::Char('i'))),
             ("n", "More", Some(K::Char('n'))),
             ("r", "Refresh", Some(K::Char('r'))),
             ("Esc", "Back", Some(K::Esc)),
@@ -1244,7 +1244,7 @@ impl Page {
                 .get(d.selected)
                 .is_some_and(|e| e["bodies"].as_array().is_some_and(|b| !b.is_empty()))
         {
-            keys.insert(1, ("↵", "查看全文", Some(K::Enter)));
+            keys.insert(1, ("↵", "Read full body", Some(K::Enter)));
         }
         keys
     }
@@ -1286,15 +1286,15 @@ impl Page {
     fn draw_list(&mut self, t: &Theme, frame: &mut Frame, area: Rect) {
         let toolbar = Rect::new(area.x, area.y, area.width, area.height.min(2));
         let project = format!(
-            "‹项目: {} ▾ p›",
+            "‹Project: {} ▾ p›",
             self.project
                 .as_deref()
                 .map(scope_label)
-                .unwrap_or_else(|| "全部项目".into())
+                .unwrap_or_else(|| "All projects".into())
         );
         let origin = format!(
-            "‹类型: {} ▾ t›",
-            self.origin.as_deref().map(origin_label).unwrap_or("全部")
+            "‹Type: {} ▾ t›",
+            self.origin.as_deref().map(origin_label).unwrap_or("All")
         );
         let half = toolbar.width / 2;
         control(
@@ -1325,14 +1325,14 @@ impl Page {
                     frame,
                     field,
                     true,
-                    "搜索任务或链路 · Enter 完成 / Esc 取消",
+                    "Search tasks or traces · Enter Done / Esc Cancel",
                     t,
                 );
             } else {
                 let label = if self.search.text.is_empty() {
-                    "‹搜索任务或链路… /›".into()
+                    "‹Search tasks or traces… /›".into()
                 } else {
-                    format!("‹搜索: {} /›", inert(&self.search.text))
+                    format!("‹Search: {} /›", inert(&self.search.text))
                 };
                 control(
                     &mut self.controls,
@@ -1358,7 +1358,7 @@ impl Page {
                 || self.origin.is_some()
                 || !self.search.text.is_empty() =>
             {
-                "列表筛选：仅显示匹配链路".into()
+                "Filtered list: matching traces only".into()
             }
             None => "Filter: all traces".to_string(),
             Some(f) => {
@@ -1570,7 +1570,7 @@ impl Page {
                     format!(
                         "Now (queried {at}) · {} · {}",
                         binding_text(s),
-                        text(&s["registration"])
+                        description(&s["registration"])
                     ),
                     counts_text(s),
                 ),
@@ -1643,7 +1643,7 @@ impl Page {
                     )
                 })
                 .collect();
-            ("选择要阅读的正文".to_string(), lines)
+            ("Choose a body to read".to_string(), lines)
         } else {
             match d.panel {
                 Panel::Ops => (
@@ -1767,7 +1767,7 @@ impl Page {
             1,
             Line::styled(
                 clip(
-                    "  序号  时间      事件                  来源       正文 / 采集缺项",
+                    "  Seq   Time      Event                  Source          Bodies / gaps",
                     tw,
                 ),
                 Style::default().fg(t.muted),
@@ -1821,7 +1821,7 @@ impl Page {
                 text(&event["seq"]),
                 clock_of(&event["recorded_at"]),
                 padded(&event_name(event), 22),
-                source_label(event),
+                padded(source_label(event), 19),
                 concise_notes(event)
             );
             put(
@@ -1869,7 +1869,7 @@ impl Page {
                     t,
                     frame,
                     rect,
-                    "‹阅读选中正文 · Enter›",
+                    "‹Read selected body · Enter›",
                     KeyCode::Enter,
                 );
             } else if count > 0 {
@@ -1879,9 +1879,9 @@ impl Page {
                     frame,
                     rect,
                     if count == 1 {
-                        "‹查看全文 · Enter›"
+                        "‹Read full body · Enter›"
                     } else {
-                        "‹选择正文 · Enter›"
+                        "‹Choose body · Enter›"
                     },
                     KeyCode::Enter,
                 );
@@ -1890,7 +1890,7 @@ impl Page {
                     frame,
                     panel,
                     1,
-                    Line::styled("此事件没有正文", Style::default().fg(t.muted)),
+                    Line::styled("This event has no body", Style::default().fg(t.muted)),
                 );
             }
             if panel.height > 2 && d.picking.is_none() {
@@ -1900,9 +1900,9 @@ impl Page {
                     frame,
                     Rect::new(panel.x, panel.y + 2, panel.width, 1),
                     if d.technical {
-                        "‹收起技术详情 · v›"
+                        "‹Hide technical details · v›"
                     } else {
-                        "‹技术详情 · v›"
+                        "‹Technical details · v›"
                     },
                     KeyCode::Char('v'),
                 );
@@ -2185,9 +2185,28 @@ fn clock_of(value: &Value) -> String {
         _ => text(value),
     }
 }
+// Public query descriptions remain unchanged; only UI chrome is rendered in English.
+fn description(value: &Value) -> String {
+    let translated = match value.as_str().unwrap_or("") {
+        "登记声明未核验" => "Registration unverified",
+        "未见运行登记声明" => "No run registration",
+        "声明的说话者/来源（未经独立核验）" => {
+            "Declared speaker/source (not independently verified)"
+        }
+        "执行或交付结果未知" => "Execution or delivery outcome unknown",
+        "仅描述已记录材料；未记录操作不可见，缺口原因未知，不代表任务完整历史。" => {
+            "Recorded material only; unrecorded operations are invisible and gap causes are unknown. This is not the complete task history."
+        }
+        "事后提交/声明时间在未采集区间或早于当前记录时段" => {
+            "Late submission: declared time is outside recording coverage or before the current interval"
+        }
+        _ => return text(value),
+    };
+    translated.into()
+}
 fn scope_label(scope: &str) -> String {
     if scope.is_empty() {
-        "未关联项目".into()
+        "No project".into()
     } else {
         inert(
             scope
@@ -2201,8 +2220,8 @@ fn scope_label(scope: &str) -> String {
 }
 fn origin_label(origin: &str) -> &str {
     match origin {
-        "task" => "任务",
-        "ad_hoc" => "临时操作",
+        "task" => "Task",
+        "ad_hoc" => "Ad hoc",
         other => other,
     }
 }
@@ -2241,33 +2260,33 @@ fn padded(value: &str, width: usize) -> String {
 fn event_name(event: &Value) -> String {
     let name = event["kind"].as_str().unwrap_or("");
     inert(match name {
-        "agent.send.begin" => "开始发送任务",
-        "agent.send.end" => "任务发送结束",
-        "agent.start.begin" => "开始创建实现者",
-        "agent.start.end" => "创建实现者结束",
-        "agent.reply.begin" => "开始读取回复",
-        "agent.reply.end" => "回复读取结束",
-        "route.begin" => "开始路由请求",
-        "route.end" => "路由请求结束",
-        "requirement.recorded" => "记录原始需求",
-        "authorization.recorded" => "记录授权原文",
-        "proposal.recorded" => "记录提案",
-        "controller.summary" => "主控需求摘要",
-        "controller.decision" => "主控路由决定",
-        "brief.snapshot" => "任务书快照",
-        "review.recorded" => "审查记录",
-        "controller.note" => "主控记录",
-        "task.transition" => "任务状态流转",
+        "agent.send.begin" => "Send started",
+        "agent.send.end" => "Send ended",
+        "agent.start.begin" => "Agent start requested",
+        "agent.start.end" => "Agent start ended",
+        "agent.reply.begin" => "Reply read started",
+        "agent.reply.end" => "Reply read ended",
+        "route.begin" => "Route started",
+        "route.end" => "Route ended",
+        "requirement.recorded" => "Requirement recorded",
+        "authorization.recorded" => "Authorization recorded",
+        "proposal.recorded" => "Proposal recorded",
+        "controller.summary" => "Controller summary",
+        "controller.decision" => "Controller decision",
+        "brief.snapshot" => "Brief snapshot",
+        "review.recorded" => "Review recorded",
+        "controller.note" => "Controller note",
+        "task.transition" => "Task transition",
         other => other,
     })
 }
 fn source_label(event: &Value) -> &'static str {
     match event["evidence_kind"].as_str() {
-        Some("execution_observed") => "宿主观测",
-        Some("system_control") => "系统控制",
-        Some("controller_statement") => "主控声明",
-        Some("plugin_statement") => "插件声明",
-        _ => "来源未知",
+        Some("execution_observed") => "Host observed",
+        Some("system_control") => "System control",
+        Some("controller_statement") => "Controller declared",
+        Some("plugin_statement") => "Plugin declared",
+        _ => "Unknown source",
     }
 }
 fn concise_notes(event: &Value) -> String {
@@ -2275,13 +2294,13 @@ fn concise_notes(event: &Value) -> String {
     let gaps = event["payload"]["gaps"].as_array().map_or(0, Vec::len);
     let mut parts = Vec::new();
     if count > 0 {
-        parts.push(format!("正文 {count} ↵"));
+        parts.push(format!("Bodies {count} ↵"));
     }
     if gaps > 0 {
-        parts.push(format!("缺项 {gaps}"));
+        parts.push(format!("Gaps {gaps}"));
     }
     if event["late_submission"] == true {
-        parts.push("晚交".into());
+        parts.push("Late".into());
     }
     parts.join(" · ")
 }
@@ -2300,8 +2319,8 @@ fn trace_row(trace: &Value, wide: bool) -> (String, String) {
     let binding = &trace["binding"];
     let paused = trace["capture_enabled"] != true;
     let right = match (binding.is_object(), paused) {
-        (true, false) => text(&trace["registration"]),
-        (true, true) => format!("{} · trace paused", text(&trace["registration"])),
+        (true, false) => description(&trace["registration"]),
+        (true, true) => format!("{} · trace paused", description(&trace["registration"])),
         (false, true) => "trace paused".into(),
         (false, false) => String::new(),
     };
@@ -2309,7 +2328,7 @@ fn trace_row(trace: &Value, wide: bool) -> (String, String) {
     let scope = binding["scope"]
         .as_str()
         .map(scope_label)
-        .unwrap_or_else(|| "未关联项目".into());
+        .unwrap_or_else(|| "No project".into());
     let main = if binding.is_object() {
         format!(
             "{label} · {scope} · {} · run {}",
@@ -2356,7 +2375,7 @@ fn counts_text(record: &Value) -> String {
         }
     }
     format!(
-        "recording {} ({off} off interval{}) · 采集缺项 {gaps} · 操作 {}{}",
+        "recording {} ({off} off interval{}) · gaps {gaps} · ops {}{}",
         if on { "on" } else { "off" },
         if off == 1 { "" } else { "s" },
         ops.len(),
@@ -2391,16 +2410,16 @@ fn body_label(event: &Value, body: &Value) -> String {
         event["kind"].as_str().unwrap_or(""),
         body["role"].as_str().unwrap_or(""),
     ) {
-        ("brief.snapshot", "brief") => "任务书快照".into(),
-        ("agent.send.begin", "message") => "实际发送内容".into(),
-        ("requirement.recorded", "text") => "需求原文（声明来源）".into(),
-        ("authorization.recorded", "text") => "授权原文（声明来源）".into(),
-        ("proposal.recorded", "text") => "提案原文（声明来源）".into(),
-        ("agent.reply.end", "reply") => "实现者回复".into(),
-        ("controller.decision", "reason") => "主控路由决定依据".into(),
-        ("review.recorded", "text") => "审查记录".into(),
-        ("controller.note", "text") => "主控记录".into(),
-        ("task.transition", "reason") => "退回原因".into(),
+        ("brief.snapshot", "brief") => "Brief snapshot".into(),
+        ("agent.send.begin", "message") => "Sent message".into(),
+        ("requirement.recorded", "text") => "Requirement (declared source)".into(),
+        ("authorization.recorded", "text") => "Authorization (declared source)".into(),
+        ("proposal.recorded", "text") => "Proposal (declared source)".into(),
+        ("agent.reply.end", "reply") => "Implementer reply".into(),
+        ("controller.decision", "reason") => "Controller decision basis".into(),
+        ("review.recorded", "text") => "Review recorded".into(),
+        ("controller.note", "text") => "Controller note".into(),
+        ("task.transition", "reason") => "Return reason".into(),
         (_, role) => format!("{} body", inert(role)),
     }
 }
@@ -2436,9 +2455,9 @@ fn event_lines(
     }
     lines.push(head);
     if event["source_description"].is_string() {
-        lines.push(text(&event["source_description"]));
+        lines.push(description(&event["source_description"]));
         if !technical {
-            lines.push(format!("声明者：{}", text(&event["producer"])));
+            lines.push(format!("Declared by: {}", text(&event["producer"])));
         }
     }
     if technical {
@@ -2453,18 +2472,18 @@ fn event_lines(
     if !technical {
         if payload["from"].is_string() && payload["to"].is_string() {
             lines.push(format!(
-                "状态流转：{} → {}",
+                "Transition: {} → {}",
                 text(&payload["from"]),
                 text(&payload["to"])
             ));
         }
         if payload["outcome"].is_object() {
             lines.push(format!(
-                "命令结果：{} · 退出码 {}",
+                "Command outcome: {} · exit code {}",
                 text(&payload["outcome"]["kind"]),
                 text(&payload["outcome"]["exit_code"])
             ));
-            lines.push("命令结果不代表任务已完成或通过验收。".into());
+            lines.push("Command outcome does not establish task completion or acceptance.".into());
         }
     }
     // The recorded payload as stored; gaps are listed under Not captured.
@@ -2496,15 +2515,16 @@ fn event_lines(
         }
     }
     if !technical && let Some(preview) = preview {
-        lines.push("── 正文预览（首份材料）".into());
+        lines.push("── Body preview (first item)".into());
         match preview {
-            Load::Pending(_) => lines.push("正在读取…".into()),
-            Load::Done { result: Err(f), .. } => {
-                lines.push(format!("{} · 预览不可用，不是空正文", f.text()))
-            }
+            Load::Pending(_) => lines.push("Loading…".into()),
+            Load::Done { result: Err(f), .. } => lines.push(format!(
+                "{} · Preview unavailable; body is not empty",
+                f.text()
+            )),
             Load::Done {
                 result: Ok(bytes), ..
-            } if bytes.is_empty() => lines.push("空正文（校验通过）".into()),
+            } if bytes.is_empty() => lines.push("Empty body (verified)".into()),
             Load::Done {
                 result: Ok(bytes), ..
             } => {
@@ -2512,14 +2532,14 @@ fn event_lines(
                     Ok(text) => lines.extend(text.lines().take(2).map(|l| {
                         clip(&escape_body(&l.chars().take(160).collect::<String>()), 100)
                     })),
-                    Err(_) => lines.push("非 UTF-8 正文，请打开全文查看十六进制。".into()),
+                    Err(_) => lines.push("Non-UTF-8 body; open full body for hex view.".into()),
                 }
             }
         }
     }
     let gaps = gaps(event);
     if !gaps.is_empty() {
-        lines.push(format!("采集缺项 / Not captured: {gaps}"));
+        lines.push(format!("Not captured: {gaps}"));
     }
     // The operation as the current summary has it, not as of the event list's bound.
     if let Some(op) = operation {
@@ -2534,7 +2554,10 @@ fn event_lines(
             .get("declared_at")
             .filter(|v| !v.is_null())
             .unwrap_or(&event["observed_at"]);
-        lines.push(format!("late · {}", text(&event["submission_notice"])));
+        lines.push(format!(
+            "late · {}",
+            description(&event["submission_notice"])
+        ));
         lines.push(format!(
             "declared {} · recorded {}",
             text(declared),
@@ -2614,7 +2637,7 @@ fn op_state(op: &Value) -> String {
         "ended".into()
     });
     if !op["unknown"].is_null() {
-        parts.push(text(&op["unknown"]));
+        parts.push(description(&op["unknown"]));
     }
     parts.join(" · ")
 }
@@ -2645,7 +2668,7 @@ fn op_line(op: &Value, events: &[Value], loaded_all: bool) -> String {
         }
     );
     if !op["unknown"].is_null() {
-        let _ = write!(line, " · {}", text(&op["unknown"]));
+        let _ = write!(line, " · {}", description(&op["unknown"]));
     }
     line
 }
@@ -2668,7 +2691,7 @@ fn intervals(record: &Value) -> Vec<String> {
         })
         .collect();
     lines.push(String::new());
-    lines.push(text(&record["coverage_notice"]));
+    lines.push(description(&record["coverage_notice"]));
     let gaps = record["known_gaps"].as_array().cloned().unwrap_or_default();
     lines.push(format!("known gaps {}", gaps.len()));
     lines.extend(gaps.iter().map(|g| {
