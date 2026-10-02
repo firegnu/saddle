@@ -10,6 +10,7 @@
 - **已完成日常插件更新**。用户确认停用后，公开状态 enabled=false 且无运行中 saddle-drover；完整旧包备份 /Users/firegnu/.local/share/saddle/backups/tasks-project-onboarding-20261002-125905。原子替换 plugins/drover/dist/drover-plugin/bin/saddle-drover，哈希与候选一致，清单逐字保留。替换后仍 disabled，已通知用户在 Settings → Plugins 点 Enable；无需更新/重启宿主或停止 agent。新运行时界面和真实业务仍待用户人工验收。
 - 本次工作区/分支已清理，无自建 agent；空提交已经完成。设计review、t38/t55保留。
 - 人工端到端测试尚未开始：测试 repo /Users/firegnu/Developer/personal_projs/saddle-e2e-20261002-113520 已建；用户已建对应 main，instance feb85d825521，报告已读规则且 key 非空。未替用户登记/添加/派发任务。docs/遥测全链路人工验收.md 的 A2 已改成 Add project 界面步骤，插件已更新，重新 Enable 后按 A2 测试。
+- 最新人工计划已按安装结果重写：从 A0 Enable 开始，跳过已完成 A1；A2/A2.1 验接入与设置取消/清空/恢复，G 验停用插件后宿主遥测和 agent 独立、重新启用保留数据。所有新增验收仍标未执行。
 
 ## 最新：顶部入口同行对齐已安装
 
