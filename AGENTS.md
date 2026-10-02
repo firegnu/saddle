@@ -5,7 +5,7 @@
 ## 规矩
 
 - Rust stable，只用成熟、活跃维护的库；不依赖 tmux、zellij 等外部程序。
-- Corral 和 dispatch-log 仍只通过公开命令访问，不改它们的仓库。用户授权完整替换 Drover：任务核心、数据和通知由 `plugins/drover/` 单一插件拥有，可读写沿用的 Drover 数据格式；旧独立 CLI/watch 退役。Saddle 宿主只提供通用插件接口，不读取业务文件。主控任务操作走 `saddle ctl plugin`，见 `plugins/drover/README.md`。
+- Corral 仍只通过公开命令访问，不改它的仓库。旧 dispatch-log 已退出本项目操作链，旧程序与数据保留供离线查看。用户授权完整替换 Drover：任务核心、数据和通知由 `plugins/drover/` 单一插件拥有，可读写沿用的 Drover 数据格式；旧独立 CLI/watch 退役。Saddle 宿主只提供通用插件接口，不读取业务文件。主控任务操作走 `saddle ctl plugin`，见 `plugins/drover/README.md`。
 - **不要干扰用户正在用的 agent**：`corral ls` 里现有的 agent 都是用户的。可以用 `corral ls/status/reply` 读；不要对它们 `corral stop`、`corral send`、`corral keys`，也不要 attach 上去打字（主控按分派流程开出来的 `saddle/dev-*`、`saddle/test-*` 是它自己的，照流程送话、关闭）。需要真实 agent 做测试时，自己开一个 `saddle/test-<名字>`（例如 `corral start saddle/test-a --cwd /tmp -- codex --yolo -m gpt-5.6-luna`），用完 `corral stop` 掉。
 - 不要按项目名或路径批量杀进程（`pkill -f corral` 这类），会误杀用户的 agent。停自己起的进程用记下的 PID。
 - 测试不依赖真实 agent：需要时用一个假的 `corral` 脚本输出固定 JSON。
@@ -14,7 +14,7 @@
 
 ## 开发方式（主控分派）
 
-- 本项目主控在进行任务路由、派发及审查收尾前，先阅读 `/Users/firegnu/Developer/personal_projs/dispatch-log/USAGE.md`，按其说明使用 dispatch-log 保存记录。被委派的实现者和审查者无需采集。此要求不改变原有任务授权及队列放行流程。
+- 主控按 corral-dispatch 技能执行项目已授权的分派流程；本链路显式选择记录时，先读该技能同目录的遥测操作.md，使用 Saddle 公开遥测、agent 与插件命令。全局关闭或本链路未选不自行开启；记录准备失败不妨碍原已授权业务，已尝试业务后不得因遥测失败、125/127 或缺回执直调重发。来源按实际取得方式声明，收尾只记录实际结果。被委派的实现者和审查者无需采集；此要求不改变任务授权及队列放行流程，不回退旧 dlog。
 - 这个项目的开发任务由主控（`saddle/main`）拆开，派给别的 agent 做。主控负责拆任务、写任务文件、审查、合并，不自己写功能代码。分派时按 corral-dispatch 技能做。
 - 被委派的 agent（任务文件里写明了身份）照任务文件做，不再往下派。
 - 需求单只写用户要的结果；验收照抄用户原话，不补验收点。主控觉得该加的，列出来问用户。

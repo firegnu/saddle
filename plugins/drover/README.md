@@ -1,6 +1,6 @@
 # Drover 插件
 
-Drover 是一个完整的可选 Saddle 进程插件：同一进程提供任务界面、任务数据读写、状态流转和通知。无需安装旧 Drover CLI、Python 程序或独立 watch。Corral 仍负责 agent，Saddle 核心提供可选遥测；插件只通过公开命令与通用导航能力访问。05A 已在源码移除旧 Dispatch 日志页和 dlog 执行依赖，尚未更新真实安装。
+Drover 是一个完整的可选 Saddle 进程插件：同一进程提供任务界面、任务数据读写、状态流转和通知。无需安装旧 Drover CLI、Python 程序或独立 watch。Corral 仍负责 agent，Saddle 核心提供可选遥测；插件只通过公开命令与通用导航能力访问。05A 已移除旧 Dispatch 日志页和 dlog 执行依赖；2026-10-02 已与新版宿主成套更新日常安装，见 [切换记录](../../docs/任务/遥测05B-实际切换记录.md)。
 
 ## 安装与生命周期
 

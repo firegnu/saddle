@@ -111,9 +111,9 @@ The optional built-in **Dispatch** plugin is included in the source build and de
 
 ## Task telemetry
 
-Saddle owns the independent **Telemetry** query page (top action or `t` with Agents focused). A numbered Drover task's **Telemetry ↗** opens all its runs there; task text, run details and Links remain inside Drover. The old Dispatch log tab and runtime dlog dependency have been removed in source. **Dispatch selected** still performs the explicit task dispatch action.
+Saddle owns the independent **Telemetry** query page (top action or `t` with Agents focused). A numbered Drover task's **Telemetry ↗** opens all its runs there; task text, run details and Links remain inside Drover. The old Dispatch log tab and runtime dlog dependency have been removed. **Dispatch selected** still performs the explicit task dispatch action.
 
-Recording is optional and starts globally disabled; only explicitly selected chains are captured. The bundled skill includes a same-version [telemetry operation guide](plugins/dispatch/resources/corral-dispatch/遥测操作.md), covering declared sources, per-dispatch identities, task snapshots, replies, reviews, closure and receipts. Business operations are never replayed to recover telemetry. The daily binary, plugin package, global skills and project instructions have **not yet been switched**; installation and external dispatch-log retirement remain controller work. Old logs are kept for offline historical viewing, with no import or deletion.
+Recording is optional and starts globally disabled; only explicitly selected chains are captured. The bundled skill includes a same-version [telemetry operation guide](plugins/dispatch/resources/corral-dispatch/遥测操作.md), covering declared sources, per-dispatch identities, task snapshots, replies, reviews, closure and receipts. Business operations are never replayed to recover telemetry. The daily binary, Drover package, both global skill copies and this project’s instructions were switched on 2026-10-02; see the [cutover record](docs/任务/遥测05B-实际切换记录.md). Old logs are kept for offline historical viewing, with no import or deletion.
 
 ## Task links (Drover plugin)
 
