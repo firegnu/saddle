@@ -1318,24 +1318,32 @@ fn open_without(runtime: &Runtime, id: u64) {
 }
 
 #[test]
-fn process_plugins_are_told_the_host_executable_and_nothing_else() {
+fn process_plugins_are_told_host_and_agent_executables_without_record_context() {
     let (dir, runtime) = telemetry_peer(false);
     let environment: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.path().join("environment.json")).unwrap())
             .unwrap();
     let host = std::env::current_exe().unwrap();
     assert!(host.is_absolute());
-    // Inherited SADDLE_* values pass through unchanged; the host adds only its own path.
+    // Session identity is stripped; the host adds its own and its agent executable paths.
     let mut expected: serde_json::Map<String, serde_json::Value> = std::env::vars()
         .filter(|(k, _)| {
             k.starts_with("SADDLE")
                 && !matches!(
                     k.as_str(),
-                    "SADDLE_INSTANCE" | "SADDLE_PANE" | "SADDLE_REVISION" | "SADDLE_HOST_BIN"
+                    "SADDLE_INSTANCE"
+                        | "SADDLE_PANE"
+                        | "SADDLE_REVISION"
+                        | "SADDLE_HOST_BIN"
+                        | "SADDLE_AGENT_BIN"
                 )
         })
         .map(|(k, v)| (k, v.into()))
         .collect();
+    expected.insert(
+        "SADDLE_AGENT_BIN".into(),
+        host.with_file_name("corral").display().to_string().into(),
+    );
     expected.insert("SADDLE_HOST_BIN".into(), host.display().to_string().into());
     assert_eq!(
         environment,
@@ -1556,4 +1564,33 @@ fn plugin_management_separates_details_and_keeps_full_setup_scrollable() {
             Some(saddle::plugins::core::State::Disabled)
         );
     }
+}
+
+#[test]
+fn process_plugin_receives_the_hosts_explicit_agent_program() {
+    let (dir, old) = telemetry_peer(false);
+    old.stop();
+    assert!(old.wait_for("Disabled", Duration::from_secs(4)));
+    drop(old);
+    std::fs::remove_file(dir.path().join("environment.json")).unwrap();
+    let program = dir.path().join("custom-agent-runtime");
+    let runtime = Runtime::with_agent_program(
+        dir.path(),
+        Manifest::read(dir.path()).unwrap(),
+        Default::default(),
+        Some(program.clone()),
+    );
+    assert!(
+        runtime.wait_for("Running", Duration::from_secs(4)),
+        "{}",
+        runtime.snapshot().note
+    );
+    let environment: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("environment.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        environment["SADDLE_AGENT_BIN"],
+        program.display().to_string()
+    );
+    runtime.stop();
 }

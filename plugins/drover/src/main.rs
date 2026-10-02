@@ -1,5 +1,8 @@
 fn main() -> anyhow::Result<()> {
-    let mut corral = "corral".to_owned();
+    let mut corral = std::env::var("SADDLE_AGENT_BIN")
+        .ok()
+        .filter(|p| std::path::Path::new(p).is_absolute())
+        .unwrap_or_else(|| "corral".to_owned());
     let mut cwd = None;
     let mut refresh = 2000;
     let mut args = std::env::args().skip(1);

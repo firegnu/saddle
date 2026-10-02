@@ -1,6 +1,6 @@
 # Corral 核心 Rust 集成设计
 
-日期：2026-10-03。状态：**用户已批准设计收敛后由主控直接实施；未部署，互操作仍须验证。**
+日期：2026-10-03。状态：**Rust 核心与消费者接入已实施并通过主控核对；隔离验证及限制已记录，未部署。**
 
 依据：[源码调研](调研/Corral核心集成到Saddle-2026-10-02.md)、原 Corral `6923da1` 的 `docs/CONTRACT.md` 与实现、Saddle `b4ab2f2`。本轮由主控直接研究，不分派、不记录遥测、不操作真实会话或配置。
 
@@ -14,7 +14,7 @@
 
 ## 2. 代码与可执行入口
 
-建议在 workspace 新增独立 `crates/corral-core/` 包，含底层 library 与薄 `corral` binary target。名称为本草案建议；边界是必要约束。
+workspace 新增独立 `crates/corral-core/` 包，含底层 library 与薄 `corral` binary target。
 
 ```text
 Saddle TUI、agent 采集包装、插件消费者
@@ -121,7 +121,7 @@ Corral 操作 skill 随产品提供匹配版本，独立 corral-dispatch 原仓�
 
 ## 8. 实施与部署分开
 
-建议实现顺序，尚未创建任务或派发：
+用户授权主控直接按以下顺序实施，未创建 Tasks 任务或派发 agent：
 
 1. 底层独立包、完整契约映射、登记与协议兼容基础。
 2. pen/PTY/attach、生命周期、终端模式、各 agent hook/事件、send/wait/after 对等实现。
@@ -140,7 +140,7 @@ Corral 操作 skill 随产品提供匹配版本，独立 corral-dispatch 原仓�
 
 本次不替换真实安装、不写用户配置或技能；交付源码与可验证发布构建方式，日常切换另行执行。
 
-## 9. 必须验证的具体场景（未执行）
+## 9. 核验场景
 
 - 原 CLI→原 pen、Rust CLI→原 pen、原 CLI→Rust pen、Rust CLI→Rust pen：同一隔离运行目录，覆盖生命周期、状态/回复、交付、attach/keys/resize、停止与同名重启。
 - 两种 CLI 同时查询/登记/清理；半行事件、过期 cursor、同名换 instance；错误不误清另一实现的存活会话。
@@ -151,4 +151,14 @@ Corral 操作 skill 随产品提供匹配版本，独立 corral-dispatch 原仓�
 
 先用 Rust 编写的合成事件、假 agent 与隔离 HOME/CORRAL_HOME 做自动化；必要的真实 coding agent 冒烟仅使用自建会话，不使用用户 agent。不复制 Python 测试或夹具到新实现。原 Python 实现最多作为仓库外独立互操作对照；新产品自身构建、测试与运行不得以它为前提，对照验证与自身验证分开报告。
 
-这份草案没有选择新库版本、执行构建或宣称上述验证通过。下一步需把现有契约与测试映射成底层实现的具体检查项，并收敛默认路径/安装目录规则；若要修改原 Corral 或改变上述无感约束，先报告用户。
+具体实现、实际执行的检查、原失败和剩余限制见 [实施核验](调研/Corral核心Rust集成-实施核验.md)。兼容范围限定原基线与实测场景，不把合成验证说成所有真实 coding agent 的端到端验收。
+
+## 10. 实现细节与保留边界
+
+- 底层新增依赖仅为成熟的 libc、serde_json、uuid、sha2、base64、regex 和 shell-words；测试用 tempfile。没有上层 crate 依赖，也没有动态加载旧 Python 的路径。
+- 公共调用保留子进程/JSON 边界。私有 `__pen`、`__hook`、`__after` 绑定 canonicalize 后的当前二进制真实路径（macOS 的 current_exe 可能保留入口软链接）；pen 自持 PTY、socket、锁，启动客户端和界面的寿命都不拥有它。
+- 登录环境捕获最多 10 秒（包括继承输出管道的子进程），启动回执等待最多 25 秒，覆盖环境重建和原 15 秒 pen 准备预算。超时不另起一遍；返回不确定失败后应查询原名称。
+- 仅新建状态目录设 0700，已有父目录权限不改；文件/套接字仍私有。登记使用非阻塞 flock 和 inode 复核，`ls` 获取锁后才清失效栏位；未知协议拒绝。
+- `install-skills` 保留原同意/预览/移除入口，但同名符号链接保守视为 foreign，不跟随写原仓库。现有全局链接的迁移属于另行部署，不自动占用。
+- `scripts/package.sh` 只创建新版本目录，遇到已有目标拒绝覆盖；包含宿主、Corral、Drover/Diff 包、Corral 指引及构建哈希。不注册插件、不安装技能、不切命令链接。并发向同一目标发布不属于脚本支持范围。
+- 新核心和新测试没有 Python 源码；`hook.py` 仅作为旧栏位保留文件名出现在兼容清理表。既有 Saddle 测试中的历史 Python 夹具不属于本次迁移；外部旧基线仅用于显式选择的互操作对照测试。
