@@ -46,7 +46,7 @@ impl<'a> Invocation<'a> {
             .iter()
             .position(|arg| arg == "--")
             .ok_or("missing_separator")?;
-        let mut program = OsString::from("corral");
+        let mut program = None;
         let mut context_file = None;
         let mut brief = None;
         let mut timeout = None;
@@ -59,7 +59,7 @@ impl<'a> Invocation<'a> {
             }
             let value = options.next().ok_or("missing_option_value")?;
             match option {
-                "--corral" if !value.is_empty() => program = value.clone(),
+                "--corral" if !value.is_empty() => program = Some(value.clone()),
                 "--timeout-ms" => {
                     let millis = value
                         .to_str()
@@ -150,7 +150,12 @@ impl<'a> Invocation<'a> {
             }
         }
         Ok(Self {
-            program,
+            program: match program {
+                Some(p) => p,
+                None => crate::agent_program::configured()
+                    .map_err(|_| "invalid_agent_program_config")?
+                    .into_os_string(),
+            },
             business,
             context,
             brief,

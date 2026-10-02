@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_program;
 pub mod agents;
 pub mod app;
 pub mod attention;

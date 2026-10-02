@@ -90,3 +90,7 @@ saddle ctl request UNIQUE_READ_ID --instance INSTANCE
 Projects → Settings（s）可改默认接收主控；No receiver 清空绑定。Cancel 不保存，外部配置改变则需要 Reload 后再保存。这里的修改只影响以后明确发起的派发，不更改已有运行记录。不创建或发送 agent，不自动推进任务，不管理 AGENTS.md。新接入会将 .drover.conf 加入 .gitignore；该步失败会显示已接入但忽略规则未更新的提示。停用插件保留项目和任务数据。
 
 插件新增公开命令（project 为绝对路径）：project-info 只读检查，返回 state（new/existing/registered/unavailable）及配置 token；project-save 使用 token，新建还需 name，已登记项目可设置 main_agent，未登记旧配置原样沿用。project-browse 只列指定目录的子目录，project-agents 只经 Corral ls 列出现有 agent；不会扫描所有项目或创建 agent。
+
+### Bundled agent runtime
+
+When launched by Saddle, the default agent program is its resolved absolute `SADDLE_AGENT_BIN`. Explicit `--corral PROGRAM` still wins; standalone invocation without the variable uses `corral` on PATH. This changes executable selection only, not task transitions or recording choices.

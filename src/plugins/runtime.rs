@@ -7,7 +7,7 @@ use std::{
     collections::VecDeque,
     io::{Read, Write},
     os::{fd::AsRawFd, unix::process::CommandExt},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         Arc, Mutex,
@@ -136,6 +136,14 @@ impl Runtime {
         Self::with_notices(dir, manifest, Notices::default())
     }
     pub fn with_notices(dir: &Path, manifest: Manifest, notices: Notices) -> Self {
+        Self::with_agent_program(dir, manifest, notices, crate::agent_program::bundled().ok())
+    }
+    pub fn with_agent_program(
+        dir: &Path,
+        manifest: Manifest,
+        notices: Notices,
+        agent_program: Option<PathBuf>,
+    ) -> Self {
         let shared = Arc::new(Mutex::new(Snapshot::default()));
         let queue = Arc::new(Mutex::new(Queue::default()));
         let stop = Arc::new(AtomicBool::new(false));
@@ -150,7 +158,15 @@ impl Runtime {
         let commands = Arc::new(Mutex::new(Vec::new()));
         let replies = commands.clone();
         let worker = thread::spawn(move || {
-            let result = run(&dir, &manifest, &s, &q, (&c, &o), &notices, &replies);
+            let result = run(
+                (&dir, agent_program.as_deref()),
+                &manifest,
+                &s,
+                &q,
+                (&c, &o),
+                &notices,
+                &replies,
+            );
             if let Err(e) = result {
                 let mut state = s.lock().unwrap();
                 state.state = if state.pid.is_some() {
@@ -324,7 +340,7 @@ fn state(shared: &Mutex<Snapshot>, name: &str, note: &str) {
     }
 }
 fn run(
-    dir: &Path,
+    paths: (&Path, Option<&Path>),
     m: &Manifest,
     shared: &Mutex<Snapshot>,
     queue: &Mutex<Queue>,
@@ -332,6 +348,7 @@ fn run(
     notices: &Mutex<Notifications>,
     commands: &Arc<Mutex<Vec<CommandReply>>>,
 ) -> Result<()> {
+    let (dir, agent_program) = paths;
     let (cancel, overflow) = signals;
     // Validate again at launch; a registration is not permission to run a changed identity.
     ensure!(
@@ -354,9 +371,13 @@ fn run(
         cmd.env_remove(key);
     }
     // Lets a plugin call this host's public CLI; it carries no record context.
-    match std::env::current_exe() {
+    match std::env::current_exe().and_then(std::fs::canonicalize) {
         Ok(host) if host.is_absolute() => cmd.env("SADDLE_HOST_BIN", host),
         _ => cmd.env_remove("SADDLE_HOST_BIN"),
+    };
+    match agent_program {
+        Some(agent) if agent.is_absolute() => cmd.env("SADDLE_AGENT_BIN", agent),
+        _ => cmd.env_remove("SADDLE_AGENT_BIN"),
     };
     unsafe {
         cmd.pre_exec(|| {

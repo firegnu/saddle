@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
-default-members = [".", "crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
+members = ["crates/corral-core", "crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
+default-members = [".", "crates/corral-core", "crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
 exclude = ["examples/counter-plugin", "examples/attention-plugin"]
 resolver = "3"
 
