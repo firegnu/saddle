@@ -171,6 +171,7 @@ pub(super) fn statement(input: &EventInput) -> Result<()> {
         )?;
     }
     let role = match input.kind.as_str() {
+        "task.transition" if !input.bodies.is_empty() => Some("reason"),
         "evidence.reused" | "task.transition" => None,
         "controller.decision" => Some("reason"),
         _ => Some("text"),

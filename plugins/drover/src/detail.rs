@@ -123,6 +123,7 @@ impl TaskDetail {
             ));
         }
         out.records(task);
+        out.reports(&data.reports);
         for (index, run) in task.previous_runs.iter().enumerate() {
             out.heading(&format!("Previous run {}", index + 1));
             out.records(run);
@@ -139,6 +140,68 @@ struct Out<'a> {
     rows: Vec<Line<'static>>,
 }
 impl Out<'_> {
+    fn reports(&mut self, reports: &crate::telemetry::Reports) {
+        self.heading("Controller reports · this run");
+        self.note("Recorded declarations, not task acceptance. Submit / Accept remain manual.");
+        match reports.state.as_str() {
+            "available" => {}
+            "not_recorded" => {
+                self.note("No telemetry trace recorded for this run; completion is unknown.");
+                return;
+            }
+            _ => {
+                self.note("Reports unavailable; completion is unknown.");
+                if let Some(detail) = &reports.detail {
+                    self.note(detail);
+                }
+                return;
+            }
+        }
+        if let Some(trace) = &reports.trace_id {
+            self.field("Trace", &[(trace.clone(), self.t.text)]);
+        }
+        if reports.entries.is_empty() {
+            self.note("No review or closure report recorded for this run.");
+        }
+        self.note("All recorded reports below; later reports may revise earlier ones. Full chain: Telemetry.");
+        for report in &reports.entries {
+            let label = if report.kind == "review.recorded" {
+                "Review"
+            } else {
+                "Closure"
+            };
+            self.heading(&format!(
+                "{label} · seq {} · {}",
+                report.seq, report.recorded_at
+            ));
+            self.field("Event", &[(report.event_id.clone(), self.t.text)]);
+            self.field(
+                "Dispatch",
+                &[(
+                    report
+                        .dispatch_id
+                        .clone()
+                        .unwrap_or_else(|| "trace-level".into()),
+                    self.t.text,
+                )],
+            );
+            if let Some(verdict) = &report.verdict {
+                self.field("Declared verdict", &[(verdict.clone(), self.t.text)]);
+            }
+            for link in &report.links {
+                self.value("Link", link);
+            }
+            match &report.text {
+                Some(text) => self.text(0, text, Style::default().fg(self.t.text)),
+                None => self.note(
+                    report
+                        .body_error
+                        .as_deref()
+                        .unwrap_or("Body unavailable; open Telemetry."),
+                ),
+            }
+        }
+    }
     fn evidence(&mut self, evidence: &crate::drover::Evidence) {
         self.heading("Repository reference");
         self.note("Observed repository data; does not establish task ownership or control task transitions.");
@@ -400,4 +463,42 @@ pub(crate) fn local(unix: f64) -> Option<libc::tm> {
     // SAFETY: localtime_r only writes the provided `tm`, which is plain data.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     (!unsafe { libc::localtime_r(&seconds, &mut tm) }.is_null()).then_some(tm)
+}
+
+#[cfg(test)]
+mod report_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn run_details_shows_reports_without_marking_the_task_complete() {
+        let value = json!({"project":"/synthetic", "task":{"id":"T1","run_id":"r1","status":"running","title":"Example"},
+        "evidence":{"scope":"repository_reference","controls_transition":false,"observed_at":0,
+            "git":{"state":"available"},"last_check":{"state":"unknown"}},
+        "reports":{"state":"available","trace_id":"trace-r1","entries":[
+            {"event_id":"review-1","seq":10,"kind":"review.recorded","dispatch_id":"implementation-1","recorded_at":"2026-10-02T00:00:00Z","verdict":"passed","text":"Three examples verified: 5, 1, 0."},
+            {"event_id":"closure-1","seq":11,"kind":"controller.note","dispatch_id":null,"recorded_at":"2026-10-02T00:00:01Z","verdict":null,"text":"Cleanup completed; not submitted.\nREPORT END"}
+        ]}});
+        let data: Detail = serde_json::from_value(value).unwrap();
+        let mut view = TaskDetail::new("Current", data.task.clone());
+        view.data = Some(Box::new(data));
+        let text = view
+            .lines(&Theme::default(), None, true, 120)
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Controller reports"), "{text}");
+        assert!(text.contains("Three examples verified: 5, 1, 0."), "{text}");
+        assert!(text.contains("REPORT END"), "{text}");
+        assert!(
+            text.contains("Declared verdict") && text.contains("passed"),
+            "{text}"
+        );
+        assert!(text.contains("not task acceptance"), "{text}");
+        assert_eq!(
+            view.data.as_ref().unwrap().task.status.as_deref(),
+            Some("running")
+        );
+    }
 }

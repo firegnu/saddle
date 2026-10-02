@@ -17,6 +17,9 @@ pub const IDENTITY_BUDGET: Duration = Duration::from_millis(300);
 pub const FOLLOW_BUDGET: Duration = Duration::from_secs(1);
 /// Only Drover calls the host; Corral and the agent entry never receive it.
 pub const HOST_VARIABLE: &str = "SADDLE_HOST_BIN";
+mod reports;
+pub use reports::{Report, Reports, reports};
+
 const PREFIX: &[u8] = b"saddle-telemetry: ";
 
 /// The Saddle executable this plugin runs under, as the host announced it.
@@ -243,9 +246,9 @@ pub fn transition(
     host: Option<&Path>,
     binding: &Value,
     trace: Option<&str>,
-    from: &str,
-    to: &str,
+    states: (&str, &str),
     committed: Value,
+    reason: Option<&str>,
     cancel: &AtomicBool,
 ) -> Value {
     let Some(host) = host else {
@@ -287,10 +290,26 @@ pub fn transition(
             }
         }
     };
+    // Keep the file alive until append has snapshotted the original committed reason.
+    let reason_file = match reason
+        .map(|text| {
+            let mut file = tempfile::NamedTempFile::new()?;
+            file.write_all(text.as_bytes())?;
+            Ok::<_, std::io::Error>(file)
+        })
+        .transpose()
+    {
+        Ok(file) => file,
+        Err(_) => return json!({"status":"unavailable","trace_id":trace}),
+    };
+    let bodies: Vec<Value> = reason_file
+        .iter()
+        .map(|file| json!({"role":"reason","path":file.path()}))
+        .collect();
     let event = json!({"schema_version":1,"event_id":new_id(),"trace_id":trace,"kind":"task.transition",
         "observed_at":timestamp(SystemTime::now()),"producer":"drover","evidence_kind":"plugin_statement",
-        "payload":{"binding":binding,"from":from,"to":to,"business_committed_at":committed},
-        "links":[],"bodies":[]});
+        "payload":{"binding":binding,"from":states.0,"to":states.1,"business_committed_at":committed},
+        "links":[],"bodies":bodies});
     let status = match write(host, &["append"], &event, deadline, cancel) {
         Ok(status) | Err(status) => status,
     };

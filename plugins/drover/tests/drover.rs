@@ -138,7 +138,7 @@ echo '{}'
         cwd: d.path().into(),
     };
     let calls = || fs::read_to_string(d.path().join("calls")).unwrap_or_default();
-    let w = DetailWorker::start(c.clone(), "T1".into(), Duration::from_millis(50));
+    let w = DetailWorker::start(c.clone(), "T1".into(), Duration::from_millis(50), false);
     for _ in 0..3 {
         let detail = w
             .updates
@@ -160,7 +160,7 @@ echo '{}'
     assert_eq!(calls(), log);
     fs::write(d.path().join("hang"), "").unwrap();
     fs::remove_file(d.path().join("calls")).unwrap();
-    let w = DetailWorker::start(c, "T1".into(), Duration::from_millis(50));
+    let w = DetailWorker::start(c, "T1".into(), Duration::from_millis(50), false);
     let deadline = Instant::now() + Duration::from_secs(5);
     while calls().is_empty() {
         assert!(Instant::now() < deadline);
