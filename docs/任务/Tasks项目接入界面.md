@@ -23,3 +23,7 @@
 - 运行中的日常 Drover 尚未替换；已请用户先停用，收到答复后才备份/替换。Saddle 宿主无需更新。人工验收文档 A2 已在主仓库改为界面流程；真实人工端到端仍未执行。
 
 - 合并 8a317e6 已推送，开发工作区/分支清理，无 agent；release 隔离 initialize/shutdown 通过，日志 /tmp/saddle-project-setup-release-smoke.log。日常更新仍等待用户停用插件，未把构建等同安装。
+
+## 实际安装
+
+用户确认停用 Drover 后，公开状态 enabled=false，进程列表无 saddle-drover。旧包完整备份 `/Users/firegnu/.local/share/saddle/backups/tasks-project-onboarding-20261002-125905`。原子替换日常二进制，旧 SHA256 `159135cfdc86eb849dbd1ea8db1d27c73a0c414b120e8e374e05b0bea5836820`，新 SHA256 `896077aefbc151e01db6c681cc6be01d1e435b16e0d5dce890996d621dbe3c05`；manifest 保持 `6b059a067bfe4407da5170222c53aa3ed160e6a9910e4bef8f3ea5fd2c29a9f2`，未改其他配置或真实任务数据。替换后公开状态仍 disabled，通知用户 Enable。宿主和 Corral 未重启；安装证据在备份 update.json 和 /tmp/saddle-project-setup-install.json。真实人工业务验收未执行。

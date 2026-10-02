@@ -2,14 +2,14 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
-## 最新：Tasks 项目接入界面已合并，等待停用后更新插件
+## 最新：Tasks 项目接入界面已安装，可重新启用 Drover
 
 - 用户批准主控直接实施，不委派。功能 a860e09，合并 8a317e6 已推送。新增项目接入状态、Add project（目录浏览/短名/可选已有主控）、旧配置复用、项目 Settings 改绑/清空主控。业务和 UI 都归 Drover 插件；宿主生产代码、Corral、AGENTS.md 未改。
 - 两项旧测试已校正：app 的 Settings 仍找顶部旧行号；workflow 的未登记旧配置现在须明确 Reuse & add。初次标准失败保留，补齐其余目标并定向修正后不同用例531过、5忽略；Clippy、diff check通过。详情 docs/任务/Tasks项目接入界面.md，日志 /tmp/saddle-project-setup-*.log。
 - release已构建并用隔离 HOME/fake Corral完成 initialize/shutdown；候选 /tmp/saddle-project-setup-package-3755yq76，路径也存 /tmp/saddle-project-setup-package-path。bin SHA256 896077aefbc151e01db6c681cc6be01d1e435b16e0d5dce890996d621dbe3c05；清单沿用日常版，无能力变更。
-- **尚未替换日常插件**。公开检查 Drover 仍 enabled=true，安装目录 plugins/drover/dist/drover-plugin，Saddle instance618062131cae7b0b。已异步请用户在 Settings → Plugins 停用 Drover；收到明确“已停用”后先核当前公开状态，备份完整旧包，再原子替换二进制（保留清单），核哈希并通知用户 Enable。无需更新宿主、退出 Saddle 或停止 agent。用户若选暂不更新就保持现状。
+- **已完成日常插件更新**。用户确认停用后，公开状态 enabled=false 且无运行中 saddle-drover；完整旧包备份 /Users/firegnu/.local/share/saddle/backups/tasks-project-onboarding-20261002-125905。原子替换 plugins/drover/dist/drover-plugin/bin/saddle-drover，哈希与候选一致，清单逐字保留。替换后仍 disabled，已通知用户在 Settings → Plugins 点 Enable；无需更新/重启宿主或停止 agent。新运行时界面和真实业务仍待用户人工验收。
 - 本次工作区/分支已清理，无自建 agent；空提交已经完成。设计review、t38/t55保留。
-- 人工端到端测试尚未开始：测试 repo /Users/firegnu/Developer/personal_projs/saddle-e2e-20261002-113520 已建；用户已建对应 main，instance feb85d825521，报告已读规则且 key 非空。未替用户登记/添加/派发任务。docs/遥测全链路人工验收.md 的 A2 已改成 Add project 界面步骤，需先更新插件再测试。
+- 人工端到端测试尚未开始：测试 repo /Users/firegnu/Developer/personal_projs/saddle-e2e-20261002-113520 已建；用户已建对应 main，instance feb85d825521，报告已读规则且 key 非空。未替用户登记/添加/派发任务。docs/遥测全链路人工验收.md 的 A2 已改成 Add project 界面步骤，插件已更新，重新 Enable 后按 A2 测试。
 
 ## 最新：顶部入口同行对齐已安装
 
