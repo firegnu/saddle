@@ -290,7 +290,7 @@ impl App {
             git: git::Poller::start("git".into(), Duration::from_secs(5)),
             actions,
             viewer,
-            mascot: crate::mascot::Mascot::new(truecolor()),
+            mascot: crate::mascot::Mascot::new(config.mascot, truecolor()),
             config,
             panel: Panel {
                 follow: true,
@@ -1614,6 +1614,10 @@ impl App {
         self.config.colors = saved.colors.clone().for_terminal(truecolor());
         self.config.left_width = saved.left_width;
         self.config.mascot_enabled = saved.mascot_enabled;
+        if self.config.mascot != saved.mascot {
+            self.config.mascot = saved.mascot;
+            self.mascot = crate::mascot::Mascot::new(saved.mascot, truecolor());
+        }
     }
     /// What saddle knows now; the command and config checks run in the background.
     fn diagnostics(&self) -> crate::diagnostics::Report {

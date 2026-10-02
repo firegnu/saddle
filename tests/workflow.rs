@@ -5468,9 +5468,9 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
     assert!(!visible(&h), "startup config disables the mascot");
     let original = h.ctl(&["inspect"])["tabs"].clone();
     h.click("Settings");
-    h.see("Clawd mascot");
+    h.see("Mascot");
     h.see("Disabled");
-    h.click("Clawd mascot");
+    h.click("Mascot");
     h.see("Enabled");
     h.until(|h| h.screen.screen().hide_cursor());
     assert!(!visible(&h), "the draft must not apply before Save");
@@ -5481,7 +5481,7 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
         Some(true)
     );
     h.click("Settings");
-    h.click("Clawd mascot");
+    h.click("Mascot");
     h.see("Disabled");
     h.send(b"\x1b");
     h.until(|h| !h.contents().contains("General F1") && visible(h));

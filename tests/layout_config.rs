@@ -256,6 +256,23 @@ fn mascot_option_defaults_on_and_accepts_only_toml_booleans() {
 }
 
 #[test]
+fn mascot_choice_defaults_to_clawd_and_accepts_only_known_pets() {
+    use saddle::mascot::Pet;
+    assert_eq!(Config::default().mascot, Pet::Clawd);
+    assert_eq!(Config::parse("").unwrap().mascot, Pet::Clawd);
+    assert_eq!(
+        Config::parse(include_str!("../config.toml"))
+            .unwrap()
+            .mascot,
+        Pet::Clawd
+    );
+    assert_eq!(Config::parse("mascot = 'cat'").unwrap().mascot, Pet::Cat);
+    for invalid in ["mascot = 'dog'", "mascot = true"] {
+        assert!(Config::parse(invalid).is_err());
+    }
+}
+
+#[test]
 fn a_theme_supplies_every_color_and_colors_overrides_only_the_keys_written() {
     use ratatui::style::Color;
     use saddle::theme::{Preset, Theme};
