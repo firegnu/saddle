@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-03。本轮核对基线 main=`419ba5f`，与远端一致；Corral Rust 核心合并 `2527c8f`，宠物包合并 `0761aeb`，均已推送。本轮仅更新交接和新旧主控交接清单，不改功能、不部署、不跑测试。
+更新：2026-10-03。部署准备源码 main=`7755bb8`，包含 Corral Rust 核心与宠物包。本轮两项定向复核通过、新成套 release 包构建及隔离退出/重开检查通过、旧安装已备份；**待用户退出 Saddle 后才切换入口，当前仍是旧安装。**
 
 ## 当前状态
 
@@ -8,7 +8,7 @@
 
 用户要求使用感觉保持一致：关闭 Saddle 不停 agent，外部仍能 `corral attach`，重开恢复同一实例；原 Corral 仓库只读保留、独立可用，不产生对宿主/插件/遥测的反向依赖。用户现有主控都有 HANDOFF，部署后由用户自行重开，不热替换旧 Python 进程，不自动关闭它们。
 
-用户此前要求等 Claude 开发收尾后再迁移；现已核实文本宠物包全部合并、相关分支/worktree 已清理，图片版暂缓，待换内核后新开会话继续。本轮授权仅探测、交接、提交推送，并关闭确认已无当前工作的 Claude，不是部署授权。
+用户此前要求等 Claude 开发收尾后再迁移；文本宠物包已收尾、Claude 已按授权关闭，图片版暂缓。用户最新同意推进部署准备和后续退出/切换/接续流程；先准备，通知用户退出界面后再切换，不因批准流程直接停止现有主控。
 
 ## 已完成
 
@@ -30,15 +30,16 @@
 ## 构建产物与下一步
 
 - Corral 核验时生产源码 `820fda28d52028ef66c1a0d2953410e5b4a94900` 的临时包：`/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`。**该包不包含后来合并的宠物功能，不能直接作为最新整包安装。** 迁移前按最新 main 重新成套构建并核对 BUILD.txt；保留原核验证据，不把它当新整包已验收。
-- 尚未更换真实 saddle/corral 命令链接、配置、技能或插件注册，未迁移/关闭真实 trace、未动队列、未发布远端 release。下一步是用户安排真实部署切换，再做自建新会话的实际体验核验。
+- 新成套包已准备在 `~/.local/share/saddle/versions/7755bb8`，包含宠物，BUILD.txt 校验通过；私有备份 `~/.local/share/saddle/backups/corral-rust-7755bb8-20261003-021136`。具体证据、哈希和待办见 `docs/调研/Corral核心Rust部署记录-2026-10-03.md`。尚未更换真实命令链接/配置/技能/插件注册，未动真实 trace/队列；下一步等用户退出界面并核实后切换。
 - 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。当前全局 corral 技能已核为实际目录/文件，不是软链接；部署时重新核所有权，不强制覆盖用户资源，不写原 Corral 仓库。
-- 上轮遥测边界日常部署与备份详情仍在 `docs/任务/遥测单任务边界-部署记录.md`；本次没有改动那套安装。此前“不能自动迁移Corral”的旧交接已被本次源码实施授权替代，真实安装切换仍未授权执行。
+- 上轮遥测边界日常部署详情在 `docs/任务/遥测单任务边界-部署记录.md`；本轮仅备份/准备，原安装尚未改变。Corral 安装技能 dry-run 两处均 same，无需覆盖。
 - 详细操作见 `docs/Corral新旧主控交接清单-Saddle示例.md`，已用 Typora 打开。新旧主控可不同名并存，读取 HANDOFF 核对后再停旧；新建表单 Controller 短名锁定 main，自定义主控名需用公开 CLI 创建并带 role=controller。底层/角色显示/Tasks 不要求名字为 main，Tasks 接收者需显式调整；现有 run 不自动转移。本项目 AGENTS 的 saddle/main 是项目约定。
 
 ## 宠物包（由 saddle/claude-1 按用户直接布置完成，2026-10-03）
 
 - 已合并 `0761aeb` 并推送，分支和 worktree `pet-packs` 已清理。吉祥物改为可换的宠物：Clawd 加原创橘猫，Settings → General → Pet 选择，配置 `mascot = "clawd" | "cat"`。素材是 `assets/pets/*.toml` 文本宠物包，Rust 直接读；Python 生成脚本和二进制帧已删除。设计见 `docs/DESIGN.md`「宠物包与第二只宠物」，格式见 `assets/pets/README.md`。
 - 合并前分支上格式和 clippy 通过，全量 63 组通过；workflow 组 `pending_delete_button_confirms_names_the_task_and_can_be_cancelled`、`native_mouse_buttons_cover_forms_and_stop_confirmation` 两项失败，原因未查清（可能与共享 `.target/debug/saddle` 被并行构建覆盖有关，未证实）。用户决定先合并，由主控用隔离 target 复跑。
+- 部署准备时基于 `7755bb8`、显式 native target 串行限定复核上述两项，2 passed；原失败原因仍未知，不声称一次全套绿。新 release 包隔离生命周期1项通过，日志 `/tmp/saddle-rust-deploy-7755bb8/`。
 - 效果只看过离线渲染的预览图，未在真实终端核验；用户日常用 Ghostty 和 Metalterm。未替换安装版。
 - 下一步：图片版，Kitty 图形协议，支持的终端默认用图片、其余自动退回方块版。先做猫；Clawd 用用户提供的 claude.dev 参考动画，只做 3 行高度放得下的。尚未开始：用户先切换新内核，之后重新开会话再做；宠物相关没有遗留分支或 worktree。
 
