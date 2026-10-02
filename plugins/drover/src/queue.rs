@@ -1283,6 +1283,27 @@ impl Panel {
         // Saddle supplies the outer frame and title. Keep content padding,
         // while reserving borders for fields, buttons and internal sections.
         frame.buffer_mut().set_style(area, t.base().bg(t.overlay));
+        if matches!(self.page, Page::Projects) {
+            let height = (self.projects.len().min(14) as u16 + 12).max(16);
+            let body = ui::dialog(t, frame, area, "Projects", 104, height);
+            let (mut body, hits) = buttons::draw_compact(t, frame, body, &self.controls());
+            self.buttons = hits;
+            if !body.is_empty() {
+                let name_width = (usize::from(body.width) / 3).clamp(12, 32);
+                frame.render_widget(
+                    Paragraph::new(format!(
+                        "  {} Status / receiver",
+                        ui::pad("Project", name_width)
+                    ))
+                    .style(Style::default().fg(t.muted)),
+                    Rect::new(body.x, body.y, body.width, 1),
+                );
+                body.y += 1;
+                body.height -= 1;
+            }
+            self.draw_page(t, frame, body, true, false);
+            return Vec::new();
+        }
         let inside = area.inner(ratatui::layout::Margin::new(1, 0));
         if inside.height < 4 || inside.width < 12 {
             return Vec::new();
@@ -1953,7 +1974,8 @@ impl Panel {
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy();
-                    let name = crate::ui::clip(&name, 16);
+                    let name_width = (usize::from(body.width) / 3).clamp(12, 32);
+                    let name = crate::ui::clip(&name, name_width);
                     let label = format!(
                         "{} {} {}",
                         if index == self.project_selected {
@@ -1961,17 +1983,15 @@ impl Panel {
                         } else {
                             " "
                         },
-                        crate::ui::pad(&name, 16),
+                        crate::ui::pad(&name, name_width),
                         crate::ui::clip(
-                            &crate::project_setup::safe(&format!(
-                                "{} · {}",
+                            &crate::project_setup::safe(
                                 self.project_status
                                     .get(path)
                                     .map(String::as_str)
-                                    .unwrap_or("Checking…"),
-                                path
-                            )),
-                            usize::from(body.width).saturating_sub(20)
+                                    .unwrap_or("Checking…")
+                            ),
+                            usize::from(body.width).saturating_sub(name_width + 3)
                         )
                     );
                     lines.push((Some(index), label));

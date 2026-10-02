@@ -168,19 +168,34 @@ fn projects_offer_add_and_settings_in_the_ui() {
     let mut panel = Panel::default();
     panel.page = Page::Projects;
     panel.projects = vec!["/tmp/demo".into()];
-    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-    terminal
-        .draw(|f| {
-            panel.draw(&Default::default(), f, f.area());
-        })
-        .unwrap();
-    let text: String = terminal
-        .backend()
-        .buffer()
-        .content
-        .iter()
-        .map(|c| c.symbol())
-        .collect();
-    assert!(text.contains("Add project"), "{text}");
-    assert!(text.contains("Settings"), "{text}");
+    for (width, height) in [(48, 24), (80, 24), (160, 50)] {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| {
+                panel.draw(&Default::default(), f, f.area());
+            })
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        for label in ["Projects", "Add project", "Settings", "/tmp/demo"] {
+            assert!(text.contains(label), "{width}x{height}: {label}");
+        }
+        assert!(!text.contains("Record default"));
+        assert!(!text.contains("Pause p"));
+        assert_eq!(panel.project_rows.len(), 1);
+        for (row, _) in &panel.project_rows {
+            assert!(
+                terminal
+                    .backend()
+                    .buffer()
+                    .area
+                    .contains(ratatui::layout::Position::new(row.x, row.y))
+            );
+        }
+    }
 }

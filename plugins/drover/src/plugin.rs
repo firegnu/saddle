@@ -879,8 +879,9 @@ impl Plugin for Drover {
             } else if self.preferences {
                 use crate::buttons::Button as B;
                 let ready = matches!(self.preference, Some(Ok(_))) && !self.preference_saving;
-                let controls = [B::new("System s", KeyCode::Char('s'), ready), B::new("In Saddle i", KeyCode::Char('i'), ready), B::control("Save ^s", KeyCode::Char('s'), ready), B::new("Cancel Esc", KeyCode::Esc, !self.preference_saving)];
-                let (body, hits) = crate::buttons::draw_compact_top(&t, frame, area, &controls);
+                let body = crate::ui::dialog(&t, frame, area, "Task notifications", 76, 16);
+                let controls = [B::control("Save ^s", KeyCode::Char('s'), ready).primary(), B::new("Cancel Esc", KeyCode::Esc, !self.preference_saving)];
+                let (body, hits) = crate::buttons::draw_compact(&t, frame, body, &controls);
                 self.panel.buttons = hits;
                 self.rows.clear();
                 let state = match &self.preference {
@@ -888,7 +889,28 @@ impl Plugin for Drover {
                     Some(Err(e)) => format!("Unavailable: {e}"),
                     Some(Ok(_)) => format!("Selected: {}", if self.preference_choice == Some(true) { "System" } else { "In Saddle" }),
                 };
-                frame.render_widget(ratatui::widgets::Paragraph::new(format!("Task notifications\n\n{state}\n\n{}\n\nThis preference is stored by Drover and applies across projects for this user.", self.preference_message)).wrap(Default::default()), body);
+                use ratatui::{style::{Modifier, Style}, widgets::{Paragraph, Wrap}};
+                if body.height >= 9 {
+                    frame.render_widget(Paragraph::new("Choose where task notifications appear.").style(Style::default().fg(t.muted)), Rect::new(body.x, body.y, body.width, 1));
+                    for (offset, label, key, choice) in [(2, "System s", 's', true), (4, "In Saddle i", 'i', false)] {
+                        let row = Rect::new(body.x, body.y + offset, body.width, 1);
+                        let selected = matches!(self.preference, Some(Ok(_))) && self.preference_choice == Some(choice);
+                        frame.render_widget(Paragraph::new(format!(" {}  {label}", if selected { "●" } else { "○" })).style(
+                            if selected { Style::default().fg(t.focus).bg(t.agent_selected).add_modifier(Modifier::BOLD) }
+                            else { Style::default().fg(if ready { t.text } else { t.muted }) }
+                        ), row);
+                        if ready {
+                            self.panel.buttons.push(crate::buttons::Hit { area: row, danger: false, key: KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE) });
+                        }
+                    }
+                    frame.render_widget(Paragraph::new(format!("{state}\n{}", self.preference_message)).wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 6, body.width, 3));
+                    frame.render_widget(Paragraph::new("Applies across projects for this user. Changes take effect after Save.").style(Style::default().fg(t.muted)).wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 9, body.width, body.height.saturating_sub(9)));
+                } else {
+                    let choices = [B::new("System s", KeyCode::Char('s'), ready), B::new("In Saddle i", KeyCode::Char('i'), ready)];
+                    let (body, hits) = crate::buttons::draw_compact_top(&t, frame, body, &choices);
+                    self.panel.buttons.extend(hits);
+                    frame.render_widget(Paragraph::new(format!("{state}\n{}", self.preference_message)).wrap(Wrap { trim: false }), body);
+                }
             } else {
                 let content = Rect { height: area.height.saturating_sub(1), ..area };
                 self.rows = self.panel.draw(&t, frame, content);

@@ -299,6 +299,13 @@ impl Setup {
         }
     }
     pub fn draw(&mut self, t: &Theme, f: &mut Frame, area: Rect) -> Vec<buttons::Hit> {
+        let title = match self.mode {
+            Mode::Directories => "Choose directory",
+            Mode::Agents => "Choose default receiver",
+            Mode::Form if self.settings => "Project settings",
+            Mode::Form => "Add project",
+        };
+        let area = crate::ui::dialog(t, f, area, title, 96, 26);
         let ready = self.pending.is_none();
         let controls = if self.mode == Mode::Directories {
             vec![
@@ -312,10 +319,6 @@ impl Setup {
             ]
         } else {
             vec![
-                B::new("Browse F2", K::F(2), ready && !self.settings),
-                B::new("Check / Reload F3", K::F(3), ready),
-                B::new("Choose agent F4", K::F(4), ready && self.editable_agent()),
-                B::new("No receiver F5", K::F(5), ready && self.editable_agent()),
                 B::control(
                     if self.state() == "registered" && !self.settings {
                         "Open ^s"
@@ -326,25 +329,17 @@ impl Setup {
                     },
                     K::Char('s'),
                     ready && matches!(self.state(), "new" | "existing" | "registered"),
-                ),
+                )
+                .primary(),
                 B::new("Cancel Esc", K::Esc, ready),
             ]
         };
-        let (body, hits) = buttons::draw_compact(t, f, area, &controls);
+        let (body, mut hits) = buttons::draw_compact(t, f, area, &controls);
         self.fields.clear();
         self.rows.clear();
         if body.height < 5 {
             return hits;
         }
-        let title = if self.settings {
-            "Project settings"
-        } else {
-            "Add project"
-        };
-        f.render_widget(
-            Paragraph::new(title).style(Style::default().fg(t.focus)),
-            Rect::new(body.x, body.y, body.width, 1),
-        );
         if self.mode != Mode::Form {
             let label = if self.mode == Mode::Directories {
                 format!("Directory: {}", self.path.text)
@@ -391,16 +386,27 @@ impl Setup {
                 ("Project short name", 1),
                 ("Default receiver", 2),
             ];
+            let mut remaining = Rect {
+                height: body.height.saturating_sub(2),
+                ..body
+            };
             for (label, i) in fields {
-                let y = body.y + 2 + i as u16 * 2;
-                if y + 1 >= body.bottom() {
+                let y = remaining.y;
+                if remaining.height < 3 {
                     break;
                 }
-                f.render_widget(
-                    Paragraph::new(label).style(Style::default().fg(t.muted)),
-                    Rect::new(body.x, y, body.width, 1),
+                let editable = match i {
+                    0 => !self.settings,
+                    1 => self.state() == "new",
+                    _ => self.editable_agent(),
+                };
+                let field = t.block(
+                    format!(" {label}{} ", if editable { "" } else { " (read-only)" }),
+                    self.focus == i && ready && editable,
                 );
-                let r = Rect::new(body.x, y + 1, body.width, 1);
+                let field_area = Rect::new(body.x, y, body.width, 3);
+                let r = field.inner(field_area);
+                f.render_widget(field, field_area);
                 self.fields.push((r, i));
                 match i {
                     0 => self.path.draw(
@@ -436,6 +442,22 @@ impl Setup {
                         )
                     }
                 }
+                remaining.y += 3;
+                remaining.height -= 3;
+                let controls = match i {
+                    0 => vec![
+                        B::new("Browse F2", K::F(2), ready && !self.settings),
+                        B::new("Check / Reload F3", K::F(3), ready),
+                    ],
+                    2 => vec![
+                        B::new("Choose agent F4", K::F(4), ready && self.editable_agent()),
+                        B::new("No receiver F5", K::F(5), ready && self.editable_agent()),
+                    ],
+                    _ => vec![],
+                };
+                let (rest, row_hits) = buttons::draw_compact_top(t, f, remaining, &controls);
+                remaining = rest;
+                hits.extend(row_hits);
             }
             let state = match self.state() {
                 "new" => {
@@ -450,13 +472,13 @@ impl Setup {
                 }
                 _ => "Choose a directory, then Check.",
             };
-            if body.height > 10 {
+            if !remaining.is_empty() {
                 let error = self
                     .info
                     .as_ref()
                     .and_then(|v| v["error"].as_str())
                     .unwrap_or("");
-                f.render_widget(Paragraph::new(safe(&format!("{state}\n{error}\nNo task is dispatched. AGENTS.md remains manually maintained.\nTab: next field. Empty receiver means manual handoff."))).wrap(Wrap{trim:false}),Rect::new(body.x,body.y+9,body.width,body.height.saturating_sub(11)));
+                f.render_widget(Paragraph::new(safe(&format!("{state}\n{error}\nNo task is dispatched. AGENTS.md remains manually maintained.\nTab: next field. Empty receiver means manual handoff."))).wrap(Wrap{trim:false}),remaining);
             }
         }
         f.render_widget(
@@ -476,4 +498,87 @@ pub fn safe(s: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend, layout::Position};
+
+    #[test]
+    fn compact_form_keeps_fields_and_actions_visible_and_clickable() {
+        for (width, height) in [(48, 24), (80, 24), (160, 50)] {
+            let mut setup = Setup {
+                worker: api::Worker::start("unused-fake-corral".into()),
+                path: Input::new("/tmp/example-project".into()),
+                name: Input::new("example-project".into()),
+                agent: "example/main".into(),
+                settings: false,
+                focus: 0,
+                mode: Mode::Form,
+                choices: vec![],
+                selected: 0,
+                info: Some(json!({"state": "new"})),
+                message: "Not saved: example failure".into(),
+                pending: None,
+                closed: false,
+                opened: None,
+                fields: vec![],
+                rows: vec![],
+            };
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            let mut hits = vec![];
+            terminal
+                .draw(|f| {
+                    hits = setup.draw(&Theme::default(), f, f.area());
+                })
+                .unwrap();
+            let text = terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|c| c.symbol())
+                .collect::<String>();
+            for label in [
+                "Add project",
+                "Directory",
+                "Project short name",
+                "Default receiver",
+                "Not saved:",
+            ] {
+                assert!(text.contains(label), "{width}x{height}: {label}");
+            }
+            assert_eq!(setup.fields.len(), 3);
+            for key in [
+                KeyEvent::from(K::F(2)),
+                KeyEvent::from(K::F(3)),
+                KeyEvent::from(K::F(4)),
+                KeyEvent::from(K::F(5)),
+                KeyEvent::new(K::Char('s'), KeyModifiers::CONTROL),
+                KeyEvent::from(K::Esc),
+            ] {
+                let hit = hits
+                    .iter()
+                    .find(|h| h.key == key)
+                    .expect("action has a click target");
+                assert!(
+                    terminal
+                        .backend()
+                        .buffer()
+                        .area
+                        .contains(Position::new(hit.area.x, hit.area.y))
+                );
+                assert!(
+                    setup
+                        .fields
+                        .iter()
+                        .all(|(field, _)| !field.intersects(hit.area))
+                );
+            }
+            let name = setup.fields[1].0;
+            setup.click(name.x, name.y);
+            assert_eq!(setup.focus, 1);
+        }
+    }
 }

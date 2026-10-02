@@ -26,3 +26,19 @@ pub(crate) fn clip(text: &str, width: usize) -> String {
 pub fn inner(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
     area.inner(ratatui::layout::Margin::new(1, 1))
 }
+
+/// A bounded settings surface inside the host-owned plugin frame.
+pub(crate) fn dialog(
+    t: &crate::theme::Theme,
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    title: &str,
+    width: u16,
+    height: u16,
+) -> ratatui::layout::Rect {
+    let area = crate::theme::centered(area, width, height);
+    let block = t.block(format!(" {title} "), true);
+    let body = block.inner(area);
+    frame.render_widget(block, area);
+    body.inner(ratatui::layout::Margin::new(1, 0))
+}
