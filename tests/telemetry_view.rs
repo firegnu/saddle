@@ -184,7 +184,8 @@ fn send_without_end(store: &Store, dir: &Path, trace: &str, dispatch: &str) -> S
 fn marked(text: &str) -> &str {
     text.lines()
         .find(|l| {
-            l.trim_start_matches(['│', '┃'])
+            l.trim_start()
+                .trim_start_matches(['│', '┃'])
                 .trim_start()
                 .starts_with('▸')
         })
@@ -199,6 +200,18 @@ fn blob(root: &Path, store: &Store, event: &str) -> PathBuf {
 }
 /// Moves the event selection to the row showing `kind`.
 fn select_event(page: &mut Page, kind: &str) {
+    let kind = match kind {
+        "task.transition" => "任务状态流转",
+        "agent.send.begin" => "开始发送任务",
+        "agent.send.end" => "任务发送结束",
+        "requirement.recorded" => "记录原始需求",
+        "brief.snapshot" => "任务书快照",
+        "controller.decision" => "主控路由决定",
+        "authorization.recorded" => "记录授权原文",
+        "proposal.recorded" => "记录提案",
+        "controller.note" => "主控记录",
+        other => other,
+    };
     for _ in 0..200 {
         let text = screen(page, 100, 40);
         if marked(&text).contains(kind) {
@@ -303,7 +316,7 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     assert!(list.contains("2 traces"), "{list}");
     assert!(list.contains("登记声明未核验"), "{list}");
     assert!(list.contains("未见运行登记声明"), "{list}");
-    assert!(list.contains("drover.task · T57"), "{list}");
+    assert!(list.contains("T57 Fix queue focus"), "{list}");
     assert!(page.status().contains("Esc Close"));
     // The newest trace is selected first; its details are below the list.
     press(&mut page, KeyCode::Down);
@@ -330,16 +343,25 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
         "agent.send.begin",
         "task.transition",
     ] {
-        assert!(detail.contains(kind), "{kind}: {detail}");
+        assert!(
+            detail.contains(match kind {
+                "requirement.recorded" => "记录原始需求",
+                "brief.snapshot" => "任务书快照",
+                "agent.send.begin" => "开始发送任务",
+                "task.transition" => "任务状态流转",
+                _ => kind,
+            }),
+            "{kind}: {detail}"
+        );
     }
     // Missing ends are not inserted into the event list as rows.
-    assert!(!detail.contains("agent.send.end"), "{detail}");
+    assert!(!detail.contains("任务发送结束"), "{detail}");
 
     select_event(&mut page, "requirement.recorded");
     let detail = shown(&mut page);
     assert!(detail.contains("需求原文（声明来源）"), "{detail}");
     assert!(
-        detail.contains("declared by synthetic controller (unverified)"),
+        detail.contains("主控声明") && detail.contains("synthetic controller"),
         "{detail}"
     );
     assert!(
@@ -367,13 +389,14 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     select_event(&mut page, "brief.snapshot");
     let detail = shown(&mut page);
     assert!(detail.contains("任务书快照"), "{detail}");
-    assert!(detail.contains("observed by Saddle"), "{detail}");
+    assert!(detail.contains("宿主观测"), "{detail}");
     assert!(detail.contains("brief.md"), "{detail}");
     assert!(!detail.contains("实际发送内容"), "{detail}");
     select_event(&mut page, "agent.send.begin");
     let detail = shown(&mut page);
     assert!(detail.contains("实际发送内容"), "{detail}");
-    assert!(!detail.contains("任务书快照"), "{detail}");
+    let selected_detail = detail.split("‹技术详情 · v›").nth(1).unwrap();
+    assert!(!selected_detail.contains("任务书快照"), "{detail}");
     // The current operation state, marked as read now, not as part of the list.
     assert!(detail.contains("now: no end"), "{detail}");
     press(&mut page, KeyCode::Enter);
@@ -404,11 +427,11 @@ fn list_detail_and_reader_show_store_results_and_return_layer_by_layer() {
     // A dispatch filters the events.
     press(&mut page, KeyCode::Tab);
     let filtered = shown(&mut page);
-    assert!(filtered.contains("agent.send.begin"), "{filtered}");
-    assert!(!filtered.contains("requirement.recorded"), "{filtered}");
+    assert!(filtered.contains("开始发送任务"), "{filtered}");
+    assert!(!filtered.contains("记录原始需求"), "{filtered}");
     press(&mut page, KeyCode::Tab);
     let empty = shown(&mut page);
-    assert!(!empty.contains("agent.send.begin"), "{empty}");
+    assert!(!empty.contains("开始发送任务"), "{empty}");
     assert!(empty.contains("parent impl-77c0"), "{empty}");
 
     assert!(press(&mut page, KeyCode::Esc).stay());
@@ -535,7 +558,7 @@ fn event_pages_keep_their_upper_bound_until_refresh() {
         press(&mut page, KeyCode::Down);
     }
     let end = shown(&mut page);
-    assert!(!end.contains("requirement.recorded"), "{end}");
+    assert!(!end.contains("记录原始需求"), "{end}");
     // Refresh rereads both: a new upper bound includes it.
     press(&mut page, KeyCode::Char('r'));
     shown(&mut page);
@@ -549,7 +572,7 @@ fn event_pages_keep_their_upper_bound_until_refresh() {
         !refreshed.contains(&format!("Events seq ≤ {upper} ")),
         "{refreshed}"
     );
-    assert!(refreshed.contains("requirement.recorded"), "{refreshed}");
+    assert!(refreshed.contains("记录原始需求"), "{refreshed}");
 }
 
 #[test]
@@ -649,19 +672,19 @@ fn narrow_and_wide_windows_keep_the_same_layers() {
     press(&mut page, KeyCode::Enter);
     settle(&mut page);
     let narrow = screen(&mut page, 80, 24);
-    assert!(narrow.contains("task.transition"), "{narrow}");
+    assert!(narrow.contains("任务状态流转"), "{narrow}");
     assert!(narrow.contains("Esc Back"), "{narrow}");
     let wide = screen(&mut page, 180, 40);
-    assert!(marked(&wide).contains("task.transition"), "{wide}");
+    assert!(marked(&wide).contains("任务状态流转"), "{wide}");
     // The event detail sits beside the timeline, not below it.
     let beside = wide
         .lines()
         .find_map(|l| {
-            l.find("declared by synthetic plugin (unverified)")
+            l.find("任务状态流转 · 插件声明")
                 .map(|i| l[..i].chars().count())
         })
         .unwrap_or_else(|| panic!("{wide}"));
-    assert!(beside > 90, "{wide}");
+    assert!(beside > 75, "{wide}");
 }
 
 trait Stay {
@@ -689,13 +712,13 @@ fn refresh_keeps_the_selected_dispatch_and_its_events() {
     press(&mut page, KeyCode::Tab);
     let review = shown(&mut page);
     assert!(review.contains("parent impl-77c0"), "{review}");
-    assert!(!review.contains("agent.send.begin"), "{review}");
+    assert!(!review.contains("开始发送任务"), "{review}");
     // Refresh while the dispatch list itself is being read again.
     press(&mut page, KeyCode::Char('r'));
     let refreshed = shown(&mut page);
     assert!(refreshed.contains("parent impl-77c0"), "{refreshed}");
-    assert!(!refreshed.contains("agent.send.begin"), "{refreshed}");
-    assert!(!refreshed.contains("brief.snapshot"), "{refreshed}");
+    assert!(!refreshed.contains("开始发送任务"), "{refreshed}");
+    assert!(!refreshed.contains("任务书快照"), "{refreshed}");
     assert!(
         refreshed.contains("No events recorded for this dispatch."),
         "{refreshed}"
@@ -703,10 +726,9 @@ fn refresh_keeps_the_selected_dispatch_and_its_events() {
     // Back to the implementation dispatch: its own events only.
     press(&mut page, KeyCode::BackTab);
     let implementation = shown(&mut page);
-    assert!(
-        implementation.contains("agent.send.begin"),
-        "{implementation}"
-    );
+    assert!(implementation.contains("开始发送任务"), "{implementation}");
+    press(&mut page, KeyCode::Char('v'));
+    let implementation = shown(&mut page);
     assert!(
         implementation.contains("dispatch impl-77c0"),
         "{implementation}"
@@ -742,6 +764,7 @@ fn event_detail_shows_recorded_fields_and_scrolls_to_the_end_when_narrow() {
     press(&mut page, KeyCode::Enter);
     settle(&mut page);
     select_event(&mut page, "task.transition");
+    press(&mut page, KeyCode::Char('v'));
     let detail = shown(&mut page);
     assert!(detail.contains("from: pending"), "{detail}");
     assert!(detail.contains("to: running"), "{detail}");
@@ -766,7 +789,7 @@ fn event_detail_shows_recorded_fields_and_scrolls_to_the_end_when_narrow() {
         seen = screen(&mut page, 80, 24);
     }
     assert!(seen.contains("to: running"), "{seen}");
-    assert!(marked(&seen).contains("task.transition"), "{seen}");
+    assert!(marked(&seen).contains("任务状态流转"), "{seen}");
 }
 
 #[test]
@@ -961,6 +984,7 @@ fn task_transition_reason_is_readable_in_the_existing_body_view() {
     press(&mut page, KeyCode::Enter);
     settle(&mut page);
     select_event(&mut page, "task.transition");
+    press(&mut page, KeyCode::Char('v'));
     let detail = shown(&mut page);
     assert!(
         detail.contains("from: awaiting_release") && detail.contains("to: pending"),
@@ -973,4 +997,188 @@ fn task_transition_reason_is_readable_in_the_existing_body_view() {
         body.contains("人工验收：测试退回重新派发") && body.contains("REASON END"),
         "{body}"
     );
+}
+
+#[test]
+fn presentation_project_type_and_search_only_filter_loaded_traces() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let s = store(&root);
+    task(&s, "a", "T1", "alpha task");
+    s.create_trace(
+        serde_json::from_value(
+            json!({"schema_version":1,"trace_id":"b","origin":"ad_hoc","label":"oral review"}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut page = open(&root);
+    assert!(shown(&mut page).contains("全部项目"));
+    press(&mut page, KeyCode::Char('p'));
+    press(&mut page, KeyCode::Down);
+    press(&mut page, KeyCode::Enter);
+    let filtered = shown(&mut page);
+    assert!(
+        filtered.contains("alpha task") && !filtered.contains("oral review"),
+        "{filtered}"
+    );
+    press(&mut page, KeyCode::Char('F'));
+    settle(&mut page);
+    press(&mut page, KeyCode::Char('/'));
+    typed(&mut page, "oral");
+    press(&mut page, KeyCode::Enter);
+    let searched = shown(&mut page);
+    assert!(
+        searched.contains("oral review") && !searched.contains("alpha task"),
+        "{searched}"
+    );
+    press(&mut page, KeyCode::Char('F'));
+    settle(&mut page);
+    press(&mut page, KeyCode::Char('t'));
+    press(&mut page, KeyCode::Down); // ad_hoc
+    press(&mut page, KeyCode::Enter);
+    let by_type = shown(&mut page);
+    assert!(
+        by_type.contains("oral review") && !by_type.contains("alpha task"),
+        "{by_type}"
+    );
+    press(&mut page, KeyCode::Char('/'));
+    typed(&mut page, "no match");
+    press(&mut page, KeyCode::Esc);
+    assert!(shown(&mut page).contains("oral review"));
+    assert_eq!(
+        s.list_bound(None).unwrap()["traces"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn presentation_body_action_preview_and_technical_details_are_explicit() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let s = store(&root);
+    task(&s, "a", "T1", "readable");
+    statement(
+        &s,
+        dir.path(),
+        "a",
+        "req",
+        "requirement.recorded",
+        b"Preview text\nsecond line",
+    );
+    transition(&s, "a", "move", "T1");
+    let mut page = open(&root);
+    press(&mut page, KeyCode::Enter);
+    let detail = shown(&mut page);
+    assert!(detail.contains("‹查看全文 · Enter›"), "{detail}");
+    assert!(detail.contains("Preview text"), "{detail}");
+    assert!(!detail.contains("event req · trace"), "{detail}");
+    press(&mut page, KeyCode::Char('v'));
+    assert!(shown(&mut page).contains("event req · trace"));
+    press(&mut page, KeyCode::Down);
+    let no_body = shown(&mut page);
+    assert!(no_body.contains("此事件没有正文"), "{no_body}");
+    assert!(!no_body.contains("‹查看全文 · Enter›"), "{no_body}");
+}
+
+#[test]
+fn presentation_centered_mouse_controls_and_preview_follow_selection() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use ratatui::{Terminal, backend::TestBackend};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let s = store(&root);
+    task(&s, "a", "T1", "readable");
+    statement(
+        &s,
+        dir.path(),
+        "a",
+        "req",
+        "requirement.recorded",
+        b"FIRST BODY",
+    );
+    statement(
+        &s,
+        dir.path(),
+        "a",
+        "note",
+        "controller.note",
+        b"SECOND BODY\x1b[31m",
+    );
+    let mut page = open(&root);
+    press(&mut page, KeyCode::Enter);
+    settle(&mut page);
+    press(&mut page, KeyCode::Down);
+    press(&mut page, KeyCode::Up);
+    press(&mut page, KeyCode::Down);
+    settle(&mut page);
+    let text = screen(&mut page, 180, 50);
+    assert!(
+        text.contains("SECOND BODY\\x1b[31m") && !text.contains("FIRST BODY"),
+        "{text}"
+    );
+    let mut terminal = Terminal::new(TestBackend::new(180, 50)).unwrap();
+    terminal
+        .draw(|f| page.draw(&Default::default(), f, f.area()))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(0, 0)].symbol(), " ", "detail is centered");
+    let (x, y) = (0..50)
+        .flat_map(|y| (0..180).map(move |x| (x, y)))
+        .find(|&(x, y)| buffer[(x, y)].symbol() == "‹" && buffer[(x + 1, y)].symbol() == "查")
+        .unwrap();
+    for kind in [
+        MouseEventKind::Down(MouseButton::Left),
+        MouseEventKind::Up(MouseButton::Left),
+    ] {
+        page.event(&Event::Mouse(MouseEvent {
+            kind,
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }));
+    }
+    assert!(shown(&mut page).contains("hash verified · UTF-8"));
+    press(&mut page, KeyCode::Esc);
+    assert!(marked(&shown(&mut page)).contains("主控记录"));
+    for (w, h) in [(1, 1), (20, 8), (40, 12), (80, 24)] {
+        screen(&mut page, w, h);
+    }
+}
+
+#[test]
+fn presentation_multiple_bodies_keep_selection_and_full_reading() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let s = store(&root);
+    task(&s, "a", "T1", "multiple bodies");
+    dispatch(&s, "a", "impl", "implementation", None);
+    let summary = file(dir.path(), "summary", b"SUMMARY ONLY");
+    let request = file(dir.path(), "request", b"REQUEST ONLY");
+    let op = s.prepare_operation(OperationInput {
+        schema_version: 1, trace_id:"a".into(), dispatch_id:"impl".into(), kind:"route".into(), producer:"saddle.synthetic".into(), basis_event_ids:vec![], decision_event_id:None, previous_brief_event_id:None,
+    }, Observation {
+        observed_at:Value::Null,
+        payload:json!({"router_model":"synthetic","router_version":"v1","rules_version":"v1","gaps":[]}),
+        bodies:vec![serde_json::from_value(json!({"role":"summary","path":summary})).unwrap(),serde_json::from_value(json!({"role":"request","path":request})).unwrap()],
+    }, None).unwrap();
+    s.record_begin(&op).unwrap();
+    let mut page = open(&root);
+    press(&mut page, KeyCode::Enter);
+    assert!(shown(&mut page).contains("‹选择正文 · Enter›"));
+    press(&mut page, KeyCode::Enter);
+    assert!(shown(&mut page).contains("选择要阅读的正文"));
+    press(&mut page, KeyCode::Down);
+    screen(&mut page, 40, 20);
+    press(&mut page, KeyCode::Enter);
+    let body = shown(&mut page);
+    assert!(
+        body.contains("REQUEST ONLY") && !body.contains("SUMMARY ONLY"),
+        "{body}"
+    );
+    press(&mut page, KeyCode::Esc);
+    assert!(shown(&mut page).contains("‹选择正文 · Enter›"));
 }
