@@ -1,63 +1,49 @@
 # Saddle 交接
 
-更新：2026-10-02。当前分支 main；本次交接前 HEAD 与 origin/main 均为 `8c3f157`，工作区干净。
+更新：2026-10-03。当前 main；Corral Rust 核心实现 `820fda2`，测试/产物记录 `ff58742`，合并 `2527c8f`（已推送），收尾空提交 `9020fec`。本交接提交后需确认 main 与 origin/main 同步、工作区干净。
 
-## 会话摘要
+## 当前状态
 
-单任务遥测结束边界已实施、审查、合并推送，并经用户授权完成日常部署。用户已重新打开 Saddle；宿主、Drover 和两份 dispatch 技能核验正常。当前没有正在实施或等待审查的任务，等用户下一项需求。
+用户批准把最后一层 Corral infra 真正用 Rust 迁入 Saddle；主控已直接实施、验证、合并。没有委派，没有创建 Tasks 任务，没有记录本次遥测。**源码完成，真实部署尚未进行；日常使用仍是原安装和原 Corral。**
+
+用户要求使用感觉保持一致：关闭 Saddle 不停 agent，外部仍能 `corral attach`，重开恢复同一实例；原 Corral 仓库只读保留、独立可用，不产生对宿主/插件/遥测的反向依赖。用户现有主控都有 HANDOFF，部署后由用户自行重开，不热替换旧 Python 进程，不自动关闭它们。
 
 ## 已完成
 
-- 功能候选 `2c29d91`，合并 `d8e31f6`，代码收尾 `9231309`；部署记录 `5fca623`，部署收尾 `8c3f157`，均已推送。
-- Saddle 增加正式 trace close、SQLite schema v2、v1 只读兼容、结束后拒绝追加及有限查询区间；合法旧 context 不妨碍业务执行一次。Drover 在 Accept/Return 后尝试 close，Submit 不 close。技能资源更新 revision 3。
-- 主控与独立 Codex 重档审查通过，必须改0、建议改0。主控原标准441过1败5忽略、Clippy通过；唯一旧Theme测试预期适配后目标1绿，补遗漏24 targets共128绿；独立13项目标绿。不能改称一次全套绿。
-- 附带只适配旧示例漏Theme参数和旧workflow默认颜色断言，未修改Theme生产行为。原始证据及逐项裁定已落实施核对/独立审查文档。
-- 本项开发和部署未选择遥测，没有复用旧Theme trace，也没有关闭旧trace、操作Tasks队列或修改Corral。
-- 本次实施、独立审查工作区及分支已清理，目录删除后关闭对应自建agent；设计会话此前也已清理，迟到提醒若not_found直接忽略。
+- 独立 `crates/corral-core`：Rust CLI、pen/PTY/socket、attach、终端模式、状态/事件/cursor、输入确认、after、环境重建、Rust hook、技能安装；pi/omp 使用随包 TypeScript 扩展。新运行核心和新测试无 Python 源码，无旧 Python fallback。
+- 保留公开 `corral start/status/send/reply/attach/stop/…` 和子进程边界。默认 `corral` 指同包程序，显式路径覆盖保留；宿主、采集入口、Drover 通过通用 `SADDLE_AGENT_BIN` 使用一致程序路径。任务/遥测业务未改。
+- 修正 macOS current_exe 保留软链接的问题：内部 worker/hook、宿主同包定位、传给插件的宿主路径均固定到真实版本路径。升级只切入口，存活会话引用的版本目录必须保留。
+- `scripts/package.sh NEW_DIRECTORY` 生成不可变成套目录，包含 saddle/corral、Drover/Diff 包和操作资源；拒绝覆盖目标，不安装、不注册、不改链接。
+- 本次分支/worktree `corral-rust-core` 已清理；没有为本任务创建 agent，所以没有关闭任何 agent。
 
-## 日常部署现状
+## 验证结果与限制
 
-- 用户退出后，确认无Saddle实例和宿主/Drover进程，取得SQLite一致性备份，再成套替换宿主与Drover包。用户已重新打开，核验时实例 `693d73ccc278e385`。
-- 安装源码 `bf056e1`；日常 `~/.local/bin/saddle` 仍链接到 `../saddle-worktrees/.target/release/saddle`。宿主SHA256：`5e1fecbd977ed311479abe2f9e92a451fea5b203dfec93dcb9271759d82d9c5d`。
-- Drover包 `plugins/drover/dist/drover-plugin`，二进制SHA256：`58b85bffdb53314237153fdebe2c08b709b575525f3cbd8a0bcd7e998cfc765a`。实际进程存在，公开projects只读请求最终complete/result.ok=true。
-- Claude Code、Codex两处corral-dispatch技能均 `revision=3 / owned_current`，逐文件匹配源码。主控已重读新版指引；其他已运行agent的上下文不会被安装强制刷新，下一次选择记录时须重新读同版本遥测操作.md。
-- config.toml/plugins.toml逐字未变。最终只读核验时真实数据库仍v1；下一次正常写连接才事务升级v2。未为验证写真实库或close历史trace。公开settings get正常：enabled=true、generation=3。
-- 长期备份：`~/.local/share/saddle/backups/telemetry-boundary-20261002-234002`，含旧宿主/完整Drover包/配置/技能/所有权，以及SQLite backup快照（v1，integrity ok）。
-- 部署证据指针 `/tmp/saddle-boundary-deploy-path`，目录 `/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-boundary-deploy-7tjwbixl`。哈希、构建及安装/启动核验详见部署记录。
-- 未发布远端release，未做真实任务端到端重验。旧二进制不能读写v2；回退需接受遥测不可用或恢复迁移前快照（会损失快照后的记录），不得自行回退。
+- 核心最终22项通过；旧/新 CLI 与旧/新 pen 的生命周期、事件/回复/cursor、四种 attach/resize/detach 组合通过。最终 release 包退出/重开 TUI 后 agent PID/instance 不变，未产生遥测 trace。
+- 首次标准69过11败3忽略，补根目标379过2败5忽略、补其他workspace128过0败；保留原失败，不能说一次全套绿。
+- 用户 Claude 的 pet-packs 构建曾替换共享 `.target/debug/saddle`，界面失败截图出现本分支没有的 Pet 设置。全部11个调用宿主二进制的根目标改用 `.target/aarch64-apple-darwin/debug` 重验并补2个examples：193过2败4忽略，其中workflow101过0败4忽略。
+- 剩余两项 agent_capture ready屏障超时限定复核2过，最终软链接路径1过；初次超时根因未证实，未放宽断言/预算、未改遥测逻辑。最终核心22、插件路径2、Clippy均通过；完整核对见下方实施核验，不再无条件重复全套。
+- 只验证 macOS arm64 与合成 agent，未跑真实 Claude/Codex/pi/omp 产品请求。不要把假进程验证说成四种真实agent完整验收。
+- 证据集中为 `/tmp/saddle-corral-*.log`；明细/原失败/裁定在 `docs/调研/Corral核心Rust集成-实施核验.md`。
 
-## 当前规则与边界
+## 构建产物与下一步
 
-- 口头要求记录只覆盖当前任务，含同任务返工、审查和实际收尾；主控完成交付且无待决事项后负责正式close。下一独立任务未要求则不记录，再要求新trace。阶段产出不是任务结束，closure note也不等于close。
-- Tasks原项目默认和本次记录覆盖、手动Submit/Accept/Return流程不变；绑定run的trace由Drover终态结束。已结束trace不能重开，历史仍可读。设计理由与契约以docs/DESIGN.md及边界设计为准。
-- 主控按AGENTS和corral-dispatch技能分派，用户明确要求自己做时照用户指令；不回退dlog/旧route.py。涉及Corral改动或反向依赖，先停相关部分告知用户。
-- 纯UI任务严格限定显示范围，不擅改展示语言、不扩业务逻辑或验证预算。当前Theme已有Dune/Tide/Lagoon/Terminal；终端默认色跟随主题，显式ANSI/RGB保留。此前“Theme待实施/待重开”旧交接已过期。
-- 不自动迁移Corral，不关闭用户agent，不推进真实任务队列。旧Drover/dispatch-log已退出日常链路，旧本地数据保留，不恢复服务。
+- 最终干净生产源码 `820fda28d52028ef66c1a0d2953410e5b4a94900` 的临时包：`/tmp/saddle-corral-820fda2.xaHm6L/product`，指针 `/tmp/saddle-corral-package-final-path`。BUILD.txt 含各二进制 SHA256；临时目录若被清理可重建。ff58742之后只改测试/文档，不改该包生产代码。
+- 尚未更换真实 saddle/corral 命令链接、配置、技能或插件注册，未迁移/关闭真实 trace、未动队列、未发布远端 release。下一步是用户安排真实部署切换，再做自建新会话的实际体验核验。
+- 部署必须先备份旧入口/配置/技能，再把成套包放持久版本目录、切链接。不要覆盖共享 `.target/release` 当成新版安装，不删除仍有 pen/hook 引用的版本。现有全局 corral 技能链接受所有权保护，`install-skills` 会保守报 foreign；需在部署时单独处理链接，不写原 Corral 仓库。
+- 上轮遥测边界日常部署与备份详情仍在 `docs/任务/遥测单任务边界-部署记录.md`；本次没有改动那套安装。此前“不能自动迁移Corral”的旧交接已被本次源码实施授权替代，真实安装切换仍未授权执行。
 
-## 保留会话与工作区
+## 保留项
 
-最新公开核对仅剩用户会话：`corral/main`（158b4aa04dd7）、`saddle-e2e-20261002-113520/main`（feb85d825521）、`saddle/main`（4ebbecf235f8）。不要送话或关闭其他用户会话。
-
-保留worktree，不自行清理：
-
-- `../saddle-worktrees/review-telemetry-design`：detached 5ddd544。
-- `../saddle-worktrees/t38-dispatch-study`：c15bc4d。
-- `../saddle-worktrees/t55-notification-flow`：3cc417d。
-
-已关闭本次自建实施f99302444ec2、审查3459f08440da及原设计7f019dd5dae6，不恢复。
-
-## 待办与已知限制
-
-- 暂无本任务必须继续处理的工作。下一步等待用户，不自行追加测试或开发。
-- 历史Drover两次budget_exhausted根因未知；一次合成探针仅定位shell入口后至宿主首回执前，本轮主控14项通过不等于原因修复。没有调整预算；取消路径独立审查仅静态核对。
-- 既有非阻断03B S1：资源安装失败时skills保留原因提示可能遗漏；目录身份核对与rmdir非原子。04B S1：无MAIN_AGENT且准备失败时一行反馈可能误写sent the plain way，交付首行及not_sent/manual_text正确。不顺手扩修。
-- 旧Theme trace `e72bb30e-3fc2-4f69-b910-36c20ee77636` 未操作；历史closure不自动转为正式结束。不得把它用于新任务。
+- 用户要求只打开的 `saddle/claude-1`（此前instance cb7fea1096b7）由用户自己布置 pet-packs；其 `../saddle-worktrees/pet-packs` 继续保留，不送话、不停止、不替它合并或安装。会话身份如需操作必须先公开核对。
+- 保留用户所有既有 agent。保留 `review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow`；没有修改原 Corral 仓库。
+- 单任务遥测规则仍是一次明确授权对应一条新 trace，完整交付后正式 close；下一任务不自动续记。不要复用旧Theme上下文。本任务没有记录选择。
+- 既有资源失败提示/Tasks降级文案等历史非阻断项没有扩修；详见先前审查记录。
 
 ## 优先阅读
 
-1. `AGENTS.md`、`docs/DESIGN.md`、`docs/任务遥测接口契约.md`。
-2. `docs/遥测单任务边界设计.md`、`docs/任务/遥测单任务边界-实施.md`。
-3. `docs/任务/遥测单任务边界-实施核对.md`、`docs/任务/遥测单任务边界-独立交叉审查.md`。
-4. `docs/任务/遥测单任务边界-部署记录.md`、`docs/遥测使用.md`、`plugins/drover/README.md`。
+1. `AGENTS.md`、`docs/DESIGN.md`。
+2. `docs/Corral核心Rust集成设计.md`、`docs/调研/Corral核心Rust集成-实施核验.md`。
+3. `crates/corral-core/README.md`、`scripts/package.sh`、`src/agent_program.rs`。
+4. `docs/插件协议.md` 第19节、`plugins/drover/README.md`。
 
-早期阶段01—05、UI整理和Theme细节已有对应任务/审查文档及Git历史，不再在HANDOFF重复过期安装状态。
+后续 cargo 仍共用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。并行项目构建会覆盖同名顶层binary；需要启动固定候选时用不可变暂存包或明确隔离的target路径，不能把被覆盖的测试结果当本候选证据。
