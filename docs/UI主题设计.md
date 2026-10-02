@@ -77,3 +77,7 @@ Reset/default和ANSI取决于终端；Viewer默认前景/背景按末尾已批�
 
 用户在Tide左冷右暖截图后批准右侧默认背景及默认文字跟随Theme，显式颜色保留。采用已有bg/text作为终端渲染默认色；两个绘制入口与普通shell共用，不改输出解析/历史或PTY通信。Tide补明确冷色bg/text，Dune/Terminal保留default；旧配置和用户显式覆盖不改写。此项替代上文“Viewer输出颜色不属于主题”中关于默认色的限制，显式ANSI/RGB及动态调色板依旧保留。
 本轮仅显示，ColorRequest/default_rgb查询回执仍沿用现状，不承诺运行中的agent重新选择自己的显式配色；不扩大成终端协议同步。
+
+## 2026-10-02 新增Lagoon
+
+用户提供纯色#0c1616截图并要求新增该色主题。追加Lagoon/lagoon，在现有Theme字段内完成深墨绿背景配套色；Settings排列Dune/Tide/Lagoon/Terminal。原三套预置及用户覆盖语义不变，不改终端或插件协议。背景与右侧默认终端一致沿已有bg/text机制。

@@ -1453,3 +1453,7 @@ Dispatch仅setup_note/setup_files.label展示元数据恢复英文并分段，�
 ### 2026-10-02 Theme终端默认色补充
 
 用户批准右侧终端默认背景/文字跟随Theme。复用bg/text，仅渲染默认色回退改为当前有效Theme；显式索引/RGB及动态调色板优先级、反色/历史/输入保持原样。Tide的bg/text从default补为协调冷色，使右侧默认区域随主题变化；Dune/Terminal不变。此决定替代前述为Viewer保持Tide bg/text default的取舍。无新配置或插件/Corral依赖，ColorRequest查询协议不在本次显示改动范围。详见docs/任务/Theme终端默认配色.md。
+
+### 2026-10-02 用户参考图：Lagoon墨绿预置
+
+用户要求以提供截图再加一个主题。取色为全图#0c1616，新增英文Lagoon/配置lagoon，主背景及Agents背景用该值；其余在现有语义字段配协调墨绿色层次。顺序Dune/Tide/Lagoon/Terminal，不改原三套主题/覆盖或渲染机制，不自动切用户配置。纯配色及枚举注册，实施范围见docs/任务/Lagoon墨绿主题.md。
