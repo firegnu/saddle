@@ -2,6 +2,14 @@
 
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
+
+## 最新：Projects / 项目表单 / 通知页面已整理安装
+
+- 用户截图指出少量内容铺满全屏、操作与字段分离。主控直接纯UI调整，保持英文，不委派不遥测：Projects居中限宽并移除无关队列工具栏，名称/状态接收者分列，完整路径保留；添加/设置/选择器紧凑居中，字段边框、只读标记、就近操作；通知明确单选标记与底色，Save/Cancel在底部。宿主外框与业务逻辑未改。
+- 功能dfef084、合并c5360bd已推送，相关26个不同目标通过（project_setup2/UI22/通知保存失败重试1/表单布局1），48×24、80×24、160×50布局检查；必要插件release/diff check通过，未全仓/Clippy。首次Projects测试扩展引用私有字段编译失败，修正后通过，不计功能RED。日志/tmp/saddle-project-dialogs-*.log，完成记录docs/任务/Tasks项目与通知页面整理.md。
+- 日常Drover二进制已原子替换，SHA256 352fcf3703c3a9ccdad7eebcb4e71f12441c868a67ee8acc87578c80e26e4e2c；完整包备份~/.local/share/saddle/backups/tasks-project-dialogs-20261002-180730，记录/tmp/saddle-project-dialogs-install.json。manifest/宿主/配置/任务数据未改，未关闭运行中进程；用户需Settings → Plugins停用再启用Drover，无需重启Saddle。
+- 本轮工作区和分支已清理、空提交收尾完成；等用户复看，不扩大UI范围。主题功能仍待全部UI调整结束，旧设计review/t38/t55保留。
+
 ## 最新：Run details顶部主状态已安装
 
 - 用户要求一眼看出任务是否需要人工处理，现有展示不丢。英文Run details标题下新增底色/粗体主状态及动作提示：YOUR REVIEW NEEDED表示本次最新收尾报告可读需审阅，AWAITING YOUR ACCEPTANCE表示已提交待验收，ACCEPTED表示已验收，COMPLETION UNCONFIRMED表示无可读收尾报告；加载/刷新失败不拿旧报告显示待批准。没有把报告出现当作成功，也不改变人工提交/验收。
