@@ -55,7 +55,7 @@ Agents 和 Tasks 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，
 ### 环境要求
 
 - Rust stable **1.96 或更高版本**。
-- `corral`（Drover 仅在启用其插件时需要） 在 `PATH` 中，或在配置中指定路径。
+- 随 Saddle 构建的 Rust `corral` 核心；Claude Code、Codex 等 coding agent CLI 仍由用户安装。可选 Drover 插件自带任务引擎，无需旧 Python Corral/Drover 程序。
 - Agents 的 Git 摘要需要 `PATH` 中有 Git 2.45 或更高版本（依赖 `--no-lazy-fetch`）；更旧或没有 Git 时显示 `git unavailable`。
 - 支持 Unicode 和鼠标的终端，建议支持真彩色。
 
@@ -66,17 +66,18 @@ Agents 和 Tasks 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，
 ```sh
 git clone https://github.com/firegnu/saddle.git
 cd saddle
-cargo run --release --locked
+cargo build --workspace --bins --release --locked
+./target/release/saddle
 ```
 
-也可以从仓库安装可执行文件：
+也可以构建不可变产品目录（不安装、不切换正在运行的程序）：
 
 ```sh
-cargo install --path . --locked
-saddle
+./scripts/package.sh /absolute/new/saddle-version
+/absolute/new/saddle-version/bin/saddle
 ```
 
-可在 Agents 的 New 中启动 agent，也可接入已有 corral 会话。队列项目仍需用 drover 登记；saddle 不初始化队列项目。
+可在 Agents 的 New 中启动 agent，也可接入已有 corral 会话。任务项目通过 Drover 插件登记；宿主不读取任务业务文件。
 
 ### 第一次使用
 
@@ -294,3 +295,7 @@ cargo run --example compare_parsers
 预览是 Ratatui 网格导出的 SVG 和文本，不是真实 agent 录屏。合成检查不代表已验证所有 agent 终端应用的兼容性。
 
 架构决定与验证记录见[设计文档](docs/DESIGN.md)和[交接记录](HANDOFF.md)，目前均使用中文。
+
+### 同包 Corral 与升级
+
+默认 `corral = "corral"` 定位与宿主相邻的运行核心，缺失时报错，不回退 PATH 中的旧程序；显式路径和 `saddle agent --corral` 覆盖仍保留。普通终端继续使用 `corral start/attach/status/stop`，无需先打开 Saddle。产品版本目录中的二进制不能原地覆盖：存活 pen/hook 使用启动时的绝对路径，升级只切入口，旧会话退出前保留旧版本。真实安装切换独立于源码构建，见 [Rust 核心设计](docs/Corral核心Rust集成设计.md)。

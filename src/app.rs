@@ -1,6 +1,6 @@
 use crate::{
     agents::Panel,
-    config::{Config, expand_home},
+    config::Config,
     corral::{Client, Poller},
     git,
     input::{Focus, Route, encode_key, encode_mouse, encode_paste},
@@ -226,7 +226,9 @@ impl App {
         // The config loaded without error, so an existing file is where it came from.
         let config_from_file = config_path.exists();
         let client = Client {
-            program: expand_home(&config.corral).to_string_lossy().into_owned(),
+            program: crate::agent_program::resolve(&config.corral)?
+                .to_string_lossy()
+                .into_owned(),
         };
         let cwd = std::env::current_dir()?.display().to_string();
         let (layout_store, saved) =
@@ -261,12 +263,13 @@ impl App {
             };
             actions.start(Action::Attach(name, ticket, None));
         }
-        let plugins = crate::plugins::Manager::with_core(
+        let plugins = crate::plugins::Manager::with_agent_program(
             config_path
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
                 .join("plugins.toml"),
             core_catalog,
+            std::path::PathBuf::from(&client.program),
         );
         Ok(Self {
             plugins,

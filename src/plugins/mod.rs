@@ -80,6 +80,7 @@ struct Running {
     theme: serde_json::Value,
 }
 pub struct Manager {
+    agent_program: Option<PathBuf>,
     pub registry: Registry,
     pub notices: Notices,
     core_catalog: core::Catalog,
@@ -100,13 +101,39 @@ impl Manager {
     pub fn with_core(path: PathBuf, core_catalog: core::Catalog) -> Self {
         Self::with_resources(path, core_catalog, resources::Resources::from_environment())
     }
+    pub fn with_agent_program(
+        path: PathBuf,
+        core_catalog: core::Catalog,
+        agent_program: PathBuf,
+    ) -> Self {
+        Self::build(
+            path,
+            core_catalog,
+            resources::Resources::from_environment(),
+            Some(agent_program),
+        )
+    }
     pub fn with_resources(
         path: PathBuf,
         core_catalog: core::Catalog,
         resources: resources::Resources,
     ) -> Self {
+        Self::build(
+            path,
+            core_catalog,
+            resources,
+            crate::agent_program::bundled().ok(),
+        )
+    }
+    fn build(
+        path: PathBuf,
+        core_catalog: core::Catalog,
+        resources: resources::Resources,
+        agent_program: Option<PathBuf>,
+    ) -> Self {
         let registry = core::registry(path, core_catalog);
         let mut this = Self {
+            agent_program,
             registry,
             core_catalog,
             notices: Notices::default(),
@@ -212,8 +239,12 @@ impl Manager {
                 .context("registration missing")?;
             let manifest = Manifest::read(&e.directory)?;
             ensure!(manifest.id == id, "manifest identity changed");
-            let runtime =
-                Runtime::with_notices(&e.directory, manifest.clone(), self.notices.clone());
+            let runtime = Runtime::with_agent_program(
+                &e.directory,
+                manifest.clone(),
+                self.notices.clone(),
+                self.agent_program.clone(),
+            );
             self.running.insert(
                 id.into(),
                 Running {

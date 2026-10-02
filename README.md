@@ -50,7 +50,7 @@ Agents are native Rust widgets; Drover renders its own Ratatui view through the 
 ### Requirements
 
 - Rust stable **1.96 or later**.
-- `corral` on PATH or configured by path; the optional Drover plugin owns its task engine and requires no old Drover CLI or Python.
+- The bundled Rust `corral` runtime (built with Saddle); external coding agent CLIs such as Claude Code or Codex remain separately installed. The optional Drover plugin owns its task engine. Neither runtime requires the retired Python Corral/Drover programs.
 - Git 2.45 or later on `PATH` for the Agents Git summary (it needs `--no-lazy-fetch`); older or missing Git shows `git unavailable`.
 - A terminal with Unicode and mouse support; true color is recommended.
 
@@ -61,14 +61,15 @@ Development and interactive validation currently take place on macOS. Other plat
 ```sh
 git clone https://github.com/firegnu/saddle.git
 cd saddle
-cargo run --release --locked
+cargo build --workspace --bins --release --locked
+./target/release/saddle
 ```
 
-Or install the executable from the checkout:
+Or build an immutable product directory (does not install or switch running programs):
 
 ```sh
-cargo install --path . --locked
-saddle
+./scripts/package.sh /absolute/new/saddle-version
+/absolute/new/saddle-version/bin/saddle
 ```
 
 Use `saddle --help` to see the command-line options.
@@ -176,7 +177,7 @@ refresh_ms = 1000
 
 | Setting | Meaning |
 |---|---|
-| `corral` | corral executable name or path |
+| `corral` | `corral` selects the adjacent bundled runtime; other names/paths explicitly select an external program |
 | `left_width` | Preferred width of the left column, in terminal cells |
 | `left_split` | No longer used: Agents take the whole left column with optional plugin views. Still accepted (between 0 and 1) so existing configs keep loading |
 | `refresh_ms` | Background refresh interval in milliseconds |
@@ -188,7 +189,7 @@ refresh_ms = 1000
 | `theme` | Built-in palette: `dune` (default, the original look), `tide` (cool blue-gray), `lagoon` (deep green-teal) or `terminal` (only the terminal's default and ANSI colors) |
 | `colors` | Optional flat table of per-color overrides on top of `theme` |
 
-Command paths support `~/`. Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom corral/cwd values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). Legacy `--dispatch-log <value>` is accepted but deprecated and ignored; new manifests omit it. The plugin owns schema 2 task data and explicit actions; the host does not read Drover projects or task state.
+Command paths support `~/`. The default never falls back to PATH if the bundled runtime is missing. Host plugins receive the resolved absolute path as `SADDLE_AGENT_BIN`; explicit plugin `--corral` overrides it. Keep old product directories while running agents still use their hooks. See [Corral integration](docs/Corral核心Rust集成设计.md). Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom corral/cwd values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). Legacy `--dispatch-log <value>` is accepted but deprecated and ignored; new manifests omit it. The plugin owns schema 2 task data and explicit actions; the host does not read Drover projects or task state.
 
 [config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above; its colors are commented out so they follow the theme. For a theme with a small override, add:
 

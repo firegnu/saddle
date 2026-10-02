@@ -1499,3 +1499,7 @@ telemetry-task-boundary按上述定稿实现宿主、Drover、查询英文ended�
 用户追加硬约束：“不能有任何python的代码了”。迁入的 Corral 实现、hook、worker、随包资源及配套新测试均不带 Python，构建/运行不能调用旧 Python 程序兜底。原独立 Corral 仓库仍不改动。已询问是否连部署后既有 Python pen 也要求全部退出；这与原会话不中断存在取舍，答复前不自行停止会话，也不把保留旧 Python 进程视为用户已批准。此待确认项不削弱新源码/发布包完全无 Python 的要求。
 
 后续答复已收敛：现有 pen 不动，用户部署后自行重开主控并读已有 HANDOFF；不要求旧 Python 进程原地转换。用户批准主控直接完成兼容/安装设计并实施 Rust 核心，不分派、不遥测。以独立底层包、现有 CLI 契约与原状态/协议互操作为范围；不改原 Corral 仓库，不切换真实安装。安装及默认路径规则见核心设计 8.1。此前“旧会话处置待答复”已失效。
+
+## 2026-10-03 Corral Rust 核心实施
+
+主控按用户授权直接实现独立 `crates/corral-core` 与 `corral` CLI，Saddle 继续经公开命令消费底层，无反向依赖。迁入运行代码、hook/worker 和新测试均无 Python；原 Corral 仓库只读保留。默认路径改为宿主同目录 Corral，进程插件通过通用 `SADDLE_AGENT_BIN` 使用宿主解析结果，Drover 显式覆盖优先；无缺失回退或业务重发。`scripts/package.sh` 生成不可变成套目录，不进行真实部署。实现细节见[核心设计](Corral核心Rust集成设计.md)，执行证据和限制见[实施核验](调研/Corral核心Rust集成-实施核验.md)。用户现有 pen 和原安装均未切换。
