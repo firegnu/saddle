@@ -3,6 +3,15 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：右侧终端默认配色跟随Theme，已派发
+
+- 用户看到Tide左冷右暖截图后批准调整默认背景和默认文字，显式颜色保留。任务docs/任务/Theme终端默认配色.md，设计补充已写；不改终端输出解析/颜色查询协议/PTY/Corral，不扩大业务逻辑。
+- saddle/dev-theme-terminal-1 instance1fbad82a5aa3，Claude opus[1m]/high；theme-terminal-colors分支/worktree，基线05375f2。JEV常规/交叉不要/影响null，主控按看得见：一组直接渲染检查+diff check，不全套Clippy；主控仅核增量和证据，不自行写功能。
+- 现有bg/text用于默认色；Tide补冷色bg/text，Dune/Terminal保持default。agent显式索引/RGB/动态调色板继续保留；两个渲染入口保持一致。未要求程序依据主题重新计算自身显式配色。
+- trace同下；新dispatch c545a60c-2707-40cc-b2f0-1f0a04c3beee，原telemetry目录viewer-reply-context.json用于reply。route/start配对stored，原始缺口保留；提醒/tmp/saddle-theme-terminal-reminder.txt已挂3600。status working时重挂，完整DONE后核审查，不重开原已清理Theme agent。
+- 通过后合并推送清理/关闭对应agent/空提交及遥测实际收尾，再必要构建备份安装供用户体验；不写真实配置/数据/队列、不动其他worktree或用户agent。
+
+
 ## 最新：Theme已合并收尾并安装，待用户重开
 
 - Dune/Tide/Terminal及Colors顶部Theme、整套草稿切换、单项覆盖/Default、Save/Cancel、旧配置观感兼容已实施审查通过。功能63e8b3c，合并d1d5855；文档0a991c3，清理空提交fc6f97e。具体取舍见docs/UI主题设计.md和docs/任务/UI主题-主控核对.md。
