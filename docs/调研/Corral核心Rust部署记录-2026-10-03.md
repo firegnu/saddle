@@ -1,6 +1,6 @@
 # Corral Rust 核心部署记录
 
-## 准备完成，尚未切换
+## 部署准备（已完成）
 
 用户同意按新旧主控交接清单推进，先准备包和备份；待用户退出 Saddle 界面后再切换。现有主控继续运行，本轮未记录遥测、未操作 Tasks。
 
@@ -24,7 +24,7 @@
 | plugins/drover/bin/saddle-drover | 9a3b138b2d60abe6d032cf6f1d16e26a2088be72fe49e70e73c84798cda38256 |
 | plugins/diff/bin/saddle-diff | d661e34cf2b7f7523216d67ba7070bfe48d0ed076450875440b03b44ba2a82ba |
 
-## 待切换
+## 切换步骤（文件切换已完成，重开核验待执行）
 
 1. 用户退出 Saddle 界面后，公开 ctl 和精确进程检查确认已退出；不要停 Corral 主控。
 2. 复核配置/注册/技能与备份未变，切换 `~/.local/bin/saddle` 与 `corral` 至新版本的相邻程序；只更新 Drover/Diff 注册路径，保留其他插件及启用状态。配置 corral 当前为默认值 `corral`，两份旧插件 manifest 无显式 `--corral` 覆盖（实际切换前再核）。
@@ -32,3 +32,15 @@
 4. 通知用户重开，核宿主、插件和原会话可用。然后另按交接清单创建新主控接续，未经用户确认不关闭旧 `saddle/main`。
 
 准备时公开实例为 `693d73ccc278e385`，显示旧 `saddle/main` instance `4ebbecf235f8`；执行时重新查询，不依赖旧实例号定位。真实切换/新主控接续均未执行。
+
+## 实际切换结果
+
+用户明确已退出 Saddle 并从外部 attach 当前主控。切换前 ctl instances 为空，精确进程名检查无 saddle/saddle-drover/saddle-diff；旧主控仍为 `4ebbecf235f8`、attached=1。
+
+- 当前配置、注册、宿主、原 Corral 启动脚本、两份插件包、四处技能及资源所有权记录均与准备备份一致；包中四个程序校验再次通过。
+- 在临时目录仅替换 Drover/Diff 两个 directory 字段，新宿主只读 plugin status 确认两者 enabled、manifest_readable。
+- 再确认无 TUI 后，持 plugins.lock 写入两项注册路径；原子切换两个命令软链接到 `~/.local/share/saddle/versions/7755bb8/bin/{saddle,corral}`。保留原插件包及旧目标，没有覆盖编译目录文件，没有停止任何 agent。
+- 新入口 help/version 成功；Rust Corral 查询旧 `saddle/main` instance 仍为 `4ebbecf235f8`，where 返回 agent_pid=72029。用户当前旧会话保持，未转换为 Rust pen。
+- 新宿主只读 plugin status 确认两个路径正确、启用状态保持、manifest 可读。config.toml 与资源所有权文件字节未变；技能 dry-run 仍为 same、written=false，无需写入。原 Corral 仓库干净。
+- 证据：原日志目录中的 `installed.json`、`old-controller-after.json`、`installed-plugin-status.json`、`installed-saddle-help.txt`。
+- 已通知用户重新打开。**尚待运行中的插件启动/界面回读核验，以及之后单独的新主控交接；没有宣称实际编程 agent 全链路验收。**
