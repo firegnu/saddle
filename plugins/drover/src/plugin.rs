@@ -24,7 +24,6 @@ pub struct Drover {
     pub panel: queue::Panel,
     corral: String,
     refresh: Duration,
-    dispatch_log: String,
     worker: drover::Worker,
     survey: drover::Surveyor,
     channel: drover::ChannelWorker,
@@ -73,17 +72,12 @@ impl Drover {
         } else {
             projects.first().cloned().unwrap_or(cwd)
         };
-        Self::with_commands("corral".into(), "dlog".into(), cwd)
+        Self::with_commands("corral".into(), cwd)
     }
-    pub fn with_commands(corral: String, dispatch_log: String, cwd: String) -> Self {
-        Self::with_refresh(corral, dispatch_log, cwd, REFRESH)
+    pub fn with_commands(corral: String, cwd: String) -> Self {
+        Self::with_refresh(corral, cwd, REFRESH)
     }
-    pub fn with_refresh(
-        corral: String,
-        dispatch_log: String,
-        cwd: String,
-        refresh: Duration,
-    ) -> Self {
+    pub fn with_refresh(corral: String, cwd: String, refresh: Duration) -> Self {
         let client = drover::Client {
             corral: corral.clone(),
             cwd: cwd.clone().into(),
@@ -117,7 +111,6 @@ impl Drover {
             input_revision: 0,
             corral,
             refresh,
-            dispatch_log,
             detail: None,
             confirmation: None,
             pending: None,
@@ -509,7 +502,6 @@ impl Drover {
         }
         if self.visible {
             self.panel.tick_links();
-            self.panel.tick_dispatch(&self.dispatch_log);
         }
         if changed {
             context.redraw();
@@ -831,7 +823,6 @@ impl Plugin for Drover {
         self.preferences
             || !matches!(self.panel.page, queue::Page::List)
             || self.panel.reading_link()
-            || self.panel.reading_dispatch()
     }
     fn cursor(&self) -> Option<[u16; 2]> {
         self.cursor

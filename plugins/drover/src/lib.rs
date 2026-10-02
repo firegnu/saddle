@@ -3,7 +3,6 @@ pub mod buttons;
 pub mod command;
 pub mod config;
 pub mod detail;
-pub mod dispatch;
 pub mod drover;
 pub mod git;
 pub mod launch_edit;

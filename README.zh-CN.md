@@ -31,7 +31,7 @@ saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，承载 [corral](h
 
   未亮柱只留底点，选中与否图标一致。没有有效标签时不显示图标但保留对齐；所有 agent 都没有有效标签时不占该列。图标只反映委派时的公开标签，不代表运行时实际 effort。
 - **每个 agent 的 Git 摘要：** 目录上面一行，例如 `⎇ dev-t12 ↑2 main     +18 -4 ?1`，描述该 agent 公开 corral `cwd` 所在 worktree：当前分支（与 agent 名称相同时只显示 `⎇`）；`↑n 基准`，即比本地 `main` 多的提交数（在 `main` 上则相对其配置的上游，即尚未推送的提交）；未提交的增删行数（暂存与未暂存一起相对 HEAD，按 Git 内建 text/eol 属性规范化后比较，已提交的 CRLF 文件只改时间戳不算改动；按路径统计、不做重命名检测，纯改名算全删加全增）；未跟踪文件数。数字属于目录而不是 agent：共用同一 worktree 的 agent 显示同一行，也不能说明提交是哪个 agent 或哪个任务做的。无法确定的值显示 `—`（没有本地 `main`、没有上游、detached HEAD、还没有提交）；二进制文件没有行数，单独显示为 `N binary`；增删放不进分支那一行时整组移到下一行右对齐；不是 Git worktree、目录已删除或超时显示 `git unavailable`。约每 5 秒刷新，只读本地数据，慢仓库会拖慢所有目录的这一轮。不 fetch，缺对象时也不补取。无论哪个 attributes 来源，都不运行外部 diff、textconv、fsmonitor 钩子或 clean/smudge/process filter；改动的文件需要这类 filter 才能比较时，增删行显示 `+— -—`。父仓库的摘要不进入子模块工作区：子模块里未提交的改动不计入，子模块提交变了按 gitlink 变化计（`+1 -1`）。不顺带写索引，也不继承 `GIT_DIR` 等 `GIT_*` 环境变量。agent 之后 cd 到别处不会跟随。
-- **Drover 插件（可选）：** 任务列表、项目切换、详情、Links/Dispatch、编辑与显式派发/提交/接受/退回。通过 **Plugins → Drover** 打开；关闭视图继续后台观察，停用才停止。不会自动推进任务。见[安装与操作](plugins/drover/README.md)。
+- **Drover 插件（可选）：** 任务列表、项目切换、详情、Links/Telemetry 关联跳转、编辑与显式派发/提交/接受/退回。通过 **Plugins → Drover** 打开；关闭视图继续后台观察，停用才停止。不会自动推进任务。见[安装与操作](plugins/drover/README.md)。
 - **Attention：** 汇总需要输入/出错的 agent、新回复和已启用插件的当前条目。点击只打开来源，不回答或推进业务。Drover 插件通过通用接口提供待验收任务与失败历史；历史标记已看在插件中操作。
 - **Settings：** Attention 同一行右侧的 `Settings` 入口（或在 Agents 按 **,**）编辑 saddle 启动时使用的配置文件，路径显示在顶部。**General** 含侧栏宽度和刷新间隔；**Colors** 按用途分组列出全部 `[colors]` 值，带色块和小范围预览；**Advanced** 含 corral 命令。修改先留在草稿中，**Save / Ctrl-S** 才保存；**Cancel / Esc** 不改文件；**Default / Ctrl-D** 把当前项恢复默认值，仍需 Save。保存只写改动的键，保留注释和其余内容，文件或目录不存在时自动创建。无效值会报错并保留草稿。若 Settings 读取后文件在磁盘上被改动，则不保存：**Keep my edits** 重读文件并保留草稿，**Discard my edits** 采用文件现状。保存后的颜色和侧栏宽度立即生效（agent 输出保留自己的颜色）；标注 `Restart required` 的设置下次启动生效。
 - **任务通知（Drover 插件）：** 在插件中按 **N** 选择 System/In Saddle，**Ctrl-S** 经公开 Drover CLI 保存。现有系统通知 watch 不变；首次观察和偏好变更建立基线，不补弹旧任务。内部提示不抢终端输入，点击打开插件目标。
@@ -116,6 +116,12 @@ Agents 的 **New / n** 打开可直接创建的表单：选 **Project**、选 **
 
 开发者运行 `./examples/counter-plugin/package.sh`，即可构建并打包独立 Counter 示例；在设置中添加产物 `examples/counter-plugin/dist/counter-plugin`。使用者只需拿到这个目录，不需要 Rust 或开发环境变量。SDK 目前是开发接口，详见 [Counter 说明](examples/counter-plugin/README.md) 和 [插件开发入门](docs/插件开发入门.md)。Drover 插件迁移另行进行。
 
+## 任务遥测
+
+Saddle 核心提供独立 **Telemetry** 查询页（顶部入口，或 Agents 焦点下 `t`）；有任务号的 Drover 详情通过 **Telemetry ↗** 查看该任务所有轮次。源码已移除旧 Dispatch 日志页和运行时 dlog 依赖，**Dispatch selected** 显式派发动作仍保留。
+
+记录可选、全局默认关闭，只采集显式选择的链路。随 dispatch 插件交付的技能包含同版本[遥测操作指引](plugins/dispatch/resources/corral-dispatch/遥测操作.md)，说明来源声明、每次派发身份、任务书快照、回复、审查、实际收尾和配对回执；业务不会为补遥测而重放。日常二进制、插件包、全局技能和项目指令**尚未实际切换**，安装与外部 dispatch-log 退役留给主控后续执行。旧历史保留供离线查看，不导入、不删除。
+
 ## 任务关联跳转（Drover 插件）
 
 在 Tasks 右侧的 **Task text**、**Run details** 旁选择 **Links**；**Tab / Shift-Tab** 在三个页签间切换。Files、Commits、Agents 按明确引用分组并显示来源，点击条目或用上下方向键选择后 Enter 打开。文件和提交在 Tasks 内只读查看，方向键、滚轮、PgUp/PgDn 滚动；**Back / Esc** 回到原 Links 位置，再 Esc 关闭 Tasks。
@@ -185,7 +191,7 @@ refresh_ms = 1000
 
 | `colors` | 可选的平铺颜色表，控制界面和 agent 类型配色 |
 
-命令路径支持 `~/`。旧 `[queue]` 表仍可加载，但不再驱动宿主。自定义 Drover 命令、目录和 dlog 路径转到插件清单 args，见[插件说明](plugins/drover/README.md)。插件通过公开 schema 2 list/show/action 接口工作，宿主不再读取 Drover 项目或任务数据。
+命令路径支持 `~/`。旧 `[queue]` 表仍可加载，但不再驱动宿主。自定义 Corral 命令和目录转到插件清单 args，见[插件说明](plugins/drover/README.md)。旧 `--dispatch-log <值>` 兼容解析但已弃用且不使用，新清单不提供。插件通过公开 schema 2 list/show/action 接口工作，宿主不再读取 Drover 项目或任务数据。
 
 [config.toml](config.toml) 提供完整默认配置与简短注释，可直接复制到上述位置，默认呈现与原界面一致。只想改几项时，可添加：
 

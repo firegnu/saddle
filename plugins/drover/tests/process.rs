@@ -21,6 +21,9 @@ struct Running {
 }
 impl Running {
     fn start() -> Self {
+        Self::start_with_legacy_arg(false)
+    }
+    fn start_with_legacy_arg(legacy: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir(root.path().join(".drover")).unwrap();
         std::fs::write(
@@ -50,7 +53,16 @@ impl Running {
             "osascript",
             "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$(dirname \"$0\")/system-notifications\"\n",
         );
-        let mut child = Command::new(env!("CARGO_BIN_EXE_saddle-drover"))
+        let dlog = common::script(
+            root.path(),
+            "dlog",
+            "#!/bin/sh\necho forbidden >> \"$(dirname \"$0\")/dlog-calls\"\nprintf '{\"dispatches\":[]}'\n",
+        );
+        let mut command = Command::new(env!("CARGO_BIN_EXE_saddle-drover"));
+        if legacy {
+            command.args(["--dispatch-log", &dlog]);
+        }
+        let mut child = command
             .args(["--refresh-ms", "100"])
             .current_dir(root.path())
             .env("HOME", root.path())
@@ -511,4 +523,41 @@ fn telemetry_link_asks_the_host_for_every_run_of_the_task_and_shows_a_refusal() 
         "Navigation requires current user input",
     ));
     p.see("Telemetry did not open");
+}
+
+#[test]
+fn legacy_log_argument_is_ignored_and_no_log_consumer_runs() {
+    let mut p = Running::start_with_legacy_arg(true);
+    // Visit all current views, including the old third view on the baseline,
+    // allowing the normal background tick to run before checking the marker.
+    for _ in 0..3 {
+        p.input(json!({"type":"key","code":{"name":"tab"},"modifiers":[],"phase":"press"}));
+        p.see("Native queue task");
+        p.key("r");
+        let until = Instant::now() + Duration::from_millis(250);
+        while Instant::now() < until {
+            if let Ok(m) = p.output.recv_timeout(Duration::from_millis(25)) {
+                p.record(&m);
+            }
+        }
+    }
+    assert!(
+        !p.root.path().join("dlog-calls").exists(),
+        "legacy path must never execute"
+    );
+    let b = buffer(p.frame.as_ref().unwrap()).unwrap();
+    let screen: String = b.content.iter().map(|c| c.symbol()).collect();
+    assert!(
+        !screen.contains("○ Dispatch") && !screen.contains("● Dispatch"),
+        "{screen}"
+    );
+    assert!(screen.contains("Telemetry ↗"), "{screen}");
+    p.key("q");
+    loop {
+        let m = p.receive();
+        if matches!(&m, Message::Event {name, ..} if name == "panel.close_request") {
+            break;
+        }
+        p.record(&m);
+    }
 }

@@ -1,6 +1,6 @@
 # Drover 插件
 
-Drover 是一个完整的可选 Saddle 进程插件：同一进程提供任务界面、任务数据读写、状态流转和通知。无需安装旧 Drover CLI、Python 程序或独立 watch。Corral 仍负责 agent，dispatch-log 仍负责派发记录；插件只通过它们的公开命令访问。
+Drover 是一个完整的可选 Saddle 进程插件：同一进程提供任务界面、任务数据读写、状态流转和通知。无需安装旧 Drover CLI、Python 程序或独立 watch。Corral 仍负责 agent，Saddle 核心提供可选遥测；插件只通过公开命令与通用导航能力访问。05A 已在源码移除旧 Dispatch 日志页和 dlog 执行依赖，尚未更新真实安装。
 
 ## 安装与生命周期
 
@@ -19,14 +19,14 @@ Saddle → Plugins → Manage plugins 添加生成的完整目录 `plugins/drove
 需要覆盖命令或初始目录时，在包中 `plugin.toml` 的 `[view]` 之前填写：
 
 ```toml
-args = ["--corral", "corral", "--dispatch-log", "/absolute/path/to/dlog", "--cwd", "/absolute/project", "--refresh-ms", "2000"]
+args = ["--corral", "corral", "--cwd", "/absolute/project", "--refresh-ms", "2000"]
 ```
 
-默认从 PATH 查找 corral/dlog。初始项目选择已登记的启动目录，否则第一项；打开时可跟随当前 agent 仓库。旧 Saddle `[queue]` 配置已不生效，旧 `--drover` 参数移除。重新打包会覆盖包清单，应保留本机自定义 args。
+默认从 PATH 查找 corral。旧清单中的 `--dispatch-log <值>` 仍兼容解析，但已弃用，值不展开、不读取、不执行；新清单不再提供，不自动修改用户清单。初始项目选择已登记的启动目录，否则第一项；打开时可跟随当前 agent 仓库。旧 Saddle `[queue]` 配置已不生效，旧 `--drover` 参数移除。重新打包会覆盖包清单，应保留本机自定义 args。
 
 ## 界面操作
 
-保留添加/编辑/排序/删除、项目选择、All pending、任务详情、Links/Dispatch。显式派发将所选 Pending 交给配置的 `MAIN_AGENT`；未配置时登记 Running 并提供手动发送文本。没有自动发送下一项。
+保留添加/编辑/排序/删除、项目选择、All pending、任务详情、Links。显式派发将所选 Pending 交给配置的 `MAIN_AGENT`；未配置时登记 Running 并提供手动发送文本。没有自动发送下一项。
 
 Running → Submit for review → Awaiting release → Accept → Done。退回 Pending 需要原因和确认工作已停止。各任务的提交不要求其他任务分支合并。删除仅作用于 Pending，保留 Dropped 历史。派发送达与运行登记分开报告，无法确认时不自动重发。
 
@@ -36,7 +36,7 @@ Running → Submit for review → Awaiting release → Accept → Done。退回 
 
 选择记录时，Drover 通过 Saddle 为插件进程提供的 `SADDLE_HOST_BIN` 调用公开 `saddle telemetry`/`saddle agent`：先在 300 ms 内建立 trace 与 controller_handoff 身份；建立不成（总开关关闭、存储不可用、没有宿主路径、超预算）时在发送前照原样直接 `corral send`，并注明没有记录上下文。有上下文时，交付消息末尾附一段只含 trace_id/dispatch_id/task/run 的记录上下文（不是任务内容，也不构成授权），经 `saddle agent --corral <原程序> --record-context … -- send` 只发一次，并在独立进程组中运行以便取消。宿主回执配对且 executed=false 才算未发送；其余按 Corral 原结果映射，缺回执/超时/取消为未知；已启动后绝不改走直接发送或自动重发。先保存任务状态，再追加 task.transition；之后的提交/接受/退回按该轮完整 binding 查到 trace 后追加，没有 trace 就不补。结果的 `delivery`/`record` 不变，另有 `telemetry` 字段。细节见 [遥测使用](../../docs/遥测使用.md)。
 
-有任务号的任务详情页签行有 `Telemetry ↗`，在 Saddle 查询页打开该任务所有轮次（宿主需支持 telemetry.open.v1；无需 dispatch 插件）。未编号待办不显示。旧 Dispatch 页签与 dlog 仍保留到阶段 05。
+有任务号的任务详情页签行有 `Telemetry ↗`，在 Saddle 查询页打开该任务所有轮次（宿主需支持 telemetry.open.v1；无需 dispatch 插件）。未编号待办不显示。旧 Dispatch 日志页已移除；Task text、Run details、Links 仍可切换、刷新和返回，Dispatch selected 业务动作保留。旧 dispatch-log 数据不迁移、不删除，仅保留供离线历史查看。
 
 `N` 打开通知偏好，System/In Saddle 互斥，`Ctrl-S` 保存。系统通知由插件内的工作线程调用 macOS osascript；内部通知通过 Saddle 的通用通知接口显示。首次观察和偏好切换只建基线。Esc 返回子页面，列表 Esc/q 关闭视图，Ctrl-] 回 Agents。关联 agent 仍由宿主核实原始 instance 后打开。
 

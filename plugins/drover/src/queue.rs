@@ -1,7 +1,5 @@
 use crate::drover::{Operation, Request, Snapshot, Task, Transition};
 use crate::theme::Theme;
-#[path = "queue_dispatch.rs"]
-mod dispatch_impl;
 #[path = "queue_links.rs"]
 mod links_impl;
 pub use crate::launch_edit::Input;
@@ -59,10 +57,6 @@ pub fn transition_click() -> KeyEvent {
 /// The Return to pending button has no terminal shortcut.
 pub fn return_click() -> KeyEvent {
     KeyEvent::new(KeyCode::Null, KeyModifiers::CONTROL)
-}
-/// The Dispatch tab's key; like Links, it is reached by clicking or Tab.
-pub fn dispatch_click() -> KeyEvent {
-    KeyEvent::new(KeyCode::Null, KeyModifiers::SHIFT)
 }
 /// The Dispatch selected button has no terminal shortcut either.
 pub fn dispatch_selected_click() -> KeyEvent {
@@ -126,7 +120,6 @@ pub enum View {
     #[default]
     Text,
     Details,
-    Dispatch,
     Links,
 }
 #[derive(Default)]
@@ -151,7 +144,6 @@ pub struct Panel {
     pub content: Option<Box<crate::detail::TaskDetail>>,
     pub view: View,
     pub links: crate::links::State,
-    pub dispatch: crate::dispatch::State,
     pub(crate) text_scroll: usize,
     pub(crate) content_area: ratatui::layout::Rect,
     pub message: String,
@@ -195,24 +187,10 @@ impl Panel {
             self.links.open();
             return None;
         }
-        if self.view == View::Dispatch
-            && matches!(self.page, Page::List)
-            && self.dispatch.reading.is_none()
-            && let Some((_, index)) = self
-                .dispatch
-                .rows
-                .iter()
-                .find(|(area, _)| area.contains((column, row).into()))
-        {
-            self.dispatch.selected = *index;
-            self.dispatch.open();
-            return None;
-        }
         let point = (column, row).into();
         if let Some(hit) = self.buttons.iter().find(|hit| hit.area.contains(point)) {
             if hit.key == transition_click()
                 || hit.key == return_click()
-                || hit.key == dispatch_click()
                 || hit.key == dispatch_selected_click()
                 || hit.key == record_click()
                 || hit.key == telemetry_click()
@@ -225,7 +203,7 @@ impl Panel {
             }
             if hit.key.code == KeyCode::Enter
                 && matches!(self.page, Page::List)
-                && matches!(self.view, View::Links | View::Dispatch)
+                && self.view == View::Links
             {
                 self.view = View::Details;
                 return None;
@@ -592,7 +570,6 @@ impl Panel {
         let Some((group, task)) = selected else {
             self.content = None;
             self.links = Default::default();
-            self.dispatch = Default::default();
             self.record = None;
             return;
         };
@@ -604,7 +581,6 @@ impl Panel {
             self.content = Some(Box::new(crate::detail::TaskDetail::new(group, task)));
             self.text_scroll = 0;
             self.links = Default::default();
-            self.dispatch = Default::default();
             self.record = None;
         }
     }
@@ -691,10 +667,6 @@ impl Panel {
     fn scroll_content(&mut self, delta: isize) {
         if self.view == View::Links {
             self.links.scroll(delta);
-            return;
-        }
-        if self.view == View::Dispatch {
-            self.dispatch.scroll(delta);
             return;
         }
         match (self.view, &mut self.content) {
@@ -891,12 +863,6 @@ impl Panel {
             }
             return None;
         }
-        if key == dispatch_click() {
-            if matches!(self.page, Page::List) {
-                self.view = View::Dispatch;
-            }
-            return None;
-        }
         if matches!(self.page, Page::Projects) {
             match key.code {
                 KeyCode::Esc => self.page = Page::List,
@@ -1053,9 +1019,8 @@ impl Panel {
                 }
                 KeyCode::Tab | KeyCode::BackTab => {
                     self.view = match (self.view, key.code == KeyCode::BackTab) {
-                        (View::Text, false) | (View::Dispatch, true) => View::Details,
-                        (View::Details, false) | (View::Links, true) => View::Dispatch,
-                        (View::Dispatch, false) | (View::Text, true) => View::Links,
+                        (View::Text, false) | (View::Links, true) => View::Details,
+                        (View::Details, false) | (View::Text, true) => View::Links,
                         _ => View::Text,
                     };
                     return None;
@@ -1072,33 +1037,6 @@ impl Panel {
                     KeyCode::Enter => self.links.open(),
                     KeyCode::Char('t' | 'c') => {}
                     _ if self.links.reading.is_some() => return None,
-                    _ => {}
-                }
-                if matches!(
-                    key.code,
-                    KeyCode::Esc
-                        | KeyCode::Up
-                        | KeyCode::Down
-                        | KeyCode::Char('j' | 'k')
-                        | KeyCode::PageUp
-                        | KeyCode::PageDown
-                        | KeyCode::Enter
-                ) {
-                    return None;
-                }
-            }
-            if self.view == View::Dispatch {
-                match key.code {
-                    KeyCode::Esc if self.dispatch.reading.is_some() => self.dispatch.back(),
-                    KeyCode::Up | KeyCode::Char('k') => self.dispatch.scroll(-1),
-                    KeyCode::Down | KeyCode::Char('j') => self.dispatch.scroll(1),
-                    KeyCode::PageUp => self.dispatch.scroll(-self.content_page()),
-                    KeyCode::PageDown => self.dispatch.scroll(self.content_page()),
-                    KeyCode::Enter => self.dispatch.open(),
-                    KeyCode::Char('t' | 'c') => {}
-                    _ if self.dispatch.reading.is_some() => return None,
-                    // Refresh reads the records again as well as the queue.
-                    KeyCode::Char('r') => self.dispatch = Default::default(),
                     _ => {}
                 }
                 if matches!(
@@ -1322,7 +1260,6 @@ impl Panel {
         self.fields.clear();
         self.project_rows.clear();
         self.links.rows.clear();
-        self.dispatch.rows.clear();
         self.list_area = Rect::default();
         self.content_area = Rect::default();
         if area.is_empty() {
@@ -1340,7 +1277,6 @@ impl Panel {
         let on_list = matches!(self.page, Page::List);
         let ready = on_list
             && !self.reading_link()
-            && !self.reading_dispatch()
             && !self.busy
             && self.snapshot.is_some()
             && self.read_error.is_none();
@@ -1488,7 +1424,7 @@ impl Panel {
             return Vec::new();
         }
         // Task actions below the list and content; Close sits apart on the right.
-        let close = if self.reading_link() || self.reading_dispatch() {
+        let close = if self.reading_link() {
             "Back Esc"
         } else {
             "Close Esc"
@@ -1679,13 +1615,8 @@ impl Panel {
         let details_label = format!(
             "{} Run details{}",
             mark(View::Details),
-            if matches!(self.view, View::Links | View::Dispatch) {
-                ""
-            } else {
-                " ↵"
-            }
+            if self.view == View::Links { "" } else { " ↵" }
         );
-        let dispatch_label = format!("{} Dispatch", mark(View::Dispatch));
         let links_label = format!("{} Links", mark(View::Links));
         let numbered = self.content.as_ref().is_some_and(|c| c.task.id.is_some());
         let draw_tabs = if outlined {
@@ -1696,11 +1627,6 @@ impl Panel {
         let mut tabs = vec![
             tab(&text_label, K::Char('t'), View::Text),
             tab(&details_label, K::Enter, View::Details),
-            {
-                let mut button = tab(&dispatch_label, K::Null, View::Dispatch);
-                button.key = dispatch_click();
-                button
-            },
             tab(&links_label, K::Null, View::Links),
         ];
         // Not a view: opens Saddle's Telemetry page on every run of this numbered task.
@@ -1714,7 +1640,6 @@ impl Panel {
         let selected = match self.view {
             View::Text => KeyEvent::from(K::Char('t')),
             View::Details => KeyEvent::from(K::Enter),
-            View::Dispatch => dispatch_click(),
             View::Links => KeyEvent::from(K::Null),
         };
         for hit in &hits {
@@ -1759,18 +1684,13 @@ impl Panel {
             return;
         }
         self.links.rows.clear();
-        if self.view == View::Dispatch {
-            self.draw_dispatch(t, frame, body);
-            return;
-        }
-        self.dispatch.rows.clear();
         let width = body.width.saturating_sub(1);
         let height = usize::from(body.height);
         let queried = self.detail_key().is_some();
         let detail = self.content.as_ref().unwrap();
         let live = self.live(detail);
         let (lines, top) = match self.view {
-            View::Links | View::Dispatch => unreachable!(),
+            View::Links => unreachable!(),
             View::Details => {
                 let lines = detail.lines(t, live, queried, usize::from(width));
                 let max = lines.len().saturating_sub(height);

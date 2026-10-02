@@ -1,6 +1,5 @@
 fn main() -> anyhow::Result<()> {
     let mut corral = "corral".to_owned();
-    let mut dispatch_log = "dlog".to_owned();
     let mut cwd = None;
     let mut refresh = 2000;
     let mut args = std::env::args().skip(1);
@@ -14,11 +13,9 @@ fn main() -> anyhow::Result<()> {
                     .display()
                     .to_string()
             }
-            "--dispatch-log" => {
-                dispatch_log = saddle_drover_plugin::config::expand_home(&value)
-                    .display()
-                    .to_string()
-            }
+            // Deprecated compatibility with existing manifests: consume the value only.
+            // Never expand, read or execute this path.
+            "--dispatch-log" => {}
             "--cwd" => {
                 cwd = Some(
                     saddle_drover_plugin::config::expand_home(&value)
@@ -51,7 +48,6 @@ fn main() -> anyhow::Result<()> {
         });
         Box::new(saddle_drover_plugin::plugin::Drover::with_refresh(
             corral,
-            dispatch_log,
             cwd,
             std::time::Duration::from_millis(refresh),
         ))

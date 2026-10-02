@@ -25,7 +25,7 @@ static MANIFEST: Manifest = Manifest {
     resources: &[Resource {
         kind: ResourceKind::AgentSkill,
         name: "corral-dispatch",
-        revision: 1,
+        revision: 2,
         files: &[
             ResourceFile {
                 path: "SKILL.md",
@@ -34,6 +34,10 @@ static MANIFEST: Manifest = Manifest {
             ResourceFile {
                 path: "项目AGENTS模板.md",
                 bytes: include_bytes!("../resources/corral-dispatch/项目AGENTS模板.md"),
+            },
+            ResourceFile {
+                path: "遥测操作.md",
+                bytes: include_bytes!("../resources/corral-dispatch/遥测操作.md"),
             },
             ResourceFile {
                 path: "README.md",
@@ -113,8 +117,8 @@ mod resource_tests {
         assert_eq!(
             (resource.revision, fingerprint.as_str()),
             (
-                1,
-                "sha256:f51968bfdae9c5891afdc64a32c502db0db11fdf4c759e17ab75295739947918"
+                2,
+                "sha256:0696e3c3fdf411be50b9751f2f430e0cff016611d13cb4d631e6dd3241850f9f"
             )
         );
         assert_eq!(
