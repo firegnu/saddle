@@ -12,7 +12,6 @@ CREATE TABLE traces (
     generation INTEGER NOT NULL CHECK(generation>=0),
     binding_kind TEXT, binding_scope TEXT, binding_key TEXT, binding_run TEXT,
     record_json TEXT NOT NULL,
-    closed_at TEXT,
     CHECK ((binding_kind IS NULL AND binding_scope IS NULL AND binding_key IS NULL AND binding_run IS NULL)
         OR (binding_kind IS NOT NULL AND binding_scope IS NOT NULL AND binding_key IS NOT NULL AND binding_run IS NOT NULL)),
     CHECK (origin!='task' OR binding_kind IS NOT NULL),
@@ -126,4 +125,4 @@ CREATE TRIGGER no_operation_delete BEFORE DELETE ON operations BEGIN SELECT RAIS
 CREATE TRIGGER no_trace_identity_update BEFORE UPDATE OF trace_id,origin,created_at,binding_kind,binding_scope,binding_key,binding_run,record_json ON traces
     BEGIN SELECT RAISE(ABORT,'immutable trace identity'); END;
 CREATE TRIGGER no_trace_delete BEFORE DELETE ON traces BEGIN SELECT RAISE(ABORT,'immutable trace'); END;
-PRAGMA user_version=2;
+PRAGMA user_version=1;

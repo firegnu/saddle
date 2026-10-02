@@ -47,6 +47,9 @@ impl Error {
             "recording is disabled or the capture generation expired",
         )
     }
+    fn closed() -> Self {
+        Self::new("disabled", "trace_closed", "trace is permanently closed")
+    }
     fn conflict(message: impl Into<String>) -> Self {
         Self::new("conflict", "id_conflict", message)
     }
@@ -115,7 +118,7 @@ impl Store {
         conn.busy_timeout(Duration::from_millis(100))?;
         conn.pragma_update(None, "foreign_keys", true)?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != 1 {
+        if !matches!(version, 1 | 2) {
             return Err(Error::unavailable("unsupported database version"));
         }
         Ok(Some(conn))

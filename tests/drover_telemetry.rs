@@ -342,8 +342,12 @@ fn a_recorded_dispatch_sends_once_with_its_context_and_follows_each_transition()
     assert_eq!(v["state"], "awaiting_release");
     assert_eq!(v["telemetry"]["status"], "stored", "{v}");
     assert_eq!(v["telemetry"]["trace_id"], trace);
+    assert_eq!(v["telemetry"]["close"]["status"], "not_attempted");
+    assert!(p.telemetry(&["show", "--id", trace])["record"]["closed_at"].is_null());
     let v = p.transition(Transition::Accept, Some(&host));
     assert_eq!(v["telemetry"]["status"], "stored", "{v}");
+    assert_eq!(v["telemetry"]["close"]["status"], "stored", "{v}");
+    assert!(p.telemetry(&["show", "--id", trace])["record"]["closed_at"].is_string());
     let events = p.events(trace);
     let moves: Vec<_> = events
         .iter()
@@ -583,7 +587,12 @@ fn returning_a_run_records_the_committed_reason_on_that_trace() {
     let returned = p.transition(Transition::Return, Some(&host));
     assert_eq!(returned["state"], "pending");
     assert_eq!(returned["telemetry"]["status"], "stored", "{returned}");
+    assert_eq!(
+        returned["telemetry"]["close"]["status"], "stored",
+        "{returned}"
+    );
     let events = p.events(trace);
+    assert_eq!(events.last().unwrap()["payload"]["closed"], true);
     let event = events
         .iter()
         .find(|e| e["kind"] == "task.transition" && e["payload"]["to"] == "pending")
@@ -724,4 +733,141 @@ fn report_queries_do_not_initialize_a_store_or_hide_query_errors_as_no_records()
         reports(None, &b, &AtomicBool::new(false)).state,
         "unavailable"
     );
+}
+
+fn terminal_host(p: &Project, mode: &str) -> PathBuf {
+    common::script(p.dir.path(), "terminal-host", &format!(r#"#!/usr/bin/python3
+import json, sys, time
+from pathlib import Path
+root = Path({root:?})
+mode = {mode:?}
+args = sys.argv[1:]
+data = json.loads(Path(args[args.index('--input')+1]).read_text()) if '--input' in args else None
+committed = json.loads((root/'project/data/tasks.state').read_text().splitlines()[-1])
+reason = Path(data['bodies'][0]['path']).read_text() if data and data.get('bodies') else None
+with (root/'terminal-calls').open('a') as out:
+    out.write(json.dumps({{'args':args,'input':data,'committed':committed,'reason':reason}})+'\n')
+if args[1] == 'list':
+    if mode == 'lookup_failure':
+        print(json.dumps({{'ok':False,'status':'unavailable'}}))
+    else:
+        print(json.dumps({{'ok':True,'traces':[] if mode == 'missing' else [{{'trace_id':'synthetic-run-trace'}}]}}))
+elif args[1] == 'append':
+    if mode == 'append_timeout': time.sleep(3)
+    print(json.dumps({{'ok':mode != 'append_failure','status':'disabled' if mode == 'append_failure' else 'stored'}}))
+elif args[1:3] == ['trace','close']:
+    if mode == 'close_timeout': time.sleep(3)
+    print(json.dumps({{'ok':mode != 'close_failure','status':'unavailable' if mode == 'close_failure' else 'stored'}}))
+else:
+    raise AssertionError(args)
+"#, root=p.dir.path(), mode=mode)).into()
+}
+fn terminal_calls(p: &Project) -> Vec<Value> {
+    std::fs::read_to_string(p.path("terminal-calls"))
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+#[test]
+fn terminal_transitions_close_after_committed_reason_and_submit_stays_open() {
+    for action in [Transition::Accept, Transition::Return] {
+        let p = Project::new("");
+        let sent = p.dispatch(Some(false), None);
+        let host = terminal_host(&p, "normal");
+        let submitted = p.transition(Transition::Submit, Some(&host));
+        assert_eq!(submitted["telemetry"]["close"]["status"], "not_attempted");
+        assert_eq!(terminal_calls(&p).len(), 2);
+        let ended = p.transition(action, Some(&host));
+        assert_eq!(ended["record"]["status"], "recorded");
+        assert_eq!(ended["telemetry"]["status"], "stored");
+        assert_eq!(ended["telemetry"]["close"]["status"], "stored");
+        let calls = terminal_calls(&p);
+        assert_eq!(calls.len(), 5);
+        assert_eq!(calls[2]["args"][1], "list");
+        assert_eq!(calls[3]["args"][1], "append");
+        assert_eq!(calls[4]["args"][1], "trace");
+        assert_eq!(calls[4]["args"][2], "close");
+        assert_eq!(calls[3]["input"]["trace_id"], calls[4]["input"]["trace_id"]);
+        assert_eq!(
+            calls[3]["input"]["payload"]["binding"]["run"],
+            sent["run_id"]
+        );
+        assert_eq!(
+            calls[2]["args"].as_array().unwrap().last().unwrap(),
+            &sent["run_id"]
+        );
+        for call in &calls[2..] {
+            assert_eq!(
+                call["committed"]["ev"],
+                if action == Transition::Return {
+                    "returned"
+                } else {
+                    "accepted"
+                }
+            );
+        }
+        if action == Transition::Return {
+            assert_eq!(calls[3]["reason"], "needs revision");
+            assert_eq!(
+                calls[4]["committed"]["return_record"]["reason"],
+                "needs revision"
+            );
+        }
+        assert_eq!(p.calls().len(), 1, "no business replay");
+    }
+}
+
+#[test]
+fn terminal_close_has_its_own_budget_and_failures_do_not_replay_or_undo_business() {
+    for (mode, transition, close) in [
+        ("append_failure", "disabled", "stored"),
+        ("append_timeout", "budget_exhausted", "stored"),
+        ("close_failure", "stored", "unavailable"),
+        ("close_timeout", "stored", "budget_exhausted"),
+        ("missing", "not_recorded", "not_attempted"),
+        ("lookup_failure", "unavailable", "not_attempted"),
+    ] {
+        let p = Project::new("");
+        p.dispatch(Some(false), None);
+        let host = terminal_host(&p, mode);
+        let start = Instant::now();
+        let result = p.transition(Transition::Return, Some(&host));
+        let elapsed = start.elapsed();
+        assert_eq!(result["state"], "pending", "{mode}: {result}");
+        assert_eq!(
+            result["telemetry"]["status"], transition,
+            "{mode}: {result}"
+        );
+        assert_eq!(
+            result["telemetry"]["close"]["status"], close,
+            "{mode}: {result}"
+        );
+        if mode == "close_timeout" {
+            assert!(
+                elapsed >= Duration::from_millis(300) && elapsed < Duration::from_secs(1),
+                "{elapsed:?}"
+            );
+        }
+        let calls = terminal_calls(&p);
+        assert_eq!(
+            calls.len(),
+            if close == "not_attempted" { 1 } else { 3 },
+            "{mode}"
+        );
+        assert_eq!(
+            calls[0]["committed"]["return_record"]["reason"],
+            "needs revision"
+        );
+        assert_eq!(p.calls().len(), 1);
+        let state = std::fs::read_to_string(p.root.join("data/tasks.state")).unwrap();
+        assert_eq!(
+            state
+                .lines()
+                .filter(|l| serde_json::from_str::<Value>(l).unwrap()["ev"] == "returned")
+                .count(),
+            1
+        );
+    }
 }

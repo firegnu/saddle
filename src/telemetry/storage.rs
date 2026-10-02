@@ -37,12 +37,22 @@ fn remaining_busy(conn: &Connection, started: Instant) -> Result<()> {
     conn.busy_timeout(Duration::from_millis(100).saturating_sub(started.elapsed()))?;
     Ok(())
 }
-pub(super) fn policy(conn: &Connection, trace: Option<&str>) -> Result<(bool, i64)> {
+pub(super) fn closed_column(conn: &Connection) -> Result<&'static str> {
+    let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    Ok(if version == 1 { "NULL" } else { "closed_at" })
+}
+pub(super) fn policy(
+    conn: &Connection,
+    trace: Option<&str>,
+) -> Result<(bool, i64, Option<String>)> {
     if let Some(id) = trace {
         conn.query_row(
-            "SELECT capture_enabled,generation FROM traces WHERE trace_id=?",
+            &format!(
+                "SELECT capture_enabled,generation,{} FROM traces WHERE trace_id=?",
+                closed_column(conn)?
+            ),
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?
         .ok_or_else(|| Error::invalid("unknown trace_id"))
@@ -50,17 +60,20 @@ pub(super) fn policy(conn: &Connection, trace: Option<&str>) -> Result<(bool, i6
         Ok(conn.query_row(
             "SELECT enabled,generation FROM recording_policy WHERE singleton=1",
             [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, None)),
         )?)
     }
 }
 pub(super) fn enabled(conn: &Connection, trace: Option<&str>) -> Result<(i64, Option<i64>)> {
-    let (on, generation) = policy(conn, None)?;
+    let trace_policy = trace.map(|id| policy(conn, Some(id))).transpose();
+    if matches!(&trace_policy, Ok(Some((_, _, Some(_))))) {
+        return Err(Error::closed());
+    }
+    let (on, generation, _) = policy(conn, None)?;
     if !on {
         return Err(Error::disabled());
     }
-    let trace_generation = if let Some(trace) = trace {
-        let (on, generation) = policy(conn, Some(trace))?;
+    let trace_generation = if let Some((on, generation, _)) = trace_policy? {
         if !on {
             return Err(Error::disabled());
         }
@@ -155,13 +168,28 @@ impl Store {
                     return Err(Error::unavailable("unrecognized database"));
                 }
                 tx.execute_batch(include_str!("schema.sql"))?;
+                tx.execute_batch(include_str!("close_triggers.sql"))?;
                 tx.execute("INSERT INTO recording_policy VALUES(1,0,0,?)", [now()])?;
-            } else if version != 1 {
+            } else if !matches!(version, 1 | 2) {
                 return Err(Error::unavailable("unsupported database version"));
             }
             tx.commit()?;
-        } else if version != 1 {
+        } else if !matches!(version, 1 | 2) {
             return Err(Error::unavailable("unsupported database version"));
+        }
+        if conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))? == 1 {
+            remaining_busy(&conn, started)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            // A concurrent writer may already have migrated while we waited for the lock.
+            let version: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
+            if version == 1 {
+                tx.execute_batch("ALTER TABLE traces ADD COLUMN closed_at TEXT;")?;
+                tx.execute_batch(include_str!("close_triggers.sql"))?;
+                tx.pragma_update(None, "user_version", 2)?;
+            } else if version != 2 {
+                return Err(Error::unavailable("unsupported database version"));
+            }
+            tx.commit()?;
         }
         remaining_busy(&conn, started)?;
         Ok(conn)
@@ -188,7 +216,7 @@ impl Store {
         }
         let mut conn = self.writer(trace.is_none())?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (current, generation) = policy(&tx, trace)?;
+        let (current, generation, closed_at) = policy(&tx, trace)?;
         if expected.is_some_and(|expected| expected != generation) {
             return Err(Error::new(
                 "conflict",
@@ -199,6 +227,9 @@ impl Store {
         let id = trace.unwrap_or("global");
         if current == input.enabled {
             return Ok(receipt("duplicate", id));
+        }
+        if closed_at.is_some() {
+            return Err(Error::closed());
         }
         let at = now();
         let generation = generation + 1;
@@ -223,11 +254,40 @@ impl Store {
         Ok(receipt("stored", id))
     }
 
+    pub fn close_trace(&self, input: TraceCloseInput) -> Result<Value> {
+        version(input.schema_version)?;
+        nonempty(&input.trace_id)?;
+        nonempty(&input.actor)?;
+        if self.reader()?.is_none() {
+            return Err(Error::invalid("unknown trace_id"));
+        }
+        let mut conn = self.writer(false)?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (_, generation, closed_at) = policy(&tx, Some(&input.trace_id))?;
+        if closed_at.is_some() {
+            return Ok(receipt("duplicate", &input.trace_id));
+        }
+        let at = now();
+        let generation = generation + 1;
+        let event_id = uuid::Uuid::new_v4().to_string();
+        let record = json!({"schema_version":1,"event_id":event_id,"trace_id":input.trace_id,"dispatch_id":null,"operation_id":null,
+            "kind":"recording.changed","observed_at":at,"producer":"saddle","evidence_kind":"system_control",
+            "source_auth":"system_control","payload":{"enabled":false,"generation":generation,"actor":input.actor,"changed_at":at,"closed":true},"links":[],"bodies":[]});
+        // The terminal event precedes closed_at in this transaction, so the trigger permits it.
+        tx.execute("INSERT INTO events(event_id,trace_id,kind,recorded_at,observed_at,fingerprint,record_json) VALUES(?,?,'recording.changed',?,?,?,?)",
+            params![event_id,input.trace_id,at,at,fingerprint(&record),record.to_string()])?;
+        tx.execute(
+            "UPDATE traces SET capture_enabled=0,generation=?,closed_at=? WHERE trace_id=?",
+            params![generation, at, input.trace_id],
+        )?;
+        tx.commit()?;
+        Ok(receipt("stored", &input.trace_id))
+    }
+
     pub fn create_trace(&self, input: TraceInput) -> Result<Value> {
         input.validate()?;
         let mut conn = self.writer(false)?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        enabled(&tx, None)?;
         let present: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM traces WHERE trace_id=?)",
             [&input.trace_id],
@@ -235,6 +295,8 @@ impl Store {
         )?;
         if present {
             enabled(&tx, Some(&input.trace_id))?;
+        } else {
+            enabled(&tx, None)?;
         }
         let value = serde_json::to_value(&input)?;
         if let Some(result) = existing(&tx, "traces", "trace_id", &input.trace_id, &value)? {
@@ -251,7 +313,7 @@ impl Store {
             }
         }
         tx.execute(
-            "INSERT INTO traces VALUES(?,?,?,1,0,?,?,?,?,?)",
+            "INSERT INTO traces(trace_id,origin,created_at,capture_enabled,generation,binding_kind,binding_scope,binding_key,binding_run,record_json) VALUES(?,?,?,1,0,?,?,?,?,?)",
             params![
                 input.trace_id,
                 input.origin,

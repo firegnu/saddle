@@ -577,7 +577,7 @@ fn bundled_sqlite_schema_permissions_and_versions_are_checkable() {
         })
         .unwrap();
     assert_eq!(count, 0);
-    db.pragma_update(None, "user_version", 2).unwrap();
+    db.pragma_update(None, "user_version", 3).unwrap();
     assert_eq!(store.settings().unwrap_err().status, "unavailable");
     assert_eq!(
         store
@@ -596,7 +596,7 @@ fn bundled_sqlite_schema_permissions_and_versions_are_checkable() {
     assert_eq!(
         db.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        2
+        3
     );
 }
 
