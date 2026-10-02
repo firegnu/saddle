@@ -315,3 +315,30 @@ fn a_theme_supplies_every_color_and_colors_overrides_only_the_keys_written() {
     );
     assert!(Config::parse("theme = 'Dune'").is_err());
 }
+
+#[test]
+fn lagoon_is_a_whole_palette_on_the_reference_green() {
+    use ratatui::style::Color;
+    use saddle::theme::Preset;
+    assert_eq!(
+        Preset::ALL.map(Preset::label),
+        ["Dune", "Tide", "Lagoon", "Terminal"]
+    );
+    let chosen = Config::parse("theme = 'lagoon'\n[colors]\nfocus = 'red'").unwrap();
+    assert_eq!(chosen.theme, Preset::Lagoon);
+    let lagoon = Preset::Lagoon.theme();
+    let green = Color::Rgb(0x0c, 0x16, 0x16);
+    assert_eq!((lagoon.bg, lagoon.agents_bg), (green, green));
+    assert_eq!(chosen.colors.focus, Color::Red);
+    assert_eq!(chosen.colors.bg, green);
+    assert_eq!(
+        chosen.overrides.keys().copied().collect::<Vec<_>>(),
+        ["focus"]
+    );
+    let mut lagoon = lagoon;
+    for (name, color) in lagoon.named_mut() {
+        if !matches!(name, "overlay") {
+            assert!(matches!(color, Color::Rgb(..)), "{name} = {color:?}");
+        }
+    }
+}

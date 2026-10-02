@@ -50,16 +50,18 @@ pub enum Preset {
     #[default]
     Dune,
     Tide,
+    Lagoon,
     Terminal,
 }
 
 impl Preset {
-    pub const ALL: [Preset; 3] = [Preset::Dune, Preset::Tide, Preset::Terminal];
+    pub const ALL: [Preset; 4] = [Preset::Dune, Preset::Tide, Preset::Lagoon, Preset::Terminal];
     /// How the theme is written in the config file.
     pub fn name(self) -> &'static str {
         match self {
             Preset::Dune => "dune",
             Preset::Tide => "tide",
+            Preset::Lagoon => "lagoon",
             Preset::Terminal => "terminal",
         }
     }
@@ -67,6 +69,7 @@ impl Preset {
         match self {
             Preset::Dune => "Dune",
             Preset::Tide => "Tide",
+            Preset::Lagoon => "Lagoon",
             Preset::Terminal => "Terminal",
         }
     }
@@ -74,13 +77,16 @@ impl Preset {
         Self::ALL
             .into_iter()
             .find(|p| p.name() == value)
-            .ok_or_else(|| format!("unknown theme {value:?}: expected dune, tide or terminal"))
+            .ok_or_else(|| {
+                format!("unknown theme {value:?}: expected dune, tide, lagoon or terminal")
+            })
     }
     /// Every color of the theme.
     pub fn theme(self) -> Theme {
         match self {
             Preset::Dune => Theme::default(),
             Preset::Tide => tide(),
+            Preset::Lagoon => lagoon(),
             Preset::Terminal => terminal(),
         }
     }
@@ -162,6 +168,55 @@ fn tide() -> Theme {
         claude: rgb(0xe48c66),
         codex: rgb(0x6fd3c2),
         pi: rgb(0xeef2f7),
+        omp: rgb(0xb07cf2),
+        ..Theme::default()
+    }
+}
+
+/// Deep green-teal neutrals on the #0c1616 background, which the terminal's default colors
+/// share; the status, danger and agent-type hues keep their Dune roles.
+fn lagoon() -> Theme {
+    let rgb = |v: u32| Color::Rgb((v >> 16) as u8, (v >> 8) as u8, v as u8);
+    Theme {
+        bg: rgb(0x0c1616),
+        text: rgb(0xd6e6e1),
+        selected: rgb(0x1d3833),
+        agent_selected: rgb(0x172b2a),
+        agent_working: rgb(0x7fa8f0),
+        agent_idle: rgb(0x93c79a),
+        agent_blocked: rgb(0xe0bd70),
+        agent_stalled: rgb(0xe39e72),
+        agent_error: rgb(0xec7f7a),
+        agent_starting: rgb(0xaa9fe2),
+        border: rgb(0x36524c),
+        bright: rgb(0xe8f3ef),
+        muted: rgb(0x8aa59e),
+        dim: rgb(0x52706a),
+        focus: rgb(0x7fd4bf),
+        connected: rgb(0x6cc6dc),
+        working: rgb(0x7a9cf0),
+        danger: rgb(0xe06c75),
+        unread: rgb(0xc38ae8),
+        input_text: rgb(0x0a1414),
+        reply_code: rgb(0xe2c98a),
+        reply_heading: rgb(0x82cbd6),
+        agents_bg: rgb(0x0c1616),
+        agents_border: rgb(0x3a5751),
+        agents_rule: rgb(0x1f3633),
+        agents_faint: rgb(0x263f3b),
+        agents_text: rgb(0xd6e6e1),
+        agents_branch: rgb(0xb8cdc6),
+        agents_dim: rgb(0x83a098),
+        agents_dimmer: rgb(0x668580),
+        agents_accent: rgb(0x7fd4bf),
+        agents_green: rgb(0x9cc98e),
+        agents_red: rgb(0xe47a74),
+        agents_blue: rgb(0x7ea2ee),
+        agents_yellow: rgb(0xdbbd6e),
+        agents_purple: rgb(0xa99ae6),
+        claude: rgb(0xe48c66),
+        codex: rgb(0x6fd3c2),
+        pi: rgb(0xeef5f2),
         omp: rgb(0xb07cf2),
         ..Theme::default()
     }
