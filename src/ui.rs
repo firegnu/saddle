@@ -957,7 +957,14 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
         } else {
             ("", t.agents_text)
         };
-        let time = short_time(a.last_output.map(|v| now - v));
+        let origin = match status {
+            Status::Working | Status::Stalled if a.state.as_deref() == Some("working") => {
+                a.turn_started
+            }
+            Status::Idle | Status::Waiting => a.state_started,
+            _ => None,
+        };
+        let time = short_time(origin.map(|v| now - v));
         let time_color = if here {
             t.agents_green
         } else if status == Status::Working {
@@ -1027,7 +1034,7 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
             // R3: what the agent is doing or needs, from public fields only.
             for (label, text, duration) in activity(a, status) {
                 let tail = duration
-                    .then(|| format!(" · {}", short_time(a.turn_started.map(|v| now - v))))
+                    .then(|| format!(" · {time}"))
                     .filter(|tail| label.width() + 2 + tail.width() <= info);
                 let room = info.saturating_sub(
                     label.width() + 1 + tail.as_deref().map_or(0, UnicodeWidthStr::width),
@@ -1159,7 +1166,7 @@ fn look(t: &Theme, status: Status, now: f64) -> Look {
     };
     Look { dot, label, color }
 }
-/// Activity lines: label, text, and whether the turn's duration follows. Waiting has no
+/// Activity lines: label, text, and whether the displayed state's duration follows. Waiting has no
 /// public summary of the question, so it says so plainly instead of guessing one.
 fn activity(a: &Agent, status: Status) -> Vec<(&'static str, String, bool)> {
     let mut lines = Vec::new();
