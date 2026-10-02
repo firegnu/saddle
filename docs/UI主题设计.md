@@ -1,139 +1,74 @@
-# UI 主题：预置与颜色覆盖（设计稿，待评审）
+# UI主题：预置与颜色覆盖（已批准，待实施）
 
-2026-10-02，saddle/dev-theme-design 起草。依据 `docs/任务/UI主题预置与颜色覆盖.md` 与 `docs/任务/UI主题-设计.md`。本文是推荐方案，**尚未经用户批准**，功能也未实现。
+2026-10-02。Claude设计初稿2c42a0b经主控静态核对，用户已批准下方线框及“切换载入整套配色，再逐项覆盖”的推荐，并授权实施。初稿比较方案以本文为准；功能尚未实现。
 
-用户原话：
+## 用户需求与批准
 
 > 写一个ui theme，预置几种theme，选择的时候，下面color随theme变化，但是用户可以覆盖这个颜色。
 > 现在的theme可以设为dune
+> 可以的。如果没有其他问题就实施吧
 
-## 1. 推荐结论
+用户确认的提议：Dune（现有风格）/ Tide（冷色）/ Terminal（跟随终端）；保持英文；选择主题在草稿载入整套新配色，然后逐项修改，Save生效、Cancel撤回，升级不重置现有颜色。
 
-- 现有 Colors 页（`Colors F2`）最上面加一行 `Theme`，下面 41 个颜色字段原样保留，分组、标签、色块和预览都不变。
-- 有效配色 = 所选预置 + 用户覆盖。`[colors]` 里写了的键就是覆盖，没写的键跟随主题。
-- 现有观感命名为 **Dune**，取值就是代码里现在的 `Theme::default()`。没有 `theme` 键的配置都按 Dune 处理。
-- 另外推荐两种预置：**Tide**（冷色深底）和 **Terminal**（全部用终端默认色 / ANSI）。
-- 不做主题商城、导入导出、自定义主题文件或多层继承；不扩展插件协议。
+## 界面
 
-## 2. 线框（Colors 页）
-
-外框、页签、按钮栏沿用现有 Settings；只多了 `Theme` 一行、行尾的 `custom` 标记和一条切换提示。下例是这位用户的配置在草稿里切到 Tide 时的样子（见第 6 节）：
+沿用Settings → Colors F2，在现有颜色字段上方加Theme选择；不重排其他Settings页面。
 
 ```text
-┏ Settings ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Config: ~/.config/saddle/config.toml                                     ┃
-┃ General F1  Colors F2  Advanced F3  Diagnostics F4  Plugins F5           ┃
-┃                                                                          ┃
-┃•Theme              [Tide          ] ←/→ switch                           ┃
-┃                                                                          ┃
-┃ Interface                                                                ┃
-┃•bg                 ██ [default       ]                                   ┃
-┃•focus              ██ [yellow        ]                                   ┃
-┃  …                                                                       ┃
-┃ Agents panel                                                             ┃
-┃ agents_bg          ██ [default       ] custom                            ┃
-┃ agents_border      ██ [#4b5462       ]                                   ┃
-┃ agent_selected     ██ [#302a23       ] custom                            ┃
-┃  …                                                                       ┃
-┃ Preview · unsaved colors                                                 ┃
-┃ Status  ● Working   ○ Idle   ? Waiting   ! Error                         ┃
-┃ Text    Normal   Muted   Code   Heading                                  ┃
-┃ Tide: 24 colors now follow the theme; 4 keep your overrides.             ┃
-┃                          [Default Ctrl-D] [Cancel Esc] [Save Ctrl-S]     ┃
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+Theme       ‹ Dune ▾ ›
+
+Interface
+Background    [default]
+Focus         [yellow]   custom
+…
+
+Preview
+                 Default   Cancel   Save
 ```
 
-- `Theme` 行：←/→（以及 Space/Enter）在 Dune → Tide → Terminal 之间循环，用法同现有开关行的 `Space/Enter toggle`。
-- 颜色行输入框显示**有效值**：有覆盖就显示覆盖值，没有就显示所选主题的值。行尾 `custom`（muted）表示这一项是覆盖。
-- 行首 `•` 仍表示"与已保存状态不同"。覆盖变成跟随主题、或反过来，都算改动，即使颜色值没变。
-- 提示用现有的 message 行，只在切换主题后出现。
+沿用键鼠选择方式（方向键/Space/Enter及点击），颜色字段保留原分组、色块、输入及滚动；值显示有效色，有覆盖标custom。当前有修改仍沿用草稿标记。不会把现有英文字段全部重新命名，上方线框仅展示层级。
 
-## 3. 预置
+## 预置及覆盖
 
-三套都按深色终端设计。`bg`、`overlay`、`text` 等共用字段三套都保持 `default`/ANSI，不给整个界面刷一块固定底色，否则会和 Viewer 里 agent 自己的终端底色对不上。四个类型色（`claude`/`codex`/`pi`/`omp`）是品牌标识，不算主题色，三套相同；只有 Terminal 把 `pi` 改成 `default`。
+- Dune：原Theme::default()的完整41色基线，名称dune。原有配置没有theme键时等价于Dune叠加原[colors]，无迁移和自动写回。
+- Tide：冷色主题，采用协调的蓝灰中性色，既有语义色角色不变。需让宿主公共区域与Agents栏形成一致冷色观感，而不只更换Agents少量中性色；具体值由界面实现者在已有字段中选定，记录关键值和声明颜色对的核对。不要把静态颜色计算说成真实终端验收。
+- Terminal：全部41字段只用default/ANSI/终端调色板值，包括agent类型色，不保留RGB再声称“完全跟随终端”。颜色实际观感依赖外层终端。
+- 无主题商城、主题文件导入导出、多层继承或额外依赖。
+- 有效颜色=预置+[colors]显式覆盖，覆盖须保留“有无”状态，不能仅凭有效值推断用户意图。现有Theme作为最终渲染值结构继续沿用。
 
-| 预置 | 风格 | 关键颜色 |
-|---|---|---|
-| **Dune**（默认） | 现状：暖沙色 Agents 栏，其余跟随终端 | 共用字段为 `default`/ANSI；`agents_bg #1d1a16`、`agents_text #e8dfcc`、`agents_dim #8c8374`、`agents_accent #bdb86a`、`agent_selected #2b2621`；状态色 `agent_working #7fb4ee`、`agent_idle #9cbd80`、`agent_blocked #e6b566`、`agent_stalled #e79b65`、`agent_error #ef8174`、`agent_starting #b0a1d8`。完整取值即 `src/theme.rs` 的 `Theme::default()` |
-| **Tide** | Dune 的冷色版：中性色换成蓝灰，强调色和状态色不变 | `agents_bg #161a1f`、`agents_border #4b5462`、`agents_rule #2d343e`、`agents_faint #323a45`、`agents_text #dce2ea`、`agents_branch #c0c8d3`、`agents_dim #838d9a`、`agents_dimmer #6c7684`、`agent_selected #222932`；其余字段同 Dune |
-| **Terminal** | 不用 RGB，完全跟随终端调色板；适合非真彩色终端或想用终端主题统一观感的人 | 共用字段同 Dune；`agents_bg/text/branch = default`，`agents_dim = gray`，`agents_dimmer/border/rule/faint = dark_gray`，`agent_selected = dark_gray`，`agents_accent = yellow`；状态色为 `blue`/`green`/`yellow`/`light_red`/`red`/`magenta`（working/idle/blocked/stalled/error/starting），`agents_*` 状态同理，`agents_purple = magenta` |
+## 交互规则（用户已批准）
 
-配色核对（按 better-colors 的原则；WCAG 对比度是对实际绘制背景用脚本算出来的）：
+- 明确选择另一个主题时，在草稿中载入该主题整套配色，清除当前草稿里的所有颜色覆盖。然后用户可逐项修改形成新覆盖。只选择当前主题不应意外清除覆盖。
+- 切换后的提示应清楚说明颜色草稿已按主题替换；不增加模态确认。Save前可以Cancel撤回整次编辑。
+- 颜色行Default Ctrl-D：移除该项覆盖，显示当前主题基准，保存时删除对应[colors]键。等于主题值的显式覆盖仍是覆盖，不用值相等推断“从没改过”。
+- Theme行Default Ctrl-D：按切换规则回到Dune（已经Dune时不作为清空覆盖的隐含入口）。
+- 编辑颜色保留原语法及错误处理，空字符串仍无效；恢复跟随主题使用Default操作。
+- 主题及颜色草稿只影响现有色块与Preview，不即时改变整个宿主；Save成功走现有应用设置路径，立即生效；Cancel丢弃草稿。
+- 文件冲突、Keep my edits / Discard my edits保留既有含义，并包含主题和颜色覆盖的增删。保存失败不丢草稿、不误报成功。
 
-- Tide 只换中性色的色相（34° → 213°），各层级的对比度和 Dune 基本一致。在 `agents_bg` 上：text 13.41（Dune 13.09）、dim 5.19（4.63）、dimmer 3.80（3.35）、border 2.28（2.26）。在选中底 `agent_selected` 上：dim 4.36（Dune 4.00）。
-- Tide 不另选强调色。试过青色 `#6fc2bd`（176°），但它和 `connected = cyan` 撞色，违反"一种颜色一个含义"，所以沿用 Dune 的 `#bdb86a`。
-- Terminal 的对比度**取决于用户终端的调色板，没测**。ANSI 里没有橙色，所以 stalled（`light_red`）和 error（`red`）色相接近；状态本身还有字形和文字区分，不只靠颜色。
-
-## 4. 存储与旧配置兼容（最小方案）
+## 最小存储方案
 
 ```toml
-theme = "tide"           # dune | tide | terminal；省略 = dune
-[colors]                 # 只写要覆盖的颜色；省略的跟随主题
-agents_bg = "default"
+theme = "tide"  # dune | tide | terminal; omitted = dune
+[colors]        # optional per-color overrides
+focus = "yellow"
 ```
 
-- 新增顶层键 `theme`，不放进 `[colors]`，这样 `[colors]` 仍然只装颜色，`Theme` 的字段和语义不用动。名字未知时报错，沿用第 8 节"解析失败不静默回退"的规则。
-- `[colors]` 的语法和校验不变，含义从"覆盖代码默认值"变成"覆盖所选主题"。没有 `theme` 键时主题就是 Dune，而 Dune = 现在的代码默认值，所以**所有旧配置升级后观感不变，文件也不改**。
-- 不做迁移，不重写文件，不往文件里补一份"新默认值"。只有用户在 Settings 改了主题并保存，才写 `theme` 键：保存只写改过的键，切回 Dune 不算改动。
-- 降级：写了 `theme` 的文件，旧版 saddle 读不了，因为 `Config` 用了 `deny_unknown_fields`。这和以前任何新键的情况一样，不另做处理。
-- 实施时代码要能分出"文件里有这个键"和"取的是默认值"：现在 `Theme` 用 `serde(default)` 反序列化，读完就分不出了。所以覆盖要按 `Option<Color>` 逐键保存，再和预置合成有效 `Theme`。合成后传给界面和插件的 `Theme` 结构不变。
-- 仓库根目录的 `config.toml` 示例现在列出了全部颜色。照抄的话每个键都会变成覆盖，切主题时什么都不变。实施时建议把颜色行改成注释示例。
+- 新顶层theme键，未知值沿现有校验报错；旧配置无theme不变。保持[colors]现有语法；只在显式Save时持久化主题或覆盖增删，保留无关键/注释及冲突检查。
+- 配置加载需区分显式覆盖与缺省；实现者选择最小内部表示，避免重复两套41字段业务定义。向渲染和插件传递的有效Theme不变。
+- 保存了新theme键以后，旧版Saddle因deny_unknown_fields不能读取，这是降级限制；不增加迁移工具。
+- 根config.toml示例颜色改成注释示例，避免新用户照抄成全覆盖。
 
-## 5. 交互规则
+## 当前配色兼容
 
-**切换主题时已有覆盖怎么处理（推荐 A）**：在草稿里从主题 X 切到 Y：
+用户现有[colors]有28项，24项与原默认相同，4项不同：agents_bg=default、agent_selected=#302a23、claude=#d97757、codex=#8ed9c1。升级只按Dune+覆盖读取，不改这4项或其他键，不把个人差异改成所有人的默认值。用户后来明确切换主题并Save时才应用上述整套替换规则。
 
-- 覆盖值**等于 X 的值**的键，视为"没有真正改过"，改为跟随 Y；
-- 和 X 不同的覆盖原样保留，继续标 `custom`；
-- 没有覆盖的键直接显示 Y 的值。
+Reset/default和ANSI取决于终端；Viewer里的agent输出颜色不属于Saddle主题，保持原样。
 
-比较的是解析后的颜色，所以 `reset`/`default`、`#FFFFFF`/`#ffffff` 算相等。这些变化只发生在草稿里，带 `•` 标记，会出提示（"N colors now follow the theme; M keep your overrides."），Cancel 能全部撤回，Save 时把转为跟随的键从 `[colors]` 删掉。
+## 宿主及插件边界
 
-为什么不推荐 B（"所有覆盖一律保留，另给一个全部重置的按钮"）：这位用户的文件里显式写了 28 个颜色，其中 24 个和 Dune 完全一样。按 B，切主题时这 24 项全都钉住不动，正好违背"选择的时候，下面color随theme变化"。A 的代价是：用户刻意把某项写成和当前主题一样的值，切主题后它也会跟着走；不过草稿里看得见，可以 Cancel，也可以再改回来。**A 和 B 怎么选要用户定**（第 8 节）。
+静态已核：宿主Agents/边框/弹窗/按钮使用config.colors；现有插件通用协议仅传text/muted/background/accent/error五色，Drover和Diff这些部分跟随。Drover自有Tasks状态色和Diff固定语法高亮仍不跟随。此轮不扩插件协议、不改业务，不声称所有插件色都已统一。
 
-**单项恢复默认（`Default Ctrl-D`）**：
+## 主控核对与后续
 
-- 在颜色行上：去掉这项覆盖，改为跟随草稿里的主题，输入框显示主题的值；保存时从 `[colors]` 删除这个键。这项只有是覆盖时按钮才可用。以前的做法是把代码默认值显式写回文件，以后不再这样。
-- 在 `Theme` 行上：切回 Dune，按上面的切换规则处理。
-- 按钮文字保持 `Default Ctrl-D`，不改界面语言。
-
-**编辑**：在颜色行上输入任何内容，这一项就成为覆盖，值等于主题值也一样。`Ctrl-U` 清空后是无效颜色，和现在一样保存时会报错；空值不当作"跟随主题"，跟随主题只能用 Ctrl-D，避免两种入口语义不同。
-
-**预览、Save 与 Cancel**：沿用第 47 节。
-
-- 草稿里的主题和覆盖只体现在色块和 `Preview · unsaved colors` 中，不实时改整个界面。
-- Save 成功后立即在当前 saddle 生效（走现有 `apply_settings`）。插件会在下一帧收到新的五个语义色。
-- Esc/Cancel 丢掉主题和所有颜色草稿。
-- 冲突检测、Keep my edits / Discard my edits 不变：`Theme` 是普通的已编辑字段，会和其他已编辑项一起列在冲突提示里。
-- 颜色无需重启。
-
-## 6. 代码默认颜色与用户当前有效配色
-
-- **代码默认颜色**：`src/theme.rs` 的 `Theme::default()`，即本方案的 Dune。
-- **用户当前有效配色**：Dune 叠加用户 `[colors]` 里的 28 个键。核对来源是脱敏快照 `current-colors.json`，按"它就是文件里的 `[colors]` 表"理解：快照有 28 项，`Theme` 有 41 项，缺的 13 项正好是除 `agents_bg` 以外的 `agents_*`。
-  - 24 项和代码默认值相同。
-  - 4 项不同：`agents_bg = default`（代码 `#1d1a16`，即 Agents 栏用终端底色）、`agent_selected = #302a23`（代码 `#2b2621`）、`claude = #d97757`（代码 `#e2835e`）、`codex = #8ed9c1`（代码 `#79d4b4`）。
-- 推荐**不把这 4 项并入 Dune**。它们是这位用户自己的选择，留在文件里作为覆盖，用户看到的效果和现在完全一样；Dune 本身仍等于代码默认值，没有配置文件的人看到的也不变。
-- 观感取决于终端：`default` 是终端的默认前景/背景，ANSI 色名用的是终端调色板。所以 Dune、Terminal 的这些部分在不同终端里看起来不一样，Saddle 不负责也不保证。RGB 字段在没有声明真彩色时：`agents_*`、`agent_selected` 和类型色由 `Theme::for_terminal` 转成最近的 256 色；`agent_working` 等共用状态 RGB 不转换。这一点是现状，本方案不改。
-
-## 7. 哪些视图跟随主题（静态核对）
-
-| 视图 | 颜色来源 | 跟随主题与覆盖 |
-|---|---|---|
-| Agents 栏、终端窗格边框/标题、各弹窗（Settings、New、Search、Placement、Attention、遥测页等）、按钮 | 宿主 `config.colors`（`src/app.rs`、`src/ui.rs` 等） | 是 |
-| 插件面板（Drover、Diff） | 宿主每帧调 `plugins.theme`，只传 `text/muted/background/accent/error` 五个语义色，变化时发 `theme` 事件（`src/plugins/mod.rs:280`，`docs/插件协议.md`） | 只有这五个色跟随 |
-| Drover 的其他颜色（Tasks 状态色等） | 插件自带的 `plugins/drover/src/theme.rs` 默认值，在 `render` 里只用五个语义色覆盖 | **不跟随**，覆盖 `agent_working` 等也不影响 Tasks。这是插件化之后就有的现状 |
-| Diff 的语法高亮 | 插件固定用 `base16-ocean.dark` | 不跟随 |
-| Viewer 里 agent 的终端输出 | RGB 原样输出；索引色/命名色先查程序用 OSC 设的调色板，没设就按索引交给外层终端画；默认色交给终端（`src/terminal.rs` 的 `color`） | **不受 Saddle 控制** |
-
-按本轮约束，插件协议和 Drover 都不扩展。要让 Tasks 状态色也跟随主题，得另开任务决定协议或插件的改法（第 8 节）。
-
-## 8. 待用户或主控决定
-
-1. 切换主题时覆盖怎么处理：推荐 A（等于原主题值的覆盖改为跟随新主题），备选 B（全部保留，另加批量重置）。
-2. 预置名单与取值：Dune / Tide / Terminal，名字和 Tide、Terminal 要不要做都可以改。
-3. 用户当前的 4 项差异是否并入 Dune：推荐不并入，继续作为覆盖。
-4. 存储用顶层 `theme` 键，接受写入后旧版不能读这一降级代价。
-5. 批准后需要修订 `docs/DESIGN.md` 第 8 节（"不增加多主题、热加载或继承"）和第 47 节"每项可恢复默认值"的含义；本轮按约束不改那份文档。
-6. Drover 的 Tasks 状态色不跟随宿主主题（现状）：本轮不处理，要不要另立任务请决定。
-7. 实施时把仓库根目录 `config.toml` 示例里的颜色行改成注释（第 4 节）。
+初稿Terminal“全部ANSI”却保留RGB类型色的矛盾已在本稿纠正；初稿A/B切换策略已由用户批准的整套载入规则替代。后续交Claude实施，配置持久化属于功能变更，路由重新判定验证预算；不沿用设计的“只静态检查”预算。
