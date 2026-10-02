@@ -4473,8 +4473,6 @@ fn open_fixture_palette(h: &mut Harness) {
     h.see("Search plugins");
     h.until(|h| h.contents().contains("Background") || h.contents().contains("View open"));
     // Built-ins precede process plugins; select the fixture, not the first row.
-    // This also removes the built-in explanation containing "Manage plugins",
-    // so later clicks address the actual footer button rather than that prose.
     h.click("Fixture Counter");
     h.see("› Fixture Counter");
 }
@@ -4905,7 +4903,8 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     h.click("Plugins");
     // No external views are registered; the disabled built-in remains visible.
     h.see("Dispatch");
-    h.see("Built-in · Disabled");
+    h.see("Dispatch · Built-in");
+    h.see("Disabled");
     h.send(b"no-view");
     h.see("No matching plugins");
     h.send(b"\r");
@@ -4931,7 +4930,8 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     let before = h.log("events");
     h.click("Plugins");
     h.see("Dispatch");
-    h.see("Built-in · Disabled");
+    h.see("Dispatch · Built-in");
+    h.see("Disabled");
     h.send(b"not-terminal-input");
     h.see("No matching plugins");
     h.send(b"\r");

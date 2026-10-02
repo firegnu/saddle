@@ -3,8 +3,9 @@ use crate::{launch::edit::Input, theme::Theme};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Margin, Rect},
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Clear, Paragraph, Wrap},
 };
 use unicode_width::UnicodeWidthStr;
@@ -42,7 +43,7 @@ impl Item {
     }
     pub fn explanation(&self) -> String {
         if self.builtin {
-            return "Built-in plugin. Enter opens Manage plugins with it selected.".into();
+            return "Built-in plugin · Manage settings and resources.".into();
         }
         let guidance: String = match self.state.as_str() {
             "Running" if !self.has_view => "Background-only plugin; no view to open.".into(),
@@ -295,10 +296,23 @@ impl Palette {
     }
     pub fn draw(&mut self, frame: &mut Frame, theme: &Theme) {
         let rows: Vec<_> = self.matches().into_iter().cloned().collect();
-        let explanation = self.selected().map(|i| i.explanation()).unwrap_or_default();
-        let height =
-            6 + rows.len().clamp(1, 12) as u16 + if explanation.is_empty() { 0 } else { 3 };
-        let area = crate::theme::centered(frame.area(), 72, height);
+        let explanation = self
+            .selected()
+            .map(|item| {
+                if !item.note.is_empty() && item.state != "Running" {
+                    format!("{} · {}", item.title, item.note)
+                } else {
+                    let text = item.explanation();
+                    if text.is_empty() {
+                        format!("{} · Open the plugin view.", item.title)
+                    } else {
+                        text
+                    }
+                }
+            })
+            .unwrap_or_default();
+        let height = 9 + rows.len().clamp(1, 12) as u16;
+        let area = crate::theme::centered(frame.area(), 78, height);
         self.hits.clear();
         self.activation_changed = false;
         frame.render_widget(Clear, area);
@@ -306,6 +320,7 @@ impl Palette {
             || " Plugins ".to_owned(),
             |(_, place)| format!(" Plugins · {} ", place.label()),
         );
+        let show_position = area.width as usize >= title.width() + 18;
         frame.render_widget(
             theme
                 .block(title, true)
@@ -313,22 +328,51 @@ impl Palette {
             area,
         );
         let inside = crate::ui::inner(area);
-        self.field = Rect::new(inside.x, inside.y, inside.width, inside.height.min(1));
+        let inside = inside.inner(Margin::new(u16::from(inside.width >= 38), 0));
+        let search_height = if inside.height >= 8 { 3 } else { 1 }.min(inside.height);
+        let search = Rect::new(inside.x, inside.y, inside.width, search_height);
+        self.field = if search_height == 3 {
+            frame.render_widget(theme.block("", false), search);
+            crate::ui::inner(search)
+        } else {
+            search
+        };
         self.input
             .draw(frame, self.field, self.focus == 0, "Search plugins", theme);
-        let detail_rows = if explanation.is_empty() {
-            0
-        } else {
-            3.min(inside.height.saturating_sub(4))
-        };
-        let footer_rows = 2.min(inside.height.saturating_sub(1));
+        let footer_rows = 2.min(inside.height.saturating_sub(search_height));
+        let detail_rows = u16::from(inside.height >= search_height + footer_rows + 3);
+        let header_rows = u16::from(inside.height >= search_height + footer_rows + detail_rows + 2);
         self.list = Rect::new(
             inside.x,
-            inside.y.saturating_add(2),
+            inside.y + search_height + header_rows,
             inside.width,
-            inside.height.saturating_sub(2 + footer_rows + detail_rows),
+            inside
+                .height
+                .saturating_sub(search_height + header_rows + footer_rows + detail_rows),
         )
         .intersection(inside);
+        // Shared column widths keep every status and action on the same edge.
+        let action_width = if inside.width >= 38 { 8 } else { 0 };
+        let status_width = if inside.width >= 24 { 12 } else { 0 };
+        let gaps = u16::from(action_width > 0) * 2 + u16::from(status_width > 0) * 2;
+        let name_width = inside
+            .width
+            .saturating_sub(action_width + status_width + gaps);
+        let status_x = inside.x + name_width + u16::from(status_width > 0) * 2;
+        let action_x = inside.right().saturating_sub(action_width);
+        if header_rows > 0 {
+            let y = self.list.y - 1;
+            for (text, x, width) in [
+                ("Plugin", inside.x, name_width),
+                ("Status", status_x, status_width),
+                ("Action", action_x, action_width),
+            ] {
+                frame.render_widget(
+                    Paragraph::new(text).style(theme.base().fg(theme.dim)),
+                    Rect::new(x, y, width, 1),
+                );
+            }
+        }
         if let Some(at) = rows
             .iter()
             .position(|i| Some(&i.id) == self.selected.as_ref())
@@ -338,7 +382,7 @@ impl Palette {
                 .min(at)
                 .max((at + 1).saturating_sub(self.list.height as usize));
         }
-        if inside.height > 1 {
+        if show_position && area.height > 0 {
             let end = (self.top + self.list.height as usize).min(rows.len());
             let position = if rows.is_empty() {
                 "0 / 0".to_owned()
@@ -349,7 +393,7 @@ impl Palette {
                 Paragraph::new(position)
                     .alignment(ratatui::layout::Alignment::Right)
                     .style(theme.base().fg(theme.muted)),
-                Rect::new(inside.x, inside.y + 1, inside.width, 1),
+                Rect::new(area.right() - 18, area.y, 15, 1),
             );
         }
         if rows.is_empty() {
@@ -375,37 +419,58 @@ impl Palette {
         {
             let rect = Rect::new(self.list.x, self.list.y + n as u16, self.list.width, 1);
             let selected = Some(&item.id) == self.selected.as_ref();
-            let style = theme.base().bg(theme.overlay);
+            let style = theme.base().bg(if selected {
+                theme.agent_selected
+            } else {
+                theme.overlay
+            });
             frame.render_widget(
                 Paragraph::new(" ".repeat(rect.width as usize)).style(style),
                 rect,
             );
-            let action_width = if rect.width >= 30 { 7 } else { 0 };
-            let gap = u16::from(rect.width > 0);
-            let status_width = (item.status().width().max(12) as u16)
-                .min(rect.width.saturating_sub(action_width + 6));
-            let name_width = rect.width.saturating_sub(action_width + status_width + gap);
+            let disabled = item.state == "Disabled";
+            let title_style = if selected {
+                style.add_modifier(Modifier::BOLD)
+            } else if disabled {
+                style.fg(theme.dim)
+            } else {
+                style
+            };
+            let suffix = if item.builtin && name_width >= 23 {
+                " · Built-in"
+            } else {
+                ""
+            };
             let title = format!("{} {}", if selected { "›" } else { " " }, item.title);
             frame.render_widget(
-                Paragraph::new(crate::ui::clip(&title, name_width as usize)).style(if selected {
-                    style.add_modifier(Modifier::BOLD)
-                } else {
-                    style
-                }),
+                Paragraph::new(Line::from(vec![
+                    Span::styled(
+                        crate::ui::clip(
+                            &title,
+                            name_width.saturating_sub(suffix.width() as u16) as usize,
+                        ),
+                        title_style,
+                    ),
+                    Span::styled(suffix, style.fg(theme.dim)),
+                ])),
                 Rect::new(rect.x, rect.y, name_width, 1),
             );
-            let status = Rect::new(rect.x + name_width + gap, rect.y, status_width, 1);
+            let status = Rect::new(status_x, rect.y, status_width, 1);
             frame.render_widget(
-                Paragraph::new(item.status()).style(style.fg(
-                    if matches!(
-                        item.state.as_str(),
-                        "Failed" | "Unavailable" | "Unresponsive"
-                    ) {
-                        theme.danger
-                    } else {
-                        theme.muted
-                    },
-                )),
+                Paragraph::new(crate::ui::clip(item.status(), status_width as usize)).style(
+                    style.fg(
+                        if matches!(
+                            item.state.as_str(),
+                            "Failed" | "Unavailable" | "Unresponsive"
+                        ) {
+                            theme.danger
+                        } else if disabled {
+                            theme.dim
+                        } else {
+                            theme.muted
+                        },
+                    ),
+                ),
                 status,
             );
             let row_hit = Rect::new(rect.x, rect.y, rect.width.saturating_sub(action_width), 1);
@@ -413,7 +478,12 @@ impl Palette {
             if action_width > 0 {
                 let action_area = Rect::new(rect.right() - action_width, rect.y, action_width, 1);
                 frame.render_widget(
-                    Paragraph::new(self.action(item).unwrap_or("—")).style(style.fg(
+                    Paragraph::new(
+                        self.action(item)
+                            .map(|action| format!("‹{action}›"))
+                            .unwrap_or_else(|| "—".into()),
+                    )
+                    .style(style.fg(
                         if item.action().is_some() || item.builtin {
                             theme.focus
                         } else {
@@ -436,8 +506,7 @@ impl Palette {
         }
         if detail_rows > 0 {
             frame.render_widget(
-                Paragraph::new(explanation)
-                    .wrap(Wrap { trim: false })
+                Paragraph::new(crate::ui::clip(&explanation, inside.width as usize))
                     .style(theme.base().fg(theme.muted)),
                 Rect::new(inside.x, self.list.bottom(), inside.width, detail_rows)
                     .intersection(inside),
@@ -448,7 +517,7 @@ impl Palette {
             let manage_width = 16.min(footer.width);
             let manage = Rect::new(footer.x, footer.y, manage_width, 1);
             frame.render_widget(
-                Paragraph::new("Manage plugins").style(theme.base().fg(if self.focus == 1 {
+                Paragraph::new("‹Manage plugins›").style(theme.base().fg(if self.focus == 1 {
                     theme.focus
                 } else {
                     theme.muted
@@ -459,7 +528,7 @@ impl Palette {
             if footer.width >= 24 {
                 let close = Rect::new(footer.right() - 7, footer.y, 7, 1);
                 frame.render_widget(
-                    Paragraph::new("Close").style(theme.base().fg(if self.focus == 2 {
+                    Paragraph::new("‹Close›").style(theme.base().fg(if self.focus == 2 {
                         theme.focus
                     } else {
                         theme.muted

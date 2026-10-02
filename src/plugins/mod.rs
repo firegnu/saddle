@@ -421,14 +421,12 @@ impl Manager {
             .map(|m| palette::Item {
                 id: m.id.into(),
                 title: m.name.into(),
-                state: format!(
-                    "Built-in · {}",
-                    if self.core_state(m.id) == Some(core::State::Enabled) {
-                        "Enabled"
-                    } else {
-                        "Disabled"
-                    }
-                ),
+                state: if self.core_state(m.id) == Some(core::State::Enabled) {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+                .into(),
                 note: String::new(),
                 has_view: false,
                 opened: false,
