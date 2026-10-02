@@ -368,6 +368,8 @@ pub struct Detail {
     pub project: String,
     pub task: Task,
     pub evidence: Evidence,
+    #[serde(default)]
+    pub reports: crate::telemetry::Reports,
 }
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Evidence {
@@ -387,6 +389,17 @@ impl Client {
     pub fn show(&self, id: &str, cancel: &AtomicBool) -> Result<Detail> {
         serde_json::from_value(crate::core::show(&self.cwd, id, &self.corral, cancel)?)
             .context("Invalid native task detail")
+    }
+}
+impl Detail {
+    pub fn load_reports(&mut self, host: Option<&std::path::Path>, cancel: &AtomicBool) {
+        if let (Some(task), Some(run)) = (&self.task.id, &self.task.run_id) {
+            self.reports = crate::telemetry::reports(
+                host,
+                &crate::telemetry::binding(&self.project, task, run),
+                cancel,
+            );
+        }
     }
 }
 /// A public transition rejection; its code is not inferred from prose.
@@ -567,14 +580,22 @@ pub struct DetailWorker {
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl DetailWorker {
-    pub fn start(client: Client, id: String, every: Duration) -> Self {
+    pub fn start(client: Client, id: String, every: Duration, include_reports: bool) -> Self {
         use std::sync::{Arc, mpsc};
         let (send, updates) = mpsc::channel();
         let (stop, stopped) = mpsc::channel::<()>();
         let cancel = Arc::new(AtomicBool::new(false));
         let quitting = cancel.clone();
         let thread = std::thread::spawn(move || {
-            while send.send(client.show(&id, &quitting)).is_ok()
+            let read = || {
+                client.show(&id, &quitting).map(|mut detail| {
+                    if include_reports {
+                        detail.load_reports(crate::telemetry::host().as_deref(), &quitting);
+                    }
+                    detail
+                })
+            };
+            while send.send(read()).is_ok()
                 && stopped.recv_timeout(every) == Err(mpsc::RecvTimeoutError::Timeout)
             {}
         });

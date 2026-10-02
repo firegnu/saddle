@@ -571,3 +571,157 @@ fn without_a_main_agent_the_context_goes_into_the_manual_text() {
             .contains("agent")
     );
 }
+
+#[test]
+fn returning_a_run_records_the_committed_reason_on_that_trace() {
+    let p = Project::new("");
+    p.enable(true);
+    let host = p.host();
+    let sent = p.dispatch(Some(true), Some(&host));
+    let trace = sent["telemetry"]["trace_id"].as_str().unwrap();
+    p.transition(Transition::Submit, Some(&host));
+    let returned = p.transition(Transition::Return, Some(&host));
+    assert_eq!(returned["state"], "pending");
+    assert_eq!(returned["telemetry"]["status"], "stored", "{returned}");
+    let events = p.events(trace);
+    let event = events
+        .iter()
+        .find(|e| e["kind"] == "task.transition" && e["payload"]["to"] == "pending")
+        .unwrap();
+    assert_eq!(event["payload"]["from"], "awaiting_release");
+    assert_eq!(event["bodies"][0]["role"], "reason", "{event}");
+    let out = Command::new(env!("CARGO_BIN_EXE_saddle"))
+        .args([
+            "telemetry",
+            "body",
+            "--sha256",
+            event["bodies"][0]["sha256"].as_str().unwrap(),
+        ])
+        .env("XDG_STATE_HOME", p.path("state"))
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(out.stdout, b"needs revision");
+    assert_eq!(p.calls().len(), 1, "return must never send again");
+    let next = p.dispatch(Some(true), Some(&host));
+    assert_ne!(next["run_id"], sent["run_id"]);
+    assert_ne!(next["telemetry"]["trace_id"], trace);
+    assert!(
+        p.events(next["telemetry"]["trace_id"].as_str().unwrap())
+            .iter()
+            .filter(|e| e["kind"] == "task.transition")
+            .all(|e| e["bodies"].as_array().unwrap().is_empty())
+    );
+}
+
+fn append_report(p: &Project, sent: &Value, id: &str, review: bool, text: &str) {
+    let body = p.path(&format!("{id}.txt"));
+    std::fs::write(&body, text).unwrap();
+    let event = json!({"schema_version":1,"event_id":id,"trace_id":sent["telemetry"]["trace_id"],
+        "dispatch_id": if review {sent["telemetry"]["dispatch_id"].clone()} else {Value::Null},
+        "kind":if review {"review.recorded"} else {"controller.note"}, "observed_at":null,
+        "producer":"synthetic controller","evidence_kind":"controller_statement",
+        "payload":if review {json!({"reviewer":"controller","verdict":"passed"})} else {json!({"note_kind":"closure"})},
+        "links":[],"bodies":[{"role":"text","path":body}]});
+    let input = p.path("report.json");
+    std::fs::write(&input, event.to_string()).unwrap();
+    let answer = p.telemetry(&["append", "--input", input.to_str().unwrap()]);
+    assert_eq!(answer["status"], "stored", "{answer}");
+}
+
+#[test]
+fn run_reports_read_only_the_exact_run_and_still_read_when_recording_is_off() {
+    use saddle_drover_plugin::telemetry::{binding, reports};
+    let p = Project::new("");
+    p.enable(true);
+    let host = p.host();
+    let old = p.dispatch(Some(true), Some(&host));
+    append_report(&p, &old, "old-review", true, "OLD RUN ONLY");
+    p.transition(Transition::Return, Some(&host));
+    let sent = p.dispatch(Some(true), Some(&host));
+    let long = format!(
+        "Verified three examples\n{}\nREPORT TAIL",
+        "中文证据\n".repeat(100)
+    );
+    append_report(&p, &sent, "current-review", true, &long);
+    append_report(
+        &p,
+        &sent,
+        "current-closure",
+        false,
+        "Cleanup failed; no acceptance claim.",
+    );
+    p.enable(false);
+    let before = core::list(&p.root).unwrap();
+    let mut detail: saddle_drover_plugin::drover::Detail = serde_json::from_value(
+        core::show(&p.root, "T1", &p.corral(), &AtomicBool::new(false)).unwrap(),
+    )
+    .unwrap();
+    let calls = p.calls().len(); // show may query the configured controller's public status.
+    detail.load_reports(Some(&host), &AtomicBool::new(false));
+    let found = detail.reports;
+    assert_eq!(found.state, "available", "{found:?}");
+    assert_eq!(
+        found.trace_id.as_deref(),
+        sent["telemetry"]["trace_id"].as_str()
+    );
+    assert_eq!(found.entries.len(), 2);
+    assert_eq!(found.entries[0].event_id, "current-review");
+    assert_eq!(found.entries[0].verdict.as_deref(), Some("passed"));
+    assert_eq!(found.entries[0].text.as_deref(), Some(long.as_str()));
+    assert_eq!(
+        found.entries[1].text.as_deref(),
+        Some("Cleanup failed; no acceptance claim.")
+    );
+    assert_eq!(
+        core::list(&p.root).unwrap(),
+        before,
+        "query cannot submit or accept"
+    );
+    assert_eq!(p.calls().len(), calls, "query cannot deliver");
+    for (scope, task, run) in [
+        ("/other-project", "T1", sent["run_id"].as_str().unwrap()),
+        (
+            p.root.to_str().unwrap(),
+            "T2",
+            sent["run_id"].as_str().unwrap(),
+        ),
+        (p.root.to_str().unwrap(), "T1", "missing-run"),
+    ] {
+        let empty = reports(
+            Some(&host),
+            &binding(scope, task, run),
+            &AtomicBool::new(false),
+        );
+        assert_eq!(empty.state, "not_recorded", "{empty:?}");
+        assert!(empty.entries.is_empty());
+    }
+}
+
+#[test]
+fn report_queries_do_not_initialize_a_store_or_hide_query_errors_as_no_records() {
+    use saddle_drover_plugin::telemetry::{binding, reports};
+    let p = Project::new("");
+    let host = p.host();
+    let b = binding(p.root.to_str().unwrap(), "T1", "unrecorded-run");
+    assert_eq!(
+        reports(Some(&host), &b, &AtomicBool::new(false)).state,
+        "not_recorded"
+    );
+    assert!(
+        !p.path("state").exists(),
+        "read must not initialize storage"
+    );
+    let broken = common::script(
+        p.dir.path(),
+        "broken-host",
+        "#!/bin/sh\necho '{\"ok\":false}'\nexit 1\n",
+    );
+    let failure = reports(Some(Path::new(&broken)), &b, &AtomicBool::new(false));
+    assert_eq!(failure.state, "unavailable");
+    assert!(failure.entries.is_empty());
+    assert_eq!(
+        reports(None, &b, &AtomicBool::new(false)).state,
+        "unavailable"
+    );
+}

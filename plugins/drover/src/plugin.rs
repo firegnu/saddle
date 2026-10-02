@@ -519,6 +519,7 @@ impl Drover {
                     self.client(&key.project),
                     key.id.clone(),
                     Duration::from_secs(5),
+                    true,
                 );
                 (key, worker)
             });
@@ -537,6 +538,7 @@ impl Drover {
                     self.client(&key.project),
                     key.id.clone(),
                     Duration::MAX,
+                    false,
                 );
                 (key, worker)
             });

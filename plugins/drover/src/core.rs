@@ -803,9 +803,9 @@ pub fn execute_with(
                 host,
                 &crate::telemetry::binding(s.repo.to_str().unwrap_or_default(), id, run_id),
                 None,
-                t["status"].as_str().unwrap_or_default(),
-                to,
+                (t["status"].as_str().unwrap_or_default(), to),
                 crate::telemetry::record_time(at),
+                (*action == Transition::Return).then_some(reason.as_str()),
                 cancel,
             );
             Ok(
@@ -984,7 +984,7 @@ pub fn execute_with(
                 match s.append(json!({"ev":"start","id":tid,"run_id":run,"t":at,"title":t["title"],"body":body,"key":t["title"],"sha":sha,"main":main})){Ok(())=>{result["run_id"]=json!(run);result["state"]=json!("running");result["record"]=json!({"status":"recorded"});
                     // Saved first, then declared: the transition only follows Drover's own record.
                     if let Some((identity, _)) = &context {
-                        telemetry["transition"] = crate::telemetry::transition(host, &binding, Some(&identity.trace_id), "pending", "running", crate::telemetry::record_time(at), cancel);
+                        telemetry["transition"] = crate::telemetry::transition(host, &binding, Some(&identity.trace_id), ("pending", "running"), crate::telemetry::record_time(at), None, cancel);
                     }
                 },Err(e)=>{result["ok"]=json!(false);result["state"]=json!("unknown");result["record"]=json!({"status":"unknown"});result["error"]=json!({"code":"write_failed","why":format!("{e:#}; delivery may already have happened")});}}
             }

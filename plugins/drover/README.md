@@ -40,6 +40,8 @@ Running → Submit for review → Awaiting release → Accept → Done。退回 
 
 `N` 打开通知偏好，System/In Saddle 互斥，`Ctrl-S` 保存。系统通知由插件内的工作线程调用 macOS osascript；内部通知通过 Saddle 的通用通知接口显示。首次观察和偏好切换只建基线。Esc 返回子页面，列表 Esc/q 关闭视图，Ctrl-] 回 Agents。关联 agent 仍由宿主核实原始 instance 后打开。
 
+Run details 的 **Controller reports · this run** 按当前项目、任务和 run 读取宿主遥测中已有审查/收尾报告，显示声明的结果与正文。它不判定任务成功，不自动 Submit/Accept；无记录或查询失败显示未知。退回原因在退回业务保存后随 task.transition 记录，可在 Telemetry 选中该事件后打开 reason 正文。更新前的旧遥测事件不会自动补写原因。
+
 ## 主控命令
 
 主控通过运行中的 Saddle 转交命令；Saddle 只处理通用插件请求，不解释任务业务。先 `saddle ctl instances` 选择承载 Drover 的实例。调用示例：

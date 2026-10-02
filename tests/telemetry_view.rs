@@ -923,3 +923,54 @@ fn a_prefilled_binding_with_control_characters_is_shown_escaped_and_queried_exac
     );
     assert!(text.contains("key=T2"), "{text}");
 }
+
+#[test]
+fn task_transition_reason_is_readable_in_the_existing_body_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("telemetry");
+    let store = store(&root);
+    task(&store, "returned-trace", "T1", "Return reason");
+    let reason = file(
+        dir.path(),
+        "return.txt",
+        "人工验收：测试退回重新派发\nSecond line\nREASON END".as_bytes(),
+    );
+    let event = json!({"schema_version":1,"event_id":"returned-event","trace_id":"returned-trace",
+        "kind":"task.transition","observed_at":null,"producer":"drover","evidence_kind":"plugin_statement",
+        "payload":{"binding":{"kind":"drover.task","scope":"/synthetic/proj","key":"T1","run":"run-returned-trace"},
+            "from":"awaiting_release","to":"pending","business_committed_at":null},
+        "links":[],"bodies":[{"role":"reason","path":reason}]});
+    store
+        .append(serde_json::from_value(event.clone()).unwrap())
+        .unwrap();
+    // The generic contract allows zero or one reason, not arbitrary or repeated bodies.
+    for bodies in [
+        json!([{"role":"text","path":reason}]),
+        json!([{"role":"reason","path":reason},{"role":"reason","path":reason}]),
+    ] {
+        let mut invalid = event.clone();
+        invalid["event_id"] = "invalid-body".into();
+        invalid["bodies"] = bodies;
+        assert!(
+            store
+                .append(serde_json::from_value(invalid).unwrap())
+                .is_err()
+        );
+    }
+    let mut page = open(&root);
+    press(&mut page, KeyCode::Enter);
+    settle(&mut page);
+    select_event(&mut page, "task.transition");
+    let detail = shown(&mut page);
+    assert!(
+        detail.contains("from: awaiting_release") && detail.contains("to: pending"),
+        "{detail}"
+    );
+    assert!(detail.contains("reason"), "{detail}");
+    press(&mut page, KeyCode::Enter);
+    let body = shown(&mut page);
+    assert!(
+        body.contains("人工验收：测试退回重新派发") && body.contains("REASON END"),
+        "{body}"
+    );
+}
