@@ -304,6 +304,50 @@ fn clawd_keeps_both_eyes_while_walking_and_turning_either_way() {
 }
 
 #[test]
+fn clawd_walks_with_only_its_legs_moving() {
+    const QUADRANTS: &str = " ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█";
+    let mut mascot = Mascot::default();
+    // Two cells of travel: heading right on ticks 0..8, turning, heading left on 16..24.
+    let frames = play(&mut mascot, Rect::new(0, 0, 20, 3), 0..24);
+    // Everything above the feet, relative to where the body is drawn: the top two rows,
+    // and the top half of the bottom row, whose bottom half holds the feet.
+    let split = |tick: usize, at: u16| {
+        let buffer = &frames[tick];
+        let mut upper = Vec::new();
+        let mut feet = Vec::new();
+        for col in 0..16 {
+            let x = 1 + at + col;
+            for y in 0..2 {
+                let c = &buffer[(x, y)];
+                upper.push((c.symbol().to_owned(), c.fg, c.bg));
+            }
+            let c = &buffer[(x, 2)];
+            let mask = QUADRANTS
+                .chars()
+                .position(|q| q.to_string() == c.symbol())
+                .unwrap_or_else(|| panic!("tick {tick}: {:?} is not a quadrant", c.symbol()));
+            let color = |bit: usize| if mask & bit != 0 { c.fg } else { c.bg };
+            upper.push((String::new(), color(1), color(2)));
+            feet.push((color(4), color(8)));
+        }
+        (upper, feet)
+    };
+    for (ticks, at) in [
+        (0..8, Box::new(|t: usize| (t / 4) as u16) as Box<dyn Fn(usize) -> u16>),
+        (16..24, Box::new(|t: usize| 2 - ((t - 16) / 4) as u16)),
+    ] {
+        let first = split(ticks.start, at(ticks.start));
+        let mut feet = std::collections::BTreeSet::new();
+        for tick in ticks {
+            let (upper, legs) = split(tick, at(tick));
+            assert_eq!(upper, first.0, "tick {tick}: only the legs may move");
+            feet.insert(format!("{legs:?}"));
+        }
+        assert!(feet.len() > 1, "the legs step");
+    }
+}
+
+#[test]
 fn curated_patrol_stays_above_the_agent_border() {
     let panes = Terminals::new("unused-fake-corral".into());
     let area = Rect::new(0, 0, 70, 16);
