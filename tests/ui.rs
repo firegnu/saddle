@@ -1661,11 +1661,16 @@ fn render_header_actions(
 }
 
 #[test]
-fn header_actions_keep_telemetry_above_plugins_and_settings() {
+fn header_actions_align_with_title_and_attention_when_they_fit() {
     use crossterm::event::KeyCode;
     use saddle::theme;
-    for (width, plugin_y, settings_y, telemetry_y) in [(52, 4, 4, 3), (30, 4, 4, 3), (20, 4, 5, 3)]
-    {
+    for (width, plugin_y, settings_y, telemetry_y) in [
+        (52, 2, 2, 1),
+        (36, 2, 2, 1),
+        (35, 4, 4, 3),
+        (30, 4, 4, 3),
+        (20, 4, 5, 3),
+    ] {
         let (buffer, hits) = render_header_actions(width, &Pointer::default(), &[]);
         let settings = hits
             .buttons
@@ -1697,6 +1702,7 @@ fn header_actions_keep_telemetry_above_plugins_and_settings() {
         assert!(!hits.plugins.intersects(attention));
         assert!(hits.list.y > settings.y.max(attention.y));
         assert_eq!(settings.right(), width - 2);
+        assert_eq!(telemetry.right(), settings.right());
         for (rect, label) in [
             (settings, "Settings"),
             (hits.plugins, "Plugins"),

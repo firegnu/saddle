@@ -119,8 +119,18 @@ pub fn draw_workspace(
     let header = agents_header(view.panes.agents);
     let show_plugins = terminals.is_some() && inner(view.panes.agents).height >= 6;
     let pair_width = SETTINGS.width() + "Plugins".width() + 2;
+    let attention_width = format!("Attention · {}", attention.items.len()).width()
+        + if attention.loading && !attention.items.is_empty() {
+            " loading…".width()
+        } else {
+            0
+        };
+    let shared_rows = show_plugins
+        && usize::from(header.width)
+            >= (format!("Agents · {}", panel.agents.len()).width() + 2 + TELEMETRY.width())
+                .max(attention_width + 2 + pair_width);
     let action_row = if show_plugins {
-        3
+        if shared_rows { 1 } else { 3 }
     } else if usize::from(header.width)
         >= format!("Agents · {}", panel.agents.len()).width() + 2 + SETTINGS.width()
     {
@@ -130,8 +140,8 @@ pub fn draw_workspace(
     };
     let separate_actions = show_plugins && usize::from(header.width) < pair_width;
     let settings_row = action_row + u16::from(separate_actions);
-    // Keep Telemetry above the management entries, regardless of sidebar width.
-    let telemetry_row = 2;
+    // Align with the title/status when both groups fit; otherwise wrap below them.
+    let telemetry_row = if shared_rows { 0 } else { 2 };
     let header_rows = (settings_row + 1).max(2);
     let right_aligned = |row: u16, width: u16| {
         let width = width.min(header.width);
