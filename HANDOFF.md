@@ -3,6 +3,13 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Theme实现已派发并挂提醒
+
+- saddle/dev-theme-1 instance e641723be7ef，Claude opus[1m]/high；theme-presets分支/worktree，基线ee1fa3a。任务docs/任务/UI主题-实施.md；JEV常规/交叉不要/改行为，主控照用。本轮新增功能与持久化，按目标/相关及一次标准预算，不当成纯颜色替换，也不扩大审计。
+- 已批准整套草稿切换及Dune/Tide/Terminal，不重问；设计d3dcecc，旧设计agent/worktree已关闭清理。实现者不安装、不改真实配置/队列/Corral/插件协议。主控审查通过才合并清理，收尾前需读公开状态确认idle/附着情况。
+- trace与implementation dispatch见下一节；implementation-start/reply-context.json位于原telemetry目录。route/start均配对begin/end stored，任务书完整快照已采；缺失Corral公开字段gap保留。已挂send --after3600，/tmp/saddle-theme-implementation-reminder.txt保存续接要求。回调先status，working重挂，idle采reply核DONE再审查；不重复启动业务。
+
+
 ## 最新：Theme用户已批准，设计收尾，准备实施
 
 - 用户批准线框及“切换载入整套配色再覆盖、Save/Cancel、旧配置不变”，docs/UI主题设计.md和DESIGN已定稿。原设计2c42a0b已合并，定稿d3dcecc已推送；theme-design工作区/分支已删除，原Claude97aab938485b在idle/attached0时随目录清理关闭，收尾025c8f0。迟到提醒not_found忽略。
