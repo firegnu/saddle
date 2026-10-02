@@ -25,3 +25,9 @@
 - 初次既有界面检查因旧原始事件名、默认展开字段与全屏位置预期失败；逐项改为批准的显示方式，字段检查通过技术详情继续保留，不删除数据语义断言。预览原文/宽窄渲染存/tmp/saddle-telemetry-ui-preview；临时示例已移除。Quick Look缩略图有裁边，完整文本缓冲及布局检查作为完整布局依据；真实终端效果待用户复看。
 - 日志/tmp/saddle-telemetry-ui-{final-target,multi,async,entry,return,release}.log；diff --check通过。release使用共享target的显式架构子目录，没有提前覆盖日常宿主。
 - 候选目录见/tmp/saddle-telemetry-ui-stage-path；manifest.json记录旧/新哈希，候选--help通过。安装/备份以HANDOFF及实际安装记录为准。
+
+## 后续：正文阅读窗口（2026-10-02）
+
+用户确认“查看全文”也改为四周留边的居中大窗口。仅修改Page::draw中正文区域尺寸：最大160列，正常尺寸左右各至少2列、上下各1行；极小尺寸保留可用面积。阅读内容和交互未改。不为纯视觉改动制造RED，验证沿用相关界面用例和必要构建。
+
+验证：现有Telemetry界面17项全部通过，覆盖全文、宽窄窗口和逐层返回；release构建与diff check通过。日志/tmp/saddle-reader-layout-test.log、/tmp/saddle-reader-layout-build.log。未跑全仓测试或Clippy，未新增测试或改动阅读逻辑。
