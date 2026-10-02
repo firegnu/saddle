@@ -37,7 +37,7 @@
 - 已合并 `0761aeb` 并推送，分支和 worktree `pet-packs` 已清理。吉祥物改为可换的宠物：Clawd 加原创橘猫，Settings → General → Pet 选择，配置 `mascot = "clawd" | "cat"`。素材是 `assets/pets/*.toml` 文本宠物包，Rust 直接读；Python 生成脚本和二进制帧已删除。设计见 `docs/DESIGN.md`「宠物包与第二只宠物」，格式见 `assets/pets/README.md`。
 - 合并前分支上格式和 clippy 通过，全量 63 组通过；workflow 组 `pending_delete_button_confirms_names_the_task_and_can_be_cancelled`、`native_mouse_buttons_cover_forms_and_stop_confirmation` 两项失败，原因未查清（可能与共享 `.target/debug/saddle` 被并行构建覆盖有关，未证实）。用户决定先合并，由主控用隔离 target 复跑。
 - 效果只看过离线渲染的预览图，未在真实终端核验；用户日常用 Ghostty 和 Metalterm。未替换安装版。
-- 下一步：图片版，Kitty 图形协议，支持的终端默认用图片、其余自动退回方块版。先做猫；Clawd 用用户提供的 claude.dev 参考动画，只做 3 行高度放得下的。新分支 `pet-images`，由 saddle/claude-1 继续。
+- 下一步：图片版，Kitty 图形协议，支持的终端默认用图片、其余自动退回方块版。先做猫；Clawd 用用户提供的 claude.dev 参考动画，只做 3 行高度放得下的。尚未开始：用户先切换新内核，之后重新开会话再做；宠物相关没有遗留分支或 worktree。
 
 ## 保留项
 
