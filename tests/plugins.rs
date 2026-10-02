@@ -1456,3 +1456,104 @@ fn palette_columns_highlight_and_button_hits_match_rendered_controls() {
         );
     }
 }
+
+#[test]
+fn plugin_management_separates_details_and_keeps_full_setup_scrollable() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{Terminal, backend::TestBackend};
+    use saddle::plugins::{Manager, resources::Resources, ui::Page};
+    static CATALOG: &[&dyn saddle_core_plugin::CorePlugin] = &[&saddle_dispatch_plugin::PLUGIN];
+    let dir = tempfile::tempdir().unwrap();
+    let mut manager = Manager::with_resources(
+        dir.path().join("plugins.toml"),
+        CATALOG,
+        Resources::new(dir.path().join("home"), dir.path().join("state")),
+    );
+    let (external, manifest) = peer("unused");
+    manager.add(external.path(), &manifest).unwrap();
+    let settings = saddle::settings::Settings::open(dir.path().join("config.toml"), true);
+    for (width, height) in [(48, 24), (80, 24), (140, 44)] {
+        let mut page = Page::default();
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        let draw = |page: &mut Page, terminal: &mut Terminal<TestBackend>| {
+            terminal
+                .draw(|frame| {
+                    page.draw(&saddle::theme::Theme::default(), frame, &manager, &settings)
+                })
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(width as usize)
+                .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let first = draw(&mut page, &mut terminal);
+        for label in ["Dispatch", "Built-in", "Enable", "Add local", "Resources"] {
+            assert!(first.contains(label), "{width}x{height}: {label}\n{first}");
+        }
+        let mut seen = first;
+        for _ in 0..25 {
+            page.event(
+                Event::Key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
+                &mut manager,
+            );
+            terminal
+                .draw(|frame| {
+                    page.draw(&saddle::theme::Theme::default(), frame, &manager, &settings)
+                })
+                .unwrap();
+            seen.extend(
+                terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|c| c.symbol()),
+            );
+        }
+        for label in ["TYPESAFE_API_KEY", "Telemetry", "Setup files", "Template:"] {
+            assert!(seen.contains(label), "{width}x{height}: {label}");
+        }
+        page.select_plugin("test.peer", &manager);
+        terminal
+            .draw(|frame| page.draw(&saddle::theme::Theme::default(), frame, &manager, &settings))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        for label in [
+            "Peer",
+            "Disabled",
+            "Technical details",
+            "Directory",
+            "Program",
+        ] {
+            assert!(text.contains(label), "{width}x{height}: {label}\n{text}");
+        }
+        assert!(!manager.enabled_here("test.peer"));
+        for _ in 0..7 {
+            page.event(
+                Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
+                &mut manager,
+            );
+        }
+        assert!(matches!(
+            page.event(
+                Event::Key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+                &mut manager
+            ),
+            saddle::plugins::ui::Outcome::Back
+        ));
+        assert_eq!(
+            manager.core_state("dispatch"),
+            Some(saddle::plugins::core::State::Disabled)
+        );
+    }
+}

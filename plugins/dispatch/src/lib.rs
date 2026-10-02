@@ -45,9 +45,9 @@ static MANIFEST: Manifest = Manifest {
             },
         ],
     }],
-    setup_note: "Dispatch 提供路由命令 `saddle plugin run dispatch route`，并随插件安装 corral-dispatch 技能（状态见上）。\n技能装好不会让所有项目都改成主控分派。要让某个项目默认这样做：打开下面的模板，把第1节复制进该项目的 AGENTS.md，替换尖括号里的项目参数，并处理和已有规则的冲突。不采用的项目不用改；某次对话里明确要求走分派流程也可以。\n路由需要环境变量 TYPESAFE_API_KEY，没有时主控自己判断，不影响委派。遥测初始关闭，由 Settings → General 单独控制；路由采集还需显式传入记录上下文。",
+    setup_note: "Routing: saddle plugin run dispatch route\nThe corral-dispatch skill is installed with this plugin.\n\nProject setup\nTo use controller-led dispatch by default, copy section 1 of the template below into the project's AGENTS.md. Replace the placeholders and reconcile existing rules. Other projects are unchanged; explicit requests can also opt in for one conversation.\n\nRequirements\nSet TYPESAFE_API_KEY for routing. Without it, the controller chooses the route; delegation remains available.\n\nTelemetry\nInitially off. Settings → General controls recording; routing capture also needs an explicit recording context.",
     setup_files: &[SetupFile {
-        label: "模板",
+        label: "Template",
         resource: "corral-dispatch",
         path: "项目AGENTS模板.md",
     }],
