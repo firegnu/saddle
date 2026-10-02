@@ -1229,3 +1229,6 @@ pub fn register(project: &Path, name: &str, agent: &str) -> Result<Value> {
     }
     Ok(json!({"ok":true,"project":project,"message":"Project registered; no task dispatched"}))
 }
+
+#[path = "project.rs"]
+pub mod project;

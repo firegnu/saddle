@@ -74,3 +74,11 @@ saddle ctl request UNIQUE_READ_ID --instance INSTANCE
 ## 从独立 Drover 切换
 
 先备份原程序入口、launchd 配置、Saddle 配置和任务数据，完成新旧投影只读对比。然后停用指定的 `dev.drover.loop`，移走其自启动入口及旧 drover/drover-board 命令链接，更新 Saddle 和插件包，登记启用插件，重启 Saddle。不要同时保留两个观察/写入入口。旧仓库与数据保留；回退须先停用新插件，再恢复旧程序与服务。切换本身不派发、提交或接受真实任务。
+
+## 在 Tasks 中接入项目
+
+打开 Tasks → 项目选择器（c）→ Add project（a）。输入绝对目录，或点 Browse 浏览目录后选 Use directory；Check 显示接入状态。新项目确认短名，并可从 Choose agent 选择已有接收主控，Save 后进入任务列表。主控留空表示手工交付，不是配置错误。目录已接入时 Open 进入现有项目；发现旧配置时 Reuse & add 沿用原配置、绑定和任务数据。登记项目配置异常仍保留在列表，显示原因，不覆盖初始化。
+
+Projects → Settings（s）可改默认接收主控；No receiver 清空绑定。Cancel 不保存，外部配置改变则需要 Reload 后再保存。这里的修改只影响以后明确发起的派发，不更改已有运行记录。不创建或发送 agent，不自动推进任务，不管理 AGENTS.md。新接入会将 .drover.conf 加入 .gitignore；该步失败会显示已接入但忽略规则未更新的提示。停用插件保留项目和任务数据。
+
+插件新增公开命令（project 为绝对路径）：project-info 只读检查，返回 state（new/existing/registered/unavailable）及配置 token；project-save 使用 token，新建还需 name，已登记项目可设置 main_agent，未登记旧配置原样沿用。project-browse 只列指定目录的子目录，project-agents 只经 Corral ls 列出现有 agent；不会扫描所有项目或创建 agent。
