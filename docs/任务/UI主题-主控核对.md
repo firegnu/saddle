@@ -34,3 +34,5 @@
 已逐项看失败断言/渲染：plugin_resources仍查未截断名称、旧`> `选中符、旧内联ID/状态、首屏包含全部详情/CLI退路；新分栏布局截断长名、详情滚动，截图可见数据存在。workflow两项Drover等旧`─ Add task`/`─ All pending ─`标题（新边框为`┏ …`）；七项Plugins等旧`Changes here apply immediately.`及用其消失作异步屏障，而当前文案是`Changes apply immediately.`。上述生产布局均在Theme基线前存在，本轮src/plugins和plugins/drover未改，Theme默认保持旧值；静态及截图支持旧测试假设过时。未运行main基线，不把本轮当全套通过，也不泛称所有历史失败同因。
 
 限定原实现者：M1保留独立注释；并只对这12项失败中已证实的旧布局/文案/等待条件最小适配测试，使原业务含义继续受检查，不改插件或Drover生产代码。不删除断言、不跳过、不加大超时。如果发现真实生产问题先报告。返工只目标和直接回归，不全套/Clippy、不重建原RED；补已有原始验证日志路径，缺失如实说明。
+
+Clippy最终exit0；results.json确认test101/clippy0。原实现者已收到本次限定返工，尚未通过合并。

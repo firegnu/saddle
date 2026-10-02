@@ -3,6 +3,15 @@
 更新：2026-10-02。main；阶段01—05已完成，日常安装已切换。用户已收到“可以重新打开Saddle”通知。不要自行开始Corral迁移。当前待办见下面最新条目。
 
 
+## 最新：Theme首轮核对后限定返工，未合并安装
+
+- 候选5c06809，原saddle/dev-theme-1 instancee641723be7ef，theme-presets工作区/分支保留。主控核对docs/任务/UI主题-主控核对.md，返工任务UI主题-第一次返工.md已通过原会话send且confirmed，已重挂提醒。
+- 必须修M1：清空最后颜色覆盖丢独立注释。另限定仅适配12项已证实旧UI测试假设（plugin_resources3/workflow9），不改无关生产UI、不删除业务断言/增超时。Tide终端背景取舍接受，主题及覆盖规则不重问。
+- 主控一次标准542通过12失败5忽略，Clippy通过；日志/var/folders/vs/3tm61ygs569g764_td0zxtym0000gn/T/saddle-theme-controller-hek2ddkh。失败具体断言/原屏幕已核，新Theme目标通过；没有main基线重跑，不能说全套绿。开发超预算重复全套和原RED日志证据不足保留。返工只目标/直接回归，不再全套Clippy。
+- 同trace，rework dispatch4097c8bd-1c8a-425a-9ed5-885ddb89da1e；原采集目录内rework1-reply-context.json用于下一次reply。主控review和返工任务快照已保存。一次纯记录decision关联review被校验拒绝，未存事件；改为允许的需求/授权链接并用新ID存入后才首次send，未重发业务。
+- 后续先status/记录reply核DONE，再核增量；未通过交原agent，最多两轮不收敛报告用户。通过才合并推送清理/关对应agent/空提交/HANDOFF/实际closure。暂无安装，真实配置/业务不动。
+
+
 ## 最新：Theme实现已派发并挂提醒
 
 - saddle/dev-theme-1 instance e641723be7ef，Claude opus[1m]/high；theme-presets分支/worktree，基线ee1fa3a。任务docs/任务/UI主题-实施.md；JEV常规/交叉不要/改行为，主控照用。本轮新增功能与持久化，按目标/相关及一次标准预算，不当成纯颜色替换，也不扩大审计。
