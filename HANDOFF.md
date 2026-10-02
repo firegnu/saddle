@@ -9,6 +9,7 @@
 - 本轮先核定结束接口/写入边界/旧库兼容及Tasks人工验收衔接，任务docs/任务/遥测单任务边界-设计.md，仅设计无实现。路由一次重/交叉null/看得见，采用Claude opus[1m]/xhigh，主控静态审查，不测试构建扩审计。产品边界已批准，不重复问；实质新取舍另报。
 - 本项工作本身未要求记录，不复用Theme trace、不操作真实遥测/队列。当前功能尚未改变；不得把closure说明称为已封闭。
 - 已派saddle/dev-telemetry-boundary-design-1，instance7f019dd5dae6，分支/worktree telemetry-task-boundary-design，基线24c04bd。结束先status再公开corral reply确认DONE；working重挂提醒。交付docs/遥测单任务边界设计.md及完成记录，主控核后再形成实施任务；现有保留目录及用户agent不动。
+- 首稿14b0eeb已核完整DONE，未通过；集中修订已交原设计者。主仓库docs/任务/遥测单任务边界-主控核对.md：M1只读policy不能拒绝closed、错误优先级/无库/合法context边界；M2区间现无条件end=null，不会自然截止，需按结束事件限定；M3审查等待/会话生命周期/保留材料表述及Tasks既有记录选择。I1–I8主控裁定在该文档；不采纳自动改Return后Record默认值，不重问既有项目默认、不操作旧trace。仅文档静态及diff check，无测试构建；未派实现、未安装。
 
 ## 最新：Lagoon墨绿主题已合并安装，待用户选择
 
