@@ -51,3 +51,9 @@ AGENTS.md、src/theme.rs预置、src/settings.rs的Preset::ALL使用、docs/UI�
 - dim 3.40只作弱化/次要提示用，未当正文色。
 
 未完成项：无；真实终端观感待主控构建安装后由用户体验。
+
+## 主控审查（2026-10-02）：通过
+
+候选0b77408，公开status idle/attached0、reply末行DONE且首尾配对stored。diff仅新增Preset::Lagoon/配色及列举、直接测试和说明；原Dune/Tide/Terminal函数未改，覆盖/渲染/Settings业务未改。bg/agents_bg精确#0c1616，顺序符合任务，diff --check通过。
+完成记录报告主题直接目标layout_config2/settings5/terminal1共8项通过；公开read保留于/tmp/saddle-lagoon-public-read.txt，尾部只有一项完整test result，未据此声称独立核过全部8项原始输出。主控按看得见预算不重跑套件。已核目标断言；正文/主背景14.24、正文/选中9.76、按钮文字/焦点10.75三对主控独立计算与记录一致，均为声明颜色值而非终端实测。
+接受dim弱提示3.40、分隔线弱对比和agent类型色保持语义；overlay沿现有default（与其他主题一致），不额外扩布局或终端协议。无阻断，无交叉审查；真实视觉体验留安装后用户检查。
