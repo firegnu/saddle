@@ -1661,10 +1661,10 @@ fn render_header_actions(
 }
 
 #[test]
-fn header_actions_share_the_title_row_and_wrap_without_colliding_with_status() {
+fn header_actions_keep_telemetry_above_plugins_and_settings() {
     use crossterm::event::KeyCode;
     use saddle::theme;
-    for (width, plugin_y, settings_y, telemetry_y) in [(52, 1, 1, 1), (30, 3, 3, 4), (20, 3, 4, 5)]
+    for (width, plugin_y, settings_y, telemetry_y) in [(52, 4, 4, 3), (30, 4, 4, 3), (20, 4, 5, 3)]
     {
         let (buffer, hits) = render_header_actions(width, &Pointer::default(), &[]);
         let settings = hits

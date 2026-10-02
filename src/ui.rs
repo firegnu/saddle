@@ -119,13 +119,10 @@ pub fn draw_workspace(
     let header = agents_header(view.panes.agents);
     let show_plugins = terminals.is_some() && inner(view.panes.agents).height >= 6;
     let pair_width = SETTINGS.width() + "Plugins".width() + 2;
-    let action_width = if show_plugins {
-        pair_width + TELEMETRY.width() + 2
-    } else {
-        SETTINGS.width()
-    };
-    let action_row = if usize::from(header.width)
-        >= format!("Agents · {}", panel.agents.len()).width() + 2 + action_width
+    let action_row = if show_plugins {
+        3
+    } else if usize::from(header.width)
+        >= format!("Agents · {}", panel.agents.len()).width() + 2 + SETTINGS.width()
     {
         0
     } else {
@@ -133,19 +130,9 @@ pub fn draw_workspace(
     };
     let separate_actions = show_plugins && usize::from(header.width) < pair_width;
     let settings_row = action_row + u16::from(separate_actions);
-    // Telemetry joins Plugins and Settings when all three fit, else takes the next row.
-    let shared_row = usize::from(header.width) >= action_width;
-    let telemetry_row = if shared_row {
-        action_row
-    } else {
-        settings_row + 1
-    };
-    let header_rows = (if show_plugins {
-        telemetry_row
-    } else {
-        settings_row
-    } + 1)
-        .max(2);
+    // Keep Telemetry above the management entries, regardless of sidebar width.
+    let telemetry_row = 2;
+    let header_rows = (settings_row + 1).max(2);
     let right_aligned = |row: u16, width: u16| {
         let width = width.min(header.width);
         Rect::new(
@@ -172,10 +159,7 @@ pub fn draw_workspace(
             rect,
         );
         hits.plugins = rect;
-        let mut rect = right_aligned(telemetry_row, TELEMETRY.width() as u16);
-        if shared_row {
-            rect.x -= pair_width as u16 + 2;
-        }
+        let rect = right_aligned(telemetry_row, TELEMETRY.width() as u16);
         frame.render_widget(
             Paragraph::new(TELEMETRY).style(
                 Style::default()
@@ -604,7 +588,7 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>, header_row
         ),
         Rect::new(content.x, content.y, content.width, 1),
     );
-    // The list starts after the shared title/actions, status and any wrapped actions.
+    // The list starts after the title, status and action rows.
     if content.height > header_rows {
         rule(frame, content.y + header_rows);
     }
