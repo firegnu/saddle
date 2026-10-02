@@ -10,7 +10,7 @@ fn public_json_merges_status_with_listing_and_keeps_starting_agents() {
         r##"#!/bin/sh
 case "$1:$2" in
   ls:) echo '{"agents":[{"name":"demo/z","starting":true,"cwd":"/tmp/z"},{"name":"demo/a","cwd":"/tmp/a","instance":"abc123456"},{"name":"demo/old","incompatible":true,"proto":99}]}' ;;
-  status:demo/a) echo '{"ok":true,"name":"demo/a","kind":"claude","state":"working","last_tool":"Bash","turn_started":100.0,"last_output":110.0,"attached":1,"last_input_source":"human","title":"中文标题","instance":"abc123456"}' ;;
+  status:demo/a) echo '{"ok":true,"name":"demo/a","kind":"claude","state":"working","last_tool":"Bash","turn_started":100.0,"state_started":105.0,"last_output":110.0,"attached":1,"last_input_source":"human","title":"中文标题","instance":"abc123456"}' ;;
   *) echo '{"ok":false,"error":"unexpected_command"}'; exit 1 ;;
 esac
 "##,
@@ -21,6 +21,8 @@ esac
     assert_eq!(a.name, "demo/a");
     assert_eq!(a.cwd.as_deref(), Some("/tmp/a"));
     assert_eq!(a.state.as_deref(), Some("working"));
+    assert_eq!(a.turn_started, Some(100.0));
+    assert_eq!(a.state_started, Some(105.0));
     assert_eq!(a.attached, 1);
     assert_eq!(a.title.as_deref(), Some("中文标题"));
     assert!(agents[1].incompatible);

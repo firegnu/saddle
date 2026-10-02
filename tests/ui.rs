@@ -22,6 +22,7 @@ fn fixture() -> (agents::Panel, ()) {
             title: Some("中文任务".into()),
             cwd: Some("/tmp/demo".into()),
             last_output: Some(99.0),
+            turn_started: Some(99.0),
             ..Default::default()
         }],
         None,
@@ -30,6 +31,9 @@ fn fixture() -> (agents::Panel, ()) {
     (agents, ())
 }
 fn render(w: u16, h: u16, a: &mut agents::Panel, _q: &mut (), focus: Focus) -> (Buffer, ui::Hits) {
+    render_at(w, h, a, focus, 100.0)
+}
+fn render_at(w: u16, h: u16, a: &mut agents::Panel, focus: Focus, now: f64) -> (Buffer, ui::Hits) {
     let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
     let panes = Panes::new(Rect::new(0, 0, w, h), &Config::default());
     let mut hits = ui::Hits::default();
@@ -48,7 +52,7 @@ fn render(w: u16, h: u16, a: &mut agents::Panel, _q: &mut (), focus: Focus) -> (
                     projects: &[],
                     viewer_note: "测试终端",
                     reply: "上一轮回复",
-                    now: 100.0,
+                    now,
                     pointer: &Pointer::default(),
                 },
             );
@@ -469,6 +473,88 @@ fn agent_states_have_the_designed_dots_colors_labels_and_activity() {
                     "{case}: {rows}"
                 ),
             }
+        }
+    }
+}
+
+#[test]
+fn working_duration_survives_output_and_animation_refreshes() {
+    let (mut a, _) = fixture();
+    a.agents[0].turn_started = Some(70.0);
+    for (now, output, expected) in [
+        (100.0, 99.0, "30s"),
+        (100.4, 100.3, "30s"),
+        (101.0, 100.9, "31s"),
+    ] {
+        let mut updated = a.agents[0].clone();
+        updated.last_output = Some(output);
+        a.absorb(vec![updated], None, now);
+        let (buffer, _) = render_at(160, 40, &mut a, Focus::Agents, now);
+        let lines = agents_lines(&buffer);
+        let headline = lines.iter().find(|line| line.contains("working")).unwrap();
+        assert!(headline.contains(expected), "{headline}");
+        let doing = lines.iter().find(|line| line.contains("DOING")).unwrap();
+        assert!(doing.contains(expected), "{doing}");
+    }
+}
+
+#[test]
+fn idle_and_waiting_duration_use_state_entry_not_output_events_or_turn() {
+    for (state, label) in [("idle", "idle"), ("blocked", "waiting")] {
+        let (mut a, _) = fixture();
+        for (now, since, expected) in [
+            (100.0, 75.0, "25s"),
+            (101.0, 75.0, "26s"),
+            (102.0, 101.0, "1s"),
+        ] {
+            let agent = serde_json::from_value(serde_json::json!({
+                "name":"demo/main", "instance":"abcdef123", "state":state,
+                "turn_started":20.0, "state_started":since,
+                "last_output":now, "last_event_at":now
+            }))
+            .unwrap();
+            a.absorb(vec![agent], None, now);
+            let (buffer, _) = render_at(160, 40, &mut a, Focus::Agents, now);
+            let lines = agents_lines(&buffer);
+            let headline = lines.iter().find(|line| line.contains(label)).unwrap();
+            assert!(headline.contains(expected), "{headline}");
+            if state == "blocked" {
+                let ask = lines.iter().find(|line| line.contains("ASK")).unwrap();
+                assert!(ask.contains(expected), "{ask}");
+            }
+        }
+    }
+}
+
+#[test]
+fn missing_state_origin_is_unknown_even_with_recent_output_and_events() {
+    for (state, label) in [
+        ("working", "working"),
+        ("idle", "idle"),
+        ("blocked", "waiting"),
+    ] {
+        let (mut a, _) = fixture();
+        a.absorb(
+            vec![
+                serde_json::from_value(serde_json::json!({
+                    "name":"demo/main", "state":state,
+                    "last_output":99.0, "last_event_at":99.0,
+                    "turn_started": if state == "working" { None } else { Some(20.0) }
+                }))
+                .unwrap(),
+            ],
+            None,
+            100.0,
+        );
+        let (buffer, _) = render_at(160, 40, &mut a, Focus::Agents, 100.0);
+        let lines = agents_lines(&buffer);
+        let headline = lines.iter().find(|line| line.contains(label)).unwrap();
+        assert!(headline.contains('—'), "{headline}");
+        for line in lines
+            .iter()
+            .filter(|line| line.contains("ASK") || line.contains("DOING"))
+        {
+            assert!(line.contains("· —"), "{line}");
         }
     }
 }
@@ -1090,6 +1176,7 @@ fn spec_sample() -> agents::Panel {
                 attached: 1,
                 last_input_source: Some("human".into()),
                 last_output: Some(89.0),
+                state_started: Some(89.0),
                 ..agent(
                     "corral/main",
                     "claude",
@@ -1102,6 +1189,7 @@ fn spec_sample() -> agents::Panel {
                 title: Some("drover".into()),
                 last_input_source: Some("agent".into()),
                 last_output: Some(-500.0),
+                state_started: Some(-500.0),
                 ..agent(
                     "drover/main",
                     "codex",
@@ -1126,6 +1214,7 @@ fn spec_sample() -> agents::Panel {
             },
             Agent {
                 last_output: Some(-20.0),
+                state_started: Some(-20.0),
                 last_input_source: Some("send".into()),
                 ..agent(
                     "saddle/main",
@@ -1251,7 +1340,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
         " │   be790d · ATT 0 · VIA agent                   ",
         "                                                  ",
         " saddle/ ──────────────────────────────────── (2) ",
-        " │ ◓ dev-t20-workspace-1 >_ codex working      0s ",
+        " │ ◓ dev-t20-workspace-1 >_ codex working      8m ",
         " │   ⠪ t20-terminal-workspace                     ",
         " │   DOING apply_patch · 8m                       ",
         " │   ⎇ t20-terminal-workspace ↑0 main  +127 -3 ?3 ",
@@ -1288,7 +1377,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
     assert_eq!(buffer[(2, 4)].fg, t::AGENTS_ACCENT);
     assert_eq!(buffer[(10, 4)].fg, t::AGENTS_FAINT);
     assert_eq!(buffer[(47, 4)].fg, t::AGENTS_DIM);
-    assert_label_color(&buffer, "0s", t::AGENTS_BLUE);
+    assert_label_color(&buffer, "8m", t::AGENTS_BLUE);
     assert_label_color(&buffer, "…/personal_projs/", t::AGENTS_DIM);
 }
 

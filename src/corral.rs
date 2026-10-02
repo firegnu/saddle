@@ -24,6 +24,7 @@ pub struct Agent {
     pub state: Option<String>,
     pub last_tool: Option<String>,
     pub turn_started: Option<f64>,
+    pub state_started: Option<f64>,
     pub last_output: Option<f64>,
     pub idle_for: Option<f64>,
     pub attached: usize,

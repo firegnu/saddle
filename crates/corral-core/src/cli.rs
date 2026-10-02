@@ -114,7 +114,7 @@ fn status(name: &str) -> Result<Status> {
     } else {
         json!({})
     };
-    let mut public = json!({"ok":true,"name":name,"instance":st["instance"],"kind":m["kind"],"proto":st["proto"],"state":"unknown","last_tool":null,"turn_started":null,"last_event":null,"last_event_at":null,"last_input_at":null,"last_input_source":null,"title":st["title"],"last_output":st["last_output"],"idle_for":st["last_output"].as_f64().map(|t|((now()-t)*1000.0).round()/1000.0),"attached":st["attached"],"last_human_input":st["last_human_input"],"started":st["started"],"labels":labels});
+    let mut public = json!({"ok":true,"name":name,"instance":st["instance"],"kind":m["kind"],"proto":st["proto"],"state":"unknown","state_started":null,"last_tool":null,"turn_started":null,"last_event":null,"last_event_at":null,"last_input_at":null,"last_input_source":null,"title":st["title"],"last_output":st["last_output"],"idle_for":st["last_output"].as_f64().map(|t|((now()-t)*1000.0).round()/1000.0),"attached":st["attached"],"last_human_input":st["last_human_input"],"started":st["started"],"labels":labels});
     let snapshot = if hooks::known(m["kind"].as_str().unwrap_or("")) {
         let snap = events::read(
             &d,
@@ -127,6 +127,9 @@ fn status(name: &str) -> Result<Status> {
             } else {
                 snap["state"].clone()
             };
+        if public["state"] == snap["state"] {
+            public["state_started"] = snap["state_started"].clone();
+        }
         for (a, b) in [
             ("last_tool", "last_tool"),
             ("turn_started", "turn_started"),
