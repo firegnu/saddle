@@ -122,3 +122,44 @@
 - 现存旧 pen、固定 helper 和无记录 after 的首次无缝过渡仍未解决；快照到备用建立之间、active 之后的崩溃没有无损保证。没有用 stub、skip 或重启伪装这些能力。
 - **未执行**：真实 Claude/Codex/pi/omp 兼容冒烟、真实安装/入口更新、首次过渡、真实 agent/任务/遥测操作、修改原独立 Corral 仓库、主仓库/其他 worktree 写入、合并和推送。
 - **需主控决定/继续**：主控和独立审查；若需要最终整套 workspace 全绿，另行给检查预算；真实兼容验证、部署与首次过渡仍需按既定授权边界另行安排。没有实验证伪而被隐瞒或降低的已批准正常升级机制。
+
+## 返工 1 完成记录
+
+2026-10-03，被委派的原实现者。依据主控的《Corral通用升级-返工1》及独立审查唯一必须改项，在原 `corral-live-upgrade` 分支完成限定修正。实现提交：`9648ff0`（修复 Corral 恢复时重建快照身份基准的问题）；本节单独提交作证据记录，等待主控复核。
+
+### 根因与修正范围
+
+- 原 `resume` 在校验失败后丢掉 `Snapshot` 外层身份依据，再调用 `Pen::save` 对当前 fd/锁重新采集；fallback、Hold/recover 会因此认可错误资源，并覆盖备用仍需使用的原依据。
+- `resume`、Hold 和 standby 现在保留完整 `Snapshot`。失败记录、recover 的 epoch/attempt/target 更新通过 `Snapshot::save` 持久化，不重建 schema、描述符身份、名称锁身份或流状态。仅初始 live pen 的两次交接保存采集身份。
+- standby 接管及 Hold 确认备用退出时，明确移除 control/alive 两个管道角色和对应描述符；其余基准保持原值。Hold 使用 listener 或取得管道关闭权前，校验 schema/角色表及该资源的原身份；未通过的 master/客户端不取得清理权，不进入原流 I/O。
+- 修正中直接暴露一个相关误拒绝：macOS 上原 socket 对端断开后，`fstat.st_mode` 的权限位会变化，原来再次采集身份掩盖了此变化。定向实测中设备号/inode 不变，mode 从 49590 变为 49152。身份校验使用原设备号、inode 和 `S_IFMT` 文件类型；保存的完整 mode 不重写。同类型 socket 替换仍拒绝。失败信息保留具体 fd 和原/实际 stat 值，便于定位。
+- 源码/测试范围仅 `crates/corral-core/src/pen/upgrade.rs`、`crates/corral-core/tests/upgrade.rs`；未改协议 schema、正式设计、CLI 接口、适配器、after 或打包。
+
+### 实际 RED → GREEN 与直接回归
+
+所有命令前台等待结束，Cargo 均使用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，显式 `--target aarch64-apple-darwin`。以下命令列省略共同的环境前缀；完整日志目录为 `/tmp/saddle-corral-rework1.6GqKIm/`。
+
+| 检查/实际命令 | 实际结果与日志 |
+|---|---|
+| `cargo test -p corral-core --target aarch64-apple-darwin --test upgrade rejected_fd_identity_survives_fallback_recover_and_standby -- --exact`，先加测试、未改实现 | **RED，退出 101**；编译运行成功后，断言发现仍带 `inherited fd identity mismatch` 的回退已变为 `custody: owner`、`state: none`。`red.log` |
+| 同一命令，保留 Snapshot 的初次修正后 | **GREEN，1 passed**；验证 fallback/recover 拒绝、原快照不变、备用从原资源恢复冻结连接。`green.log` |
+| `cargo test -p corral-core --target aarch64-apple-darwin --test upgrade -- rejected_fd_identity hold_recovers hold_reports recover_record_failure pre_io_crash standby_never` | **首轮直接回归 6 passed / 1 failed，退出 101**；原 `hold_reports_lost_standby_and_can_recover_unprotected` 被 socket mode 动态变化误拒绝。`regression.log`，未将该轮写成通过 |
+| `cargo test -p corral-core --target aarch64-apple-darwin --test upgrade hold_reports_lost_standby_and_can_recover_unprotected -- --exact`，增加 fd/stat 错误详情后 | **限定定位复跑仍失败，退出 101**；同 fd 的设备号/inode 不变，mode 权限位改变。`pipe-diagnosis.log` |
+| `cargo test -p corral-core --target aarch64-apple-darwin --lib pen::upgrade::tests::descriptor_identity_survives_peer_disconnect -- --exact` | **RED → GREEN，退出 101 → 0，最终 1 passed**；先证明同一 socket 对端关闭后的误拒绝，再核实类型位校验通过且 `dup2` 替换成另一 socket 仍拒绝。`socket-mode-red.log`、`socket-mode-green.log` |
+| `cargo test -p corral-core --target aarch64-apple-darwin --test upgrade -- rejected_fd_identity hold_recovers hold_reports recover_record_failure pre_io_crash standby_never public_upgrade_keeps`，最终候选 | **8 passed / 0 failed，退出 0**；`regression-final.log` |
+| `git diff --check`、源码/测试提交前 `git diff --cached --check` | 通过 |
+
+两个新增集成用例仅在隔离 exec 映像中用有效文件替换一个继承客户端 fd，备用仍持有原 socket：
+
+- 比较失败记录和 recover 后快照的全部非 upgrade 字段，确认 schema、描述符、锁身份与完整流状态未改变；校验拒绝未被 fallback/recover 豁免，未出现 active，错误资源未被写入，原客户端保持冻结。
+- 有备用时，终止本测试失败映像后，备用按原快照接管，保留 agent PID/instance，恢复两条原连接及请求回执。
+- 备用先退出时，确认 `hold_unprotected`；recover 只移除原管道描述符，其他快照字段不变，错误 fd 仍被拒绝。
+
+最终 8 条集成回归还包括正常原地升级与半包连接、原 Hold 成功恢复、备用退出后的成功恢复、recover 记录写入失败后重试、pre-active 崩溃接管、active 标记禁止重放。额外 1 条 unit 检查覆盖同 socket 对端变化与同类型资源替换；不是另跑全套升级或故障矩阵。
+
+### 验证边界与未执行项
+
+- 全部使用临时 HOME/CORRAL_HOME、合成 cat/脚本以及同一构建复制的固定临时二进制；不代表真实产品版本间升级或真实 coding agent 兼容验收。夹具只清理本次记录的 PID；结束后只读检查临时测试可执行路径，未见匹配残留。
+- 按返工预算，没有运行 workspace 全套、clippy、重新打包或真实 agent 冒烟。主控任务书已说明修正前候选标准 test/clippy 通过，该结果不属于修正后验证。
+- 没有新增任意崩溃恢复、旧 agent 首次迁移或 Observer 后续升级；原实施边界继续有效。没有部署、真实 agent/任务/遥测操作、再派发、主仓库/审查 worktree 写入、合并或推送。
+- 后续仅待主控按本次修正范围复核；未擅自启动额外全套检查或部署步骤。
