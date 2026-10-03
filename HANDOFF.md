@@ -1,6 +1,12 @@
 # Saddle 交接
 
-更新：2026-10-03。**图片版宠物与状态计时已成套部署到 `f7c967a`，两个命令入口及 Drover/Diff 注册已切换；用户稍后自行重启 Saddle，运行中界面尚未更新。** 无在办实现 agent。部署细节见 `docs/任务/宠物与计时-部署记录.md`。
+更新：2026-10-03。**图片版宠物与状态计时已成套部署到 `f7c967a`；用户已重启并反馈「看到修复了，不错」，当前宿主/配套插件加载路径已回读为新版。** 新任务「宠物显示方式」正在独立分支实施。
+
+## 在办任务：宠物显示方式
+
+- 用户批准 Settings 的 Pet 旁新增「自动（默认）/字符方块」两档，不增加强制图片；沿用 Save/Cancel 与即时生效机制。Claude Code `saddle/dev-pet-display-1`（instance=`25007afe83ef`，opus[1m]/high）在 `../saddle-worktrees/pet-display-mode`、分支 `pet-display-mode` 实施。
+- 任务文件在该分支 `docs/任务/宠物显示方式.md`。本任务未选择遥测、不创建 Tasks run；完成后按任务书审查、集成。不得因上一任务部署授权自动重启用户界面。
+- 当前宿主 instance=`3101f085078dc2e7`、PID=10055，加载 `f7c967a/bin/saddle`，Drover/Diff 也来自同版；现有主控 instance=`faec2c2b00cb` 保持。用户的修复反馈不等于逐项验收所有终端与宠物动作。
 
 ## 当前状态
 
