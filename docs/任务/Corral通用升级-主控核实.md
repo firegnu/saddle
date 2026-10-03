@@ -34,3 +34,10 @@ CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo c
 ## 实际边界
 
 没有部署、切换真实命令入口、首次迁移、服务重启、操作用户 agent、Tasks 或遥测。旧 pen/旧 hook/旧 after 首次过渡限制，以及 Observer 退出码与 active 后崩溃边界仍然保留，不因隔离检查通过而改变。
+
+## 主控审查：独立首审结果
+
+已核对审查者同实例 `dca43ca10e7b`，公开 idle、完整回复 DONE；结论为 1 项必须改、0 项建议改。
+主控核对 `resume/validate/save/hold` 控制流，认可「恢复校验失败后不能重新建立 fd 身份基准并覆盖原快照」；该问题属于已设计恢复路径中的资源身份缺陷，挡合并。
+对其余八项取舍认可独立意见：保留既有分层、Observer/首次过渡/故障窗口与合成证据限制，不扩大本轮范围。
+返工交回原实现者，任务 `docs/任务/Corral通用升级-返工1.md`；仅缺陷 RED→GREEN 与直接回归，不重复标准 test/clippy。完成后更新独立 detached 工作区到新提交，交原审查者限定复核。当前未合并。

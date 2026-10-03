@@ -10,8 +10,9 @@
 - 当前主控 `saddle/main`，公开 instance `19185812ef0e`，role=controller；此前主控/Claude 实例已不在公开列表，旧 PID 不复用。开始/完成与实际 agent 名字以公开回执核对。
 - 目标适用首个具备升级协议版本之后：原地 exec、通用资源交接、稳定 hook、进程内采集与判定分离、持久提醒。现存旧 pen/适配器/旧 after 首次过渡仍未解决，不自动停、重建或 resume。已知故障窗口仍可能丢会话。
 - 实施者已交付 `816358a`（功能）与 `ce6f675`（完成记录）；主控核对同实例 idle/DONE、完整回复及干净 worktree。主控对 `ce6f675` 重跑标准检查一次：test 641 passed、0 failed、9 ignored；clippy 通过。保留实现者首轮失败及修正历史，见 `docs/任务/Corral通用升级-主控核实.md`。
-- 独立 Codex 重档审查正在进行：`saddle/dev-corral-upgrade-review-1`，instance `dca43ca10e7b`，role=reviewer，`gpt-6-astra / xhigh`；detached worktree `../saddle-worktrees/review-corral-live-upgrade`，HEAD `ce6f675`。唯一意见文件 `docs/任务/Corral通用升级-独立审查.md`；已登记公开 after 完成提醒并取得 pending 回执，不要重复登记。
-- 实施仅隔离合成验证，不操作用户会话、真实安装、Tasks 或遥测；本链路未选择遥测。目前尚未合并/推送实现，等待独立审查 DONE 后处理必须改项。
+- 独立 Codex 重档首审已核对 idle/DONE：`saddle/dev-corral-upgrade-review-1`，instance `dca43ca10e7b`，role=reviewer，`gpt-6-astra / xhigh`；detached worktree `../saddle-worktrees/review-corral-live-upgrade`，HEAD `ce6f675`。意见在 `docs/任务/Corral通用升级-独立审查.md`：1 项必须改、0 项建议改。主控认可恢复校验失败后 save 重新建立 fd 身份基准的缺陷，暂不合并。
+- 返工 1 交原实现者，见 `docs/任务/Corral通用升级-返工1.md`；仅修该资源身份缺陷并做 RED→GREEN/直接回归，不重复标准全套或 clippy。完成后将 detached 工作区更新到新提交，请原审查者限定复核；复核预算上限两轮。
+- 实施仅隔离合成验证，不操作用户会话、真实安装、Tasks 或遥测；本链路未选择遥测。目前尚未合并/推送实现，返工通过后继续原授权的集成收尾。
 
 ## 上轮调研归档历史
 
@@ -47,7 +48,7 @@
 
 ## 下一步
 
-1. 收到独立审查完成提醒后核对公开状态、完整 DONE 回复和审查文件；不要重跑已完成的主控标准检查。
+1. 收到返工完成提醒后核对公开状态、完整 DONE 回复、分支和完成记录；不要重跑已完成的主控标准检查。
 2. 结合主控核实与独立意见，按 corral-dispatch 预算处理必要返工和限定复核；本轮实施已获批准，不再按上轮“仅讨论”边界停工。
 3. 审查通过按 AGENTS.md 合并/推送、清理本轮 worktree/分支及其自建 agent、补收尾提交、更新交接。保留历史调研工作区与会话，不顺手清理。
 4. 汇报实现和验证的实际结果。真实部署、现存 agent 首次过渡另行确认，不因实现获批自动执行。
