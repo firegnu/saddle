@@ -41,3 +41,11 @@ CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo c
 主控核对 `resume/validate/save/hold` 控制流，认可「恢复校验失败后不能重新建立 fd 身份基准并覆盖原快照」；该问题属于已设计恢复路径中的资源身份缺陷，挡合并。
 对其余八项取舍认可独立意见：保留既有分层、Observer/首次过渡/故障窗口与合成证据限制，不扩大本轮范围。
 返工交回原实现者，任务 `docs/任务/Corral通用升级-返工1.md`；仅缺陷 RED→GREEN 与直接回归，不重复标准 test/clippy。完成后更新独立 detached 工作区到新提交，交原审查者限定复核。当前未合并。
+
+## 主控核实：返工 1
+
+核对实现者同实例 `7321e90e81f2`，idle/DONE；提交 `9648ff0`、`bd282db`，worktree 干净。改动仅 upgrade.rs、对应专项测试和实施完成记录。
+源码改为持有完整 Snapshot 并原样保存身份基准；备用退出仅移除明确管道角色。Hold 控制资源单独核验。认可同一 socket 对端断开不应因权限位变化被视为资源替换，设备/inode/类型仍校验。
+读取 `/tmp/saddle-corral-rework1.6GqKIm/` 的 RED/GREEN 和最终回归原始日志：初始缺陷真实失败、修正通过；相关 socket mode 误拒绝也有独立 RED/GREEN，最终 8 项集成、1 项单测通过。保留中间回归失败记录。
+主控在 `bd282db` 仅重跑 `--test upgrade rejected_fd_identity`（2 passed）与 `--lib pen::upgrade::tests::descriptor_identity_survives_peer_disconnect -- --exact`（1 passed），使用指定共享 target 和显式目标；diff check 通过。未重跑标准套件或 clippy，不把旧候选的全套结果算作新候选全套结果。
+原审查者 detached 工作区已更新至 `bd282db2339498b0f9589f99aafa2524c72a82e8`；交回限定复核第 1 轮，最终合并结论待其 DONE。
