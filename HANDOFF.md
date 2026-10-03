@@ -2,6 +2,12 @@
 
 更新：2026-10-03。**宠物显示方式 Auto/Blocks 已审查、合并、推送、清理并成套部署到 `419d302`，待用户重启。** 当前运行宿主仍为 `f7c967a`；没有停止宿主或现有 agent。
 
+## 在办：图片猫猫候选
+
+- 用户满意 Blocks 猫猫、Blocks Clawd、图片 Clawd，仅认为图片猫猫不可爱，要求请 Claude Code 调查并给几个候选。
+- 已派 `saddle/dev-cat-candidates-1`（instance=`8d0d47f7daf0`，opus[1m]/high）到 `../saddle-worktrees/cat-image-candidates`，分支 `cat-image-candidates`，任务书 `docs/任务/图片猫猫候选调研.md`。本轮只调查、提供视觉参考及候选方向，不改生产素材或代码，不部署；等用户选方向再实施。
+- 未选择遥测、未创建 Tasks run。完成后核对候选与来源，展示给用户；不要因本轮候选调研自动开始制作或安装。
+
 ## 本轮完成：宠物显示方式
 
 - Settings → General → Pet 后新增 Display：Auto 默认支持时图片、否则字符；Blocks 始终字符。不增加强制图片，沿用 Save/Cancel、恢复默认与保存后即时生效。
