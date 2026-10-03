@@ -55,3 +55,11 @@ CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo c
 2026-10-03，核对独立审查者同实例 `dca43ca10e7b` 的 idle/DONE、完整回复及「复核第 1 轮」：原必须改 1 项解决，剩余必须改 0 项、新增建议改 0 项，可以合并。
 主控认可 Snapshot 保留、明确管道角色移除、Hold 控制资源身份与 socket 类型校验四项结论；结合前述主控定向复跑，批准合并候选 `bd282db`。
 不追加第二轮复核、不重跑标准全套，不将修正前全套或旧临时包视为最终修正后的全套/发布包。真实部署、首次迁移和真实 agent 兼容冒烟仍未执行。
+
+## 合并与清理实际结果
+
+- 合并 `dab13d723f700b1558f3415c8817eb754d15bee6` 已成功推送 origin/main，未冲突、未改变已审候选源码。
+- 清理前核对两名本轮 agent 均为原实例、idle、attached=0，两处 worktree 干净且提交已被 main 包含。
+- 已不带 force 删除 `corral-live-upgrade` 和 `review-corral-live-upgrade` 两处 worktree，并以 `git branch -d` 删除已合并实现分支。
+- 工作目录已删，一并关闭本轮实现者 `saddle/dev-corral-upgrade-1`（`7321e90e81f2`）及审查者 `saddle/dev-corral-upgrade-review-1`（`dca43ca10e7b`）；两次公开 stop 均返回 ok、exit_code 0。
+- 历史调研/其他 worktree 保留；设计评估会话 `saddle/dev-live-upgrade-review-1`（`43b27dc12c46`）及主控 `saddle/main` 保留。没有操作用户 agent、部署或首次迁移。
