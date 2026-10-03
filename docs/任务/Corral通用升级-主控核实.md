@@ -49,3 +49,9 @@ CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo c
 读取 `/tmp/saddle-corral-rework1.6GqKIm/` 的 RED/GREEN 和最终回归原始日志：初始缺陷真实失败、修正通过；相关 socket mode 误拒绝也有独立 RED/GREEN，最终 8 项集成、1 项单测通过。保留中间回归失败记录。
 主控在 `bd282db` 仅重跑 `--test upgrade rejected_fd_identity`（2 passed）与 `--lib pen::upgrade::tests::descriptor_identity_survives_peer_disconnect -- --exact`（1 passed），使用指定共享 target 和显式目标；diff check 通过。未重跑标准套件或 clippy，不把旧候选的全套结果算作新候选全套结果。
 原审查者 detached 工作区已更新至 `bd282db2339498b0f9589f99aafa2524c72a82e8`；交回限定复核第 1 轮，最终合并结论待其 DONE。
+
+## 最终主控审查
+
+2026-10-03，核对独立审查者同实例 `dca43ca10e7b` 的 idle/DONE、完整回复及「复核第 1 轮」：原必须改 1 项解决，剩余必须改 0 项、新增建议改 0 项，可以合并。
+主控认可 Snapshot 保留、明确管道角色移除、Hold 控制资源身份与 socket 类型校验四项结论；结合前述主控定向复跑，批准合并候选 `bd282db`。
+不追加第二轮复核、不重跑标准全套，不将修正前全套或旧临时包视为最终修正后的全套/发布包。真实部署、首次迁移和真实 agent 兼容冒烟仍未执行。
