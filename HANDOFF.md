@@ -1,12 +1,14 @@
 # Saddle 交接
 
-更新：2026-10-03。**A 图片猫猫已部署到 `7acceb3`，用户反馈「可以不错」。卡皮巴拉新宠物已授权并交给 Claude Code 实施。**
+更新：2026-10-03。**卡皮巴拉图片与 Blocks 两版已审查集成并清理，尚未部署。** 安装仍为 `7acceb3`，包含用户认可的 A 图片猫。
 
-## 在办：卡皮巴拉
+## 本轮完成：卡皮巴拉
 
-- 用户要求请 Claude Code 做卡皮巴拉，主控此前呆萌、圆桶身子、宽口鼻、半眯眼与慢走/嚼叶/打盹/顶橘子/小鸟等建议已交给它参考，具体动作由它按空间和辨识度选择。
-- 新 agent `saddle/dev-capybara-1`（instance=`6c79ab3c803c`，opus[1m]/high，role=implementer），分支/worktree `capybara-pet`；任务书 `docs/任务/卡皮巴拉宠物.md`，提交 `0874d8c`。
-- 提供图片与 Blocks 两版、接入已有 Pet/Auto/Blocks，保持猫猫与 Clawd 四套素材不变。范围包含必要配置/选择行为测试，标准检查按任务预算各一次；未选择遥测，未创建 Tasks run。完成后审查集成，不自行部署或重启。
+- 实现 `ea665b3`，完成记录 `e6cf18a`，主控审查 `0776995`，合并 `33c00d7`，收尾 `eda201b`。任务及审查见 `docs/任务/卡皮巴拉宠物.md`；两版静态/动作预览见 `docs/调研/卡皮巴拉宠物.md`。
+- Pet 增加 Capybara，配置 capybara，默认仍 Clawd；沿用 Auto/Blocks、Save/Cancel/恢复默认/即时生效。既有四套宠物素材与渲染器不变。图片 41 姿态、Blocks 35 姿态，两版七段动画节拍一致：走、转身、发呆、嚼叶、打盹、顶橘子、小鸟落背。接受方块版简化嘴和小道具细节。
+- 主控标准首轮 496 passed、1 failed、9 ignored；既有 workflow 鼠标任务表单在 tests/workflow.rs:851 失败，限定复跑 1 passed；补完中断后插件/示例目标 128 passed。合计覆盖 625 项通过、9 项忽略，不是一次全套全绿；Clippy 通过。首次失败原因未证实，未扩修；日志 `/tmp/saddle-capybara-review-*.log`。
+- `capybara-pet` 分支/worktree 已清理；自建实现者 `saddle/dev-capybara-1`（instance=`6c79ab3c803c`）确认 idle、attached=0 后关闭，stop ok、SIGHUP、exit_code=129。未选择遥测、未创建 Tasks run。
+- 下一步等用户安排；本轮明确不自行部署，尚未在真实 Ghostty/Metalterm 目测。预览的 8×19 来自既有测试注释，不是本轮实时测量。
 
 ## 本轮完成：A 图片猫猫
 
