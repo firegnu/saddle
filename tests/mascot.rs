@@ -48,6 +48,7 @@ fn render(
                     popup: None,
                 },
                 settings: None,
+                updates: false,
             }),
         );
     })

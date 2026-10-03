@@ -26,6 +26,7 @@ pub mod telemetry_view;
 pub mod terminal;
 pub mod terminals;
 pub mod ui;
+pub mod updates;
 pub mod viewer;
 
 pub mod theme;

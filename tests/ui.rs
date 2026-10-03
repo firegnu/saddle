@@ -1049,6 +1049,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                             popup: None,
                         },
                         settings: None,
+                        updates: false,
                     }),
                 );
             })
@@ -1700,6 +1701,14 @@ fn render_header_actions(
     pointer: &Pointer,
     items: &[saddle::attention::Item],
 ) -> (Buffer, ui::Hits) {
+    render_header(left_width, pointer, items, false)
+}
+fn render_header(
+    left_width: u16,
+    pointer: &Pointer,
+    items: &[saddle::attention::Item],
+    updates: bool,
+) -> (Buffer, ui::Hits) {
     let (mut panel, _) = fixture();
     let terminals = saddle::terminals::Terminals::new("unused-fake-corral".into());
     let colors = saddle::theme::Theme::default();
@@ -1742,6 +1751,7 @@ fn render_header_actions(
                         popup: None,
                     },
                     settings: None,
+                    updates,
                 }),
             );
         })
@@ -1838,4 +1848,29 @@ fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
     assert_eq!(buffer[(x + 12, y)].fg, theme::AGENTS_YELLOW);
     let (buffer, _) = render_header_actions(52, &Pointer::default(), &[]);
     assert_eq!(buffer[(x, y)].fg, theme::AGENTS_DIM);
+}
+
+#[test]
+fn a_dot_beside_settings_shows_that_installed_updates_need_the_user() {
+    use crossterm::event::KeyCode;
+    for width in [52, 30, 20] {
+        for (updates, dot) in [(false, " "), (true, "•")] {
+            let (buffer, hits) = render_header(width, &Pointer::default(), &[], updates);
+            let settings = hits
+                .buttons
+                .iter()
+                .find(|h| h.key.code == KeyCode::Char(','))
+                .unwrap()
+                .area;
+            let text: String = (settings.x..settings.right())
+                .map(|x| buffer[(x, settings.y)].symbol())
+                .collect();
+            assert_eq!(text, "Settings", "width {width}");
+            assert_eq!(
+                buffer[(settings.right(), settings.y)].symbol(),
+                dot,
+                "width {width}"
+            );
+        }
+    }
 }

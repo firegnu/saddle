@@ -227,6 +227,7 @@ struct App {
     agents_read: crate::diagnostics::Last,
     config_from_file: bool,
     checker: Option<crate::diagnostics::Checker>,
+    updates: crate::updates::Updates,
 }
 impl App {
     fn new(
@@ -283,6 +284,16 @@ impl App {
             std::path::PathBuf::from(&client.program),
         );
         Ok(Self {
+            updates: crate::updates::Updates::start(
+                crate::updates::Sources {
+                    running: std::env::current_exe()
+                        .and_then(std::fs::canonicalize)
+                        .map_err(|e| e.to_string()),
+                    command: "saddle".into(),
+                    corral: config.corral.clone(),
+                },
+                Duration::from_secs(30),
+            ),
             plugins,
             plugin_page: None,
             telemetry: None,
@@ -411,6 +422,7 @@ impl App {
                             .settings
                             .as_mut()
                             .filter(|_| self.plugin_page.is_none()),
+                        updates: self.updates.attention(),
                     }),
                 );
                 self.draw_plugin_overlay(frame, panes);
@@ -470,6 +482,10 @@ impl App {
         Ok(())
     }
     fn tick(&mut self, panes: Panes) -> Result<()> {
+        self.updates.poll();
+        if let Some(settings) = &mut self.settings {
+            settings.set_updates(self.updates.page());
+        }
         self.viewer_area = panes.viewer;
         let focused = self.focus == Focus::Viewer
             && self.settings.is_none()
@@ -1570,6 +1586,7 @@ impl App {
     fn open_settings(&mut self, back: Focus) {
         if let Some(mut parked) = self.parked_settings.take() {
             parked.refresh_recording();
+            parked.set_updates(self.updates.page());
             self.settings = Some(parked);
             self.settings_return = back;
             return;
@@ -1580,6 +1597,9 @@ impl App {
         );
         self.settings_return = back;
         self.focus = Focus::Agents;
+        if let Some(settings) = &mut self.settings {
+            settings.set_updates(self.updates.page());
+        }
     }
     /// Closing returns input to where it was. A save applies colors and the sidebar width now;
     /// the other settings wait for the next start.
@@ -1591,6 +1611,17 @@ impl App {
                 return;
             }
             Outcome::Stay => return,
+            Outcome::CheckUpdates | Outcome::Upgrade => {
+                if matches!(outcome, Outcome::Upgrade) {
+                    self.updates.upgrade();
+                } else {
+                    self.updates.refresh();
+                }
+                if let Some(settings) = &mut self.settings {
+                    settings.set_updates(self.updates.page());
+                }
+                return;
+            }
             Outcome::Cancel => {}
             // The config part was written; Settings stays open on what was not saved.
             Outcome::Applied(saved, _) => {

@@ -37,13 +37,15 @@ pub enum Page {
     Advanced,
     Diagnostics,
     Plugins,
+    Updates,
 }
-const PAGES: [(Page, &str, u8); 5] = [
+const PAGES: [(Page, &str, u8); 6] = [
     (Page::General, "General F1", 1),
     (Page::Colors, "Colors F2", 2),
     (Page::Advanced, "Advanced F3", 3),
     (Page::Diagnostics, "Diagnostics F4", 4),
     (Page::Plugins, "Plugins F5", 5),
+    (Page::Updates, "Updates F6", 6),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -188,6 +190,10 @@ pub enum Outcome {
     Recorded,
     /// The config was written but the switch was not: apply it and keep Settings open.
     Applied(Box<Config>, Vec<&'static str>),
+    /// Updates opened or Refresh pressed: check again now.
+    CheckUpdates,
+    /// Upgrade all pressed while offered.
+    Upgrade,
 }
 
 pub struct Settings {
@@ -220,6 +226,8 @@ pub struct Settings {
     report: Option<crate::diagnostics::Report>,
     /// The first Diagnostics line shown.
     report_top: u16,
+    updates: crate::updates::Page,
+    updates_top: u16,
     /// Where the recording switch is stored; Err says why there is none.
     telemetry: Result<Store, String>,
     /// The switch's generation as last read; Err while its state is unknown, saying why.
@@ -259,6 +267,8 @@ impl Settings {
             rows: Vec::new(),
             report: None,
             report_top: 0,
+            updates: Default::default(),
+            updates_top: 0,
             telemetry: Err("no telemetry store".into()),
             recording: Err("no telemetry store".into()),
             recording_conflict: false,
@@ -320,6 +330,22 @@ impl Settings {
         if let Some(report) = &mut self.report {
             report.checks = Some(checks);
         }
+    }
+    /// What the Updates page shows now.
+    pub fn set_updates(&mut self, page: crate::updates::Page) {
+        self.updates = page;
+    }
+    /// Shows the Updates page; the caller checks again.
+    pub fn open_updates(&mut self) {
+        self.page = Page::Updates;
+        self.message.clear();
+    }
+    pub fn updates_help(&self) -> Option<&'static str> {
+        (self.page == Page::Updates).then_some(if self.updates.upgrade {
+            " ↑↓ Scroll  F1-F6 Page  r Refresh  u Upgrade all  Esc Close"
+        } else {
+            " ↑↓ Scroll  F1-F6 Page  r Refresh  Esc Close"
+        })
     }
     pub fn copied(&mut self, result: Result<(), String>) {
         (self.message, self.error) = match result {
@@ -530,6 +556,30 @@ impl Settings {
         if key.code == KeyCode::Esc {
             return Outcome::Cancel;
         }
+        if key.code == KeyCode::F(6) {
+            self.open_updates();
+            return Outcome::CheckUpdates;
+        }
+        if self.page == Page::Updates {
+            if key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+            {
+                return Outcome::Stay;
+            }
+            match key.code {
+                KeyCode::F(n @ 1..=3) => self.show(PAGES[usize::from(n - 1)].0),
+                KeyCode::F(4) => return self.diagnostics_key(key),
+                KeyCode::Char('r') => return Outcome::CheckUpdates,
+                KeyCode::Char('u') if self.updates.upgrade => return Outcome::Upgrade,
+                KeyCode::Up => self.updates_top = self.updates_top.saturating_sub(1),
+                KeyCode::Down => self.updates_top = self.updates_top.saturating_add(1),
+                KeyCode::PageUp => self.updates_top = self.updates_top.saturating_sub(10),
+                KeyCode::PageDown => self.updates_top = self.updates_top.saturating_add(10),
+                _ => {}
+            }
+            return Outcome::Stay;
+        }
         // Diagnostics stays reachable while the config file cannot be used.
         if self.page == Page::Diagnostics || key.code == KeyCode::F(4) {
             return self.diagnostics_key(key);
@@ -622,7 +672,7 @@ impl Settings {
             Input::new((self.inputs[self.selected].text != "true").to_string());
     }
     pub fn paste(&mut self, text: &str) {
-        if self.page != Page::Diagnostics
+        if !matches!(self.page, Page::Diagnostics | Page::Updates)
             && !self.conflict
             && self.broken.is_none()
             && !matches!(
@@ -634,7 +684,10 @@ impl Settings {
         }
     }
     pub fn click(&mut self, point: Position) {
-        if self.conflict || self.broken.is_some() || self.page == Page::Diagnostics {
+        if self.conflict
+            || self.broken.is_some()
+            || matches!(self.page, Page::Diagnostics | Page::Updates)
+        {
             return;
         }
         if let Some(&(_, input, i)) = self.rows.iter().find(|(row, _, _)| row.contains(point)) {
@@ -650,7 +703,13 @@ impl Settings {
         }
     }
     pub fn scroll(&mut self, down: bool) {
-        if self.page == Page::Diagnostics {
+        if self.page == Page::Updates {
+            self.updates_top = if down {
+                self.updates_top.saturating_add(1)
+            } else {
+                self.updates_top.saturating_sub(1)
+            };
+        } else if self.page == Page::Diagnostics {
             self.report_top = if down {
                 self.report_top.saturating_add(1)
             } else {
@@ -869,7 +928,8 @@ impl Settings {
     pub fn draw(&mut self, t: &Theme, frame: &mut Frame) -> Vec<buttons::Hit> {
         // Colors needs a tall list; the other pages and notices stay compact.
         let diagnostics = self.page == Page::Diagnostics;
-        let height = if diagnostics {
+        let updates = self.page == Page::Updates;
+        let height = if diagnostics || updates {
             40
         } else if self.conflict || self.broken.is_some() {
             18
@@ -881,6 +941,9 @@ impl Settings {
         } else {
             16
         };
+        // The sixth tab wraps at the normal width; preserve the existing fields and notes.
+        let height =
+            height + u16::from(!diagnostics && !updates && !self.conflict && self.broken.is_none());
         let area = crate::theme::centered(frame.area(), 76, height);
         frame.render_widget(Clear, area);
         frame.render_widget(t.block(TITLE, true).style(t.base().bg(t.overlay)), area);
@@ -891,7 +954,13 @@ impl Settings {
             ..inside
         };
         self.rows.clear();
-        let bar = if diagnostics {
+        let bar = if updates {
+            vec![
+                Button::new("Refresh r", KeyCode::Char('r'), true),
+                Button::new("Upgrade all u", KeyCode::Char('u'), self.updates.upgrade).primary(),
+                Button::new("Close Esc", KeyCode::Esc, true),
+            ]
+        } else if diagnostics {
             vec![
                 Button::new("Refresh r", KeyCode::Char('r'), true).primary(),
                 Button::new("Copy summary c", KeyCode::Char('c'), self.report.is_some()),
@@ -907,6 +976,7 @@ impl Settings {
             vec![
                 Button::new("Diagnostics F4", KeyCode::F(4), true),
                 Button::new("Plugins F5", KeyCode::F(5), true),
+                Button::new("Updates F6", KeyCode::F(6), true),
                 Button::new("Cancel Esc", KeyCode::Esc, true),
                 Button::control("Reload Ctrl-R", KeyCode::Char('r'), true),
             ]
@@ -927,10 +997,41 @@ impl Settings {
         if body.is_empty() {
             return hits;
         }
-        let show_tabs = diagnostics || (!self.conflict && self.broken.is_none());
+        let show_tabs = diagnostics || updates || (!self.conflict && self.broken.is_none());
         let (rest, tabs) = self.draw_header(t, frame, body, show_tabs.then_some(self.page));
         body = rest;
         hits.extend(tabs);
+        if updates {
+            use crate::updates::{Row, Tone};
+            let mut lines = Vec::new();
+            for row in &self.updates.rows {
+                let (text, style) = match row {
+                    Row::Heading(text) => (
+                        text.clone(),
+                        Style::default().fg(t.focus).add_modifier(Modifier::BOLD),
+                    ),
+                    Row::Item(label, value, tone) => (
+                        format!("{label}: {value}"),
+                        Style::default().fg(match tone {
+                            Tone::Good => t.text,
+                            Tone::Action => t.unread,
+                            Tone::Bad => t.danger,
+                            Tone::Unknown => t.muted,
+                        }),
+                    ),
+                };
+                lines.extend(
+                    word_wrap(&text, usize::from(body.width).max(1))
+                        .into_iter()
+                        .map(|line| Line::styled(line, style)),
+                );
+            }
+            self.updates_top = self
+                .updates_top
+                .min(lines.len().saturating_sub(usize::from(body.height)) as u16);
+            frame.render_widget(Paragraph::new(lines).scroll((self.updates_top, 0)), body);
+            return hits;
+        }
         // The message sits above the buttons; a long one wraps onto up to three rows.
         if body.height > 1 && !self.message.is_empty() {
             let mut lines = word_wrap(&self.message, usize::from(body.width));
@@ -1078,7 +1179,7 @@ impl Settings {
         let Some(active) = active else {
             return (body, Vec::new());
         };
-        // Compact tabs keep all five pages together at the normal dialog width.
+        // Compact tabs wrap when the dialog cannot fit all pages.
         let tabs: Vec<_> = PAGES
             .iter()
             .map(|&(page, label, n)| {

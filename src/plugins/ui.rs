@@ -197,7 +197,7 @@ impl Page {
         }
         if let Event::Key(key) = &event {
             self.pointer.cancel();
-            if matches!(key.code, KeyCode::F(1..=5)) {
+            if matches!(key.code, KeyCode::F(1..=6)) {
                 return Outcome::Page(*key);
             }
         }

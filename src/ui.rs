@@ -57,6 +57,8 @@ pub struct Workspace<'a> {
     pub modal: bool,
     pub attention: Attention<'a>,
     pub settings: Option<&'a mut crate::settings::Settings>,
+    /// Installed updates need the user, or could not be confirmed: a dot beside Settings.
+    pub updates: bool,
 }
 /// The Attention entry's items and, while open, its popup.
 pub struct Attention<'a> {
@@ -80,6 +82,7 @@ pub fn draw_workspace(
         modal,
         attention,
         mut settings,
+        updates,
     ) = match workspace {
         Some(w) => (
             Some(w.terminals),
@@ -96,6 +99,7 @@ pub fn draw_workspace(
             w.modal,
             w.attention,
             w.settings,
+            w.updates,
         ),
         None => (
             None,
@@ -111,6 +115,7 @@ pub fn draw_workspace(
                 popup: None,
             },
             None,
+            false,
         ),
     };
     let t = view.colors;
@@ -195,6 +200,12 @@ pub fn draw_workspace(
     let area = crate::attention::entry(t, frame, attention_row, attention.items, attention.loading);
     let settings_area = right_aligned(settings_row, SETTINGS.width() as u16);
     if !settings_area.is_empty() && settings_area.width == SETTINGS.width() as u16 {
+        if updates {
+            frame.render_widget(
+                Paragraph::new("•").style(Style::default().fg(t.unread)),
+                Rect::new(settings_area.right(), settings_area.y, 1, 1).intersection(frame.area()),
+            );
+        }
         frame.render_widget(
             Paragraph::new(SETTINGS).style(if settings.is_some() {
                 Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
@@ -409,6 +420,8 @@ pub fn draw_workspace(
         target = "Settings".into();
         help = if settings.conflict() {
             " k Keep my edits  d Discard my edits  Esc Back"
+        } else if let Some(help) = settings.updates_help() {
+            help
         } else {
             " Tab/↑↓ Field  F1-F3 Page  Ctrl-D Default  Ctrl-U Clear  Ctrl-S Save  Esc Cancel"
         };
