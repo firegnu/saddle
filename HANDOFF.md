@@ -5,11 +5,11 @@
 ## 当前实施入口
 
 - 正式设计：`docs/Corral通用升级设计.md`；主设计已追加入口，旧核心设计已注明新旧规则边界。
-- 任务：`docs/任务/Corral通用升级-实施.md`。主控按 corral-dispatch 准备派发 Codex 重档 `gpt-6-astra / xhigh`，实现分支 `corral-live-upgrade`、worktree `../saddle-worktrees/corral-live-upgrade`。路由判重，交叉审查/影响面未定；主控按进程和并发影响判碰要害、需要独立审查。
+- 任务：`docs/任务/Corral通用升级-实施.md`。设计/任务提交 `940be2a`；已创建 Codex 重档 `gpt-6-astra / xhigh` 实现者 `saddle/dev-corral-upgrade-1`（instance `7321e90e81f2`，role=implementer），实现分支 `corral-live-upgrade`、worktree `../saddle-worktrees/corral-live-upgrade`。路由判重，交叉审查/影响面未定；主控按进程和并发影响判碰要害、需要独立审查。
 - 最新一致记录：`docs/调研/Corral通用升级-实施前一致记录.md`。评估会话 `saddle/dev-live-upgrade-review-1`，instance `43b27dc12c46`，只读设计已完成，保留，不关闭。
 - 当前主控 `saddle/main`，公开 instance `19185812ef0e`，role=controller；此前主控/Claude 实例已不在公开列表，旧 PID 不复用。开始/完成与实际 agent 名字以公开回执核对。
 - 目标适用首个具备升级协议版本之后：原地 exec、通用资源交接、稳定 hook、进程内采集与判定分离、持久提醒。现存旧 pen/适配器/旧 after 首次过渡仍未解决，不自动停、重建或 resume。已知故障窗口仍可能丢会话。
-- 实施仅隔离合成验证，不操作用户会话、真实安装、Tasks 或遥测；本链路未选择遥测。尚未修改功能代码或运行升级原型。
+- 实施仅隔离合成验证，不操作用户会话、真实安装、Tasks 或遥测；本链路未选择遥测。任务已派发，完成状态与实际验证等待公开 DONE 回复及分支记录核对，不能凭创建成功视作完成。
 
 ## 上轮调研归档历史
 
