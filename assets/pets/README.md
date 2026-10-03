@@ -45,4 +45,4 @@ The references are pixel art on a 50-unit grid at 12 frames per second, like sad
 
 ## Cat as images (`cat-image.toml`)
 
-The same original orange cat at Clawd's pixel size, with the poses and clip timing of `cat.toml`; the tail stays still while it walks.
+An original orange cat at Clawd's pixel size, drawn for pictures rather than copied from `cat.toml`: a dark brown outline, a round head about three fifths of its height, big eyes with a white shine, a white muzzle with a small mouth, pink cheeks and inner ears, and short legs. It has the poses and clip timing of `cat.toml`. While it walks only the legs move; the head, body and tail keep still. Previews and the earlier concepts: `docs/调研/图片猫猫候选.md`.
