@@ -151,7 +151,7 @@ pub fn run(
     // Asked before anything reads input; terminals that do not answer keep the glyph pet.
     if let Some(cell) = crate::kitty::probe(Duration::from_millis(500)) {
         app.image_cell = Some(cell);
-        app.mascot = app.new_mascot(app.config.mascot);
+        app.mascot = app.new_mascot();
     }
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
@@ -1640,19 +1640,24 @@ impl App {
         self.checker = None;
         self.focus = self.settings_return;
     }
-    fn new_mascot(&self, pet: crate::mascot::Pet) -> crate::mascot::Mascot {
-        match self.image_cell {
-            Some(cell) => crate::mascot::Mascot::with_images(pet, cell),
-            None => crate::mascot::Mascot::new(pet, truecolor()),
-        }
+    fn new_mascot(&self) -> crate::mascot::Mascot {
+        crate::mascot::Mascot::for_display(
+            self.config.mascot,
+            self.config.mascot_display,
+            self.image_cell,
+            truecolor(),
+        )
     }
     fn apply_settings(&mut self, saved: &crate::config::Config) {
         self.config.colors = saved.colors.clone().for_terminal(truecolor());
         self.config.left_width = saved.left_width;
         self.config.mascot_enabled = saved.mascot_enabled;
-        if self.config.mascot != saved.mascot {
+        if (self.config.mascot, self.config.mascot_display) != (saved.mascot, saved.mascot_display)
+        {
             self.config.mascot = saved.mascot;
-            self.mascot = self.new_mascot(saved.mascot);
+            self.config.mascot_display = saved.mascot_display;
+            // A pet drawn with glyphs shows no picture, so the next frame takes the old one away.
+            self.mascot = self.new_mascot();
         }
     }
     /// What saddle knows now; the command and config checks run in the background.

@@ -473,6 +473,59 @@ fn mascot_choice_cycles_through_the_pets_and_saves_the_name() {
     );
 }
 
+#[test]
+fn mascot_display_sits_after_the_pet_and_chooses_auto_or_blocks() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "# keep this comment\nmascot = \"cat\"\n").unwrap();
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot_display"), Some("auto"));
+    for _ in 0..4 {
+        press(&mut settings, KeyCode::Down);
+    }
+    press(&mut settings, KeyCode::Right);
+    assert_eq!(settings.value("mascot_display"), Some("blocks"));
+    settings.paste("images");
+    ctrl(&mut settings, 'u');
+    assert_eq!(settings.value("mascot_display"), Some("blocks"));
+    press(&mut settings, KeyCode::Right);
+    assert_eq!(
+        settings.value("mascot_display"),
+        Some("auto"),
+        "only two choices"
+    );
+    press(&mut settings, KeyCode::Left);
+    assert!(matches!(
+        press(&mut settings, KeyCode::Esc),
+        Outcome::Cancel
+    ));
+    assert_eq!(read(&path), "# keep this comment\nmascot = \"cat\"\n");
+
+    let mut settings = Settings::open(path.clone(), true);
+    for _ in 0..4 {
+        press(&mut settings, KeyCode::Down);
+    }
+    press(&mut settings, KeyCode::Right);
+    let Outcome::Saved(saved, restart) = ctrl(&mut settings, 's') else {
+        panic!("{}", settings.message())
+    };
+    assert!(restart.is_empty(), "the display changes without a restart");
+    assert_eq!(saved.mascot, saddle::mascot::Pet::Cat, "the pet is its own");
+    let written: toml::Value = toml::from_str(&read(&path)).unwrap();
+    assert_eq!(written["mascot_display"].as_str(), Some("blocks"));
+    assert_eq!(written["mascot"].as_str(), Some("cat"));
+    assert!(read(&path).starts_with("# keep this comment\nmascot = \"cat\"\n"));
+
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot_display"), Some("blocks"));
+    for _ in 0..4 {
+        press(&mut settings, KeyCode::Down);
+    }
+    ctrl(&mut settings, 'd');
+    assert_eq!(settings.value("mascot_display"), Some("auto"));
+    assert_eq!(settings.value("mascot"), Some("cat"));
+}
+
 fn color_name(theme: &saddle::theme::Theme, name: &str) -> String {
     let mut theme = theme.clone();
     let color = theme

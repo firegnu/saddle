@@ -273,6 +273,28 @@ fn mascot_choice_defaults_to_clawd_and_accepts_only_known_pets() {
 }
 
 #[test]
+fn mascot_display_defaults_to_auto_and_accepts_only_auto_or_blocks() {
+    use saddle::mascot::Display;
+    assert_eq!(Config::default().mascot_display, Display::Auto);
+    assert_eq!(Config::parse("").unwrap().mascot_display, Display::Auto);
+    assert_eq!(
+        Config::parse(include_str!("../config.toml"))
+            .unwrap()
+            .mascot_display,
+        Display::Auto
+    );
+    assert_eq!(
+        Config::parse("mascot_display = 'blocks'")
+            .unwrap()
+            .mascot_display,
+        Display::Blocks
+    );
+    for invalid in ["mascot_display = 'images'", "mascot_display = true"] {
+        assert!(Config::parse(invalid).is_err());
+    }
+}
+
+#[test]
 fn a_theme_supplies_every_color_and_colors_overrides_only_the_keys_written() {
     use ratatui::style::Color;
     use saddle::theme::{Preset, Theme};
