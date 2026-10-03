@@ -243,6 +243,167 @@ fn pre_io_crash_is_recovered_by_standby_without_restarting_the_agent() {
 }
 
 #[test]
+fn rejected_fd_identity_survives_fallback_recover_and_standby() {
+    rejected_fd_identity(false);
+}
+
+#[test]
+fn rejected_fd_identity_survives_backup_exit_and_recover() {
+    rejected_fd_identity(true);
+}
+
+fn rejected_fd_identity(lose_backup: bool) {
+    let lab = Lab::new();
+    lab.start();
+    let before = lab.request(json!({"op":"status"}));
+    let dir = lab.root.path().join("pens/test/raw");
+    let mut partial = lab.connect();
+    partial.write_all(b"{\"op\":\"sta").unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    // Replace a client fd only in the exec'd process. K still holds the exact
+    // original socket. Keep a copy of the pre-fault snapshot for comparison.
+    let bad = lab.shim(&format!(
+        r#"cp "$2/upgrade.json" "$2/baseline.json"
+fd=$(sed -n 's/.*"sock":\([0-9][0-9]*\).*/\1/p' "$2/baseline.json")
+test -n "$fd" || exit 1
+eval "exec $fd<>\"$2/replaced-fd\""
+exec '{}' "$@""#,
+        lab.old.display()
+    ));
+    let mut request = lab.connect();
+    writeln!(
+        request,
+        "{}",
+        json!({"op":"upgrade","exe":bad,"epoch":"rejected-fd"})
+    )
+    .unwrap();
+    let until = Instant::now() + Duration::from_secs(5);
+    while !dir.join("baseline.json").exists() {
+        assert!(Instant::now() < until, "replacement image did not start");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let wait_hold = |attempt, state| {
+        let until = Instant::now() + Duration::from_secs(5);
+        loop {
+            let mut s = lab.connect();
+            s.set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            writeln!(s, "{}", json!({"op":"status"})).unwrap();
+            if let Ok(st) = try_line(&mut s) {
+                lab.track(&st);
+                assert_ne!(
+                    st["upgrade"]["state"], "none",
+                    "fd rejection was waived: {st}"
+                );
+                if st["upgrade"]["state"] == state && st["upgrade"]["attempt"] == attempt {
+                    assert!(
+                        st["upgrade"]["last_error"]
+                            .as_str()
+                            .unwrap()
+                            .contains("inherited fd identity mismatch"),
+                        "{st}"
+                    );
+                    assert_eq!(st["custody"], "handoff");
+                    assert_eq!(st["agent_pid"], before["agent_pid"]);
+                    return st;
+                }
+            }
+            assert!(
+                Instant::now() < until,
+                "did not enter Hold for attempt {attempt}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let held = wait_hold(1, "hold");
+    let original: Value =
+        serde_json::from_slice(&fs::read(dir.join("baseline.json")).unwrap()).unwrap();
+    let assert_snapshot = |backup_removed| {
+        assert!(!dir.join("upgrade.active").exists());
+        let mut saved: Value =
+            serde_json::from_slice(&fs::read(dir.join("upgrade.json")).unwrap()).unwrap();
+        let mut expected = original.clone();
+        if backup_removed {
+            let pipes = [
+                original["pen"]["upgrade"]["control"].clone(),
+                original["pen"]["upgrade"]["alive"].clone(),
+            ];
+            expected["descriptors"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|d| !pipes.contains(&d["fd"]));
+            for key in ["control", "alive", "backup_pid"] {
+                assert!(saved["pen"]["upgrade"][key].is_null());
+            }
+        }
+        saved["pen"].as_object_mut().unwrap().remove("upgrade");
+        expected["pen"].as_object_mut().unwrap().remove("upgrade");
+        assert_eq!(
+            saved, expected,
+            "failure recording changed the original identity or stream state"
+        );
+        assert!(fs::read(dir.join("replaced-fd")).unwrap().is_empty());
+    };
+    assert_snapshot(false);
+    partial.write_all(b"tus\"}\n").unwrap();
+    partial
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    assert!(
+        try_line(&mut partial).is_err(),
+        "Hold consumed a frozen client"
+    );
+    let expected_state = if lose_backup {
+        assert_eq!(
+            unsafe {
+                libc::kill(
+                    held["upgrade"]["backup_pid"].as_i64().unwrap() as i32,
+                    libc::SIGKILL,
+                )
+            },
+            0
+        );
+        wait_hold(1, "hold_unprotected");
+        "hold_unprotected"
+    } else {
+        "hold"
+    };
+    let accepted = lab.request(json!({"op":"recover","exe":lab.new}));
+    assert_eq!(accepted["result"], "accepted");
+    let retried = wait_hold(2, expected_state);
+    assert_eq!(retried["upgrade"]["epoch"], "rejected-fd");
+    assert_snapshot(lose_backup);
+    if lose_backup {
+        assert_eq!(retried["upgrade"]["protected"], false);
+        return;
+    }
+    assert_eq!(
+        retried["upgrade"]["backup_pid"],
+        held["upgrade"]["backup_pid"]
+    );
+    // Remove only this test's failed process. K must still be able to validate
+    // the saved original identities and resume both frozen connections.
+    assert_eq!(
+        unsafe { libc::kill(before["pen_pid"].as_i64().unwrap() as i32, libc::SIGKILL) },
+        0
+    );
+    partial
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let restored = line(&mut partial);
+    lab.track(&restored);
+    assert_eq!(restored["pen_pid"], held["upgrade"]["backup_pid"]);
+    assert_eq!(restored["agent_pid"], before["agent_pid"]);
+    assert_eq!(restored["instance"], before["instance"]);
+    assert_eq!(line(&mut request)["result"], "accepted");
+    let after = lab.request(json!({"op":"status"}));
+    assert_eq!(after["custody"], "observer");
+    assert_eq!(after["upgrade"]["state"], "none");
+    assert_eq!(after["upgrade"]["attempt"], 2);
+    lab.json(&["send", "test/raw", "original standby resources"]);
+}
+
+#[test]
 fn hold_recovers_the_same_epoch_and_preserves_frozen_connections() {
     recover_from_hold(false, false);
 }

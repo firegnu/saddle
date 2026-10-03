@@ -96,6 +96,21 @@ struct Descriptor {
     ino: u64,
     mode: u32,
 }
+impl Descriptor {
+    fn validate(&self) -> Result<()> {
+        let actual = descriptor(self.fd)?;
+        // Socket permission bits can change when its peer disconnects on macOS;
+        // the resource identity is its device, inode and file type.
+        let kind = libc::S_IFMT as u32;
+        if (self.dev, self.ino, self.mode & kind) != (actual.dev, actual.ino, actual.mode & kind) {
+            return Err(failure(format!(
+                "inherited fd identity mismatch: fd {} saved ({}, {}, {}), actual ({}, {}, {})",
+                self.fd, self.dev, self.ino, self.mode, actual.dev, actual.ino, actual.mode
+            )));
+        }
+        Ok(())
+    }
+}
 #[derive(Serialize, Deserialize)]
 struct Snapshot {
     schema: u32,
@@ -103,6 +118,28 @@ struct Snapshot {
     lock_ino: u64,
     lock_dev: u64,
     pen: Pen,
+}
+impl Snapshot {
+    fn save(&self, path: &Path) -> Result<()> {
+        // Recovery updates must retain the original identity baseline, even
+        // when the current image's descriptors or schema failed validation.
+        state::write_durable(path, &serde_json::to_value(self)?)
+    }
+    fn remove_backup(&mut self) {
+        let fds = [
+            self.pen.upgrade.control.take().map(|f| f.as_raw_fd()),
+            self.pen.upgrade.alive.take().map(|f| f.as_raw_fd()),
+        ];
+        self.descriptors.retain(|d| !fds.contains(&Some(d.fd)));
+        self.pen.upgrade.backup_pid = None;
+    }
+    fn validate_fd(&self, fd: i32) -> Result<()> {
+        self.descriptors
+            .iter()
+            .find(|d| d.fd == fd)
+            .ok_or_else(|| failure("missing inherited fd identity"))?
+            .validate()
+    }
 }
 
 fn descriptor(fd: i32) -> Result<Descriptor> {
@@ -218,6 +255,8 @@ impl Pen {
         }
     }
     fn save(&self, path: &Path) -> Result<()> {
+        // Only the original live pen captures resource identities. Recovery
+        // persists the loaded Snapshot instead of capturing them again.
         let descriptors: Vec<_> = self
             .fds()
             .into_iter()
@@ -440,12 +479,10 @@ fn standby(pen: &mut Pen, mut control: Handle<File>, alive: Handle<File>) -> ! {
         validate(&snap, false)?;
         // K owns different pipe ends. Its failed predecessor must not be kept
         // artificially alive by any inherited writer.
-        snap.pen.upgrade.control = None;
-        snap.pen.upgrade.alive = None;
-        snap.pen.upgrade.backup_pid = None;
+        snap.remove_backup();
         snap.pen.observer = true;
         snap.pen.custody = Custody::Handoff;
-        snap.pen.save(&path)?;
+        snap.save(&path)?;
         drop(control);
         drop(alive);
         let fds = snap.pen.fds();
@@ -461,7 +498,7 @@ fn standby(pen: &mut Pen, mut control: Handle<File>, alive: Handle<File>) -> ! {
         snap.pen.upgrade.state = "hold_unprotected".into();
         snap.pen.upgrade.last_error =
             Some("standby could not execute either recovery image".into());
-        hold(snap.pen, path);
+        hold(snap, path);
     })();
     let _ = result;
     unsafe { libc::_exit(1) }
@@ -475,7 +512,7 @@ fn snapshot_path(dir: &Path) -> PathBuf {
         dir.join("upgrade.json")
     }
 }
-fn validate(snap: &Snapshot, pipes: bool) -> Result<()> {
+fn validate_roles(snap: &Snapshot) -> Result<()> {
     if snap.schema != SCHEMA {
         return Err(failure("incompatible snapshot schema"));
     }
@@ -485,10 +522,19 @@ fn validate(snap: &Snapshot, pipes: bool) -> Result<()> {
     }
     let expected: BTreeSet<_> = p.fds().into_iter().collect();
     if expected.len() != p.fds().len()
+        || expected.len() != snap.descriptors.len()
         || expected != snap.descriptors.iter().map(|d| d.fd).collect()
     {
         return Err(failure("invalid fd role table"));
     }
+    if p.clients.iter().any(|(fd, c)| *fd != c.sock.as_raw_fd()) {
+        return Err(failure("client fd role mismatch"));
+    }
+    Ok(())
+}
+fn validate(snap: &Snapshot, pipes: bool) -> Result<()> {
+    validate_roles(snap)?;
+    let p = &snap.pen;
     for d in &snap.descriptors {
         if !pipes
             && [
@@ -499,10 +545,7 @@ fn validate(snap: &Snapshot, pipes: bool) -> Result<()> {
         {
             continue;
         }
-        let actual = descriptor(d.fd)?;
-        if (d.dev, d.ino, d.mode) != (actual.dev, actual.ino, actual.mode) {
-            return Err(failure("inherited fd identity mismatch"));
-        }
+        d.validate()?;
     }
     let lock = fs::metadata(p.dir.join("lock"))?;
     let held = p.lock.metadata()?;
@@ -514,9 +557,6 @@ fn validate(snap: &Snapshot, pipes: bool) -> Result<()> {
     if unsafe { libc::flock(p.lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } < 0 {
         return Err(failure("name lock no longer held"));
     }
-    if p.clients.iter().any(|(fd, c)| *fd != c.sock.as_raw_fd()) {
-        return Err(failure("client fd role mismatch"));
-    }
     Ok(())
 }
 
@@ -527,7 +567,7 @@ pub(crate) fn resume(args: &[String]) -> i32 {
     let path = snapshot_path(&dir);
     // Loading and validation perform no I/O on any stream and do not acquire
     // automatic descriptor ownership, including on a partially decoded snapshot.
-    let snap: Snapshot = match fs::read(&path)
+    let mut snap: Snapshot = match fs::read(&path)
         .map_err(Error::from)
         .and_then(|b| Ok(serde_json::from_slice(&b)?))
     {
@@ -535,7 +575,7 @@ pub(crate) fn resume(args: &[String]) -> i32 {
         Err(_) => return 1,
     };
     let validation = validate(&snap, true);
-    let mut pen = snap.pen;
+    let pen = &mut snap.pen;
     pen.observer |= args.get(1).is_some_and(|s| s == "observer");
     let result = validation.and_then(|()| {
         if path != dir.join("upgrade.committed") {
@@ -561,14 +601,16 @@ pub(crate) fn resume(args: &[String]) -> i32 {
         pen.upgrade.last_error = Some(e.value.to_string());
         let path = snapshot_path(&dir);
         // Preserve the exact stream snapshot; only upgrade metadata changes.
-        let _ = pen.save(&path);
+        let _ = snap.save(&path);
+        let pen = &snap.pen;
         if args.get(2).is_none_or(|s| s != "fallback")
             && let Some(old) = &pen.upgrade.old
         {
             let _ = exec_pen(old, &dir, pen.observer, true, &pen.fds());
         }
-        hold(pen, path);
+        hold(snap, path);
     }
+    let mut pen = snap.pen;
     pen.custody = Custody::Handoff;
     pen.upgrade.state = "running_new_pending".into();
     // A fallback image restores service, but cannot complete the requested target.
@@ -587,20 +629,30 @@ pub(crate) fn resume(args: &[String]) -> i32 {
     }
 }
 
-fn hold(mut pen: Pen, path: PathBuf) -> ! {
-    for fd in pen.fds() {
+fn hold(mut snap: Snapshot, path: PathBuf) -> ! {
+    let roles_valid = validate_roles(&snap).is_ok();
+    let listener_valid = roles_valid && snap.validate_fd(snap.pen.listener.as_raw_fd()).is_ok();
+    // Even Hold's control I/O and pipe cleanup require the saved identities.
+    // A rejected master/client never gains ownership by entering Hold.
+    let valid_pipes: Vec<_> = [&snap.pen.upgrade.control, &snap.pen.upgrade.alive]
+        .into_iter()
+        .flatten()
+        .filter(|f| roles_valid && snap.validate_fd(f.as_raw_fd()).is_ok())
+        .map(|f| f.as_raw_fd())
+        .collect();
+    for fd in snap.pen.fds() {
         let _ = flags(fd, false);
     }
-    for pipe in [&mut pen.upgrade.control, &mut pen.upgrade.alive]
+    for pipe in [&mut snap.pen.upgrade.control, &mut snap.pen.upgrade.alive]
         .into_iter()
         .flatten()
     {
-        pipe.owned = true;
+        pipe.owned = valid_pipes.contains(&pipe.as_raw_fd());
     }
     // Never poll the original master or clients here. Only fresh control
     // connections are read, answered and closed; they are absent from snapshots.
     loop {
-        if let Some(alive) = &pen.upgrade.alive {
+        if let Some(alive) = snap.pen.upgrade.alive.as_ref().filter(|p| p.owned) {
             let mut p = libc::pollfd {
                 fd: alive.as_raw_fd(),
                 events: libc::POLLIN,
@@ -609,23 +661,26 @@ fn hold(mut pen: Pen, path: PathBuf) -> ! {
             if unsafe { libc::poll(&mut p, 1, 0) } > 0 {
                 let mut b = [0u8];
                 if unsafe { libc::read(p.fd, b.as_mut_ptr().cast(), 1) } == 0 {
-                    if let Some(pid) = pen.upgrade.backup_pid {
+                    if let Some(pid) = snap.pen.upgrade.backup_pid {
                         unsafe {
                             libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG);
                         }
                     }
-                    pen.upgrade.alive = None;
-                    pen.upgrade.control = None;
-                    pen.upgrade.backup_pid = None;
+                    snap.remove_backup();
                 }
             }
         }
+        let pen = &mut snap.pen;
         pen.upgrade.state = if pen.upgrade.alive.is_some() {
             "hold"
         } else {
             "hold_unprotected"
         }
         .into();
+        if !listener_valid {
+            std::thread::sleep(Duration::from_millis(25));
+            continue;
+        }
         match pen.listener.accept() {
             Ok((mut sock, _)) => {
                 let _ = sock.set_read_timeout(Some(Duration::from_millis(250)));
@@ -651,14 +706,14 @@ fn hold(mut pen: Pen, path: PathBuf) -> ! {
                                 pen.upgrade.target = Some(exe.clone());
                                 pen.upgrade.result = Some("accepted".into());
                                 pen.upgrade.last_error = None;
-                                match pen.save(&path) {
+                                match snap.save(&path) {
                                     Ok(()) => {
                                         target = Some(exe);
-                                        json!({"ok":true,"result":"accepted","upgrade":pen.upgrade.public()})
+                                        json!({"ok":true,"result":"accepted","upgrade":snap.pen.upgrade.public()})
                                     }
                                     Err(e) => {
-                                        pen.upgrade.result = Some("failed".into());
-                                        pen.upgrade.last_error = Some(e.value.to_string());
+                                        snap.pen.upgrade.result = Some("failed".into());
+                                        snap.pen.upgrade.last_error = Some(e.value.to_string());
                                         e.value
                                     }
                                 }
@@ -674,13 +729,33 @@ fn hold(mut pen: Pen, path: PathBuf) -> ! {
                 let _ = writeln!(sock, "{reply}");
                 drop(sock);
                 if let Some(target) = target {
+                    let pen = &mut snap.pen;
                     let e = exec_pen(&target, &pen.dir, pen.observer, false, &pen.fds());
                     pen.upgrade.result = Some("failed".into());
                     pen.upgrade.last_error = Some(e.value.to_string());
-                    let _ = pen.save(&path);
+                    let _ = snap.save(&path);
                 }
             }
             Err(_) => std::thread::sleep(Duration::from_millis(25)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn descriptor_identity_survives_peer_disconnect() {
+        let (socket, peer) = UnixStream::pair().unwrap();
+        let saved = descriptor(socket.as_raw_fd()).unwrap();
+        drop(peer);
+        saved.validate().unwrap();
+        let (replacement, _peer) = UnixStream::pair().unwrap();
+        assert_eq!(
+            unsafe { libc::dup2(replacement.as_raw_fd(), socket.as_raw_fd()) },
+            socket.as_raw_fd()
+        );
+        assert!(saved.validate().is_err(), "a different socket was accepted");
     }
 }
