@@ -182,7 +182,7 @@ refresh_ms = 1000
 | `left_split` | No longer used: Agents take the whole left column with optional plugin views. Still accepted (between 0 and 1) so existing configs keep loading |
 | `refresh_ms` | Background refresh interval in milliseconds |
 | `mascot_enabled` | Show the animated mascot (default `true`); toggle in Settings → General → Mascot and save with Ctrl-S to apply immediately |
-| `mascot` | Which pet the mascot is: `clawd` (default) or `cat`; choose in Settings → General → Pet and save with Ctrl-S to apply immediately |
+| `mascot` | Which pet the mascot is: `clawd` (default), `cat` or `capybara`; choose in Settings → General → Pet and save with Ctrl-S to apply immediately |
 | `mascot_display` | How the pet is drawn: `auto` (default; pictures where the terminal shows them, otherwise blocks) or `blocks` (always block glyphs); choose in Settings → General → Display and save with Ctrl-S to apply immediately |
 
 
