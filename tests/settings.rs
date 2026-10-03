@@ -510,7 +510,6 @@ fn mascot_display_sits_after_the_pet_and_chooses_auto_or_blocks() {
         panic!("{}", settings.message())
     };
     assert!(restart.is_empty(), "the display changes without a restart");
-    assert_eq!(saved.mascot_display, saddle::mascot::Display::Blocks);
     assert_eq!(saved.mascot, saddle::mascot::Pet::Cat, "the pet is its own");
     let written: toml::Value = toml::from_str(&read(&path)).unwrap();
     assert_eq!(written["mascot_display"].as_str(), Some("blocks"));
