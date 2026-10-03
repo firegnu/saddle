@@ -1,6 +1,12 @@
 # Saddle 交接
 
-更新：2026-10-03。**A 图片猫猫已审查集成、清理并成套部署到 `7acceb3`，等待用户重启。** 本轮未重启宿主或中断现有 agent。
+更新：2026-10-03。**A 图片猫猫已部署到 `7acceb3`，用户反馈「可以不错」。卡皮巴拉新宠物已授权并交给 Claude Code 实施。**
+
+## 在办：卡皮巴拉
+
+- 用户要求请 Claude Code 做卡皮巴拉，主控此前呆萌、圆桶身子、宽口鼻、半眯眼与慢走/嚼叶/打盹/顶橘子/小鸟等建议已交给它参考，具体动作由它按空间和辨识度选择。
+- 新 agent `saddle/dev-capybara-1`（instance=`6c79ab3c803c`，opus[1m]/high，role=implementer），分支/worktree `capybara-pet`；任务书 `docs/任务/卡皮巴拉宠物.md`，提交 `0874d8c`。
+- 提供图片与 Blocks 两版、接入已有 Pet/Auto/Blocks，保持猫猫与 Clawd 四套素材不变。范围包含必要配置/选择行为测试，标准检查按任务预算各一次；未选择遥测，未创建 Tasks run。完成后审查集成，不自行部署或重启。
 
 ## 本轮完成：A 图片猫猫
 
@@ -10,7 +16,7 @@
 - 文件已进 main：`docs/任务/图片猫猫候选调研.md`、`docs/调研/图片猫猫候选.md` 和同名预览目录（正式结果 `final-*.png/gif`，旧概念图保留为历史）。
 - `cat-image-candidates` worktree/分支已清理；自建实现者 `saddle/dev-cat-candidates-1`（instance=`8d0d47f7daf0`）确认 idle、attached=0 后关闭，stop ok、SIGHUP、exit_code=129。本任务未选择遥测、未创建 Tasks run。
 - 用户随后要求部署，已切换两命令入口与 Drover/Diff 注册到 `7acceb3`；四程序哈希、插件回读与隔离 release 退出重开测试 1 项通过。备份 `~/.local/share/saddle/backups/cat-a-7acceb3-20261003-120318`；详见 `docs/任务/A图片猫猫-部署记录.md`。等用户重启后看效果，Pet=Cat、Display=Auto；Blocks 猫不变。
-- 用户同时讨论新增萌宠并提出卡皮巴拉（水豚），目前仅讨论，尚未授权分派或实施，不自行开始。
+- 卡皮巴拉已由后续用户明确授权实施，当前分派见上文。
 
 ## 本轮完成：宠物显示方式
 
