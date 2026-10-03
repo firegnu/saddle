@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-03。**卡皮巴拉图片与 Blocks 两版已审查集成并清理，尚未部署。** 安装仍为 `7acceb3`，包含用户认可的 A 图片猫。
+更新：2026-10-03。**卡皮巴拉图片与 Blocks 两版已审查集成、清理并成套部署到 `00af4f2`，等待用户重启。** 现有 agent 保持运行。
 
 ## 本轮完成：卡皮巴拉
 
@@ -8,7 +8,8 @@
 - Pet 增加 Capybara，配置 capybara，默认仍 Clawd；沿用 Auto/Blocks、Save/Cancel/恢复默认/即时生效。既有四套宠物素材与渲染器不变。图片 41 姿态、Blocks 35 姿态，两版七段动画节拍一致：走、转身、发呆、嚼叶、打盹、顶橘子、小鸟落背。接受方块版简化嘴和小道具细节。
 - 主控标准首轮 496 passed、1 failed、9 ignored；既有 workflow 鼠标任务表单在 tests/workflow.rs:851 失败，限定复跑 1 passed；补完中断后插件/示例目标 128 passed。合计覆盖 625 项通过、9 项忽略，不是一次全套全绿；Clippy 通过。首次失败原因未证实，未扩修；日志 `/tmp/saddle-capybara-review-*.log`。
 - `capybara-pet` 分支/worktree 已清理；自建实现者 `saddle/dev-capybara-1`（instance=`6c79ab3c803c`）确认 idle、attached=0 后关闭，stop ok、SIGHUP、exit_code=129。未选择遥测、未创建 Tasks run。
-- 下一步等用户安排；本轮明确不自行部署，尚未在真实 Ghostty/Metalterm 目测。预览的 8×19 来自既有测试注释，不是本轮实时测量。
+- 用户随后明确要求部署，已切换命令入口与 Drover/Diff 注册到 `00af4f2`；四程序哈希、插件回读与隔离 release 退出重开检查 1 项通过。备份 `~/.local/share/saddle/backups/capybara-00af4f2-20261003-124250`，详见 `docs/任务/卡皮巴拉-部署记录.md`。
+- 下一步等用户重启：Settings → General → Pet 选 Capybara，Ctrl-S 保存，Display 支持 Auto/Blocks。尚未在真实 Ghostty/Metalterm 目测；预览 8×19 来自既有测试注释，不是本轮实时测量。不自行开始新任务。
 
 ## 本轮完成：A 图片猫猫
 
