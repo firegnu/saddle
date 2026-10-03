@@ -1,0 +1,430 @@
+# A capybara drawn as block glyphs on a 16x3 cell canvas. See README.md for the format.
+# Original design for saddle, the block twin of capybara-image.toml: a barrel body, a raised
+# boxy head with a small ear, a sleepy half-lidded eye and a broad snout. It faces right; saddle
+# flips every pose when it walks left.
+step_ticks = 6
+mirror = true
+
+[palette]
+G = "#c08550"  # fur
+N = "#5b3a26"  # nose
+K = "#24160f"  # eyes
+B = "#ec9c8c"  # cheeks
+L = "#79b84a"  # leaf
+O = "#f5a031"  # orange
+C = "#9fd2f2"  # bird
+Y = "#f3b23a"  # beak
+Z = "#a59d8b"  # sleep
+
+[poses.stand]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.walk-a]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+.......GG.G........GG.G.........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.walk-b]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+.....GG.....G....GG.....G.......
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.blink]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▇", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.doze-ear]
+art = '''
+................................
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▃", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▇", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.front]
+art = '''
+................................
+............GGGGGGGG............
+...........GGGGGGGGGG...........
+...........GGGNNNNGGG...........
+...........GGGGGGGGGG...........
+............GG....GG............
+'''
+cells = [[7, 0, "▂", "G", "."], [8, 0, "▂", "G", "."], [6, 1, "▆", "G", "K"], [7, 1, "▂", "N", "G"], [8, 1, "▂", "N", "G"], [9, 1, "▆", "G", "K"]]
+
+[poses.front-blink]
+art = '''
+................................
+............GGGGGGGG............
+...........GGGGGGGGGG...........
+...........GGGNNNNGGG...........
+...........GGGGGGGGGG...........
+............GG....GG............
+'''
+cells = [[7, 0, "▂", "G", "."], [8, 0, "▂", "G", "."], [6, 1, "▇", "G", "K"], [7, 1, "▂", "N", "G"], [8, 1, "▂", "N", "G"], [9, 1, "▇", "G", "K"]]
+
+[poses.chew-3a]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG.LL
+......GG...G......GG...G.......L
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.chew-3b]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG.L
+......GG...G......GG...G......LL
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.chew-2a]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG.LL
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.chew-2b]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+......GG...G......GG...G......LL
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.chew-1a]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG.L.
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.chew-1b]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+......GG...G......GG...G......L.
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.crouch]
+art = '''
+....................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GGGGGGGGGGGGGGGGGGGGGG....
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▇", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.nap-a]
+art = '''
+................................
+................................
+....................GGGGGGGG....
+....GGGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+'''
+cells = [[2, 1, "▂", "G", "."], [10, 1, "▆", "G", "."], [11, 1, "▅", "G", "."], [12, 1, "▅", "G", "."], [13, 1, "▅", "G", "."], [12, 2, "▇", "G", "K"]]
+
+[poses.nap-b]
+art = '''
+................................
+................................
+......GGGGGGGGGGGGGGGGGGGGGG....
+....GGGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+'''
+cells = [[2, 1, "▃", "G", "."], [3, 1, "▅", "G", "."], [4, 1, "▅", "G", "."], [5, 1, "▅", "G", "."], [6, 1, "▅", "G", "."], [7, 1, "▅", "G", "."], [8, 1, "▅", "G", "."], [9, 1, "▅", "G", "."], [10, 1, "▆", "G", "."], [11, 1, "▅", "G", "."], [12, 1, "▅", "G", "."], [13, 1, "▅", "G", "."], [12, 2, "▇", "G", "K"]]
+
+[poses.nap-az]
+art = '''
+........................Z.......
+........................Z.......
+....................GGGGGGGG....
+....GGGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+'''
+cells = [[12, 0, "z", "Z", "."], [2, 1, "▂", "G", "."], [10, 1, "▆", "G", "."], [11, 1, "▅", "G", "."], [12, 1, "▅", "G", "."], [13, 1, "▅", "G", "."], [12, 2, "▇", "G", "K"]]
+
+[poses.nap-bz]
+art = '''
+........................Z.......
+........................Z.......
+......GGGGGGGGGGGGGGGGGGGGGG....
+....GGGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+'''
+cells = [[12, 0, "z", "Z", "."], [2, 1, "▃", "G", "."], [3, 1, "▅", "G", "."], [4, 1, "▅", "G", "."], [5, 1, "▅", "G", "."], [6, 1, "▅", "G", "."], [7, 1, "▅", "G", "."], [8, 1, "▅", "G", "."], [9, 1, "▅", "G", "."], [10, 1, "▆", "G", "."], [11, 1, "▅", "G", "."], [12, 1, "▅", "G", "."], [13, 1, "▅", "G", "."], [12, 2, "▇", "G", "K"]]
+
+[poses.nap-azz]
+art = '''
+........................Z...Z...
+........................Z...Z...
+....................GGGGGGGG....
+....GGGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+'''
+cells = [[12, 0, "z", "Z", "."], [14, 0, "z", "Z", "."], [2, 1, "▂", "G", "."], [10, 1, "▆", "G", "."], [11, 1, "▅", "G", "."], [12, 1, "▅", "G", "."], [13, 1, "▅", "G", "."], [12, 2, "▇", "G", "K"]]
+
+[poses.nap-bzz]
+art = '''
+........................Z...Z...
+........................Z...Z...
+......GGGGGGGGGGGGGGGGGGGGGG....
+....GGGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+'''
+cells = [[12, 0, "z", "Z", "."], [14, 0, "z", "Z", "."], [2, 1, "▃", "G", "."], [3, 1, "▅", "G", "."], [4, 1, "▅", "G", "."], [5, 1, "▅", "G", "."], [6, 1, "▅", "G", "."], [7, 1, "▅", "G", "."], [8, 1, "▅", "G", "."], [9, 1, "▅", "G", "."], [10, 1, "▆", "G", "."], [11, 1, "▅", "G", "."], [12, 1, "▅", "G", "."], [13, 1, "▅", "G", "."], [12, 2, "▇", "G", "K"]]
+
+[poses.orange]
+art = '''
+....................GG..OOOO....
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "O"], [13, 0, "▂", "G", "O"], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.orange-l]
+art = '''
+....................GGOOOO......
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "O"], [12, 0, "▂", "G", "O"], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.orange-r]
+art = '''
+....................GG....OOOO..
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "O"], [14, 0, "▁", "G", "O"], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.orange-blink]
+art = '''
+....................GG..OOOO....
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "O"], [13, 0, "▂", "G", "O"], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▇", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.fly-1]
+art = '''
+CC..................GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.fly-2]
+art = '''
+....................GG..........
+..CC................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.fly-3]
+art = '''
+....CC..............GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.fly-4]
+art = '''
+....................GG..........
+......CC............GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.away-1]
+art = '''
+....................GG..........
+..............CC....GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.away-2]
+art = '''
+................CC..GG..........
+....................GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.away-3]
+art = '''
+..................C.GG..........
+..................C.GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[9, 0, "▔", "C", "."], [10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.perch]
+art = '''
+....................GG..........
+..........CCY.......GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.perch-blink]
+art = '''
+....................GG..........
+..........CCY.......GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▇", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.perch-peck]
+art = '''
+....................GG..........
+..........CCY.......GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[5, 0, "▂", "C", "."], [10, 0, "▅", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[poses.perch-ear]
+art = '''
+................................
+..........CCY.......GGGGGGGGGG..
+......GGGGGGGGGGGGGGGGGGGGGGGN..
+.....GGGGGGGGGGGGGGGGGGGGGBBGG..
+.....GGGGGGGGGGGGGGGGGGGGGGGG...
+......GG...G......GG...G........
+'''
+cells = [[10, 0, "▃", "G", "."], [11, 0, "▂", "G", "."], [12, 0, "▂", "G", "."], [13, 0, "▂", "G", "."], [14, 0, "▁", "G", "."], [3, 1, "▆", "G", "."], [12, 1, "▆", "G", "K"], [13, 1, "▂", "B", "G"]]
+
+[[clip]]
+name = "walking"
+frames = [["stand", 3], ["walk-a", 3], ["stand", 3], ["walk-b", 3]]
+
+[[clip]]
+name = "turning"
+frames = [["stand", 3], ["front", 3], ["front-blink", 2], ["front", 3], ["stand", 3]]
+
+[[clip]]
+name = "daze"
+frames = [["stand", 6], ["blink", 19], ["doze-ear", 3], ["blink", 3], ["doze-ear", 3], ["blink", 14], ["stand", 4], ["blink", 2], ["stand", 5]]
+
+[[clip]]
+name = "munch"
+frames = [["stand", 4], ["chew-3a", 4], ["chew-3b", 4], ["chew-3a", 4], ["chew-3b", 4], ["chew-2a", 4], ["chew-2b", 4], ["chew-2a", 4], ["chew-2b", 4], ["chew-1a", 4], ["chew-1b", 4], ["stand", 3], ["blink", 8], ["stand", 5]]
+
+[[clip]]
+name = "nap"
+frames = [["stand", 4], ["crouch", 5], ["nap-a", 8], ["nap-b", 8], ["nap-az", 8], ["nap-bz", 8], ["nap-azz", 8], ["nap-bzz", 8], ["nap-a", 8], ["nap-bz", 8], ["nap-azz", 8], ["nap-b", 8], ["crouch", 5], ["stand", 3], ["blink", 2], ["stand", 5]]
+
+[[clip]]
+name = "orange"
+frames = [["stand", 4], ["orange", 10], ["orange-l", 3], ["orange", 3], ["orange-r", 3], ["orange", 6], ["orange-blink", 4], ["orange", 8], ["orange-r", 3], ["orange", 3], ["orange-l", 3], ["orange", 6], ["blink", 2], ["stand", 4], ["blink", 2], ["stand", 5]]
+
+[[clip]]
+name = "bird"
+frames = [["stand", 4], ["fly-1", 2], ["fly-2", 2], ["fly-3", 2], ["fly-4", 2], ["perch", 6], ["perch-blink", 4], ["perch", 6], ["perch-peck", 2], ["perch", 3], ["perch-peck", 2], ["perch", 6], ["perch-ear", 3], ["perch", 4], ["perch-blink", 4], ["perch", 4], ["away-1", 2], ["away-2", 2], ["away-3", 2], ["stand", 3], ["blink", 2], ["stand", 4]]

@@ -449,9 +449,10 @@ fn mascot_choice_cycles_through_the_pets_and_saves_the_name() {
     press(&mut settings, KeyCode::Left);
     assert_eq!(
         settings.value("mascot"),
-        Some("cat"),
+        Some("capybara"),
         "the choice wraps around"
     );
+    press(&mut settings, KeyCode::Left);
     let Outcome::Saved(saved, restart) = ctrl(&mut settings, 's') else {
         panic!("{}", settings.message())
     };
@@ -471,6 +472,47 @@ fn mascot_choice_cycles_through_the_pets_and_saves_the_name() {
         Some("clawd"),
         "Default goes back to Clawd"
     );
+}
+
+#[test]
+fn capybara_is_the_third_pet_and_saves_cancels_and_defaults_like_the_others() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "# keep this comment\nleft_width = 52\n").unwrap();
+    let pick = |settings: &mut Settings| {
+        for _ in 0..3 {
+            press(settings, KeyCode::Down);
+        }
+        press(settings, KeyCode::Right);
+        press(settings, KeyCode::Right);
+        assert_eq!(settings.value("mascot"), Some("capybara"));
+    };
+    let mut settings = Settings::open(path.clone(), true);
+    pick(&mut settings);
+    assert!(matches!(
+        press(&mut settings, KeyCode::Esc),
+        Outcome::Cancel
+    ));
+    assert_eq!(read(&path), "# keep this comment\nleft_width = 52\n");
+
+    let mut settings = Settings::open(path.clone(), true);
+    pick(&mut settings);
+    let Outcome::Saved(saved, restart) = ctrl(&mut settings, 's') else {
+        panic!("{}", settings.message())
+    };
+    assert!(restart.is_empty(), "the pet changes without a restart");
+    assert_eq!(saved.mascot.name(), "capybara");
+    let written: toml::Value = toml::from_str(&read(&path)).unwrap();
+    assert_eq!(written["mascot"].as_str(), Some("capybara"));
+    assert!(read(&path).starts_with("# keep this comment\nleft_width = 52\n"));
+
+    let mut settings = Settings::open(path.clone(), true);
+    assert_eq!(settings.value("mascot"), Some("capybara"));
+    for _ in 0..3 {
+        press(&mut settings, KeyCode::Down);
+    }
+    ctrl(&mut settings, 'd');
+    assert_eq!(settings.value("mascot"), Some("clawd"), "Default stays Clawd");
 }
 
 #[test]

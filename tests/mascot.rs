@@ -675,7 +675,14 @@ fn a_transparent_part_shows_what_is_underneath() {
 fn every_built_in_pet_parses_patrols_and_stays_in_its_three_rows() {
     assert_eq!(Pet::default(), Pet::Clawd);
     assert_eq!(Pet::parse("cat"), Ok(Pet::Cat));
-    assert!(Pet::parse("dog").unwrap_err().contains("clawd or cat"));
+    let capybara = Pet::parse("capybara").expect("capybara is a built-in pet");
+    assert_eq!(capybara.label(), "Capybara");
+    assert!(Pet::ALL.contains(&capybara));
+    assert!(
+        Pet::parse("dog")
+            .unwrap_err()
+            .contains("clawd, cat or capybara")
+    );
     for pet in Pet::ALL {
         assert_eq!(Pet::parse(pet.name()), Ok(pet));
         let mut m = Mascot::new(pet, true);
