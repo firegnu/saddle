@@ -62,3 +62,63 @@
 ## 做完
 
 在本文件末尾追加完成记录并提交：实现与提交号、真实 RED/GREEN 和标准检查结果、必要取舍、已知限制、未执行项目。若实验证伪关键机制且无法在既定设计内解决，报告具体阻塞，不用 stub/skip/弱化断言宣布完成。回复给出提交号、结果及需主控决定事项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（2026-10-03，被委派实现者）
+
+实现提交：`816358a9b23776da10f43d194910372c66294878`（实现 Corral 通用升级与持久提醒交接）。集成实现已交付本分支，等待主控与独立审查；没有合并、推送或部署。
+
+### 交付内容
+
+- pen 的 snapshot schema 1、目标预检、原地 exec、完整流/终端/定时/身份/元数据快照、fd 角色与锁 inode 验证、Owner/Handoff/Observer 清理规则、双管道备用、active 边界、Hold/recover 和同 epoch attempt。状态公开实际 exe、能力、custody、保护状态和结果。保留 proto 1，核心无宿主/插件/业务依赖。
+- 公开 `upgrade [--all|NAME] [--exe PATH]`、`recover`；批量分别报告 pen、helper 和持久提醒，旧 pen 为 needs_restart，回执不明为 unknown，不停止旧 pen 兜底。旧 pen 上由新协议建立的持久提醒仍独立交接，不能把它们误判为旧内存 worker。
+- 每个 CORRAL_HOME 的稳定 helper 入口；pi/omp 只采集 v2 原生事实，Rust 读取端负责输入原文关联、回复、去抖和重试宽限，兼容 v1/v2。普通程序仍为 unknown / confirmed:false，升级本身不按 kind 分支。
+- 新 after 持久记录与永久锁 inode、串行持有者交接、绝对等待/交付期限；`send` request_id 的 accepted/written 事实和 `after NAME --request-id ID` 公开查询。sending 有接受证据时持续观察原请求；证据缺失为 unknown，不重发。正常交接完成不等于提醒已交付，结果同时保留 phase。
+- 必要的指南、随包技能资源与 UPGRADING.md；打包加入采集器和专项设计，仍只创建新目录。既有 Saddle/插件公开调用边界无需改动，没有新增宿主私有状态读取。
+
+### RED → GREEN 与直接回归
+
+以下 RED 都是可编译、可运行检查中的行为失败；实施中的编译错误没有计入 RED。
+
+| 检查 | 实施前/修复前的真实 RED | GREEN |
+|---|---|---|
+| 公开升级保留身份和半包连接 | upgrade 返回 unknown or missing command | 最终专项通过 |
+| 排队输入事实与回执 | recent 的 request_id 为 null | accepted/written、原连接回执与退出码通过 |
+| 稳定外部 helper | 注入的是固定版本真实路径 | 稳定入口及切换后原命令执行通过 |
+| v2 读取与旧事件混用 | unsupported event format | 原文确认、回复、重试宽限及 v1 混用通过 |
+| 持久提醒公开结果 | pending 回执缺 request_id | after 查询及普通程序 confirmed:false 通过 |
+| fd 复用后的在途回执 | 新半包连接被旧回执关闭，BrokenPipe | 回执关联改为 fd + 连接 order，跨升级通过 |
+| recover 记录写入失败 | status 仍为 accepted | failed/last_error 可见，再次 recover 成功 |
+| 已接受提醒的回执等待过期 | 错误转成 unknown | 保持 sending 观察，随后只写入一次 |
+| 旧 pen 与新持久提醒混用 | 提醒 worker 仍在旧 exe | pen 保留 needs_restart，记录型 worker 独立交接 |
+
+- 最终 `cargo test -p corral-core --target aarch64-apple-darwin --test upgrade`：**15 passed，0 failed，0 ignored**。还覆盖繁忙输出逐字节顺序、两个接入者、半帧输入、终端解析半序列和模式、人类保护、写者交接、schema 拒绝、备用接管、Hold 原 epoch 恢复、备用丢失、active 后禁止重放、提醒期限/证据丢失/不重复发送。
+- 直接协议与生命周期回归：`--test protocol --test lifecycle` 共 **20 passed**；后续返工仅跑相关升级专项与 core clippy，没有重跑整套预算。
+- `node crates/corral-core/tests/collectors.mjs`：pi/omp 合成扩展 API 通过；采集器保留原生事实、无判定定时器，写入失败不影响调用者。没有运行真实 pi/omp。
+- 两次检查夹具时序失败也保留在记录中：Hold 查询可能在冻结前已成为旧连接，后改为有界等待新的控制连接；提醒交接回执可先于新 worker 的下一次阶段判断，后改为有界等待 unknown。业务断言（连接连续、原 request_id、文本只有一次写入）没有删弱。一次失败遗留的隔离 pen/备用/cat 已核对精确 PID 并清理，夹具加入自身 PID 清理；最后未发现本任务测试 pen 遗留。
+
+### 标准检查：保留首轮结果
+
+所有 Cargo 命令都使用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`，目标为 `aarch64-apple-darwin`，命令均等待前台完成。
+
+1. `cargo test --all-targets --target aarch64-apple-darwin` 首轮 **退出 101**。在 fail-fast 前汇总 **510 passed、1 failed、9 ignored**。唯一失败是未改动的宿主 `tests/workflow.rs:851` 中 `native_mouse_buttons_cover_forms_and_stop_confirmation`，界面把标题/正文连到一起，未等到队列中的分行文本；该测试使用既有假 Corral，与新 pen 无直接调用关系。
+2. 按预算只对该用例限定复跑一次：`cargo test -p saddle --target aarch64-apple-darwin --test workflow native_mouse_buttons_cover_forms_and_stop_confirmation -- --exact`，**1 passed**。这不是首轮全套通过，也不是最终 HEAD 的整套重跑；首轮 fail-fast 后未执行的目标不补称已验证。
+3. `cargo clippy --all-targets --target aarch64-apple-darwin -- -D warnings` 首轮 **退出 101**：本次新增代码的 unnecessary_unwrap 和 nonminimal_bool 两处告警。已修正；最终限定 `cargo clippy -p corral-core --all-targets --target aarch64-apple-darwin -- -D warnings` **通过**。没有重跑整套 workspace clippy，不宣称它已全绿。
+4. `git diff --cached --check` **通过**，包括新增文件；任务完成记录追加后再次检查相应文档差异。
+
+日志保留在本机临时目录 `/tmp/saddle-corral-upgrade-checks.BE7R1b/`：`test-first.log`、`workflow-rerun.log`、`clippy-first.log`、`clippy-core-final.log`、`upgrade-final.log`，以及 `upgrade-handover-observation-race.log`。这些是本轮证据路径，不是发布内容。
+
+### 成套包与消费者
+
+- `sh -n scripts/package.sh` 通过；实际执行打包成功，检查必需二进制、说明和两份采集器齐全，并验证对已有输出目录拒绝覆盖、文件哈希不变。
+- 最终包：`/tmp/saddle-corral-upgrade-checks.BE7R1b/product-final`。BUILD.txt 标记 revision 为 `816358a9b23776da10f43d194910372c66294878`、working-tree 为 clean；没有安装、注册插件或切换任何真实入口。最终打包日志为 `package-final.log`。
+- 使用该包的 saddle/corral 显式运行原有可选成套检查 `tui_exit_and_reopen_preserve_agent_identity_and_runtime -- --ignored --exact`，**1 passed**（`product-final.log`）。它在临时 HOME/CORRAL_HOME 内使用合成 cat，验证 TUI 关闭和重开不改变实例/agent PID，不是真实 agent 冒烟。
+
+### 实现取舍、限制和后续
+
+- 新依赖仅加入 workspace 已有的 serde derive。快照包含全部 Corral 自有解析/队列状态；内核 PTY 模式随同一 fd 保留。恢复结构在验证及 active 边界前不取得自动关闭 fd 或杀 agent 的清理权，普通父进程用 waitpid，备用用非父进程观察与 PTY 退出，后者退出码为 null。
+- 普通 upgrade 遵循设计的 Owner 限制；备用接管保持 Observer，不擅自提升清理权限。标记/备用尚未收尾时不允许下一轮。Observer 后续开启新升级轮次没有擅自扩展为新的设计能力。
+- after 保留原先“等待被等待者结束/更换/超时，再等待接收者可交付”的两阶段超时含义；每段期限持久化后不因交接重置。request_id 的 recent 证据有界，事件确认仍不构成同文本多提醒的精确逐条确认或接收端持久去重账本。
+- 生命周期测试从同一新构建复制出两套不可变临时路径，按实际 exe 区分，验证的是首个支持协议版本的交接机制；没有声称已经验证任意真实产品版本间升级。无新增 Python 代码或夹具。
+- 现存旧 pen、固定 helper 和无记录 after 的首次无缝过渡仍未解决；快照到备用建立之间、active 之后的崩溃没有无损保证。没有用 stub、skip 或重启伪装这些能力。
+- **未执行**：真实 Claude/Codex/pi/omp 兼容冒烟、真实安装/入口更新、首次过渡、真实 agent/任务/遥测操作、修改原独立 Corral 仓库、主仓库/其他 worktree 写入、合并和推送。
+- **需主控决定/继续**：主控和独立审查；若需要最终整套 workspace 全绿，另行给检查预算；真实兼容验证、部署与首次过渡仍需按既定授权边界另行安排。没有实验证伪而被隐瞒或降低的已批准正常升级机制。
