@@ -7,6 +7,7 @@
 - 用户满意 Blocks 猫猫、Blocks Clawd、图片 Clawd，仅认为图片猫猫不可爱，要求请 Claude Code 调查并给几个候选。
 - 已派 `saddle/dev-cat-candidates-1`（instance=`8d0d47f7daf0`，opus[1m]/high）到 `../saddle-worktrees/cat-image-candidates`，分支 `cat-image-candidates`，任务书 `docs/任务/图片猫猫候选调研.md`。本轮只调查、提供视觉参考及候选方向，不改生产素材或代码，不部署；等用户选方向再实施。
 - 未选择遥测、未创建 Tasks run。完成后核对候选与来源，展示给用户；不要因本轮候选调研自动开始制作或安装。
+- 候选调研已完成（`1bec651`），主控已看 diff、对比/姿态预览并打开参考来源。四个原创概念方向：A 描边大头橘猫、B 方块猫高清版、C 圆团猫、D 线稿白猫；均为选型预览，不是完整动画包。文件在该 worktree 的 `docs/调研/图片猫猫候选.md` 和同名图片目录，首看 `compare.png`。现停在展示、等用户选方向；未合并或部署，agent/worktree 保留。
 
 ## 本轮完成：宠物显示方式
 
