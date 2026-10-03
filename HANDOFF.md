@@ -1,19 +1,18 @@
 # Saddle 交接
 
-更新：2026-10-03。用户已批准 Corral 通用升级实施。**实施与部署分开：正式设计先落盘，隔离实现、验证、主控与独立审查；未授权真实部署或现存旧 agent 首次迁移。**
+更新：2026-10-03。Corral 通用升级实施已审查通过、合并推送并清理本轮工作区，收尾空提交 `a148d2b`。**未部署，未授权现存旧 agent 首次迁移；本轮实现工作已完成，等待用户另行安排部署或首次过渡。**
 
-## 当前实施入口
+## 当前完成状态
 
 - 正式设计：`docs/Corral通用升级设计.md`；主设计已追加入口，旧核心设计已注明新旧规则边界。
-- 任务：`docs/任务/Corral通用升级-实施.md`。设计/任务提交 `940be2a`；已创建 Codex 重档 `gpt-6-astra / xhigh` 实现者 `saddle/dev-corral-upgrade-1`（instance `7321e90e81f2`，role=implementer），实现分支 `corral-live-upgrade`、worktree `../saddle-worktrees/corral-live-upgrade`。路由判重，交叉审查/影响面未定；主控按进程和并发影响判碰要害、需要独立审查。
+- 任务与实际完成记录：`docs/任务/Corral通用升级-实施.md`；主控核实、独立审查同目录。候选 `bd282db`，合并 `dab13d7` 已推送；收尾 `a148d2b`。最终交接提交及远端一致性以 `git log -3`、`git status -sb`、`git ls-remote origin refs/heads/main` 核对。
 - 最新一致记录：`docs/调研/Corral通用升级-实施前一致记录.md`。评估会话 `saddle/dev-live-upgrade-review-1`，instance `43b27dc12c46`，只读设计已完成，保留，不关闭。
 - 当前主控 `saddle/main`，公开 instance `19185812ef0e`，role=controller；此前主控/Claude 实例已不在公开列表，旧 PID 不复用。开始/完成与实际 agent 名字以公开回执核对。
 - 目标适用首个具备升级协议版本之后：原地 exec、通用资源交接、稳定 hook、进程内采集与判定分离、持久提醒。现存旧 pen/适配器/旧 after 首次过渡仍未解决，不自动停、重建或 resume。已知故障窗口仍可能丢会话。
-- 实施者已交付 `816358a`（功能）与 `ce6f675`（完成记录）；主控核对同实例 idle/DONE、完整回复及干净 worktree。主控对 `ce6f675` 重跑标准检查一次：test 641 passed、0 failed、9 ignored；clippy 通过。保留实现者首轮失败及修正历史，见 `docs/任务/Corral通用升级-主控核实.md`。
-- 独立 Codex 重档首审已核对 idle/DONE：`saddle/dev-corral-upgrade-review-1`，instance `dca43ca10e7b`，role=reviewer，`gpt-6-astra / xhigh`；detached worktree `../saddle-worktrees/review-corral-live-upgrade`，HEAD `ce6f675`。意见在 `docs/任务/Corral通用升级-独立审查.md`：1 项必须改、0 项建议改。主控认可恢复校验失败后 save 重新建立 fd 身份基准的缺陷，暂不合并。
-- 返工 1 已核对同实例 DONE：`9648ff0` 修正、`bd282db` 完成记录；实现者最终直接回归 8 项集成及 1 项单测通过，主控重跑缺陷用例 2 项及身份单测 1 项通过。真实 RED/GREEN 与中间失败均留记录。未重复标准全套/clippy。
-- 原审查者 detached 工作区已更新至 `bd282db2339498b0f9589f99aafa2524c72a82e8`，当前交回限定复核第 1 轮；唯一意见文件仍是主仓库的独立审查任务。复核预算上限两轮。
-- 实施仅隔离合成验证，不操作用户会话、真实安装、Tasks 或遥测；本链路未选择遥测。目前尚未合并/推送实现，返工通过后继续原授权的集成收尾。
+- 检查：主控对修正前 `ce6f675` 标准 test 641 passed、0 failed、9 ignored，clippy 通过。最终 `bd282db` 返工直接回归由实现者验证 8 项集成及 1 项单测，主控重跑缺陷 2 项集成及 1 项单测通过。没有重跑修正后的全套/clippy；初次失败与真实 RED/GREEN 保留，不混报版本。
+- 独立 Codex 重档首审发现 1 项必须改；`9648ff0` 修正后，第 1 轮限定复核同实例 DONE，可以合并，剩余必须改 0、新增建议改 0。主控认可，无待处理审查项。
+- 本轮实现及 detached 审查 worktree、已合并 `corral-live-upgrade` 分支已安全删除；工作目录已删，一并关闭实现者 `saddle/dev-corral-upgrade-1`（`7321e90e81f2`）与审查者 `saddle/dev-corral-upgrade-review-1`（`dca43ca10e7b`），两次 stop 均 ok/exit 0。公开列表仅保留主控和上述设计评估会话，两者均在主仓库。
+- 实施仅隔离合成验证，未操作用户会话、真实安装、Tasks 或遥测；本链路未选择遥测。旧临时固定包基于 `816358a`，不包含后续身份修正，不能作为最终部署包使用。真实 Claude/Codex/pi/omp 冒烟未执行。
 
 ## 上轮调研归档历史
 
@@ -41,7 +40,7 @@
 
 ## 核心与操作约束
 
-- Rust Corral 已集成到 `crates/corral-core`，原 Corral 仓库只读保留。宿主、插件只通过公开接口交互。关闭 Saddle 不停 agent，重开接回同实例是已有能力；这不代表热替换 pen 已实现。
+- Rust Corral 已集成到 `crates/corral-core`，原 Corral 仓库只读保留。宿主、插件只通过公开接口交互。关闭 Saddle 不停 agent，重开接回同实例是既有能力；通用升级代码本轮已合并，但现行安装仍是旧版本，不能据此声称运行中的 pen 已升级。
 - Rust 集成验证和原始失败记录见 `docs/调研/Corral核心Rust集成-实施核验.md`；部署记录见 `docs/调研/Corral核心Rust部署记录-2026-10-03.md`。只测过合成 agent 的产品生命周期，不能称真实 Claude/Codex/pi/omp 全路径验收。
 - 主控遵守 AGENTS.md：功能开发用 corral-dispatch 派发，自己审查集成。现有用户 agent 只读，不擅自送话、按键、停止；不读 Corral 私有状态文件，不批量杀进程。
 - 本调研未选择遥测、未创建或操作真实 Tasks run。历史队列快照不当作当前状态，不自动派下一任务。
@@ -49,9 +48,9 @@
 
 ## 下一步
 
-1. 收到限定复核第 1 轮完成提醒后核对公开状态、完整 DONE 回复及审查结论；不要重跑已完成的检查。
-2. 结合主控核实与独立意见，按 corral-dispatch 预算处理必要返工和限定复核；本轮实施已获批准，不再按上轮“仅讨论”边界停工。
-3. 审查通过按 AGENTS.md 合并/推送、清理本轮 worktree/分支及其自建 agent、补收尾提交、更新交接。保留历史调研工作区与会话，不顺手清理。
-4. 汇报实现和验证的实际结果。真实部署、现存 agent 首次过渡另行确认，不因实现获批自动执行。
+1. 本轮实现与审查集成已完成，不再派发、重跑已完成检查或消费晚到提醒重复工作。
+2. 等待用户安排真实兼容验证、部署和现存旧 agent 首次过渡；未获授权不安装、不切入口、不重启或迁移。
+3. 若后续获准部署，需从包含 `9648ff0` 的最终源码生成新的不可变成套包；原临时包不含返工，不能直接发布。部署和首次过渡分别核对，不把入口切换等同旧 agent 已接新核心。
+4. 保留历史调研工作区与设计评估会话，不顺手清理。
 
 正式设计入口：`docs/DESIGN.md`、`docs/Corral核心Rust集成设计.md`。本轮的理由与双方意见保存在调查报告中。
