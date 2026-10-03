@@ -1,13 +1,13 @@
 # Saddle 交接
 
-更新：2026-10-03。Corral 通用升级实施已收尾（`a148d2b`），用户随后批准继续部署，**新包 `711ab18` 已安装并切换命令入口；等待用户退出当前旧主控、重开 Saddle 后新建主控。旧主控尚未迁移，不声称首次无缝过渡。**
+更新：2026-10-03。Corral 通用升级实施已收尾（`a148d2b`），部署记录已提交推送（`2b9a728`）。**新包 `711ab18` 已在真实宿主、插件和新主控中运行；当前主控具备升级协议能力。新建替换已完成，不声称旧实例首次无缝迁移。** 本轮只读核对后，用户要求更新本交接、提交推送，然后停止，等待其提问。
 
 ## 当前完成状态
 
 - 正式设计：`docs/Corral通用升级设计.md`；主设计已追加入口，旧核心设计已注明新旧规则边界。
 - 任务与实际完成记录：`docs/任务/Corral通用升级-实施.md`；主控核实、独立审查同目录。候选 `bd282db`，合并 `dab13d7` 已推送；收尾 `a148d2b`。最终交接提交及远端一致性以 `git log -3`、`git status -sb`、`git ls-remote origin refs/heads/main` 核对。
-- 最新一致记录：`docs/调研/Corral通用升级-实施前一致记录.md`。评估会话 `saddle/dev-live-upgrade-review-1`（`43b27dc12c46`）已按用户明确要求关闭；目前只剩旧主控。
-- 当前主控 `saddle/main`，公开 instance `19185812ef0e`，role=controller；此前主控/Claude 实例已不在公开列表，旧 PID 不复用。开始/完成与实际 agent 名字以公开回执核对。
+- 最新一致记录：`docs/调研/Corral通用升级-实施前一致记录.md`。评估会话 `saddle/dev-live-upgrade-review-1`（`43b27dc12c46`）已按用户明确要求关闭；本轮公开列表仅有新主控。
+- 当前主控 `saddle/main`，公开 instance `935562a4613c`，role=controller，agent PID `51609`、pen PID `51035`；旧主控 `19185812ef0e` 已不在公开列表。PID 和实例均为本轮快照，接续时重新通过公开命令核对。
 - 目标适用首个具备升级协议版本之后：原地 exec、通用资源交接、稳定 hook、进程内采集与判定分离、持久提醒。现存旧 pen/适配器/旧 after 首次过渡仍未解决，不自动停、重建或 resume。已知故障窗口仍可能丢会话。
 - 检查：主控对修正前 `ce6f675` 标准 test 641 passed、0 failed、9 ignored，clippy 通过。最终 `bd282db` 返工直接回归由实现者验证 8 项集成及 1 项单测，主控重跑缺陷 2 项集成及 1 项单测通过。没有重跑修正后的全套/clippy；初次失败与真实 RED/GREEN 保留，不混报版本。
 - 独立 Codex 重档首审发现 1 项必须改；`9648ff0` 修正后，第 1 轮限定复核同实例 DONE，可以合并，剩余必须改 0、新增建议改 0。主控认可，无待处理审查项。
@@ -33,7 +33,9 @@
 
 - 当前成套安装为 `~/.local/share/saddle/versions/711ab18`，包含恢复身份修正；两命令入口和 Drover/Diff 注册已切换。四程序哈希、插件回读、隔离 release 退出重开 1 项通过；隔离新建合成实例公开 status 确认新版 exe 及 upgrade/recover/snapshot=1，测试实例已清理。
 - 本轮部署记录：`docs/任务/Corral通用升级-部署记录.md`；私有备份 `~/.local/share/saddle/backups/corral-upgrade-711ab18-20261003-191430`。config.toml 未变；两处 Corral 技能同步新版并 dry-run same。旧包保留，不删除。
-- 当前真实主控仍是 `19185812ef0e`（agent PID `15740`、pen PID `15167`），无升级能力；未由主控重启真实 Saddle 或升级旧 agent。用户将自行 exit 后重开新建，接续时核对宿主/插件实际映像与新 agent capabilities。
+- 本轮真实运行核对：两命令入口均指向 `711ab18`；`lsof` 确认 Saddle PID `50936`、Drover PID `50938`、Diff PID `50939` 及主控 pen PID `51035` 的实际映像均来自该包。四程序 SHA256 与 BUILD.txt 一致，公开 plugin status 确认 Drover/Diff 注册指向该包且 enabled、manifest_readable。
+- 新主控 `935562a4613c` 的公开 status：exe 为 `711ab18/bin/corral`，capabilities 的 upgrade/recover/snapshot 均为 1，custody=owner，upgrade.state=none、attempt=0、last_error=null。进程参数确认 Codex hooks 使用稳定 helper 入口。具备后续公开升级能力，但本轮未执行 upgrade/recover，未验证真实客户端跨版本连续性。
+- 本轮核对前工作区干净，main 与远端均为 `2b9a728`；本次仅更新 HANDOFF，不修改源码、不重跑 Cargo、不操作真实 Tasks 或遥测、不重启或停止 agent。交接提交及推送结果仍以 Git 回读为准。
 - 部署记录：`docs/任务/卡皮巴拉-部署记录.md`；备份 `~/.local/share/saddle/backups/capybara-00af4f2-20261003-124250`。旧包仍有 pen/hook 引用，不可删除。部署只切入口不会改变存活 pen。
 - 已集成部署：Agents 状态计时；图片宠物及 Blocks Clawd 仅腿动；Display Auto/Blocks；A 描边大头橘猫；Capybara 图片与 Blocks 两版。默认宠物仍 Clawd，Display 默认 Auto。对应任务书均在 `docs/任务/`。
 - Capybara：实现 `ea665b3`，审查 `0776995`，合并 `33c00d7`，收尾 `eda201b`；预览 `docs/调研/卡皮巴拉宠物.md`。41 图片姿态、35 Blocks 姿态、七段动画，既有四套未变。该实现分支/worktree 已清理，实现者已关闭。
@@ -51,7 +53,7 @@
 ## 下一步
 
 1. 本轮实现与审查集成已完成，不再派发、重跑已完成检查或消费晚到提醒重复工作。
-2. 已完成部署，等待用户退出当前旧主控、关闭再打开 Saddle、新建主控。新主控先读本文件，再只读核对自己的 instance/exe/capabilities 与运行中宿主/插件映像；不要把旧实例恢复当作新核心接管。
+2. 新主控、宿主及插件已完成本轮只读核对。按用户要求，本交接提交并推送后立即停止，等待用户提问；不自行启动升级、测试、派发或清理。
 3. 后续真实客户端全路径兼容验证另行安排；本次新建替换不解决旧 agent 无缝首次迁移。旧 Tasks runs 不自动转移，旧包不删除。
 4. 保留历史调研工作区，不顺手清理。设计评估会话已由用户要求关闭。
 
