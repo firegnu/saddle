@@ -82,6 +82,42 @@ impl<'de> Deserialize<'de> for Pet {
     }
 }
 
+/// How the pet is drawn: pictures where the terminal shows them, or always block glyphs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Display {
+    #[default]
+    Auto,
+    Blocks,
+}
+impl Display {
+    pub const ALL: [Display; 2] = [Display::Auto, Display::Blocks];
+    /// How the display is written in the config file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Display::Auto => "auto",
+            Display::Blocks => "blocks",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Display::Auto => "Auto",
+            Display::Blocks => "Blocks",
+        }
+    }
+    pub fn parse(value: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|d| d.name() == value)
+            .ok_or_else(|| format!("unknown mascot_display {value:?}: expected auto or blocks"))
+    }
+}
+impl<'de> Deserialize<'de> for Display {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Display::parse(&value).map_err(serde::de::Error::custom)
+    }
+}
+
 /// One terminal cell of a pose; colors are palette indexes and 0 is transparent.
 #[derive(Clone, Copy)]
 struct Cell {
@@ -414,6 +450,18 @@ impl Mascot {
         let mut mascot = Self::with(pet.image_pack(), true);
         mascot.cell = Some(cell);
         mascot
+    }
+    /// The pet as `display` asks, given the cell size in pixels when the terminal shows pictures.
+    pub fn for_display(
+        pet: Pet,
+        display: Display,
+        cell: Option<(u16, u16)>,
+        truecolor: bool,
+    ) -> Self {
+        match (display, cell) {
+            (Display::Auto, Some(cell)) => Self::with_images(pet, cell),
+            _ => Self::new(pet, truecolor),
+        }
     }
     /// A pet from pack text, as documented in `assets/pets/README.md`.
     pub fn from_pack(text: &str, truecolor: bool) -> Result<Self> {

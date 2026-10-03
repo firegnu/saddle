@@ -12,6 +12,8 @@ pub struct Config {
     pub mascot_enabled: bool,
     /// Which pet the mascot is.
     pub mascot: crate::mascot::Pet,
+    /// Pictures where the terminal shows them, or always block glyphs.
+    pub mascot_display: crate::mascot::Display,
     /// Preserved for old config files; all task settings now belong to the Drover plugin.
     pub queue: Option<toml::Value>,
     pub theme: crate::theme::Preset,
@@ -35,6 +37,7 @@ impl Default for Config {
             refresh_ms: 1000,
             mascot_enabled: true,
             mascot: Default::default(),
+            mascot_display: Default::default(),
             queue: None,
             theme: Default::default(),
             overrides: Default::default(),

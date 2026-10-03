@@ -7,7 +7,7 @@ use crate::{
     buttons::{self, Button},
     config::Config,
     launch::edit::Input,
-    mascot::Pet,
+    mascot::{Display, Pet},
     telemetry::{SettingInput, Store},
     theme::{Preset, Theme, color_name, parse_color},
 };
@@ -55,6 +55,7 @@ enum Kind {
     Color,
     Theme,
     Pet,
+    Display,
 }
 struct Field {
     /// The config key, dotted below a table (`colors.bg`).
@@ -106,6 +107,13 @@ fn fields() -> Vec<Field> {
         field("mascot_enabled", "Mascot", Page::General, Kind::Bool, false),
         field("mascot", "Pet", Page::General, Kind::Pet, false),
         field(
+            "mascot_display",
+            "Display",
+            Page::General,
+            Kind::Display,
+            false,
+        ),
+        field(
             RECORDING,
             "Telemetry recording",
             Page::General,
@@ -145,6 +153,7 @@ fn value(config: &Config, field: &Field) -> String {
         "refresh_ms" => config.refresh_ms.to_string(),
         "mascot_enabled" => config.mascot_enabled.to_string(),
         "mascot" => config.mascot.name().into(),
+        "mascot_display" => config.mascot_display.name().into(),
         "corral" => config.corral.clone(),
         "theme" => config.theme.name().into(),
         // Off until the store says otherwise, as on a first install.
@@ -377,12 +386,21 @@ impl Settings {
         self.error = false;
     }
     fn cycle(&mut self, delta: isize) {
-        if self.fields[self.selected].kind == Kind::Pet {
-            let all = Pet::ALL;
-            let now = Pet::parse(&self.inputs[self.selected].text).unwrap_or_default();
-            let at = all.iter().position(|&p| p == now).unwrap_or(0);
-            let next = all[(at as isize + delta).rem_euclid(all.len() as isize) as usize];
-            self.inputs[self.selected] = Input::new(next.name().into());
+        let text = &self.inputs[self.selected].text;
+        let next = match self.fields[self.selected].kind {
+            Kind::Pet => Some(step(&Pet::ALL, Pet::parse(text).unwrap_or_default(), delta).name()),
+            Kind::Display => Some(
+                step(
+                    &Display::ALL,
+                    Display::parse(text).unwrap_or_default(),
+                    delta,
+                )
+                .name(),
+            ),
+            _ => None,
+        };
+        if let Some(next) = next {
+            self.inputs[self.selected] = Input::new(next.into());
             return;
         }
         let all = Preset::ALL;
@@ -533,7 +551,7 @@ impl Settings {
                 KeyCode::Char('u')
                     if !matches!(
                         self.fields[self.selected].kind,
-                        Kind::Bool | Kind::Theme | Kind::Pet
+                        Kind::Bool | Kind::Theme | Kind::Pet | Kind::Display
                     ) =>
                 {
                     self.edit(Input::clear)
@@ -564,7 +582,7 @@ impl Settings {
             }
             code if !matches!(
                 self.fields[self.selected].kind,
-                Kind::Bool | Kind::Theme | Kind::Pet
+                Kind::Bool | Kind::Theme | Kind::Pet | Kind::Display
             ) =>
             {
                 self.edit(|input| input.key(code, false))
@@ -609,7 +627,7 @@ impl Settings {
             && self.broken.is_none()
             && !matches!(
                 self.fields[self.selected].kind,
-                Kind::Bool | Kind::Theme | Kind::Pet
+                Kind::Bool | Kind::Theme | Kind::Pet | Kind::Display
             )
         {
             self.edit(|input| input.insert(text, false));
@@ -794,6 +812,7 @@ impl Settings {
                     .map(|e| format!("{}: {e}", field.label)),
                 Kind::Theme => Preset::parse(text).err(),
                 Kind::Pet => Pet::parse(text).err(),
+                Kind::Display => Display::parse(text).err(),
                 Kind::Bool | Kind::Command => None,
             };
             if let Some(problem) = problem {
@@ -1283,6 +1302,9 @@ impl Settings {
                     spans.push(Span::raw("   "));
                     self.preset().label()
                 }
+                Kind::Display => Display::parse(&self.inputs[i].text)
+                    .unwrap_or_default()
+                    .label(),
                 _ => Pet::parse(&self.inputs[i].text).unwrap_or_default().label(),
             };
             let used = spans.iter().map(|s| s.content.width()).sum::<usize>() as u16;
@@ -1345,13 +1367,18 @@ fn unit(kind: Kind) -> &'static str {
     match kind {
         Kind::Millis => " ms",
         Kind::Bool => " Space/Enter toggle",
-        Kind::Theme | Kind::Pet => " ←/→ choose",
+        Kind::Theme | Kind::Pet | Kind::Display => " ←/→ choose",
         _ => "",
     }
 }
+/// The choice `delta` places from `now`, wrapping around.
+fn step<T: Copy + PartialEq>(all: &[T], now: T, delta: isize) -> T {
+    let at = all.iter().position(|&c| c == now).unwrap_or(0);
+    all[(at as isize + delta).rem_euclid(all.len() as isize) as usize]
+}
 /// A setting chosen from a fixed list with ‹ ›, not typed.
 fn choice(kind: Kind) -> bool {
-    matches!(kind, Kind::Theme | Kind::Pet)
+    matches!(kind, Kind::Theme | Kind::Pet | Kind::Display)
 }
 /// Marks a color set by its own `[colors]` key rather than the theme.
 const CUSTOM: &str = " custom";
@@ -1440,7 +1467,7 @@ fn apply(
         Some(text) => Some(match field.kind {
             Kind::Columns | Kind::Millis => Value::from(text.trim().parse::<i64>()?),
             Kind::Bool => Value::from(text.parse::<bool>()?),
-            Kind::Color | Kind::Theme | Kind::Pet => Value::from(text.trim()),
+            Kind::Color | Kind::Theme | Kind::Pet | Kind::Display => Value::from(text.trim()),
             Kind::Command => Value::from(text),
         }),
     };

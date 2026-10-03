@@ -911,3 +911,39 @@ fn clawd_pictures_walk_with_only_their_legs_moving() {
     assert_eq!(uppers.len(), 1, "head, arms and body stay put");
     assert!(legs.len() > 2, "the legs step");
 }
+
+#[test]
+fn blocks_display_draws_glyphs_even_where_pictures_show() {
+    use saddle::mascot::Display;
+    let frame = |m: &mut Mascot| {
+        let mut terminal = Terminal::new(TestBackend::new(70, 3)).unwrap();
+        let mut sprite = None;
+        let mut glyphs = false;
+        terminal
+            .draw(|f| {
+                m.draw(f, f.area(), 0.0, &[]);
+                sprite = m.sprite(f.buffer_mut());
+                glyphs = f.buffer_mut().content().iter().any(|c| c.symbol() != " ");
+            })
+            .unwrap();
+        (sprite.is_some(), glyphs)
+    };
+    for pet in Pet::ALL {
+        let cell = Some((8, 19));
+        assert_eq!(
+            frame(&mut Mascot::for_display(pet, Display::Auto, cell, true)),
+            (true, false),
+            "Auto shows a picture where the terminal can"
+        );
+        assert_eq!(
+            frame(&mut Mascot::for_display(pet, Display::Auto, None, true)),
+            (false, true),
+            "Auto falls back to blocks"
+        );
+        assert_eq!(
+            frame(&mut Mascot::for_display(pet, Display::Blocks, cell, true)),
+            (false, true),
+            "Blocks never shows a picture"
+        );
+    }
+}
