@@ -267,6 +267,12 @@ fn mascot_choice_defaults_to_clawd_and_accepts_only_known_pets() {
         Pet::Clawd
     );
     assert_eq!(Config::parse("mascot = 'cat'").unwrap().mascot, Pet::Cat);
+    assert_eq!(
+        Config::parse("mascot = 'capybara'")
+            .map(|c| c.mascot.name())
+            .ok(),
+        Some("capybara")
+    );
     for invalid in ["mascot = 'dog'", "mascot = true"] {
         assert!(Config::parse(invalid).is_err());
     }

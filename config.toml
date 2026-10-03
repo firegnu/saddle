@@ -6,7 +6,7 @@ left_width = 52               # Preferred left column width, in terminal cells.
 left_split = 0.5              # Unused: Agents fill the left column. Kept so old configs load.
 refresh_ms = 1000             # Background refresh interval, in milliseconds.
 mascot_enabled = true        # Show the animated mascot beside terminal tabs.
-mascot = "clawd"             # Which pet: "clawd" or "cat".
+mascot = "clawd"             # Which pet: "clawd", "cat" or "capybara".
 mascot_display = "auto"      # "auto": pictures where the terminal shows them; "blocks": always glyphs.
 theme = "dune"               # dune | tide | lagoon | terminal; omitted = dune. Sets every color below.
 

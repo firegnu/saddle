@@ -30,34 +30,38 @@ pub enum Pet {
     #[default]
     Clawd,
     Cat,
+    Capybara,
 }
 impl Pet {
-    pub const ALL: [Pet; 2] = [Pet::Clawd, Pet::Cat];
+    pub const ALL: [Pet; 3] = [Pet::Clawd, Pet::Cat, Pet::Capybara];
     /// How the pet is written in the config file.
     pub fn name(self) -> &'static str {
         match self {
             Pet::Clawd => "clawd",
             Pet::Cat => "cat",
+            Pet::Capybara => "capybara",
         }
     }
     pub fn label(self) -> &'static str {
         match self {
             Pet::Clawd => "Clawd",
             Pet::Cat => "Cat",
+            Pet::Capybara => "Capybara",
         }
     }
     pub fn parse(value: &str) -> Result<Self, String> {
         Self::ALL
             .into_iter()
             .find(|p| p.name() == value)
-            .ok_or_else(|| format!("unknown mascot {value:?}: expected clawd or cat"))
+            .ok_or_else(|| format!("unknown mascot {value:?}: expected clawd, cat or capybara"))
     }
     fn pack(self) -> Arc<Pack> {
         // Built-in packs are checked in and covered by tests; nothing is read from disk.
-        static PACKS: LazyLock<[Arc<Pack>; 2]> = LazyLock::new(|| {
+        static PACKS: LazyLock<[Arc<Pack>; 3]> = LazyLock::new(|| {
             [
                 include_str!("../assets/pets/clawd.toml"),
                 include_str!("../assets/pets/cat.toml"),
+                include_str!("../assets/pets/capybara.toml"),
             ]
             .map(|text| Arc::new(Pack::parse(text).expect("built-in pet pack")))
         });
@@ -65,10 +69,11 @@ impl Pet {
     }
     /// The pet drawn as pixel images, parsed only when the terminal can show them.
     fn image_pack(self) -> Arc<Pack> {
-        static PACKS: LazyLock<[Arc<Pack>; 2]> = LazyLock::new(|| {
+        static PACKS: LazyLock<[Arc<Pack>; 3]> = LazyLock::new(|| {
             [
                 include_str!("../assets/pets/clawd-image.toml"),
                 include_str!("../assets/pets/cat-image.toml"),
+                include_str!("../assets/pets/capybara-image.toml"),
             ]
             .map(|text| Arc::new(Pack::parse(text).expect("built-in pet image pack")))
         });

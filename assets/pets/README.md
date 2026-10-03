@@ -46,3 +46,9 @@ The references are pixel art on a 50-unit grid at 12 frames per second, like sad
 ## Cat as images (`cat-image.toml`)
 
 An original orange cat at Clawd's pixel size, drawn for pictures rather than copied from `cat.toml`: a dark brown outline, a round head about three fifths of its height, big eyes with a white shine, a white muzzle with a small mouth, pink cheeks and inner ears, and short legs. It has the poses and clip timing of `cat.toml`. While it walks only the legs move; the head, body and tail keep still. Previews and the earlier concepts: `docs/调研/图片猫猫候选.md`.
+
+## Capybara (`capybara.toml`, `capybara-image.toml`)
+
+An original design for saddle: a sleepy, unhurried capybara in side view, with a round barrel body, short legs, a small round ear, a broad blunt snout with a dark nose, half-lidded eyes and pink cheeks. Both packs face right and are mirrored, and they share clip names and timing. It walks a cell every 6 ticks, slower than the cat, and only its legs move while it walks. Its actions: daze, munch a leaf, nap, balance an orange and let a bird land on its back.
+
+The image pack is 55x24 pixels with the outline and colors of `cat-image.toml`. The picture is limited by the canvas width, so it shows at the same scale as Clawd and the cat; the extra row is headroom for the orange and the bird. The block pack has no outline and fewer details: the orange appears and leaves without falling, because one cell cannot hold the orange, the gap below it and the head. Previews: `docs/调研/卡皮巴拉宠物.md`.
