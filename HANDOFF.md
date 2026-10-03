@@ -1,16 +1,19 @@
 # Saddle 交接
 
-更新：2026-10-03。**图片版宠物与状态计时已成套部署到 `f7c967a`；用户已重启并反馈「看到修复了，不错」，当前宿主/配套插件加载路径已回读为新版。** 新任务「宠物显示方式」正在独立分支实施。
+更新：2026-10-03。**宠物显示方式 Auto/Blocks 已审查、合并、推送并清理，尚未部署。** 当前安装入口仍为 `f7c967a`（图片版宠物与状态计时）；用户已重启并反馈「看到修复了，不错」，此前已回读宿主/配套插件加载新版。
 
-## 在办任务：宠物显示方式
+## 本轮完成：宠物显示方式
 
-- 用户批准 Settings 的 Pet 旁新增「自动（默认）/字符方块」两档，不增加强制图片；沿用 Save/Cancel 与即时生效机制。Claude Code `saddle/dev-pet-display-1`（instance=`25007afe83ef`，opus[1m]/high）在 `../saddle-worktrees/pet-display-mode`、分支 `pet-display-mode` 实施。
-- 任务文件在该分支 `docs/任务/宠物显示方式.md`。本任务未选择遥测、不创建 Tasks run；完成后按任务书审查、集成。不得因上一任务部署授权自动重启用户界面。
-- 当前宿主 instance=`3101f085078dc2e7`、PID=10055，加载 `f7c967a/bin/saddle`，Drover/Diff 也来自同版；现有主控 instance=`faec2c2b00cb` 保持。用户的修复反馈不等于逐项验收所有终端与宠物动作。
+- Settings → General → Pet 后新增 Display：Auto 默认支持时图片、否则字符；Blocks 始终字符。不增加强制图片，沿用 Save/Cancel、恢复默认与保存后即时生效。
+- 实现 `916e84e`，行为级 RED/GREEN 补充 `0bfbdc0`，主控审查 `ebe15d2`，合并 `1f5b6b9`，收尾 `71002a1`。任务及详细证据见 `docs/任务/宠物显示方式.md`。
+- 主控标准首轮 495 passed、1 failed、9 ignored；既有 workflow 鼠标任务表单正文断言失败，原因未证实。限定复跑该项 1 passed；补完中断后未执行的插件和示例目标 128 passed；合计覆盖 624 项通过、9 项忽略，不是一次全套全绿。Clippy 通过，未改断言。日志 `/tmp/saddle-pet-display-review-*.log`。
+- `pet-display-mode` 分支/worktree 已清理；实现者 `saddle/dev-pet-display-1`（instance=`25007afe83ef`）确认 idle、attached=0 后关闭，公开 stop 返回 ok、SIGHUP、exit_code=129。本任务未选择遥测、未创建 Tasks run。
+- 下一步等用户安排部署或新任务，不自行启动。Auto/Blocks 尚未安装，也未在真实 Ghostty/Metalterm 目测切换；不能把源码检查当作视觉验收，不自行重启用户界面。
+- 上次宿主回读 instance=`3101f085078dc2e7`、PID=10055，加载 `f7c967a/bin/saddle`，Drover/Diff 同版；主控 instance=`faec2c2b00cb` 保持。用户的修复反馈不等于逐项验收所有终端与宠物动作。
 
 ## 当前状态
 
-用户批准把最后一层 Corral infra 真正用 Rust 迁入 Saddle；已直接实施、验证、合并并切换安装。该迁移没有委派、Tasks 任务或遥测。现在 `saddle/main` instance=`faec2c2b00cb`、agent_pid=99462，由成套 Rust Corral pen 托管；旧主控已不在公开列表。本会话只读核对确认当前宿主与 Corral/Drover/Diff 加载 `7755bb8`，四个程序哈希匹配 BUILD.txt，Drover 查询正常，Tasks 默认接收者仍为 `saddle/main`，无 Running/Awaiting、8 项 Pending。新主控的退出重开与外部 attach 全路径未在本会话复测。
+用户批准把最后一层 Corral infra 真正用 Rust 迁入 Saddle；已直接实施、验证、合并并切换安装。该迁移没有委派、Tasks 任务或遥测。`saddle/main` instance=`faec2c2b00cb`、agent_pid=99462，由成套 Rust Corral pen 托管；旧主控已不在公开列表。迁移后的首次核对为 `7755bb8`，后来宿主和插件更新为上文 `f7c967a`；存活主控的 pen 仍可引用保留的旧版本。迁移时 Drover 查询正常、Tasks 默认接收者 `saddle/main`、无 Running/Awaiting、8 项 Pending，这是历史快照。本轮未重查真实队列，也未复测新主控退出重开与外部 attach 全路径。
 
 ## 本轮计时与宠物修复
 
