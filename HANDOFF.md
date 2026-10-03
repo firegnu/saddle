@@ -5,7 +5,8 @@
 ## 在办：全部现存 agent 无缝接管可行性调研
 
 - 用户明确目标是本机开发重新部署 Saddle/Corral 后，全部现存 agent 自动由最新核心托管，保留 agent 进程、上下文、在途工作、输入输出、连接与身份；包括主控、普通和后台会话。当前不是发行渠道设计，也不是结束会话后 resume。用户授权「开始调查」，尚未授权实现或迁移。
-- 已派 Claude Code `saddle/dev-live-upgrade-1`（instance=`3d4043d744ca`，opus[1m]/xhigh）在 `../saddle-worktrees/corral-live-upgrade-research` 调查；任务书 `docs/任务/现存agent无缝接管调研.md`，任务提交 `6a51ba8`，结果写 `docs/调研/现存agent无缝接管可行性.md`。
+- Claude Code `saddle/dev-live-upgrade-1`（instance=`3d4043d744ca`，opus[1m]/xhigh）调研已完成，提交 `460d03b`；主控已核对并在报告开头追加限定，待用户讨论。agent idle、attached=0，分支/worktree `../saddle-worktrees/corral-live-upgrade-research` 保留；任务书 `docs/任务/现存agent无缝接管调研.md`、报告 `docs/调研/现存agent无缝接管可行性.md` 均在该分支，未合并/推送。
+- 核对结论：当前 pen 无升级/状态导出入口，主控仍为 pen 98891/7755bb8、agent 99462、instance faec2c2b00cb。当前公开机制内没有首次无缝过渡路径；原地 exec 有系统依据但未验证，忙碌跳过、旧 hook、回退失败和 after 超时尚未闭合。不能宣称已满足全部 agent 无缝更新，不自动选择重启或自然结束。
 - 调查要分别回答未来具备交接协议的升级，以及当前 7755bb8 旧 pen 首次过渡。原地 exec 是主控先前提出的候选，未验证、未定案；需核对 PTY/连接、锁、队列、子进程回收、hook 旧路径、after 通知及失败保护。
 - 只写调研文档，不改源码/测试/正式设计，不跑迁移原型、不发信号、不部署、不操作真实会话；未选择遥测、未创建 Tasks run。完成后主控核对并向用户汇报讨论，不自动开始实现。
 
