@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-03。**宠物显示方式 Auto/Blocks 已审查、合并、推送并清理，尚未部署。** 当前安装入口仍为 `f7c967a`（图片版宠物与状态计时）；用户已重启并反馈「看到修复了，不错」，此前已回读宿主/配套插件加载新版。
+更新：2026-10-03。**宠物显示方式 Auto/Blocks 已审查、合并、推送、清理并成套部署到 `419d302`，待用户重启。** 当前运行宿主仍为 `f7c967a`；没有停止宿主或现有 agent。
 
 ## 本轮完成：宠物显示方式
 
@@ -8,7 +8,8 @@
 - 实现 `916e84e`，行为级 RED/GREEN 补充 `0bfbdc0`，主控审查 `ebe15d2`，合并 `1f5b6b9`，收尾 `71002a1`。任务及详细证据见 `docs/任务/宠物显示方式.md`。
 - 主控标准首轮 495 passed、1 failed、9 ignored；既有 workflow 鼠标任务表单正文断言失败，原因未证实。限定复跑该项 1 passed；补完中断后未执行的插件和示例目标 128 passed；合计覆盖 624 项通过、9 项忽略，不是一次全套全绿。Clippy 通过，未改断言。日志 `/tmp/saddle-pet-display-review-*.log`。
 - `pet-display-mode` 分支/worktree 已清理；实现者 `saddle/dev-pet-display-1`（instance=`25007afe83ef`）确认 idle、attached=0 后关闭，公开 stop 返回 ok、SIGHUP、exit_code=129。本任务未选择遥测、未创建 Tasks run。
-- 下一步等用户安排部署或新任务，不自行启动。Auto/Blocks 尚未安装，也未在真实 Ghostty/Metalterm 目测切换；不能把源码检查当作视觉验收，不自行重启用户界面。
+- 用户随后明确要求「部署啊」，已切换 saddle/corral 入口及 Drover/Diff 注册到 `419d302`；四个程序哈希核对、候选/安装公开状态及隔离 release 退出重开测试 1 项通过。私有备份 `~/.local/share/saddle/backups/pet-display-419d302-20261003-113016`；详见 `docs/任务/宠物显示方式-部署记录.md`。
+- 下一步等用户重启，Settings → General → Display 选择 Auto/Blocks 后 Ctrl-S 保存。尚未在真实 Ghostty/Metalterm 目测切换；不能把检查当作视觉验收，不自行重启用户界面或启动新任务。
 - 上次宿主回读 instance=`3101f085078dc2e7`、PID=10055，加载 `f7c967a/bin/saddle`，Drover/Diff 同版；主控 instance=`faec2c2b00cb` 保持。用户的修复反馈不等于逐项验收所有终端与宠物动作。
 
 ## 当前状态
