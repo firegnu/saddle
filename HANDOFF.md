@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-03。**A 图片猫猫已审查集成并清理，尚未部署。** 安装入口仍为包含 Auto/Blocks 的 `419d302`；本轮没有重启宿主，未重新核对其实际加载版本。
+更新：2026-10-03。**A 图片猫猫已审查集成、清理并成套部署到 `7acceb3`，等待用户重启。** 本轮未重启宿主或中断现有 agent。
 
 ## 本轮完成：A 图片猫猫
 
@@ -9,7 +9,8 @@
 - 实现者记录 `tests/mascot.rs` 22 项通过；主控核对 diff、TOML 节拍和正式全姿态/深浅背景预览，通过。本轮是纯视觉调整，按预算未重复全套或 Clippy。8×19 是既有测试记录的尺寸，非本轮实时测量；未在实际 Ghostty/Metalterm 验收。
 - 文件已进 main：`docs/任务/图片猫猫候选调研.md`、`docs/调研/图片猫猫候选.md` 和同名预览目录（正式结果 `final-*.png/gif`，旧概念图保留为历史）。
 - `cat-image-candidates` worktree/分支已清理；自建实现者 `saddle/dev-cat-candidates-1`（instance=`8d0d47f7daf0`）确认 idle、attached=0 后关闭，stop ok、SIGHUP、exit_code=129。本任务未选择遥测、未创建 Tasks run。
-- 尚未部署，等待用户后续安排。用户同时讨论新增萌宠并提出卡皮巴拉（水豚），目前仅讨论，尚未授权分派或实施，不自行开始。
+- 用户随后要求部署，已切换两命令入口与 Drover/Diff 注册到 `7acceb3`；四程序哈希、插件回读与隔离 release 退出重开测试 1 项通过。备份 `~/.local/share/saddle/backups/cat-a-7acceb3-20261003-120318`；详见 `docs/任务/A图片猫猫-部署记录.md`。等用户重启后看效果，Pet=Cat、Display=Auto；Blocks 猫不变。
+- 用户同时讨论新增萌宠并提出卡皮巴拉（水豚），目前仅讨论，尚未授权分派或实施，不自行开始。
 
 ## 本轮完成：宠物显示方式
 
