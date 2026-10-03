@@ -1,36 +1,49 @@
 # Saddle 交接
 
-更新：2026-10-03。Settings 已安装更新提示已实现、发布编译并安装。用户在获知 10 项测试失败仍未解决后明确要求「那就收尾，handoff 之后提交+推送」；本轮据此合并收尾，保留失败记录，不宣称标准回归全绿。
+更新：2026-10-04。本轮完成宿主与插件的只读 UI 审查、Codex/Claude 讨论及两份共识文档；已记录并整理待办。用户要求关闭已用完的 Claude agent，handoff 后提交推送，再等待后续指令。本轮没有实施 UI、业务或协议改动。
 
-## 完成状态
+## 当前完成状态
 
-- 当前分支 `main`。功能提交 `a542931` 已快进合并；本任务 `update-indicator` 分支及 worktree 已删除，收尾空提交 `74c93fc`。本轮没有委派；清理前公开列表仅有工作目录在主仓库的 `saddle/main`，未停止任何 agent。
-- 已实现 Settings 小点、Updates F6 页面、每 30 秒只读检测已安装程序、用户触发的 Upgrade all、逐项 pen/after 回执与后续公开核验。unknown 不自动重发，页面重开及重复点击不重复升级。正式设计见 `docs/DESIGN.md`。
-- Release 构建成功，`~/.local/bin/saddle` 指向 `~/.local/share/saddle/versions/a542931/bin/saddle`；已安装入口、SHA256 与 `--help` 核对通过。
-- 收尾时 `lsof` 确认 Saddle PID `15011` 已加载 `a542931/bin/saddle`。这是本轮快照；无需因这次安装再次重开。只读运行版本核对不代表功能端到端验收。
-- 只重编译了 Saddle；Corral、Drover、Diff 二进制复用 `711ab18`，Corral 命令入口、插件注册及配置保持原样。没有升级、恢复或重启任何用户 agent。
-- 本文、部署记录及任务收尾记录随本轮文档提交推送。最终提交号、远端一致性和工作区是否干净，以 `git log -3`、`git status -sb`、`git ls-remote origin refs/heads/main` 回读为准。
+- 分支 `main`，本轮文档提交前 HEAD 为 `dc557b1`。本轮仅提交本文和下列两份新文档；最终提交号、远端一致性和主工作区是否干净，以 `git log -3`、`git status -sb`、`git ls-remote origin refs/heads/main` 回读为准。
+- `docs/UI设计语言.md`：长期的轻量视觉规则，覆盖语义角色、组件类型、间距与尺寸、操作提示、状态和插件主题边界。
+- `docs/调研/UI整理清单-2026-10-03.md`：宿主及全部插件的逐界面意见、证据、撤回/降级项、建议顺序、待渲染确认项和双方讨论记录。
+- 两份文档已达成双方一致：Claude 最终要求六项文字修正，明确修完无需再回传；主控已全部落实。共同意见不等于用户已批准所有具体外观，宽度、色彩效果等仍须通过代表性画面确定。
+- Claude `saddle/dev-claude-1`（instance `2f8f5cde8704`）已按本次用户授权停止；stop 回执 ok=true，SIGHUP，随后公开 `corral ls` 已无该实例。当前列表只剩 `saddle/main`（instance `495ec65fc41e`），不复用旧身份进行后续操作。
+- 本轮文档只做链接、空白与改动范围检查，不重新编译、不部署、不跑 UI/真实 agent 测试。审查基于源码和设计资料；代码确认、未运行复现、待实际画面确认分别标明。
 
-## 验证与未解决事项
+## 下一项：等待用户触发 T73
 
-- 最终直接回归 71 passed（Updates 10、Settings 24、telemetry_settings 6、UI 31）。新增页签使 General 说明被挤掉的回归已修复。宿主 all-targets clippy，以及最后布局修正后的 lib clippy 通过。
-- 首次标准 test 在 agent_capture 中断：109 passed、5 failed、4 ignored；限定串行复跑为 23 passed、1 failed。其余宿主补跑 401 passed、12 failed、5 ignored，其中 1 项页面回归已修；drover_telemetry 限定串行复跑为 5 passed、9 failed。其他 workspace 包补跑 128 passed；workflow 101 passed、4 ignored。首次 clippy 的本轮布尔表达式警告已修。不能将这些结果合称一次标准全套绿。
-- **仍有 10 项失败**：agent_capture 的 `timeout_reaps_only_the_direct_client_and_reports_execution_as_unknown` 在 500ms 内未获得预期部分 stdout；drover_telemetry 9 项多为 `budget_exhausted/no_context` 或缺 trace 的断言。根因及是否既有问题未确认，没有修改预算或放宽断言。原始日志 `/tmp/saddle-update-indicator-*-20261003.log`，详细证据见实施记录；既定复跑预算已用完，本次收尾未新增复跑。
-- 用户要求不做端到端测试，功能实际使用验证留待用户使用时进行。本轮未操作真实 Tasks/遥测、未执行真实 Upgrade all。
+- 用户要求“明天第一项”为 **T73：依据设计语言与 UI 整理清单，细调 Saddle 及插件 UI/UX**。先读两份文档，再按用户实际授权开始；Pending 第一位不构成自动实施或派发许可。
+- **T74：重新设计各 repo 的 Tasks 入口，缩短任务访问路径**，收尾时公开列表位于第二。这是单独的入口设计任务，不借 T73 的纯展示整理顺手改导航。
+- T73 保持展示范围：不改任务状态机、权限、升级语义、查询/分页、数据结构、生命周期、快捷键映射或危险确认行为；沿用英文产品界面，用户正文保持原文。
+- 保留已批准的 Agents 3a、工作区圆角 Tab、插件灰细外框、Drover 居中面板和 Plugins 面板设计。不同类型组件允许合理差异，不全局强行一种外框/一种尺寸/一种选中态。
+- 不扩插件主题协议，不创建通用 UI 框架，不因配色整理新增快捷键。主题仅使用已有能力；第三方插件契约不改。具体设计取舍在两份文档内，不在本交接重开讨论。
 
-## 重要文件
+## 队列快照
 
-- `docs/任务/已安装更新提示-实施.md`：实现、RED/GREEN、标准失败及后续收尾记录。
-- `docs/任务/已安装更新提示-部署记录.md`：构建、四程序哈希、入口及私有备份位置。
-- `docs/DESIGN.md`、`docs/Corral通用升级设计.md`：已批准设计及公开升级协议边界。
-- `docs/任务/Corral通用升级-部署记录.md`：旧成套版本 `711ab18` 的部署历史；保留旧包，现存 pen/hook 可能仍引用。
+通过运行中的 Saddle/Drover 公开接口回读，Pending 共 `23` 项；`current=null`、`awaiting=null`、`paused=false`。没有派发或推进任务。paused=false 只允许显式派发，不表示自动执行。
 
-## 保留工作区与边界
+当前顺序：
 
-- 历史 worktree `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow` 保留。本轮未改动；其中 `review-telemetry-design` 有 6 个既有未提交文件，不属于本任务，不清理或提交。
-- 构建继续共用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。固定安装包使用不可变版本目录，不能把共享构建输出或符号链接当作存活进程已切版的证据。
-- 本轮用户明确要求直接实施、不委派；没有新建或等待独立审查 agent。真实 agent 继续遵守公开接口与不干扰约束。
+T73 → T74 → T68 → T66 → T63 → T62 → T67 → T49 → T64 → T65 → T59 → T69 → T53 → T61 → T70 → T56 → T34 → T32 → T60 → T50 → T71 → T72 → T75
 
-## 下一步
+- T59 恢复 Owlet 开发；T69 用真实 Owlet 开发验证 Saddle 流程，两者侧重点不同。
+- T61 插件开发文档、T70 最小规范示例分别保留；T63 统一可搜索入口、T74 repo Tasks 入口不自动合并。
+- T75 是“补齐 Saddle / Corral 产品化基础能力”总任务，完整七项及建议先后已保存在任务正文：安装升级卸载、首次使用、兼容性与发布验证、诊断恢复、数据保障、权限信任说明、版本与文档一致性。仅登记，未拆分启动。
+- T71 宣传 landing page/产品视频、T72 RSI 为队列中既有用户条目，本轮保留，不解释为已授权实施。
+- 队列数据由 Drover 管理，不在本轮 Git 文档提交内。接续时先 `saddle ctl instances` 选实例，再用 `saddle ctl plugin` 的 list/show 与 request 回读；超过 20 条要分页，不能只凭本快照行动。
 
-本轮提交推送并回读后停止，等待用户下一项指令。不自动派发队列任务、不扩大测试或修复范围；10 项失败保留为后续待处理问题，用户实际使用时再验证新功能。
+## 已安装版本与未解决回归
+
+- 既有功能提交 `a542931`（Settings 已安装更新提示及 Upgrade all）已合并、构建、安装；对应收尾 `74c93fc`、交接 `dc557b1` 已推送。
+- 本轮 `lsof` 仍确认 Saddle PID `15011` 加载 `~/.local/share/saddle/versions/a542931/bin/saddle`；本轮只改文档，不需要重新编译安装。
+- Corral、Drover、Diff 沿用 `711ab18` 二进制；旧包保留，活跃 pen/hook 可能仍引用。没有升级或恢复用户 agent。
+- **10 项标准测试失败仍未解决**：agent_capture 1 项（500ms 内未得到预期部分 stdout），drover_telemetry 9 项（多为 budget_exhausted/no_context 或缺 trace）。根因及是否既有问题未确认，已登记 T68；不能称全套绿。
+- 既有直接回归 71 passed，宿主 all-targets clippy 和最后布局修正后的 lib clippy 通过；这是实施阶段结果，不是本轮重跑。完整首次结果、限定复跑及原始日志路径见 `docs/任务/已安装更新提示-实施.md`。
+- 已安装功能尚未做真实端到端验收，用户表示使用时再验证；本轮未扩大测试。部署和备份见 `docs/任务/已安装更新提示-部署记录.md`、`docs/任务/Corral通用升级-部署记录.md`。
+
+## 保留工作区与后续边界
+
+- 本轮未新建开发分支或 worktree。历史 `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow` 保留，不顺手清理；此前 `review-telemetry-design` 有 6 个未提交文件，接续时重新核对，本轮不纳入提交。
+- 前一功能任务用户要求主控直接实施；本轮用户另行授权 Claude 只读审查及双方讨论。不要把这次审查授权扩展为后续开发派发许可。
+- 本轮提交推送并回读后停止，等待用户。不要自动开发第一项、处理队列其余项或重开已经完成的审查。
