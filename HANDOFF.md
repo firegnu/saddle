@@ -1,6 +1,6 @@
 # Saddle 交接
 
-更新：2026-10-03。安装源码仍为 `7755bb8`。**新 Rust 主控已接续；Agents 状态计时（`bc5f44e`）及图片版宠物/Clawd 步态（`fdbe95c`）均已合并推送并收尾，尚未更新安装。无在办实现 agent。**
+更新：2026-10-03。**图片版宠物与状态计时已成套部署到 `f7c967a`，两个命令入口及 Drover/Diff 注册已切换；用户稍后自行重启 Saddle，运行中界面尚未更新。** 无在办实现 agent。部署细节见 `docs/任务/宠物与计时-部署记录.md`。
 
 ## 当前状态
 
@@ -8,12 +8,12 @@
 
 ## 本轮计时与宠物修复
 
-- Agents 状态计时：实现 `2df04b8`，主控审查 `6e44bfe`，合并 `bc5f44e`，收尾 `3df626b`。working 显示本轮时长，idle/waiting 从进入状态计时；公开状态缺可信起点时显示 `—`。主控标准复核 609 passed、0 failed、9 ignored，Clippy 通过。任务与审查见 `docs/任务/Agents状态计时.md`；未部署、未重启宿主，当前安装仍是旧计时。
+- Agents 状态计时：实现 `2df04b8`，主控审查 `6e44bfe`，合并 `bc5f44e`，收尾 `3df626b`。working 显示本轮时长，idle/waiting 从进入状态计时；公开状态缺可信起点时显示 `—`。主控标准复核 609 passed、0 failed、9 ignored，Clippy 通过。任务与审查见 `docs/任务/Agents状态计时.md`；现已随 `f7c967a` 部署，待用户重启宿主生效。
 - 计时实现者 `saddle/dev-state-timer-1` 已确认 idle、attached=0 后清理 worktree/分支并关闭，stop 返回 ok、exit_code=0。没有操作真实 Tasks 或记录遥测。
 - 宠物实现 `5bf6af5`（方块步态）、`ad5a643`（图片版），主控审查 `88605bf`，合并 `fdbe95c`，收尾 `79d315d`。用户要求的 Clawd 来回走时头和上身固定、只让腿动已落实；支持 Kitty 图形协议的终端默认图片，否则回退方块版。主控在合入计时修复的组合候选上复核：621 passed、0 failed、9 ignored，Clippy 通过；任务与完整取舍见 `docs/任务/图片版宠物与Clawd步态.md`。
 - 宠物 worktree/分支已清理；实现者 `saddle/dev-pet-images-1`（instance=`1e54868368ec`）确认 idle、attached=0 后关闭，stop 返回 ok、SIGHUP、exit_code=129。该任务未选择遥测、未创建 Tasks run。当前只保留主控与下文三个历史 worktree。
 - 待用户看效果：Ghostty/Metalterm 实际图片大小、背景/弹窗层次、闪烁和橘猫造型未验收。离线素材预览 `/tmp/saddle-pet-images-review-preview.png` 不等于真实终端截图；开发者 kitty 临时协议程序没有运行完整 Saddle。图片版筛选 20 段三行内动作，整体镜像及 2.4 格/秒步速的取舍已接受。启动探测期间普通键入会被丢弃、极慢响应可能进入按键流，作为非阻断后续建议记录，未扩修。
-- 下一步若用户要求看新版，先按最新 main 准备不可变成套包（计时需新宿主和配套 Corral），再按退出界面/切换/重开的流程部署。当前两个命令入口及插件注册仍指 `7755bb8`，两项新改动都尚未在日常安装中生效。
+- 用户已授权部署并表示稍后自行重启。本轮在旧界面保持运行时准备不可变成套包并切换磁盘入口，未停宿主/agent；旧进程继续引用旧版本。当前入口为 `f7c967a`；包校验、隔离 release 生命周期 1 项、插件注册和旧主控身份回读通过。下一步等待用户重启后核验实际加载路径和视觉效果，不自行重启或再次切换。
 
 用户要求使用感觉保持一致：关闭 Saddle 不停 agent，外部仍能 `corral attach`，重开恢复同一实例；原 Corral 仓库只读保留、独立可用，不产生对宿主/插件/遥测的反向依赖。用户现有主控都有 HANDOFF，部署后由用户自行重开，不热替换旧 Python 进程，不自动关闭它们。
 
@@ -50,7 +50,7 @@
 - 合并前分支上格式和 clippy 通过，全量 63 组通过；workflow 组 `pending_delete_button_confirms_names_the_task_and_can_be_cancelled`、`native_mouse_buttons_cover_forms_and_stop_confirmation` 两项失败，原因未查清（可能与共享 `.target/debug/saddle` 被并行构建覆盖有关，未证实）。用户决定先合并，由主控用隔离 target 复跑。
 - 部署准备时基于 `7755bb8`、显式 native target 串行限定复核上述两项，2 passed；原失败原因仍未知，不声称一次全套绿。新 release 包隔离生命周期1项通过，日志 `/tmp/saddle-rust-deploy-7755bb8/`。
 - 效果只看过离线渲染的预览图，未在真实终端核验；用户日常用 Ghostty 和 Metalterm。已随本次成套包切换安装，待用户重开体验。
-- 图片版源码现已完成并合并，细节及未验收边界见上文「本轮计时与宠物修复」。当前安装仍是文本宠物包；新版尚未部署，无宠物遗留分支/worktree。
+- 图片版源码现已完成并合并，细节及未验收边界见上文「本轮计时与宠物修复」。新版已部署，待用户重启查看；无宠物遗留分支/worktree。
 
 ## 保留项
 
