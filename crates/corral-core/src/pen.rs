@@ -1,6 +1,8 @@
 use crate::{Error, Result, now, state};
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+pub(crate) mod upgrade;
 use std::{
     collections::{BTreeMap, VecDeque},
     fs::{self, File},
@@ -14,13 +16,15 @@ use std::{
         },
     },
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
 };
+use upgrade::{Custody, Handle, Upgrade};
 
 pub fn start(cfg: Value) -> Result<Value> {
     let mut command = Command::new(crate::executable()?);
     command
         .arg("__pen")
+        .env("CORRAL_HOME", std::path::absolute(state::home())?)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -117,7 +121,7 @@ mod tests {
         );
     }
 }
-#[derive(PartialEq)]
+#[derive(PartialEq, Serialize, Deserialize)]
 
 enum Mode {
     Handshake,
@@ -125,8 +129,9 @@ enum Mode {
     Closing,
     Attached,
 }
+#[derive(Serialize, Deserialize)]
 struct Client {
-    sock: UnixStream,
+    sock: Handle<UnixStream>,
     input: Vec<u8>,
     output: VecDeque<u8>,
     mode: Mode,
@@ -142,16 +147,30 @@ impl Client {
         self.mode = Mode::Closing;
     }
 }
+#[derive(Serialize, Deserialize)]
 struct Chunk {
     bytes: VecDeque<u8>,
     delay: f64,
-    reply: Option<i32>,
+    reply: Option<(i32, u64)>,
+    request_id: Option<String>,
+    failed: bool,
 }
+#[derive(Serialize, Deserialize)]
 struct Pen {
-    agent: Child,
-    master: File,
-    listener: UnixListener,
+    agent: u32,
+    master: Handle<File>,
+    listener: Handle<UnixListener>,
+    lock: Handle<File>,
+    custody: Custody,
+    observer: bool,
+    upgrade: Upgrade,
+    #[serde(skip)]
+    owns: bool,
+    #[serde(skip)]
+    pending_upgrade: Option<PathBuf>,
     dir: PathBuf,
+    metadata: Value,
+    labels: Value,
     instance: String,
     started: f64,
     clients: BTreeMap<i32, Client>,
@@ -162,7 +181,7 @@ struct Pen {
     stopping: bool,
     stop_at: Option<f64>,
     stopped_by: Value,
-    exit: Option<std::process::ExitStatus>,
+    exit: Option<i32>,
     exit_at: f64,
     pty_open: bool,
     writer: Option<i32>,
@@ -176,11 +195,14 @@ struct Pen {
 }
 impl Drop for Pen {
     fn drop(&mut self) {
-        if self.exit.is_none() {
+        if !self.owns || self.custody == Custody::Handoff {
+            return;
+        }
+        if self.exit.is_none() && self.custody == Custody::Owner {
             unsafe {
-                libc::kill(-(self.agent.id() as i32), libc::SIGKILL);
+                libc::kill(-(self.agent as i32), libc::SIGKILL);
+                libc::waitpid(self.agent as i32, std::ptr::null_mut(), 0);
             }
-            let _ = self.agent.wait();
         }
         let _ = fs::remove_file(self.dir.join("sock"));
     }
@@ -194,6 +216,8 @@ impl Pen {
                         bytes: bytes.into(),
                         delay: 0.0,
                         reply: None,
+                        request_id: None,
+                        failed: false,
                     });
                 }
                 self.stopped_by = json!("keys");
@@ -205,7 +229,7 @@ impl Pen {
                     _ => libc::SIGKILL,
                 };
                 unsafe {
-                    libc::kill(-(self.agent.id() as i32), sig);
+                    libc::kill(-(self.agent as i32), sig);
                 }
                 self.stopped_by =
                     json!(format!("SIG{}", step["signal"].as_str().unwrap_or("KILL")));
@@ -218,7 +242,12 @@ impl Pen {
         }
     }
     fn status(&self) -> Value {
-        json!({"ok":true,"proto":1,"instance":self.instance,"agent_pid":self.agent.id(),"pen_pid":std::process::id(),"started":self.started,"attached":self.clients.values().filter(|c|c.mode==Mode::Attached).count(),"writer_attached":self.writer.is_some(),"last_output":self.last_output,"title":self.term.title,"last_human_input":self.human,"size":[self.size.0,self.size.1],"bracketed_paste":self.term.paste(),"recent_sends":self.recent})
+        let mut status = json!({"ok":true,"proto":1,"instance":self.instance,"agent_pid":self.agent,"pen_pid":std::process::id(),"started":self.started,"attached":self.clients.values().filter(|c|c.mode==Mode::Attached).count(),"writer_attached":self.writer.is_some(),"last_output":self.last_output,"title":self.term.title,"last_human_input":self.human,"size":[self.size.0,self.size.1],"bracketed_paste":self.term.paste(),"recent_sends":self.recent});
+        status["exe"] = json!(crate::executable().ok());
+        status["custody"] = json!(self.custody);
+        status["capabilities"] = json!({"upgrade":1,"recover":1,"snapshot":upgrade::SCHEMA});
+        status["upgrade"] = self.upgrade.public();
+        status
     }
     fn resize(&mut self, rows: u16, cols: u16, redraw: bool) {
         self.size = (rows.max(1), cols.max(1));
@@ -283,6 +312,8 @@ impl Pen {
                     bytes: bytes.into(),
                     delay: 0.0,
                     reply: None,
+                    request_id: None,
+                    failed: false,
                 });
             } else if typ == b'r' && bytes.len() == 4 {
                 let rows = u16::from_be_bytes(bytes[..2].try_into().unwrap()).max(1);
@@ -295,8 +326,21 @@ impl Pen {
         }
     }
     fn request(&mut self, fd: i32, req: Value) {
+        if let Some(instance) = req["instance"].as_str()
+            && instance != self.instance
+        {
+            self.clients
+                .get_mut(&fd)
+                .unwrap()
+                .reply(json!({"ok":false,"error":"restarted","message":"instance changed"}));
+            return;
+        }
         let reply = match req["op"].as_str() {
             Some("status") => self.status(),
+            Some("upgrade") => self.prepare_upgrade(&req),
+            Some("recover") => {
+                json!({"ok":false,"error":"not_hold","message":"recover requires Hold"})
+            }
             Some("attach") => {
                 let readonly = self.writer.is_some();
                 let c = self.clients.get_mut(&fd).unwrap();
@@ -332,7 +376,9 @@ impl Pen {
                         out.push(Chunk {
                             bytes: B64.decode(v["data"].as_str()?).ok()?.into(),
                             delay: v["delay"].as_f64().unwrap_or(0.0),
-                            reply: (i + 1 == values.len()).then_some(fd),
+                            reply: (i + 1 == values.len()).then_some((fd, self.clients[&fd].order)),
+                            request_id: req["request_id"].as_str().map(str::to_owned),
+                            failed: false,
                         });
                     }
                     Some(out)
@@ -341,7 +387,7 @@ impl Pen {
                     Some(chunks) if !chunks.is_empty() => {
                         if req["op"] == "send" {
                             self.recent.push(
-                                json!({"t":now(),"digest":req["digest"].as_str().unwrap_or("")}),
+                                json!({"t":now(),"digest":req["digest"].as_str().unwrap_or(""),"request_id":req["request_id"],"state":"accepted"}),
                             );
                             if self.recent.len() > 10 {
                                 self.recent.remove(0);
@@ -434,12 +480,11 @@ impl Pen {
     }
     fn run(&mut self) -> Result<()> {
         loop {
-            if self.exit.is_none()
-                && let Some(exit) = self.agent.try_wait()?
-            {
-                self.exit = Some(exit);
-                self.exit_at = now();
+            if let Some(target) = self.pending_upgrade.take() {
+                self.handoff(target);
             }
+            self.finish_upgrade();
+            self.observe_exit()?;
             if self.exit.is_some() && (!self.pty_open || now() - self.exit_at > 0.3) {
                 break;
             }
@@ -503,7 +548,7 @@ impl Pen {
                         self.clients.insert(
                             s.as_raw_fd(),
                             Client {
-                                sock: s,
+                                sock: Handle::new(s),
                                 input: Vec::new(),
                                 output: VecDeque::new(),
                                 mode: Mode::Handshake,
@@ -550,13 +595,43 @@ impl Pen {
                                 c.bytes.drain(..n);
                             }
                             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                            Err(_) => c.bytes.clear(),
+                            Err(_) => {
+                                c.failed = true;
+                                if let Some(id) = &c.request_id
+                                    && let Some(r) =
+                                        self.recent.iter_mut().find(|r| r["request_id"] == *id)
+                                {
+                                    r["state"] = json!("write_failed");
+                                }
+                                c.bytes.clear();
+                            }
                         }
                         if c.bytes.is_empty() {
                             let chunk = self.input.pop_front().unwrap();
                             self.next_input = now() + chunk.delay;
-                            if let Some(c) = chunk.reply.and_then(|fd| self.clients.get_mut(&fd)) {
-                                c.reply(json!({"ok":true}));
+                            if chunk.failed && chunk.request_id.is_some() {
+                                for pending in &mut self.input {
+                                    if pending.request_id == chunk.request_id {
+                                        pending.failed = true;
+                                    }
+                                }
+                            }
+                            let mut written = !chunk.failed;
+                            if chunk.reply.is_some()
+                                && let Some(id) = &chunk.request_id
+                                && let Some(r) =
+                                    self.recent.iter_mut().find(|r| r["request_id"] == *id)
+                            {
+                                written &= r["state"] != "write_failed";
+                                if written {
+                                    r["state"] = json!("written");
+                                    r["written_at"] = json!(now());
+                                }
+                            }
+                            if let Some(c) = chunk.reply.and_then(|(fd, order)| {
+                                self.clients.get_mut(&fd).filter(|c| c.order == order)
+                            }) {
+                                c.reply(if written {json!({"ok":true,"request_id":chunk.request_id,"state":"written"})} else {json!({"ok":false,"error":"write_failed","message":"PTY write failed","request_id":chunk.request_id})});
                             }
                         }
                     }
@@ -573,9 +648,14 @@ impl Pen {
                 .set_write_timeout(Some(std::time::Duration::from_millis(500)));
             let _ = client.sock.write_all(client.output.make_contiguous());
         }
-        let code = self
-            .exit
-            .and_then(|e| e.code().or_else(|| e.signal().map(|n| -n)));
+        let code = self.exit.and_then(|e| {
+            if self.observer {
+                None
+            } else {
+                let e = std::process::ExitStatus::from_raw(e);
+                e.code().or_else(|| e.signal().map(|n| -n))
+            }
+        });
         state::write(
             &self.dir.join("exit.json"),
             &json!({"instance":self.instance,"code":code,"t":now(),"stop_step":self.stopped_by}),
@@ -589,7 +669,7 @@ pub fn worker() -> i32 {
         let name = cfg["name"]
             .as_str()
             .ok_or_else(|| Error::new(1, "usage", "missing name"))?;
-        let (name, _lock) = state::acquire(name, cfg["unique"] == true)?;
+        let (name, lock) = state::acquire(name, cfg["unique"] == true)?;
         let dir = state::dir(&name)?;
         for file in state::FILES {
             if *file != "lock" {
@@ -692,10 +772,18 @@ pub fn worker() -> i32 {
             .unwrap()
             .to_string_lossy();
         let mut pen = Pen {
-            agent,
-            master,
-            listener,
+            agent: agent.id(),
+            master: Handle::new(master),
+            listener: Handle::new(listener),
+            lock: Handle::new(lock),
+            custody: Custody::Owner,
+            observer: false,
+            owns: true,
+            pending_upgrade: None,
+            upgrade: Upgrade::default(),
             dir,
+            metadata: Value::Null,
+            labels: json!({"instance":instance,"labels":cfg["labels"].as_object().cloned().unwrap_or_default()}),
             instance,
             started,
             clients: BTreeMap::new(),
@@ -722,10 +810,8 @@ pub fn worker() -> i32 {
             pen.recent
                 .push(json!({"t":started,"digest":crate::events::digest(prompt)}));
         }
-        state::write(
-            &pen.dir.join("meta.json"),
-            &json!({"name":name,"instance":pen.instance,"proto":1,"kind":kind,"cwd":cfg["cwd"],"argv":argv,"started":started,"pen_pid":std::process::id(),"agent_pid":pen.agent.id(),"version":env!("CARGO_PKG_VERSION"),"has_prompt":cfg["prompt"].is_string()}),
-        )?;
+        pen.metadata = json!({"name":name,"instance":pen.instance,"proto":1,"kind":kind,"cwd":cfg["cwd"],"argv":argv,"started":started,"pen_pid":std::process::id(),"agent_pid":pen.agent,"version":env!("CARGO_PKG_VERSION"),"has_prompt":cfg["prompt"].is_string(),"exe":crate::executable()?,"upgrade_capable":true});
+        state::write(&pen.dir.join("meta.json"), &pen.metadata)?;
         // Ready is the only stdout record. Closing its writer lets the short-lived start command exit.
         let mut ready = json!({"ok":true,"name":name,"instance":pen.instance,"kind":kind});
         if !warnings.is_empty() {

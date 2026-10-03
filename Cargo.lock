@@ -302,6 +302,7 @@ dependencies = [
  "base64 0.22.1",
  "libc",
  "regex",
+ "serde",
  "serde_json",
  "sha2",
  "shell-words",

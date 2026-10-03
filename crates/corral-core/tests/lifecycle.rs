@@ -387,6 +387,9 @@ fn public_subcommands_expose_help_without_creating_state() {
         "read",
         "attach",
         "stop",
+        "upgrade",
+        "recover",
+        "after",
         "guide",
         "install-skills",
     ] {

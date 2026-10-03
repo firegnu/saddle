@@ -1,3 +1,4 @@
+mod after;
 mod attach;
 mod cli;
 mod environment;
@@ -7,6 +8,7 @@ mod pen;
 mod skills;
 mod state;
 mod terminal;
+mod upgrade;
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -50,13 +52,19 @@ fn now() -> f64 {
 }
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().is_some_and(|s| s == "__pen-probe") {
+        println!("{}", json!({"ok":true,"schema":pen::upgrade::SCHEMA}));
+        return 0;
+    }
+    if args.first().is_some_and(|s| s == "__pen-resume") {
+        return pen::upgrade::resume(&args[1..]);
+    }
     if args.first().is_some_and(|s| s == "__hook") {
         hooks::run(args.get(1).map(String::as_str).unwrap_or(""));
         return 0;
     }
     if args.first().is_some_and(|s| s == "__after") {
-        cli::after_worker();
-        return 0;
+        return after::worker(args.get(1).map(String::as_str).unwrap_or(""));
     }
     if args.first().is_some_and(|s| s == "__pen") {
         return pen::worker();

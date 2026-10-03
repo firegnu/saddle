@@ -1,6 +1,7 @@
 use crate::{Error, Result, state};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+mod raw;
 use std::{
     fs::File,
     io::{BufRead, BufReader, Seek, SeekFrom},
@@ -16,7 +17,7 @@ pub fn digest(s: &str) -> String {
     format!("{:x}", Sha256::digest(normalize(s).as_bytes()))
 }
 fn fresh(instance: &str) -> Value {
-    json!({"cursor":3,"fmt":1,"inst":instance,"offset":0,"main_session":null,"other_sessions":[],"pending":[],"state":"starting","state_started":null,"last_tool":null,"turn_started":null,"last_event":null,"last_event_t":null,"inputs":[],"input_count":0,"last_prompt":null,"reply":null,"reply_t":null,"background_running":null})
+    json!({"cursor":4,"fmt":1,"inst":instance,"offset":0,"main_session":null,"other_sessions":[],"pending":[],"state":"starting","state_started":null,"last_tool":null,"turn_started":null,"last_event":null,"last_event_t":null,"inputs":[],"input_count":0,"last_prompt":null,"reply":null,"reply_t":null,"background_running":null,"raw":{}})
 }
 fn string(v: &Value) -> String {
     match v {
@@ -164,7 +165,7 @@ pub fn read(dir: &Path, instance: &str, cwd: &Path) -> Result<Value> {
     };
     let size = f.metadata()?.len();
     let mut s = state::read(dir.join("cursor"));
-    if s["cursor"] != 3
+    if s["cursor"] != 4
         || s["inst"] != instance
         || s["offset"].as_u64().is_none_or(|n| n > size)
         || ["pending", "other_sessions", "inputs"]
@@ -182,6 +183,7 @@ pub fn read(dir: &Path, instance: &str, cwd: &Path) -> Result<Value> {
         ));
     }
     s["fmt"] = fmt;
+    let original = s.clone();
     let start = s["offset"].as_u64().unwrap();
     let mut input = BufReader::new(f);
     input.seek(SeekFrom::Start(start))?;
@@ -195,15 +197,21 @@ pub fn read(dir: &Path, instance: &str, cwd: &Path) -> Result<Value> {
             && e.is_object()
             && e["inst"] == instance
         {
-            if e["v"] != 1 {
+            if e["v"] != 1 && e["v"] != 2 {
                 return Err(Error::new(9, "incompatible", "unsupported event format"));
             }
-            apply(&mut s, &e, cwd);
+            raw::settle(&mut s, e["t"].as_f64().unwrap_or(0.0), cwd);
+            if e["v"] == 2 {
+                raw::apply_raw(&mut s, &e, cwd)?;
+            } else {
+                apply(&mut s, &e, cwd);
+            }
         }
         offset += line.len() as u64;
     }
     s["offset"] = json!(offset);
-    if offset != start {
+    raw::settle(&mut s, crate::now(), cwd);
+    if s != original {
         state::write(&dir.join("cursor"), &s)?
     }
     Ok(s)

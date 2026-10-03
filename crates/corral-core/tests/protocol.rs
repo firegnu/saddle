@@ -407,7 +407,7 @@ fn hook_is_fail_open_and_sandbox_public_commands_leave_no_state() {
     }
 }
 #[test]
-fn injected_hooks_are_version_bound_and_adapter_arguments_are_preserved() {
+fn injected_hooks_use_the_namespace_entry_and_adapter_arguments_are_preserved() {
     let lab = Lab::new();
     let fake = lab.root.path().join("claude");
     fs::write(
@@ -440,7 +440,7 @@ fn injected_hooks_are_version_bound_and_adapter_arguments_are_preserved() {
         "{}",
         String::from_utf8_lossy(&started.stdout)
     );
-    // Switching the public entry cannot retarget the helper already handed to the agent.
+    // An unrelated command link does not change the namespace's helper entry.
     fs::remove_file(&public).unwrap();
     std::os::unix::fs::symlink("/usr/bin/false", &public).unwrap();
     let args_file = lab.root.path().join("pens/lab/main/events.args");
@@ -457,11 +457,26 @@ fn injected_hooks_are_version_bound_and_adapter_arguments_are_preserved() {
         .as_str()
         .unwrap();
     assert!(
-        hook.contains(fs::canonicalize(&lab.core).unwrap().to_str().unwrap()),
-        "helper: {hook}; fixed core: {}",
-        lab.core.display()
+        hook.contains(
+            lab.root
+                .path()
+                .join("pens/.runtime/helper")
+                .to_str()
+                .unwrap()
+        ),
+        "helper: {hook}"
     );
     assert!(!hook.contains("python"));
+    let next = lab.root.path().join("next-corral");
+    fs::copy(&lab.core, &next).unwrap();
+    assert_eq!(
+        lab.json(&["upgrade", "lab/main", "--exe", next.to_str().unwrap()])["result"],
+        "complete"
+    );
+    assert_eq!(
+        fs::read_link(lab.root.path().join("pens/.runtime/helper")).unwrap(),
+        fs::canonicalize(&next).unwrap()
+    );
     let instance = lab.json(&["status", "lab/main"])["instance"]
         .as_str()
         .unwrap()
@@ -492,6 +507,63 @@ fn injected_hooks_are_version_bound_and_adapter_arguments_are_preserved() {
         serde_json::from_str::<Value>(records.trim()).unwrap()["v"],
         1
     );
+}
+
+#[test]
+fn raw_v2_events_keep_original_input_reply_and_retry_grace_with_v1() {
+    let lab = Lab::new();
+    lab.recognized();
+    let instance = lab.json(&["status", "lab/main"])["instance"].clone();
+    let emit = |ev: &str, event: Value| {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        let record = json!({"v":2,"inst":instance,"adapter":"omp","ev":ev,"t":t,"session_id":"main","cwd":"/tmp","has_ui":true,"event":event});
+        writeln!(
+            fs::OpenOptions::new()
+                .append(true)
+                .open(lab.root.path().join("pens/lab/main/events"))
+                .unwrap(),
+            "{record}"
+        )
+        .unwrap();
+    };
+    emit("session_start", json!({"reason":"startup"}));
+    assert_eq!(lab.json(&["status", "lab/main"])["state"], "idle");
+    std::thread::scope(|scope| {
+        let sending = scope.spawn(|| lab.json(&["send", "lab/main", "original", "--timeout", "2"]));
+        eventually(|| {
+            String::from_utf8_lossy(&lab.out(&["read", "lab/main"]).stdout).contains("original")
+        });
+        emit("input", json!({"text":"original"}));
+        emit("before_agent_start", json!({"prompt":"expanded"}));
+        assert_eq!(sending.join().unwrap()["confirmed"], true);
+    });
+    assert_eq!(lab.json(&["status", "lab/main"])["state"], "working");
+    emit(
+        "message_end",
+        json!({"message":{"role":"assistant","content":[{"type":"text","text":"raw reply"}]}}),
+    );
+    emit(
+        "agent_end",
+        json!({"messages":[{"role":"assistant","stopReason":"error","errorMessage":"503 unavailable"}]}),
+    );
+    std::thread::sleep(Duration::from_millis(350));
+    assert_eq!(lab.json(&["status", "lab/main"])["state"], "working");
+    emit("agent_start", json!({}));
+    emit("agent_end", json!({"willContinue":true}));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(lab.json(&["status", "lab/main"])["state"], "working");
+    emit("agent_end", json!({}));
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(lab.json(&["reply", "lab/main"])["text"], "raw reply");
+    assert_eq!(lab.json(&["status", "lab/main"])["state"], "idle");
+    lab.event(
+        "PreToolUse",
+        json!({"session_id":"main","tool_name":"v1-tool"}),
+    );
+    assert_eq!(lab.json(&["status", "lab/main"])["last_tool"], "v1-tool");
 }
 
 #[test]

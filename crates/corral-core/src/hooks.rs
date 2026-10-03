@@ -48,13 +48,36 @@ pub fn run(event: &str) {
 pub fn known(kind: &str) -> bool {
     matches!(kind, "claude" | "codex" | "pi" | "omp")
 }
+pub(crate) fn helper(target: &Path, switch: bool) -> crate::Result<std::path::PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, symlink};
+    let root = std::path::absolute(crate::state::home())?;
+    let dir = root.join(".runtime");
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&dir)?;
+    let path = dir.join("helper");
+    if switch {
+        let temp = dir.join(format!("helper.{}.tmp", uuid::Uuid::new_v4()));
+        symlink(target, &temp)?;
+        if let Err(e) = std::fs::rename(&temp, &path) {
+            let _ = std::fs::remove_file(temp);
+            return Err(e.into());
+        }
+    } else if let Err(e) = symlink(target, &path)
+        && e.kind() != std::io::ErrorKind::AlreadyExists
+    {
+        return Err(e.into());
+    }
+    Ok(path)
+}
 pub fn argv(argv: &[String], dir: &Path, prompt: Option<&str>) -> crate::Result<Vec<String>> {
     let kind = Path::new(&argv[0])
         .file_name()
         .unwrap_or_default()
         .to_string_lossy();
     let mut out = vec![argv[0].clone()];
-    let exe = crate::executable()?;
+    let exe = helper(&crate::executable()?, false)?;
     let helper = shell_words::quote(
         exe.to_str()
             .ok_or_else(|| crate::Error::new(1, "error", "non UTF-8 helper path"))?,

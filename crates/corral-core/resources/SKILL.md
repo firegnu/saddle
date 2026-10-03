@@ -39,6 +39,7 @@ corral send "$CORRAL_NAME" "<提醒的话>" --after <名字> --timeout 3600
 
 1. 交给对方的话末尾固定加上：「命令都在前台跑完，全部做完后，回复最后一行写 DONE」。
 2. 提醒的话写成「<名字> 这一轮结束了，去看它的状态和回复」。`send --after` 立即返回，告诉用户已经交出去，然后结束这一轮。
+   新提醒保留 `request_id`，可用 `corral after <接收者名字> --request-id <ID>` 查询。pending 不是送达；unknown 时不重发、不换 ID 重试。
 3. **你是 Claude Code 时，再加第二条通道**：你正在忙、或用户刚在你的窗口里打过字时，提醒会晚到。所以另用 Bash 工具的后台运行（run_in_background）跑下面这条，它结束时你会被直接叫醒。两条哪条先到处理哪条；另一条晚到时先查状态，处理过的不再重复。Codex、pi、omp 不加：Codex 和 pi 的后台命令结束时不会叫醒你；omp 会，但这期间你会一直显示为在干活。
    ```sh
    while corral wait <名字> --timeout 90 --quiet 600; [ $? -eq 4 ]; do :; done
@@ -69,3 +70,4 @@ corral send "$CORRAL_NAME" "<提醒的话>" --after <名字> --timeout 3600
 - 名字由你起：用有意义的前缀加 `--unique`。
 - 不要读 corral 状态目录里的文件，只看命令输出的 JSON。
 - 更多命令和细节：运行 `corral guide`。
+- 通用升级必须另有授权。`upgrade`/`recover` 的 accepted、pending、hold、unknown 不是 complete；needs_restart 不授权自动重启。旧 pen、固定 hook 和无记录 after 的首次过渡须另行安排。
