@@ -47,6 +47,7 @@ corral send "$CORRAL_NAME" "<提醒的话>" --after <名字> --timeout 3600
 - 收到后 `corral status <名字>`、`corral reply <名字>`：回复最后一行是 DONE，取结果告诉人，不要 stop；对方又在干活，是被叫早了，再挂一次 `send --after`；没有 DONE 但对方已经停了，告诉人去 attach 看。
 - corral 只知道「这一轮结束」，不知道「做完」，所以一定要靠 DONE 判断。
 - 让已经开着的对方接着做长活：用 `send` 把新任务交过去（末尾同样带 DONE 约定），再挂 `send --after`，不要重新 start。
+- 新提醒返回 `request_id`。用 `corral after <接收者名字> --request-id <ID>` 查 waiting/sending/sent/confirmed/not_delivered/unknown/expired；pending 不是送达。unknown 表示不能证实原请求，不能重发或换 ID 再送。
 
 ## 等待时要知道的
 
@@ -82,4 +83,10 @@ corral attach --wait <名字>
 
 - `keys` 送原始按键（`enter` `esc` `up` `down` `ctrl-c`，或 `text:<文字>`），不看状态，后果自负；`esc` 可以打断正在干活的 agent。按完键 agent 要过一会儿才反应，紧接着 `send` 可能因为状态还没变被退回 7，先 `status` 或 `wait` 再送。`keys` 不算人在打字，不会触发 8。
 - `read` 给的是**累积的输出**（最近若干字节的滚动缓冲），不是当前画面：启动横幅、早已过去的提示都还在里面，拿整段做子串匹配会被历史内容骗到。要判断「现在屏幕上是什么」只看尾部（最后几百字符），并且只作排查，不要靠它做决定。
-- 退出码 2：不存在或已退出；6：你在 Codex 沙箱里，corral 用不了，需要调用方不带沙箱启动；9：版本不兼容，`stop` 后重新 `start`。
+- 退出码 2：不存在或已退出；6：你在 Codex 沙箱里，corral 用不了，需要调用方不带沙箱启动；9：版本不兼容，报告给用户，不自行重启。
+
+## 通用升级
+
+只有获得升级授权后，才运行 `corral upgrade --all` 或 `corral upgrade <名字> --exe <新版本绝对路径>`。`status` 公开实际 exe、custody、capabilities 和 upgrade 的 epoch/attempt/target。accepted、pending、hold、unknown 都不是 complete；批量逐项核对 pen 与提醒，不因 CLI 已换版本而推定会话都已升级。丢回执先查询，不自动重发。
+
+Hold 用 `corral recover <名字> --exe <兼容版本绝对路径>` 恢复，在同一 epoch 递增 attempt。旧 pen 无能力返回 needs_restart，但不会自动停止、重启或 resume。旧固定 hook 和无记录 after 的首次过渡未解决；升级不承诺任意崩溃无损。详细边界见包内 UPGRADING.md。

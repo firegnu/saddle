@@ -12,7 +12,7 @@ const MODES: &[&str] = &[
     "1", "25", "1000", "1002", "1003", "1005", "1006", "1015", "1004", "2004", "47", "1047", "1049",
 ];
 const ALT: &[&str] = &["1049", "1047", "47"];
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 pub struct Terminal {
     pub title: String,
     modes: BTreeMap<String, u8>,

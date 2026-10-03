@@ -99,12 +99,12 @@ impl Args {
 fn usage(message: impl ToString) -> Error {
     Error::new(1, "usage", message)
 }
-struct Status {
-    public: Value,
-    snapshot: Option<Value>,
-    pen: Value,
+pub(crate) struct Status {
+    pub(crate) public: Value,
+    pub(crate) snapshot: Option<Value>,
+    pub(crate) pen: Value,
 }
-fn status(name: &str) -> Result<Status> {
+pub(crate) fn status(name: &str) -> Result<Status> {
     let st = state::require(name, json!({"op":"status"}))?;
     let d = state::dir(name)?;
     let m = state::read(d.join("meta.json"));
@@ -115,6 +115,19 @@ fn status(name: &str) -> Result<Status> {
         json!({})
     };
     let mut public = json!({"ok":true,"name":name,"instance":st["instance"],"kind":m["kind"],"proto":st["proto"],"state":"unknown","state_started":null,"last_tool":null,"turn_started":null,"last_event":null,"last_event_at":null,"last_input_at":null,"last_input_source":null,"title":st["title"],"last_output":st["last_output"],"idle_for":st["last_output"].as_f64().map(|t|((now()-t)*1000.0).round()/1000.0),"attached":st["attached"],"last_human_input":st["last_human_input"],"started":st["started"],"labels":labels});
+    for key in [
+        "exe",
+        "custody",
+        "capabilities",
+        "upgrade",
+        "agent_pid",
+        "pen_pid",
+        "recent_sends",
+    ] {
+        if let Some(value) = st.get(key) {
+            public[key] = value.clone();
+        }
+    }
     let snapshot = if hooks::known(m["kind"].as_str().unwrap_or("")) {
         let snap = events::read(
             &d,
@@ -167,7 +180,47 @@ fn status(name: &str) -> Result<Status> {
         pen: st,
     })
 }
-fn deliver(name: &str, text: &str, force: bool, timeout: f64, st: Status) -> Result<Value> {
+fn deliver(
+    name: &str,
+    text: &str,
+    force: bool,
+    timeout: f64,
+    st: Status,
+    request_id: &str,
+) -> Result<Value> {
+    let t0 = now();
+    send_once(name, text, force, &st, request_id)?;
+    if st.snapshot.is_none() {
+        return Ok(
+            json!({"ok":true,"name":name,"instance":st.public["instance"],"request_id":request_id,"confirmed":false}),
+        );
+    }
+    let deadline = now() + timeout;
+    loop {
+        if let Some(mut result) =
+            confirmation(name, text, st.public["instance"].as_str().unwrap_or(""), t0)?
+        {
+            result["request_id"] = json!(request_id);
+            return Ok(result);
+        }
+        if now() >= deadline {
+            return Err(
+                Error::new(3, "not_delivered", "no matching input event; not resending")
+                    .with("name", name)
+                    .with("instance", st.public["instance"].clone())
+                    .with("request_id", request_id),
+            );
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+pub(crate) fn send_once(
+    name: &str,
+    text: &str,
+    force: bool,
+    st: &Status,
+    request_id: &str,
+) -> Result<Value> {
     let known = st.snapshot.is_some();
     if known && st.public["state"] != "idle" {
         return Err(Error::new(7, "not_idle", format!("{name} is not idle"))
@@ -179,10 +232,9 @@ fn deliver(name: &str, text: &str, force: bool, timeout: f64, st: Status) -> Res
     } else {
         text.as_bytes().to_vec()
     };
-    let t0 = now();
     let reply = state::request(
         name,
-        json!({"op":"send","digest":events::digest(text),"force":force,"chunks":[{"data":B64.encode(body),"delay":0.3},{"data":B64.encode(b"\r")}]}),
+        json!({"op":"send","instance":st.public["instance"],"request_id":request_id,"digest":events::digest(text),"force":force,"chunks":[{"data":B64.encode(body),"delay":0.3},{"data":B64.encode(b"\r")}]}),
     )?;
     if reply["ok"] != true {
         return Err(Error::new(
@@ -197,53 +249,37 @@ fn deliver(name: &str, text: &str, force: bool, timeout: f64, st: Status) -> Res
         .with("name", name)
         .with("last_human_input", reply["last_human_input"].clone()));
     }
-    if !known {
-        return Ok(
-            json!({"ok":true,"name":name,"instance":st.public["instance"],"confirmed":false}),
-        );
-    }
+    Ok(reply)
+}
+pub(crate) fn confirmation(
+    name: &str,
+    text: &str,
+    instance: &str,
+    t0: f64,
+) -> Result<Option<Value>> {
+    let d = state::dir(name)?;
+    let m = state::read(d.join("meta.json"));
+    let snap = events::read(&d, instance, Path::new(m["cwd"].as_str().unwrap_or("")))?;
+    let inputs = snap["inputs"].as_array().unwrap();
     let want = events::digest(text);
-    let deadline = now() + timeout;
-    loop {
-        let d = state::dir(name)?;
-        let m = state::read(d.join("meta.json"));
-        let snap = events::read(
-            &d,
-            st.public["instance"].as_str().unwrap_or(""),
-            Path::new(m["cwd"].as_str().unwrap_or("")),
-        )?;
-        let inputs = snap["inputs"].as_array().unwrap();
-        let merged = if inputs
-            .iter()
-            .any(|i| i["digest"] == want && i["t"].as_f64().unwrap_or(0.0) >= t0)
-        {
-            Some(false)
-        } else if inputs
-            .last()
-            .is_some_and(|i| i["t"].as_f64().unwrap_or(0.0) >= t0)
-            && !events::normalize(text).is_empty()
-            && snap["last_prompt"]
-                .as_str()
-                .is_some_and(|p| events::normalize(p).contains(&events::normalize(text)))
-        {
-            Some(true)
-        } else {
-            None
-        };
-        if let Some(merged) = merged {
-            return Ok(
-                json!({"ok":true,"name":name,"instance":st.public["instance"],"confirmed":true,"merged_with_draft":merged,"latency":((now()-t0)*1000.0).round()/1000.0}),
-            );
-        }
-        if now() >= deadline {
-            return Err(
-                Error::new(3, "not_delivered", "no matching input event; not resending")
-                    .with("name", name)
-                    .with("instance", st.public["instance"].clone()),
-            );
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
+    let merged = if inputs
+        .iter()
+        .any(|i| i["digest"] == want && i["t"].as_f64().unwrap_or(0.0) >= t0)
+    {
+        Some(false)
+    } else if inputs
+        .last()
+        .is_some_and(|i| i["t"].as_f64().unwrap_or(0.0) >= t0)
+        && !events::normalize(text).is_empty()
+        && snap["last_prompt"]
+            .as_str()
+            .is_some_and(|p| events::normalize(p).contains(&events::normalize(text)))
+    {
+        Some(true)
+    } else {
+        None
+    };
+    Ok(merged.map(|merged|json!({"ok":true,"name":name,"instance":instance,"confirmed":true,"merged_with_draft":merged,"latency":((now()-t0)*1000.0).round()/1000.0})))
 }
 fn turn_end(name: &str, timeout: f64, quiet: Option<f64>, instance: Option<&str>) -> Result<Value> {
     let deadline = now() + timeout;
@@ -312,7 +348,7 @@ pub fn run(args: &[String]) -> Result<Option<Value>> {
     let op = args.first().map(String::as_str).unwrap_or("");
     if matches!(op, "--help" | "-h") {
         println!(
-            "corral start|send|keys|status|wait|reply|where|ls|read|attach|stop|guide|install-skills"
+            "corral start|send|keys|status|wait|reply|where|ls|read|attach|stop|upgrade|recover|after|guide|install-skills"
         );
         return Ok(None);
     }
@@ -320,13 +356,15 @@ pub fn run(args: &[String]) -> Result<Option<Value>> {
         "start" => Some(
             "NAME [--cwd DIR] [--unique] [--prompt TEXT] [--env KEY=VALUE] [--label KEY=VALUE] -- COMMAND [ARG ...]",
         ),
-        "send" => Some("NAME TEXT [--force] [--timeout SECONDS] [--after NAME]"),
+        "send" => Some("NAME TEXT [--force] [--timeout SECONDS] [--after NAME] [--request-id ID]"),
         "keys" => Some("NAME KEY [KEY ...]"),
         "status" | "reply" | "where" => Some("NAME"),
         "wait" => Some("NAME [--timeout SECONDS] [--quiet SECONDS]"),
         "read" => Some("NAME [--bytes COUNT]"),
         "attach" => Some("NAME [--wait]"),
         "stop" => Some("NAME [--timeout SECONDS]"),
+        "after" => Some("NAME [--request-id ID]"),
+        "upgrade" | "recover" => Some("[--all|NAME] [--exe PATH]"),
         "ls" | "guide" => Some(""),
         "install-skills" => {
             Some("[--target all|claude|codex] [--project DIR] [--remove] [--dry-run] [--yes]")
@@ -370,9 +408,36 @@ pub fn run(args: &[String]) -> Result<Option<Value>> {
             p.get("--project"),
         )?));
     }
+    if op == "after" {
+        let p = Args::parse(&args[1..], &[], &["--request-id"])?;
+        p.count(1)?;
+        return Ok(Some(crate::after::list(
+            &p.words[0],
+            p.get("--request-id"),
+        )?));
+    }
+    if matches!(op, "upgrade" | "recover") {
+        let p = Args::parse(&args[1..], &["--all"], &["--exe"])?;
+        p.count(if p.has("--all") { 0 } else { 1 })?;
+        let target = p
+            .get("--exe")
+            .map(PathBuf::from)
+            .unwrap_or(crate::executable()?);
+        if !target.is_absolute() {
+            return Err(usage("--exe must be absolute"));
+        }
+        if let Some(name) = p.words.first() {
+            state::validate(name)?;
+        }
+        return Ok(Some(crate::upgrade::run(
+            p.words.first().map(String::as_str),
+            &target,
+            op == "recover",
+        )?));
+    }
     let (flags, values): (&[&str], &[&str]) = match op {
         "start" => (&["--unique"], &["--cwd", "--prompt", "--env", "--label"]),
-        "send" => (&["--force"], &["--timeout", "--after"]),
+        "send" => (&["--force"], &["--timeout", "--after", "--request-id"]),
         "wait" => (&[], &["--timeout", "--quiet"]),
         "stop" => (&[], &["--timeout"]),
         "read" => (&[], &["--bytes"]),
@@ -430,34 +495,17 @@ pub fn run(args: &[String]) -> Result<Option<Value>> {
         "status" => status(name)?.public,
         "send" => {
             if let Some(after) = parsed.get("--after") {
-                use std::{
-                    os::unix::process::CommandExt,
-                    process::{Command, Stdio},
-                };
                 if !parsed.has("--timeout") {
                     return Err(usage("--after needs an explicit --timeout"));
                 }
-                state::validate(after)?;
-                let target = state::require(name, json!({"op":"status"}))?;
-                let other = state::require(after, json!({"op":"status"}))?;
-                let cfg = json!({"name":name,"text":parsed.words[1],"force":parsed.has("--force"),"timeout":parsed.seconds("--timeout",0.0)?,"instance":target["instance"],"after":after,"after_instance":other["instance"]});
-                let mut cmd = Command::new(crate::executable()?);
-                cmd.arg("__after")
-                    .current_dir("/")
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
-                unsafe {
-                    cmd.pre_exec(|| {
-                        if libc::setsid() < 0 {
-                            return Err(std::io::Error::last_os_error());
-                        }
-                        Ok(())
-                    });
-                }
-                let mut child = cmd.spawn()?;
-                serde_json::to_writer(child.stdin.take().unwrap(), &cfg)?;
-                json!({"ok":true,"name":name,"instance":target["instance"],"after":after,"after_instance":other["instance"],"pending":true})
+                crate::after::create(
+                    name,
+                    after,
+                    &parsed.words[1],
+                    parsed.has("--force"),
+                    parsed.seconds("--timeout", 0.0)?,
+                    parsed.get("--request-id"),
+                )?
             } else {
                 deliver(
                     name,
@@ -465,6 +513,10 @@ pub fn run(args: &[String]) -> Result<Option<Value>> {
                     parsed.has("--force"),
                     parsed.seconds("--timeout", 15.0)?,
                     status(name)?,
+                    &parsed
+                        .get("--request-id")
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 )?
             }
         }
@@ -568,35 +620,4 @@ pub fn run(args: &[String]) -> Result<Option<Value>> {
         _ => unreachable!(),
     };
     Ok(Some(value))
-}
-pub fn after_worker() {
-    let _ = (|| -> Result<()> {
-        let cfg: Value = serde_json::from_reader(std::io::stdin())?;
-        let name = cfg["name"].as_str().ok_or_else(|| usage("missing name"))?;
-        let after = cfg["after"]
-            .as_str()
-            .ok_or_else(|| usage("missing after"))?;
-        let timeout = cfg["timeout"].as_f64().unwrap_or(0.0);
-        let _ = turn_end(after, timeout, None, cfg["after_instance"].as_str());
-        let deadline = now() + timeout;
-        loop {
-            let st = status(name)?;
-            if st.public["instance"] != cfg["instance"] {
-                return Ok(());
-            }
-            match deliver(
-                name,
-                cfg["text"].as_str().unwrap_or(""),
-                cfg["force"] == true,
-                15.0,
-                st,
-            ) {
-                Ok(_) => return Ok(()),
-                Err(e) if matches!(e.code, 7 | 8) && now() < deadline => {
-                    thread::sleep(Duration::from_secs(2))
-                }
-                Err(e) => return Err(e),
-            }
-        }
-    })();
 }

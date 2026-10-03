@@ -26,6 +26,9 @@ pub const FILES: &[&str] = &[
     "exit.json",
     "pen.log",
     "labels.json",
+    "upgrade.json",
+    "upgrade.committed",
+    "upgrade.active",
 ];
 pub fn home() -> PathBuf {
     std::env::var_os("CORRAL_HOME")
@@ -67,6 +70,12 @@ pub fn read(path: impl AsRef<Path>) -> Value {
         .unwrap_or(Value::Null)
 }
 pub fn write(path: &Path, v: &Value) -> Result<()> {
+    write_record(path, v, false)
+}
+pub(crate) fn write_durable(path: &Path, v: &Value) -> Result<()> {
+    write_record(path, v, true)
+}
+fn write_record(path: &Path, v: &Value, durable: bool) -> Result<()> {
     let tmp = path.with_file_name(format!(
         "{}.{}.tmp",
         path.file_name().unwrap().to_string_lossy(),
@@ -80,7 +89,13 @@ pub fn write(path: &Path, v: &Value) -> Result<()> {
         .open(&tmp)?;
     f.set_permissions(fs::Permissions::from_mode(0o600))?;
     f.write_all(&serde_json::to_vec(v)?)?;
+    if durable {
+        f.sync_all()?;
+    }
     fs::rename(tmp, path)?;
+    if durable {
+        File::open(path.parent().unwrap())?.sync_all()?;
+    }
     Ok(())
 }
 pub fn lock(path: &Path, create: bool) -> Result<Option<File>> {
@@ -166,7 +181,7 @@ pub fn check_proto(v: &Value) -> Result<()> {
 pub fn request(name: &str, req: Value) -> Result<Value> {
     request_timeout(name, req, Duration::from_secs(30))
 }
-fn request_timeout(name: &str, mut req: Value, timeout: Duration) -> Result<Value> {
+pub(crate) fn request_timeout(name: &str, mut req: Value, timeout: Duration) -> Result<Value> {
     let mut sock = UnixStream::connect(socket(name)?).map_err(|_| not_found(name))?;
     let meta = read(dir(name)?.join("meta.json"));
     if let Some(v) = meta.get("proto") {

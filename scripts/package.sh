@@ -27,8 +27,9 @@ for plugin in drover diff; do
     cp "$build_dir/$host/release/saddle-$plugin" "$staging/plugins/$plugin/bin/saddle-$plugin"
     cp "plugins/$plugin/plugin.toml" "$staging/plugins/$plugin/plugin.toml"
 done
-cp crates/corral-core/resources/SKILL.md crates/corral-core/resources/AGENT_USAGE.md "$staging/share/corral/"
+cp crates/corral-core/resources/SKILL.md crates/corral-core/resources/AGENT_USAGE.md crates/corral-core/resources/UPGRADING.md crates/corral-core/resources/hook_pi.ts crates/corral-core/resources/hook_omp.ts "$staging/share/corral/"
 cp docs/Corral核心Rust集成设计.md "$staging/share/corral/"
+cp docs/Corral通用升级设计.md "$staging/share/corral/"
 {
     printf 'revision: '; git rev-parse HEAD
     printf 'target: %s\n' "$host"
