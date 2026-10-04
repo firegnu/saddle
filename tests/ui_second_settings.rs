@@ -124,6 +124,7 @@ fn diagnostics_and_updates_share_one_label_column_and_keep_every_word() {
         save_off: false,
         checked: SystemTime::now(),
         checks: None,
+        versions: None,
     });
     let (text, b) = render(120, 50, |f| {
         settings.draw(&t, f);

@@ -68,12 +68,43 @@ pub struct Check {
     pub corral: Result<PathBuf, String>,
     /// The agents the installed Corral lists, or why they could not be read.
     pub agents: Result<Vec<(String, Pen)>, String>,
+    /// The running saddle, as resolved when it started.
+    pub running: Result<PathBuf, String>,
+    /// The builds of the running and installed saddle, from their packages' build records.
+    pub running_build: Result<Build, String>,
+    pub installed_build: Result<Build, String>,
+    /// The Saddle source the installed build names, and what it has since.
+    pub source: Result<Source, String>,
     verified_receipt: Option<Instant>,
 }
 
-/// File comparisons kept while neither file changes, so checks do not reread binaries.
+/// A program's build, from the BUILD.txt that package.sh writes beside it, and only when the
+/// record's checksum matches the program: neither a directory name nor a repository HEAD proves
+/// what a binary was built from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Build {
+    pub revision: String,
+    /// Built from a working tree with uncommitted changes, or one the record does not call clean.
+    pub modified: bool,
+    /// The Saddle source checkout and branch it was packaged from; older records do not say.
+    pub source: Option<(PathBuf, String)>,
+    pub record: PathBuf,
+}
+
+/// The Saddle source checkout a build names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Source {
+    pub checkout: PathBuf,
+    pub branch: String,
+    /// The branch's latest commit now.
+    pub head: String,
+    /// Commits on the branch that the installed build does not have, or why that is unknown.
+    pub newer: Result<u64, String>,
+}
+
+/// File checksums kept while the file does not change, so checks do not reread binaries.
 #[derive(Default)]
-pub struct Files(HashMap<(PathBuf, PathBuf), (Stamp, Stamp, bool)>);
+pub struct Files(HashMap<PathBuf, (Stamp, [u8; 32])>);
 type Stamp = (u64, u64, u64, i64, i64, i64, i64);
 
 fn stamp(path: &Path) -> Result<Stamp, String> {
@@ -92,34 +123,162 @@ fn stamp(path: &Path) -> Result<Stamp, String> {
     ))
 }
 impl Files {
-    fn same(&mut self, a: &Path, b: &Path) -> Result<bool, String> {
-        let (sa, sb) = (stamp(a)?, stamp(b)?);
-        let key = (a.to_owned(), b.to_owned());
-        if let Some((old_a, old_b, same)) = self.0.get(&key)
-            && (*old_a, *old_b) == (sa, sb)
+    fn digest(&mut self, path: &Path) -> Result<[u8; 32], String> {
+        let before = stamp(path)?;
+        if let Some((old, digest)) = self.0.get(path)
+            && *old == before
         {
-            return Ok(*same);
+            return Ok(*digest);
         }
-        let hash = |p: &Path| -> Result<_, String> {
-            let mut file = fs::File::open(p).map_err(|e| e.to_string())?;
-            let mut hash = Sha256::new();
-            let mut buffer = [0; 65536];
-            loop {
-                let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
-                if n == 0 {
-                    break;
-                }
-                hash.update(&buffer[..n]);
+        let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
+        let mut hash = Sha256::new();
+        let mut buffer = [0; 65536];
+        loop {
+            let n = file.read(&mut buffer).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
             }
-            Ok(hash.finalize())
-        };
-        let same = sa.2 == sb.2 && hash(a)? == hash(b)?;
-        if stamp(a)? != sa || stamp(b)? != sb {
+            hash.update(&buffer[..n]);
+        }
+        if stamp(path)? != before {
             return Err("Program changed during check; Refresh again".into());
         }
-        self.0.insert(key, (sa, sb, same));
+        let digest = hash.finalize().into();
+        self.0.insert(path.to_owned(), (before, digest));
+        Ok(digest)
+    }
+    fn same(&mut self, a: &Path, b: &Path) -> Result<bool, String> {
+        let (before_a, before_b) = (stamp(a)?, stamp(b)?);
+        let same = self.digest(a)? == self.digest(b)?;
+        if stamp(a)? != before_a || stamp(b)? != before_b {
+            return Err("Program changed during check; Refresh again".into());
+        }
         Ok(same)
     }
+}
+
+/// The build record of a program at `<package>/bin/<name>`, verified against its content.
+fn build(program: &Path, files: &mut Files) -> Result<Build, String> {
+    let (Some(bin), Some(name)) = (program.parent(), program.file_name()) else {
+        return Err("not a program file".into());
+    };
+    let package = bin
+        .parent()
+        .filter(|_| bin.file_name().is_some_and(|n| n == "bin"))
+        .ok_or("not in a package, so no BUILD.txt")?;
+    let record = package.join("BUILD.txt");
+    let text = fs::read_to_string(&record).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => "no BUILD.txt in its package".to_owned(),
+        _ => format!("BUILD.txt: {e}"),
+    })?;
+    let entry = format!("bin/{}", name.to_string_lossy());
+    let mut fields = HashMap::new();
+    let mut checksum = None;
+    for line in text.lines() {
+        if let Some((key, value)) = line.split_once(": ") {
+            fields.insert(key, value.trim());
+        } else if let Some((hash, file)) = line.split_once("  ")
+            && file == entry
+        {
+            checksum = Some(hash);
+        }
+    }
+    let checksum = checksum.ok_or_else(|| format!("BUILD.txt has no checksum of {entry}"))?;
+    let actual: String = files
+        .digest(program)?
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    if !checksum.eq_ignore_ascii_case(&actual) {
+        return Err("BUILD.txt does not match this program".into());
+    }
+    let revision = fields
+        .get("revision")
+        .filter(|r| r.len() >= 40 && r.bytes().all(|b| b.is_ascii_hexdigit()))
+        .ok_or("BUILD.txt has no valid revision")?;
+    let source = match (fields.get("source"), fields.get("branch")) {
+        (Some(path), Some(branch)) if !path.is_empty() => {
+            Some((PathBuf::from(path), (*branch).to_owned()))
+        }
+        _ => None,
+    };
+    Ok(Build {
+        revision: revision.to_ascii_lowercase(),
+        modified: fields.get("working-tree") != Some(&"clean"),
+        source,
+        record,
+    })
+}
+
+/// The branch a build was packaged from, as its source checkout has it now, compared with the
+/// installed build when that is known. Only reads, with Git's bounded runner.
+fn source(named: &Build, installed: Option<&Build>, cancel: &AtomicBool) -> Result<Source, String> {
+    let (checkout, branch) = named
+        .source
+        .clone()
+        .ok_or("the build record names no Saddle source (older package)")?;
+    if !checkout.is_absolute() {
+        return Err("the build record has no absolute Saddle source path".into());
+    }
+    if branch.is_empty() {
+        return Err("packaged from a detached HEAD; no branch to compare".into());
+    }
+    if !checkout.is_dir() {
+        return Err(format!("source {} is no longer there", checkout.display()));
+    }
+    let git = |args: &[&str]| {
+        crate::git::git("git", &checkout, args, cancel)
+            .ok_or_else(|| format!("Git cannot read {}", checkout.display()))
+    };
+    let output = git(&["rev-parse", "--show-toplevel"])?;
+    let root = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    if !output.status.success()
+        || !root.is_absolute()
+        || fs::canonicalize(root)
+            .ok()
+            .zip(fs::canonicalize(&checkout).ok())
+            .is_none_or(|(root, checkout)| root != checkout)
+    {
+        return Err("the recorded Saddle source is not a worktree root".into());
+    }
+    let output = git(&[
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        &format!("refs/heads/{branch}^{{commit}}"),
+    ])?;
+    if !output.status.success() {
+        return Err(format!(
+            "branch {branch} not found in {}",
+            checkout.display()
+        ));
+    }
+    let head = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    let newer = installed
+        .ok_or_else(|| "the installed build is unknown".to_owned())
+        .and_then(|build| {
+            let ancestor = git(&["merge-base", "--is-ancestor", &build.revision, &head])?;
+            match ancestor.status.code() {
+                Some(0) => {}
+                Some(1) => return Err(format!("the installed revision is not on {branch}")),
+                _ => return Err("the source does not have the installed revision".into()),
+            }
+            let count = git(&[
+                "rev-list",
+                "--count",
+                &format!("{}..{head}", build.revision),
+            ])?;
+            String::from_utf8_lossy(&count.stdout)
+                .trim()
+                .parse()
+                .map_err(|_| "Git did not count the commits".to_owned())
+        });
+    Ok(Source {
+        checkout,
+        branch,
+        head,
+        newer,
+    })
 }
 
 fn executable(program: &str) -> Result<PathBuf, String> {
@@ -235,6 +394,10 @@ pub fn check(
         installed: None,
         corral: Err("not checked".into()),
         agents: Err("not checked".into()),
+        running: sources.running.clone(),
+        running_build: Err("not checked".into()),
+        installed_build: Err("not checked".into()),
+        source: Err("not checked".into()),
         verified_receipt: None,
     };
     let installed = executable(&sources.command);
@@ -245,6 +408,21 @@ pub fn check(
             Err(e) => Saddle::Unknown(e),
         },
         (Err(e), _) | (_, Err(e)) => Saddle::Unknown(e.clone()),
+    };
+    result.running_build = sources
+        .running
+        .clone()
+        .and_then(|running| build(&running, files));
+    result.installed_build = installed
+        .clone()
+        .and_then(|installed| build(&installed, files));
+    let named = [&result.installed_build, &result.running_build]
+        .into_iter()
+        .flatten()
+        .find(|b| b.source.is_some());
+    result.source = match named {
+        Some(named) => source(named, result.installed_build.as_ref().ok(), cancel),
+        None => Err("no build record names a Saddle source (older package or none)".into()),
     };
     result.corral = if sources.corral == "corral" {
         installed
@@ -675,6 +853,112 @@ impl Updates {
                         })
                 })
     }
+    /// Source, Installed, Running and, when the agents were read, how many use the installed
+    /// Corral: each says only what its own evidence shows.
+    fn versions(&self, check: &Check) -> Vec<Row> {
+        let build = |build: &Result<Build, String>| match build {
+            Ok(b) if b.modified => format!("{} + uncommitted changes", short(&b.revision)),
+            Ok(b) => short(&b.revision).to_owned(),
+            Err(e) => format!("build unknown ({e})"),
+        };
+        let mut rows = Vec::new();
+        let (text, tone) = match &check.source {
+            Err(e) => (format!("Unknown: {e}"), Tone::Unknown),
+            Ok(source) => {
+                let at = format!(
+                    "{} at {} in {}",
+                    source.branch,
+                    short(&source.head),
+                    crate::diagnostics::private(&source.checkout.display().to_string())
+                );
+                let modified = check.installed_build.as_ref().is_ok_and(|b| b.modified);
+                match &source.newer {
+                    Ok(0) if modified => (
+                        format!("{at}; Installed was built from it with uncommitted changes"),
+                        Tone::Unknown,
+                    ),
+                    Ok(0) => (format!("{at}; Installed has every commit"), Tone::Good),
+                    Ok(n) => (
+                        format!(
+                            "{at}; {n} newer commit{} not in Installed; build and install to use {}",
+                            if *n == 1 { "" } else { "s" },
+                            if *n == 1 { "it" } else { "them" }
+                        ),
+                        Tone::Action,
+                    ),
+                    Err(e) => (
+                        format!("{at}; cannot compare with Installed: {e}"),
+                        Tone::Unknown,
+                    ),
+                }
+            }
+        };
+        rows.push(Row::Item("Source".into(), text, tone));
+        let (text, tone) = match (&check.installed, &check.installed_build) {
+            (None, Err(e)) => (format!("Unknown: {e}"), Tone::Unknown),
+            (_, Ok(_)) => (build(&check.installed_build), Tone::Good),
+            (Some(_), Err(_)) => (build(&check.installed_build), Tone::Unknown),
+        };
+        rows.push(Row::Item("Installed".into(), text, tone));
+        let (text, tone) = match &check.saddle {
+            Saddle::Current => (
+                format!("{}; same program as Installed", build(&check.running_build)),
+                Tone::Good,
+            ),
+            Saddle::Reopen(_) => (
+                format!(
+                    "{}; differs from Installed. Reopen Saddle normally to apply; agents keep running",
+                    build(&check.running_build)
+                ),
+                Tone::Action,
+            ),
+            Saddle::Unknown(e) => (format!("Cannot confirm: {e}"), Tone::Unknown),
+        };
+        rows.push(Row::Item("Running".into(), text, tone));
+        if let Ok(agents) = &check.agents {
+            let count = |f: fn(&Pen) -> bool| agents.iter().filter(|(_, p)| f(p)).count();
+            let current = count(|p| *p == Pen::Current);
+            let older = count(|p| matches!(p, Pen::Outdated(_)));
+            let restart = count(|p| *p == Pen::NoProtocol);
+            let other = agents.len() - current - older - restart;
+            let (text, tone) = if agents.is_empty() {
+                ("No agents".into(), Tone::Good)
+            } else if current == agents.len() {
+                (
+                    format!("All {} use the installed Corral", agents.len()),
+                    Tone::Good,
+                )
+            } else {
+                let mut text = format!("{current} of {} use the installed Corral", agents.len());
+                if older > 0 {
+                    text += &format!(
+                        "; {older} still on an older Corral{}",
+                        if self.can_upgrade() {
+                            " (Upgrade all)"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+                if restart > 0 {
+                    text += &format!("; {restart} need a restart");
+                }
+                if other > 0 {
+                    text += &format!("; {other} pending or unconfirmed");
+                }
+                (
+                    text,
+                    if older + restart > 0 {
+                        Tone::Action
+                    } else {
+                        Tone::Unknown
+                    },
+                )
+            };
+            rows.push(Row::Item("Agents".into(), text, tone));
+        }
+        rows
+    }
     pub fn page(&self) -> Page {
         let mut rows = Vec::new();
         if self.upgrading() {
@@ -694,27 +978,7 @@ impl Updates {
             ));
         }
         if let Some(check) = &self.latest {
-            let (text, tone) = match &check.saddle {
-                Saddle::Current => ("Current".into(), Tone::Good),
-                Saddle::Reopen(_) => (
-                    "Reopen Saddle normally to apply; agents keep running".into(),
-                    Tone::Action,
-                ),
-                Saddle::Unknown(e) => (format!("Cannot confirm: {e}"), Tone::Unknown),
-            };
-            rows.push(Row::Item("Saddle".into(), text, tone));
-            match &check.corral {
-                Ok(path) => rows.push(Row::Item(
-                    "Installed Corral".into(),
-                    path.display().to_string(),
-                    Tone::Good,
-                )),
-                Err(e) => rows.push(Row::Item(
-                    "Installed Corral".into(),
-                    e.clone(),
-                    Tone::Unknown,
-                )),
-            }
+            rows.extend(self.versions(check));
             match &check.agents {
                 Err(e) => rows.push(Row::Item(
                     "Agents".into(),
@@ -866,4 +1130,8 @@ pub struct Page {
     pub rows: Vec<Row>,
     /// Upgrade all is offered.
     pub upgrade: bool,
+}
+/// A revision as Git abbreviates it by default.
+fn short(revision: &str) -> &str {
+    revision.get(..7).unwrap_or(revision)
 }

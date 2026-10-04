@@ -34,6 +34,9 @@ cp docs/Corral通用升级设计.md "$staging/share/corral/"
     printf 'revision: '; git rev-parse HEAD
     printf 'target: %s\n' "$host"
     printf 'working-tree: '; if [ -z "$(git status --porcelain)" ]; then printf 'clean\n'; else printf 'modified\n'; fi
+    # The Saddle source and branch this was built from, so Updates can compare it later.
+    printf 'source: %s\n' "$project_dir"
+    printf 'branch: '; git symbolic-ref --quiet --short HEAD || printf '\n'
     for file in bin/saddle bin/corral plugins/drover/bin/saddle-drover plugins/diff/bin/saddle-diff; do
         (cd "$staging" && shasum -a 256 "$file")
     done

@@ -47,6 +47,7 @@ fn empty_report(config: PathBuf) -> Report {
         save_off: false,
         checked: SystemTime::now(),
         checks: None,
+        versions: None,
     }
 }
 
@@ -262,4 +263,63 @@ fn a_config_error_keeps_its_place_and_kind_but_not_the_configured_value() {
         .summary();
         assert!(!summary.contains("SYNTHETIC_PRIVATE_VALUE"), "{summary}");
     }
+}
+
+#[test]
+fn diagnostics_show_the_paths_and_build_records_behind_the_versions() {
+    use sha2::{Digest, Sha256};
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let bin = root.join("pkg/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let saddle = common::script(&bin, "saddle", "#!/bin/sh\n# saddle\n");
+    let revision = "d".repeat(40);
+    std::fs::write(
+        root.join("pkg/BUILD.txt"),
+        format!(
+            "revision: {revision}\nworking-tree: clean\n{:x}  bin/saddle\n",
+            Sha256::digest(std::fs::read(&saddle).unwrap())
+        ),
+    )
+    .unwrap();
+    let check = saddle::updates::check(
+        &saddle::updates::Sources {
+            running: Ok(PathBuf::from(&saddle)),
+            command: saddle.clone(),
+            corral: root.join("missing/corral").display().to_string(),
+        },
+        &mut saddle::updates::Files::default(),
+        Duration::from_secs(5),
+        &AtomicBool::new(false),
+    );
+    let mut settings = Settings::open(root.join("config.toml"), true);
+    press(&mut settings, KeyCode::F(4));
+    let report = Report {
+        versions: Some(check),
+        ..empty_report(root.join("config.toml"))
+    };
+    let summary = report.summary();
+    for text in [
+        "Versions",
+        "running saddle",
+        "running build",
+        "installed saddle",
+        "installed build",
+        "installed corral",
+        "saddle source",
+        &revision,
+        &root.join("pkg/BUILD.txt").display().to_string(),
+        "missing/corral",
+    ] {
+        assert!(summary.contains(text), "{text} missing:\n{summary}");
+    }
+    settings.diagnose(report);
+    let shown = screen(&mut settings);
+    assert!(shown.contains("Versions"), "{shown}");
+    // Before the first Updates check nothing is claimed.
+    let summary = empty_report(root.join("config.toml")).summary();
+    assert!(
+        summary.contains("Versions") && summary.contains("not checked yet"),
+        "{summary}"
+    );
 }

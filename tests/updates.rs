@@ -624,3 +624,268 @@ esac
         1
     );
 }
+
+// Fixture setup only; isolated from the user's Git config so commits never sign or prompt.
+fn git(dir: &Path, args: &[&str]) -> String {
+    let output = std::process::Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c"])
+        .arg("commit.gpgsign=false")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {args:?}: {output:?}");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+/// A Saddle source checkout with two commits on main: the first and the latest.
+fn source_repo(root: &Path) -> (PathBuf, String, String) {
+    let repo = root.join("saddle-src");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    let mut revisions = Vec::new();
+    for text in ["one", "two"] {
+        fs::write(repo.join("file"), text).unwrap();
+        git(&repo, &["add", "file"]);
+        git(&repo, &["commit", "-q", "-m", text]);
+        revisions.push(git(&repo, &["rev-parse", "HEAD"]));
+    }
+    let latest = revisions.pop().unwrap();
+    (repo, revisions.pop().unwrap(), latest)
+}
+
+/// BUILD.txt as package.sh writes it, with the real checksum of the package's saddle unless
+/// `checksum` replaces it; `extra` holds the source lines newer packages add.
+fn record(package: &Path, revision: &str, tree: &str, extra: &str, checksum: Option<&str>) {
+    use sha2::{Digest, Sha256};
+    let actual = format!(
+        "{:x}",
+        Sha256::digest(fs::read(package.join("bin/saddle")).unwrap())
+    );
+    fs::write(
+        package.join("BUILD.txt"),
+        format!(
+            "revision: {revision}\ntarget: test\nworking-tree: {tree}\n{extra}{}  bin/saddle\n{}  bin/corral\n",
+            checksum.unwrap_or(&actual),
+            "0".repeat(64)
+        ),
+    )
+    .unwrap();
+}
+
+fn checked(sources: &Sources) -> updates::Check {
+    updates::check(
+        sources,
+        &mut Files::default(),
+        Duration::from_secs(10),
+        &AtomicBool::new(false),
+    )
+}
+
+#[test]
+fn source_metadata_cannot_redirect_to_the_launch_directory_or_a_parent_repository() {
+    let install = install();
+    let (repo, first, _) = source_repo(&install.root);
+    let nested = repo.join("removed-checkout");
+    fs::create_dir(&nested).unwrap();
+    for path in [Path::new("."), nested.as_path()] {
+        record(
+            &install.root.join("new"),
+            &first,
+            "clean",
+            &format!("source: {}\nbranch: main\n", path.display()),
+            None,
+        );
+        let check = checked(&sources(&install));
+        assert!(check.installed_build.is_ok());
+        assert!(
+            check.source.is_err(),
+            "unreliable source accepted: {:?}",
+            check.source
+        );
+    }
+}
+
+#[test]
+fn build_records_and_the_recorded_source_tell_committed_installed_and_running_apart() {
+    let install = install();
+    let (repo, first, latest) = source_repo(&install.root);
+    let (new, old) = (install.root.join("new"), install.root.join("old"));
+    let source = format!("source: {}\nbranch: main\n", repo.display());
+    record(&new, &first, "clean", &source, None);
+    record(&old, &"a".repeat(40), "clean", "", None);
+    let check = checked(&sources(&install));
+    let installed = check.installed_build.clone().unwrap();
+    assert_eq!(installed.revision, first);
+    assert!(!installed.modified);
+    assert_eq!(installed.record, new.join("BUILD.txt"));
+    assert_eq!(
+        check.running_build.clone().unwrap().revision,
+        "a".repeat(40)
+    );
+    // The source named by the installed build, not the cwd or any agent's project.
+    let source = check.source.clone().unwrap();
+    assert_eq!(source.checkout, repo);
+    assert_eq!(source.branch, "main");
+    assert_eq!(source.head, latest);
+    assert_eq!(source.newer, Ok(1));
+
+    // Built from the latest commit, and the commit is all the source has.
+    record(
+        &new,
+        &latest,
+        "clean",
+        &format!("source: {}\nbranch: main\n", repo.display()),
+        None,
+    );
+    assert_eq!(checked(&sources(&install)).source.unwrap().newer, Ok(0));
+    // Built with uncommitted changes: said so, never matched to a commit as is.
+    record(
+        &new,
+        &latest,
+        "modified",
+        &format!("source: {}\nbranch: main\n", repo.display()),
+        None,
+    );
+    let check = checked(&sources(&install));
+    assert!(check.installed_build.unwrap().modified);
+
+    // A revision the source does not have is not compared.
+    record(
+        &new,
+        &"b".repeat(40),
+        "clean",
+        &format!("source: {}\nbranch: main\n", repo.display()),
+        None,
+    );
+    assert!(checked(&sources(&install)).source.unwrap().newer.is_err());
+    // An older package without source lines: the source is unknown.
+    record(&new, &first, "clean", "", None);
+    let check = checked(&sources(&install));
+    assert!(check.installed_build.is_ok());
+    assert!(check.source.is_err(), "{:?}", check.source);
+    // A record that does not match the program, or none: the build is unknown, whatever the
+    // directory is called.
+    record(&new, &first, "clean", "", Some(&"c".repeat(64)));
+    assert!(checked(&sources(&install)).installed_build.is_err());
+    fs::remove_file(old.join("BUILD.txt")).unwrap();
+    let check = checked(&sources(&install));
+    assert!(
+        matches!(&check.running_build, Err(e) if e.contains("BUILD.txt")),
+        "{:?}",
+        check.running_build
+    );
+    // The same program elsewhere is still current, and its build is not guessed from a path.
+    let elsewhere = install.root.join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::copy(new.join("bin/saddle"), elsewhere.join("saddle")).unwrap();
+    let check = checked(&Sources {
+        running: Ok(elsewhere.join("saddle")),
+        ..sources(&install)
+    });
+    assert_eq!(check.saddle, Saddle::Current);
+    assert!(check.running_build.is_err());
+}
+
+#[test]
+fn the_updates_page_names_source_installed_running_and_agents_without_a_new_dot() {
+    let install = install();
+    let (repo, first, latest) = source_repo(&install.root);
+    let new = install.root.join("new");
+    record(
+        &new,
+        &first,
+        "clean",
+        &format!("source: {}\nbranch: main\n", repo.display()),
+        None,
+    );
+    record(
+        &install.root.join("old"),
+        &"a".repeat(40),
+        "clean",
+        "",
+        None,
+    );
+    let mut updates = Updates::start(sources(&install), Duration::from_secs(3600));
+    wait(&mut updates, |u| u.latest().is_some() && !u.checking());
+    let mut settings = Settings::open(install.root.join("config.toml"), true);
+    settings.open_updates();
+    settings.set_updates(updates.page());
+    let row = |label: &str| {
+        updates
+            .page()
+            .rows
+            .iter()
+            .find_map(|row| match row {
+                updates::Row::Item(l, value, _) if l == label => Some(value.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{label} missing"))
+    };
+    let source = row("Source");
+    assert!(
+        source.starts_with(&format!("main at {} in ", &latest[..7])),
+        "{source}"
+    );
+    assert!(
+        source.contains("1 newer commit not in Installed"),
+        "{source}"
+    );
+    assert_eq!(row("Installed"), first[..7]);
+    let running = row("Running");
+    assert!(
+        running.starts_with("aaaaaaa; differs from Installed. Reopen"),
+        "{running}"
+    );
+    assert!(row("Agents").starts_with("2 of 8 use the installed Corral"));
+    let shown = screen(&mut settings);
+    for text in [
+        "Source",
+        "Installed",
+        "Running",
+        "Agents",
+        "p/old",
+        "Reopen",
+    ] {
+        assert!(shown.contains(text), "{text} missing:\n{shown}");
+    }
+    // Narrow windows keep the labels and wrap the values.
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut terminal = Terminal::new(TestBackend::new(60, 40)).unwrap();
+    terminal
+        .draw(|frame| {
+            settings.draw(&saddle::theme::Theme::default(), frame);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let narrow: String = (0..40)
+        .map(|y| {
+            (0..60)
+                .map(|x| buffer[(x, y)].symbol().to_owned())
+                .collect::<String>()
+                + "\n"
+        })
+        .collect();
+    for text in ["Source", "Installed", "Running", "Agents"] {
+        assert!(narrow.contains(text), "{text} missing:\n{narrow}");
+    }
+
+    // Everything installed is in use: newer source commits alone add no dot.
+    let script = "#!/bin/sh\necho '{\"ok\":true,\"agents\":[]}'\n";
+    common::script(install.new_corral.parent().unwrap(), "corral", script);
+    let mut updates = Updates::start(
+        Sources {
+            running: Ok(new.join("bin/saddle")),
+            ..sources(&install)
+        },
+        Duration::from_secs(3600),
+    );
+    wait(&mut updates, |u| u.latest().is_some() && !u.checking());
+    assert_eq!(
+        updates.latest().unwrap().source.as_ref().unwrap().newer,
+        Ok(1)
+    );
+    assert!(!updates.attention());
+}

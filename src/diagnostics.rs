@@ -35,6 +35,8 @@ pub struct Report {
     pub checked: SystemTime,
     /// None: still checking.
     pub checks: Option<Checks>,
+    /// The latest Updates check when the page was opened or refreshed: the versions behind it.
+    pub versions: Option<crate::updates::Check>,
 }
 
 /// The checks that run outside the interface: they may wait on the file system or a command.
@@ -171,8 +173,10 @@ impl Report {
             Item("corral command", private(&self.corral), Unknown),
             Item("corral path", corral_path.0, corral_path.1),
             Item("corral version", corral_version.0, corral_version.1),
-            Heading("Agents"),
+            Heading("Versions"),
         ];
+        rows.extend(self.versions());
+        rows.push(Heading("Agents"));
         let (text, tone) = last(&self.agents, "no read yet");
         rows.push(Item("Last read", text, tone));
         rows.push(Heading("Configuration"));
@@ -236,6 +240,75 @@ impl Report {
             last(&self.save, "not saved yet")
         };
         rows.push(Item("Last save", text, tone));
+        rows
+    }
+
+    /// Where the Updates versions come from: program paths, build records and the source.
+    fn versions(&self) -> Vec<Row> {
+        use Row::Item;
+        use Tone::{Good, Unknown};
+        let Some(check) = &self.versions else {
+            return vec![Item(
+                "checked",
+                "not checked yet; Updates checks in the background".into(),
+                Unknown,
+            )];
+        };
+        let path = |path: &Result<PathBuf, String>| match path {
+            Ok(path) => (private(&path.display().to_string()), Good),
+            Err(error) => (format!("unknown: {}", private(error)), Unknown),
+        };
+        let build = |build: &Result<crate::updates::Build, String>| match build {
+            Ok(build) => (
+                format!(
+                    "{}{} per {}",
+                    build.revision,
+                    if build.modified {
+                        " with uncommitted changes"
+                    } else {
+                        ""
+                    },
+                    private(&build.record.display().to_string())
+                ),
+                Good,
+            ),
+            Err(error) => (format!("unknown: {}", private(error)), Unknown),
+        };
+        let installed = check
+            .installed
+            .clone()
+            .ok_or_else(|| "saddle command not found".to_owned());
+        let mut rows = vec![Item(
+            "checked",
+            format!("by Updates at {}", clock(check.at)),
+            Unknown,
+        )];
+        for (label, (text, tone)) in [
+            ("running saddle", path(&check.running)),
+            ("running build", build(&check.running_build)),
+            ("installed saddle", path(&installed)),
+            ("installed build", build(&check.installed_build)),
+            ("installed corral", path(&check.corral)),
+        ] {
+            rows.push(Item(label, text, tone));
+        }
+        let (text, tone) = match &check.source {
+            Ok(source) => (
+                format!(
+                    "{} at {} in {}{}",
+                    source.branch,
+                    source.head,
+                    private(&source.checkout.display().to_string()),
+                    match &source.newer {
+                        Ok(n) => format!("; {n} commits not in installed build"),
+                        Err(error) => format!("; not compared: {}", private(error)),
+                    }
+                ),
+                Good,
+            ),
+            Err(error) => (format!("unknown: {}", private(error)), Unknown),
+        };
+        rows.push(Item("saddle source", text, tone));
         rows
     }
 
@@ -321,7 +394,7 @@ fn without_values(error: &str) -> String {
 }
 
 /// The home folder shown as `~`, so the summary can be shared.
-fn private(text: &str) -> String {
+pub(crate) fn private(text: &str) -> String {
     match std::env::var("HOME") {
         Ok(home) if home.trim_end_matches('/').len() > 1 => {
             let home = home.trim_end_matches('/');

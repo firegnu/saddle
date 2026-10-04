@@ -1702,6 +1702,7 @@ impl App {
             save_off: self.layout_store.protected(),
             checked: SystemTime::now(),
             checks: None,
+            versions: self.updates.latest().cloned(),
         }
     }
     fn attention_items(&self) -> Vec<crate::attention::Item> {

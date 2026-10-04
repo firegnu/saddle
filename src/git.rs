@@ -177,7 +177,7 @@ impl Worktree<'_> {
 // so the directory shows as unavailable), skips optional index writes and fsmonitor hooks, and
 // inherits no GIT_* variable, which could redirect the repository, index or objects, inject
 // config, or write traces.
-fn git(program: &str, dir: &Path, args: &[&str], cancel: &AtomicBool) -> Option<Output> {
+pub(crate) fn git(program: &str, dir: &Path, args: &[&str], cancel: &AtomicBool) -> Option<Output> {
     let mut full = vec![
         "--no-lazy-fetch",
         "--no-optional-locks",
