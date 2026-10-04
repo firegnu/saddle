@@ -2,34 +2,18 @@
 
 更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。用户已批准设计并要求在同一 T74 继续实施；下方 T66 记录为此前完成快照。
 
-## 当前：T74 两项返工已完成，原 Codex 定向复核中
+## 当前：T74 已合并、推送并清理，未部署
 
-- 用户要求缩短各 repo 的 Tasks 访问路径，入口形式已由本轮设计和后续用户继续指令确定。任务正文末尾“仅加入待办”是登记阶段旧说明，本次正式派发已触发设计。
-- Claude Code `saddle/dev-t74-design-1`（instance `0f81bd0e76e9`），`opus[1m] / high`，role=implementer；路由档位拿不准，主控选常规，交叉审查不要，影响面看得见。
-- worktree `../saddle-worktrees/t74-tasks-entry-design`，分支同名，基线 `a570fda`；任务书 `docs/任务/T74-Tasks入口设计.md`，候选产出 `docs/Tasks入口设计.md`（均在该 worktree）。设计阶段已完成，实施候选已完成于 `e6edaca`，仍未合并或收尾。
-- 特别核对：当前项目如何确定；现有“插件不贡献常驻按钮”的规则若需改变须明确列为提案；保持宿主通用插件边界。考虑 T76 的 GPUI 评估，避免默认完整 TUI 导航重构，不吸收 T63 通用搜索。
-- 实时公开查询 T74 为 Running，run `5e378db26877a85fefe4684199d17910`；宿主控制实例现为 `7b8c8e5e67b7a313`（先前实例已过时），主控 Corral instance 仍 `9f8a73396d8a`。
-- trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c`；controller handoff `13bf71fb-fbd3-4e2d-8a3f-913039c9fdbb`；设计 dispatch `7f407043-4f55-4abb-abcd-99cc8afc6056`。公开 reply 用 `/tmp/saddle-t74-20261004/reply-context.json`，完整记录与 start 回执在同目录。不要复用 T66 身份，不提前关闭 task trace。
-- 设计阶段两轮公开回复均为 DONE，修订 `ee9b570` 主控复核通过，结论提交 `ec33dec`。用户讨论未安装、停用、卸载边界后明确“继续吧，实现依然在这个任务中实现”，已授权实施，不再等待设计确认。
-- 原 Claude、原 worktree/分支继续实施；任务书 `docs/任务/T74-Tasks入口实施.md`。采用一个固定入口、Agents p、普通终端启动目录；停用保留固定，移除清除固定。先同步 DESIGN，再改代码；不部署或自动推进队列。
-- 实施 dispatch `b4447de7-1097-4b0a-9a04-4155cabe24ff`；reply context `/tmp/saddle-t74-20261004/implementation-reply-context.json`；已确认交付，send request `22fe2692-9de0-4ff3-8e7d-c10dd0f6b25a`。路由 tier拿不准，沿用 opus[1m]/high；影响面碰要害、独立交叉审查要（重点异步定位/草稿保留）。
-- 验证按 T66：实现者目标RED/GREEN、相关回归与定向Clippy，主控跨模块阶段集成全量标准检查一次；不在每次小修、每个审查者处重复全量。代码完成后另派 Codex 重档独立审查，不提前开审查空转。
-- 实施完成提醒 `d2a8c49a-462a-40ac-9c51-ece0285e9c27` 已处理。公开 status/reply 核对原 Claude 为 idle、回复 DONE、worktree 干净；reply operation `8962b610-940a-4507-9d79-e92111e958a2`。实现候选 `e6edaca`（T74: 实现 Tasks 直接入口与来源定位）。
-- 实现者报告目标 RED/GREEN、相关组及两包 Clippy 通过；workflow 整组 102 passed / 1 failed / 4 ignored，失败 `native_mouse_buttons_cover_forms_and_stop_confirmation:851`，并报告旧基线两次同样失败、单例通过。主控未据此宣称全绿；不搭车修复无关问题，集成时保留真实全量结果。
-- 主控已检查生产代码与关键测试差异，尚无已确认阻塞项；独立审查重点为错项目、过期异步结果、草稿保留及来源提示。主仓库任务书/报告 `docs/任务/T74-Tasks入口独立审查.md`，审查者已完成追加，主控核验和第一轮返工任务书一同提交保存。
-- 独立 Codex `saddle/dev-t74-review-1`，instance `80d99546d75c`，`gpt-6-astra / xhigh`，role=reviewer，启动已确认 working。detached worktree `../saddle-worktrees/review-t74-tasks-entry-design`，固定 `e6edaca`，审查 `ec33dec..e6edaca`。独立审查者现 idle/DONE，保留等待修订复核。
-- review dispatch `5b864f63-da36-4d14-9fae-9e9e552b68d7`；decision `bddd47ca-1bec-4ca9-81df-7f08af45e6bd`；start operation `2d8cc0ca-f9f0-4e70-833a-82c7d8cbe598`；reply context `/tmp/saddle-t74-20261004/implementation-review-reply-context.json`。审查者仅做必要定向验证，不重复全量或 workflow 整组。
-- 独立审查完成提醒 `56acd2dc-f4ab-42ca-8f5f-d06ac59db701` 已处理；公开回复 operation `a27a46d2-b780-4896-8afb-fbce4bda5ce8`，idle/DONE，结论必须改2、建议改0、可以不改5。主控对照源码、批准设计和实际协议帧确认：R1 常用窗口保留草稿时实际项目被截断、接入页盖掉提示；R2 已登记目标队列读取失败误入接入表单且仍留旧项目。未重复运行探针/测试。
-- 第一轮返工任务书（主仓库）`docs/任务/T74-Tasks入口实施返工.md`，已交付原 Claude/原实现 worktree，只修 R1/R2、先目标 RED/GREEN，直接回归及改动包 Clippy；全量仍留主控阶段集成一次。独立报告证据 `/tmp/saddle-t74-review/`；返工日志约定 `/tmp/saddle-t74-rework/`。
-- 主控 changes_requested 事件 `75e451be-fd55-49ba-8480-ef991334d6ae`；返工 dispatch `ecf89173-31d3-432c-92be-0b48e02c658c`；decision `f6d53828-a13e-492c-80b2-1da9f0343a75`；send request `ef1fcbd0-2c83-45ff-811e-860eb73e29a9` confirmed=true。reply context `/tmp/saddle-t74-20261004/implementation-rework-reply-context.json`。
-- 返工完成提醒 `c6873658-838b-4d78-b079-bcec14315962` pending=true，不表示送达；到达先核对原 Claude 实例/公开回复，再让原 Codex 定向复核修订（先更新干净 detached review worktree 到新提交）。所有记录继续同 trace/run；不自动 Submit/Accept、部署或关闭 task trace。
-
-
-- 第一轮返工完成于 `439c5e3`，原 Claude idle/DONE、工作区干净；公开 reply operation `cb2bc1bd-ad27-4250-812e-915a7c0efe62`。主控已读修订 diff 与目标 RED/GREEN 日志，三个目标检查先失败后通过，相关 process/ui/project_setup 和三个 workflow 单例通过；尚未全量。
-- R1 改为优先 Showing 实际项目/状态，setup/preferences 为提示保留一行；R2 已登记且有配置的错误项目进入自身 Read failed 列表。主控接受窄时省略来源、截短原因，以及手动选择同类错误项目走同一列表通路，不扩大设计。
-- 原 Codex `saddle/dev-t74-review-1` / `80d99546d75c` 已确认 idle 后接收复核；干净 detached review worktree 已更新到 `439c5e3`。复核任务追加于 `docs/任务/T74-Tasks入口独立审查.md`，只看 R1/R2 和直接影响。
-- 复核 dispatch `91cb9789-6afd-4c81-b95f-109baece7230`；decision `a339353c-dba2-48aa-bb56-b2e071188f8d`；send request `f0a5cd7b-1dc2-4318-8243-d4743441635d` confirmed=true；reply context `/tmp/saddle-t74-20261004/implementation-rereview-reply-context.json`。返工完成提醒已处理，复核提醒回执在同目录 `implementation-rereview-reminder.out`，pending 不代表送达。
-
+- 用户已批准同一 T74 实施。实现 `e6edaca`，两项返工 `439c5e3`；原独立 Codex 定向复核 R1/R2 通过、阻塞0，主控阶段集成完成。合并提交 `a62eecf` 已推送；本节随收尾更新。
+- 入口：Settings → Plugins 给 Tasks 设置 Pin 后，Agents 头部出现 Tasks，Agents 焦点按 p 可打开；Viewer 按键透传。普通终端使用启动 cwd。停用保留入口并解释不可用，移除清除固定。没有默认自动固定。
+- R1 已修：保留草稿时优先显示实际项目和未切换状态，接入/通知偏好表单不覆盖提示。R2 已修：已登记项目队列读取失败仍切到该项目列表显示 Read failed，不误入接入表单。详见设计和实施记录。
+- 标准全量命令只跑一次，在 workflow 失败后停止：555 passed / 2 failed / 9 ignored。只补跑未执行的插件目标142 passed、宿主examples退出0；首次覆盖合计 **697 passed / 2 failed / 9 ignored**。两项失败各限定复核一次均通过，未改代码/断言/超时。全量Clippy、fmt、diff检查通过。
+- 两项失败为 `mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends:1257` 与 `native_mouse_buttons_cover_forms_and_stop_confirmation:851`。不能称默认并行全套稳定全绿；后一项与实现者旧基线报告相同，但主控未重跑旧基线确认归因。没有搭车修复时序测试。完整日志 `/tmp/saddle-t74-integration/`。
+- 主控确认合并后代码与受检候选一致，差异只有主控文档。两个 T74 worktree 和分支已安全清理；原 Claude `saddle/dev-t74-design-1` / `0f81bd0e76e9`、Codex `saddle/dev-t74-review-1` / `80d99546d75c` 在 idle、未attach、clean及祖先检查后随工作目录删除一并关闭。公开 corral ls 只剩本主控，四个历史worktree保留。
+- 未发布编译、安装部署、重启或推进 Tasks。上次公开 T74 为 Running，run `5e378db26877a85fefe4684199d17910`；本轮未改状态，不把本地合并当 Submit/Accept。后续部署等待用户触发。
+- trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c` 继续开放，绑定 T74 同run；不由主控关闭。记录目录 `/tmp/saddle-t74-20261004/`；原审查/返工/复核提醒均已处理，后续迟到提醒不重复执行。
+- 最后复核 dispatch `91cb9789-6afd-4c81-b95f-109baece7230`，主控passed事件 `aceb863e-63a3-4d94-b7aa-61eedea39304`。审查报告 `docs/任务/T74-Tasks入口独立审查.md` 保存各阶段真实证据和集成判断；源阶段任务书已随合并保留。
+- 用户指出入口任务耗时过长，后续坚持缩小范围、避免重复检查；本次未追加新需求。T76等下一项未获本轮实施授权。
 
 ## 会话摘要
 
@@ -79,4 +63,4 @@
 
 ## 下一步
 
-等待原独立 Codex 对 439c5e3 的 R1/R2 定向复核；通过后主控集中运行一次阶段集成全量测试及 Clippy，再按项目流程合并推送清理。用户已指出耗时偏长，本轮严格收住两项修复，不扩审查范围。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
+T74 已合并推送清理，等待用户决定部署或 Tasks 提交/验收。不要自动部署、Submit/Accept、关闭 task trace 或派发下一任务。收到同任务反馈再处理；旧完成提醒只核对已处理事实。
