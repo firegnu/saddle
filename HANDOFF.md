@@ -2,7 +2,18 @@
 
 更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。用户已批准设计并要求在同一 T74 继续实施；下方 T66 记录为此前完成快照。
 
-## 当前：T74 已合并并安装，当前窗口需重开加载新版
+## 当前：T63 由 Codex 做设计阶段
+
+- 用户已派发 T63「统一可搜索的操作入口」，随后明确“不交claude，还是codex来做”。Claude 未创建；只派一个 Codex，由 saddle/main 主控。
+- 用户需求：在已有 Agent 搜索和插件面板基础上，用统一可搜索入口找项目、切换 agent、打开任务、进入具体设置页，减少记忆入口位置。先做简短推荐方案和文字线框，给用户确认后再实施；不扩成通用命令平台。
+- Codex `saddle/dev-t63-design-1` / instance `bd7efad2d99a`，`gpt-6-astra / xhigh`、role=implementer；路由重/不要交叉审查/看得见。本轮仅源码核对和文档diff检查，不编译或测试，不独立交叉审查。
+- worktree `../saddle-worktrees/t63-unified-search`，分支同名，基线 `b6f93d9`；任务书 `docs/任务/T63-统一搜索入口设计.md`，产出 `docs/T63-统一搜索入口方案.md`，均在该worktree。只改这两份文档，不改产品、测试或已批准 DESIGN。
+- 公开 Drover 核对为 Running，run `1aceb478636a305c942d7b155e57bc79`；宿主新实例 `dc9cd32ad965b34b`，主控 Corral instance仍 `9f8a73396d8a`。T74已重启核实宿主/Drover均加载29c94d4。
+- T63 trace `16b9ad30-24fa-46c1-b07b-f3ea48e8656f` 开放、采集开启，controller_handoff `86502084-b6b3-4153-aa91-75756da5eaaa`；设计dispatch `e6073356-3b04-44b4-93fb-a09fab8308b2`。不要复用T74记录身份。
+- 记录目录 `/tmp/saddle-t63-20261004/`，公开回复上下文 `reply-context.json`。start operation `42079751-a7e5-4bbe-9838-ceb571095672`；完成提醒 `f31e9bec-9488-458b-b84f-ad0b9f6ec060` pending=true，不代表已送达。收到提醒先核对实例、状态和公开回复，不重复处理迟到提醒。
+- 不自动实施、合并设计、Submit/Accept、部署或关闭task trace；先向用户呈现具体方案。T74已完成记录如下，历史worktree保留。
+
+## 上一项：T74 已合并、安装并重启验证
 
 - 用户已批准同一 T74 实施。实现 `e6edaca`，两项返工 `439c5e3`；原独立 Codex 定向复核 R1/R2 通过、阻塞0，主控阶段集成完成。合并提交 `a62eecf` 已推送；本节随收尾更新。
 - 入口：Settings → Plugins 给 Tasks 设置 Pin 后，Agents 头部出现 Tasks，Agents 焦点按 p 可打开；Viewer 按键透传。普通终端使用启动 cwd。停用保留入口并解释不可用，移除清除固定。没有默认自动固定。
@@ -63,4 +74,4 @@
 
 ## 下一步
 
-T74 已安装，用户正常重开 Saddle 后加载新版；Settings → Plugins 选 Drover → Pin，然后可从 Agents 头部 Tasks 或按 p 打开。当前宿主 PID68447 仍加载 d7da5b4，Drover PID68450 仍加载5f39f88，本轮未重启进程或升级 agent。构建与安装校验日志/配置备份：`~/.local/share/saddle/backups/t74-deploy-20261004-201807/`。等待用户 Tasks 提交/验收或反馈；不自动 Submit/Accept、关闭 task trace 或派发下一任务。
+等待 Codex 的 T63 设计结果，核对公开回复和文档，主控聚焦复用与最小范围，再向用户展示推荐及文字线框。不要因为新入口加出独立导航/插件平台；不要重复全量。T74已重启核实两进程加载29c94d4，不再重复部署或处理旧提醒。
