@@ -2,27 +2,23 @@
 
 更新：2026-10-04。用户认可设计语言和 33 页实际绘制预览，要求确认未破坏逻辑后合并部署。第一批 UI 已完成审查、合并、推送、安装与开发目录清理；本轮未走 Tasks 队列或开启遥测。
 
-## 当前：UI 收尾核对已派发（2026-10-04）
+## 当前：UI 收尾已完成并部署（2026-10-04）
 
-用户在看过第二批后批准继续：更新总清单、核对 Agents/按钮窄窗和 Diff 浅色表现，仅修复确认的展示问题。总清单已按两批记录更新，明确 D2–D3、All pending、New 极窄 Edit path 等保留项，未冒充全部改完。产品基线 `593ff8a`，任务书/清单提交 `1b48172`。
+用户批准的两批 UI 和后续收尾均已落地。收尾宿主 `d98cc0a`、Diff 返工 `abd7e6c` 主控审查通过；独立集成 `35f2e2e`，main 合并 `efea116`，收尾 `bae7004`。当前安装 Saddle/Diff 为 `~/.local/share/saddle/versions/efea116`，Drover 注册仍为 `5f39f88`，Corral 不变。未重启运行中的宿主，正常重开加载。
 
-| 实现者 | instance | worktree | 完成提醒 request_id |
-| --- | --- | --- | --- |
-| saddle/dev-ui-final-host-1 | bd43f863e4e6 | ../saddle-worktrees/ui-final-host | ae9de27e-79a6-4d80-a8bd-365863b89ce4 |
-| saddle/dev-ui-final-diff-1 | f85f97a47591 | ../saddle-worktrees/ui-final-diff | 65a95bc3-7c33-4690-8158-9a82dee0737c |
+- 新增收尾：Agents 窄栏名称优先，时间再状态文字退让，状态符号形状/行高/操作保留；插件可见截断按钮焦点修正；Diff 明确浅色 RGB 背景可读性适配，#909090 语法分类合并返工已关闭。
+- 宿主目标检查实现者报告 2 passed；Diff 实现者 lib 6 passed，主控针对复核 1 passed；发布构建与安装回读通过。本轮未重跑全套/Clippy，旧基线失败继续单列。
+- 两个收尾实现者与开发/集成 worktree、分支已按规清理，完成提醒已处理；重复提醒不重做。四个历史 worktree 原样保留。Tasks 队列与遥测未动。
+- 保留：Reset 实际背景未知、极矮窗整行按钮不可见的公共布局边界、其余清单明确保留项。不存在当前必须返工项，不自动推进其他任务。
+- 记录：`docs/任务/UI收尾-集成与部署-2026-10-04.md`；清单 `docs/调研/UI整理清单-2026-10-03.md` 已逐项更新。备份与验证日志：`/Users/firegnu/.local/share/saddle/backups/ui-final-20261004-140225`。
+- 下一步：用户正常重开后查看本轮微调，有反馈再处理；没有反馈则本轮 UI 整理告一段落，等待用户触发下一项。
 
-两组 Claude Code opus[1m]/high、role=implementer，路由常规（Diff 档位 null 主控选常规）/不交叉审查/看得见；start ok，完成提醒 pending。宿主独占 ui.rs/plugins/ui.rs，Diff 独占 plugins/diff；具体任务书 `docs/任务/UI收尾-{宿主窄窗,Diff主题}-2026-10-04.md`。后续读取 status/reply 并主控审查；两组集成后统一合并部署，不把 DONE 直接当通过。
-
-Diff 初版 `170b7b3` 已主控审查：独占与业务边界符合，但有 1 项必须改——中等亮度 RGB 背景的 7:1 目标不可达，负目标把多种语法色压黑合并。已在任务书写同任务返工，不纳入集成；Reset 限制保留、不扩协议。原 Diff 完成提醒已处理。宿主组 `d98cc0a` 已完成主控审查，无必须改项：接受先去时间再去状态文字、保留不同形状状态标记的窄栏取舍；截断按钮焦点仅改绘制。已建立 `ui-final-integration` 纳入宿主组，尚未合 main/部署；宿主完成提醒已处理。Diff 仍在原实例返工，新提醒 `591acd9e-a599-4902-9344-deb4ed406f41` 已挂。
-
-cargo 仍用 `/tmp/saddle-ui2-cargo.py` 共享 target 串行锁；本批只做针对展示检查，不重跑全套/Clippy，不推进 Tasks 队列或开启遥测。窄栏名称优先的用户批准已回写 DESIGN。第二批安装状态见下文，不能把本次候选说成已部署。
-
-## 第二批已完成（2026-10-04）
+## 第二批历史完成记录（2026-10-04）
 
 用户批准剩余 UI 整理及 Agents 限定方案，三组并行实现和主控审查均已完成。宿主 `29357c3`、Settings `8735ff8`、Diff 返工 `60f7bf1` 统一集成；34 列 Staged+error 必须改项已关闭。main 合并 `6189921`，收尾 `3b2f6b6`。
 
 - 集成展示检查宿主 7、Settings 4、Diff 1 项通过；Diff 34 列专项复核另有 1 passed。源码独占范围和业务边界通过审查；Agents 3a、行高、入口顺序与行为保持。未重跑全套/Clippy；此前旧基线 12 项失败仍保留，不能宣称全套绿。
-- 当前安装包 `~/.local/share/saddle/versions/6189921`：Saddle 与 Diff 更新；Drover 注册仍为 `5f39f88`，Corral 入口不变。发布构建与安装回读通过，主配置 hash 未变；备份 `/Users/firegnu/.local/share/saddle/backups/ui-second-batch-20261004-132008`。未重启当前宿主或主控，正常重开 Saddle 加载本批。
+- 第二批当时安装包 `~/.local/share/saddle/versions/6189921`：Saddle 与 Diff 更新；Drover 注册仍为 `5f39f88`，Corral 入口不变。发布构建与安装回读通过，主配置 hash 未变；备份 `/Users/firegnu/.local/share/saddle/backups/ui-second-batch-20261004-132008`。未重启当前宿主或主控，正常重开 Saddle 加载本批。
 - 实际绘制预览：`file:///Users/firegnu/Developer/personal_projs/saddle-ui-preview/2026-10-04-second-batch/index.html`，31 幅合成 Buffer。预览、原始帧与日志独立保存，不等同真实终端/手机 SSH 验收。
 - 三个 ui2 开发 worktree/分支与 ui2-integration 已安全清理，对应三个实现者已随目录关闭；完成提醒全部处理，重复提醒忽略。四个历史 worktree 原样保留。
 - 既有极窄 Agents 名称/Attention 截断、极窄按钮焦点线索属于建议观察项，没有扩展本批范围。后续依用户实际反馈继续小修，不自动启动其他任务。
