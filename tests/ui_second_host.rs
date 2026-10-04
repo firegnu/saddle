@@ -134,7 +134,8 @@ fn workspace_and_overlay_status_bars_share_one_target_and_help_shape() {
     let (buffer, _) = workspace((100, 12), Focus::Agents, &terminals, None, &mut p);
     let normal = show("workspace", &buffer);
     // Overlays: Telemetry's own status line, Plugins, Plugin settings and a plugin view.
-    let bars: [(&str, Box<dyn Fn(&mut ratatui::Frame, Rect)>); 4] = [
+    type DrawBar<'a> = Box<dyn Fn(&mut ratatui::Frame, Rect) + 'a>;
+    let bars: [(&str, DrawBar<'_>); 4] = [
         (
             "Telemetry",
             Box::new(|f, a| ui::status_text(&t, f, a, " Input ▸ Telemetry · Esc Close")),
