@@ -655,9 +655,21 @@ fn task_tabs_mark_the_chosen_view_and_details_color_structured_states() {
     }
     // Reference failures keep their semantic color and do not become completion gates.
     let buffer = render_queue(&mut q, 106, 120);
-    for label in ["Repository reference", "Last check", "Run records"] {
+    for label in ["Repository reference", "Last check"] {
         assert_eq!(style(&buffer, label, 0, 5), (heading, true), "{label}");
     }
+    // Look further names the section first; the heading itself sits at the left edge.
+    let (x, _) = find(&buffer, "Repository reference").unwrap();
+    let y = (0..buffer.area.height)
+        .find(|&y| {
+            "Run records"
+                .chars()
+                .enumerate()
+                .all(|(i, c)| buffer[(x + i as u16, y)].symbol() == c.to_string())
+        })
+        .unwrap_or_else(|| panic!("Run records heading: {}", text(&buffer)));
+    assert_eq!(buffer[(x, y)].fg, heading);
+    assert!(buffer[(x, y)].modifier.contains(Modifier::BOLD));
     assert!(text(&buffer).contains("stale"));
 }
 
@@ -1060,7 +1072,8 @@ fn returned_pending_run_details_show_the_saved_history() {
     value["task"]["status"] = "pending".into();
     value["task"]["return_history"] = serde_json::json!([record]);
     q.absorb_detail(&key, Ok(serde_json::from_value(value).unwrap()));
-    let screen = text(&render_queue(&mut q, 150, 48));
+    // Tall enough to reach the history below Look further and Key events without scrolling.
+    let screen = text(&render_queue(&mut q, 150, 60));
     for words in [
         "Return history",
         "Wrong dispatch",
@@ -1299,6 +1312,89 @@ fn run_overview_keeps_key_nodes_and_manual_steps_on_the_first_screen() {
         ));
     }
     panic!("full reports remain reachable at narrow width");
+}
+
+#[test]
+fn run_details_point_further_first_and_the_body_link_opens_every_run() {
+    use serde_json::json;
+    let mut q = detail_queue(json!({"id":"T4","title":"Synthetic further","status":"running"}));
+    let mut data = show_json();
+    data["task"]["return_history"] = json!([{"reason":"CURRENT RETURN"}]);
+    data["task"]["previous_runs"] = json!([{"run_id":"run-3"}]);
+    data["reports"] = json!({"state":"available","trace_id":"trace-4","entries":[
+        {"event_id":"r","seq":9,"kind":"review.recorded","dispatch_id":"d","recorded_at":"NOW","verdict":"passed","text":"REVIEW BODY"},
+        {"event_id":"c","seq":10,"kind":"controller.note","dispatch_id":null,"recorded_at":"NOW","text":null,"body_error":"Read budget exhausted; open Telemetry for the body"}]});
+    open_detail(&mut q, Some(data));
+    let wide = render_queue(&mut q, 160, 44);
+    let output = text(&wide);
+    for label in [
+        "2 recorded below (1 body unreadable)",
+        "This run + 1 previous run below · 1 return this run",
+        "every run of T4",
+    ] {
+        assert!(output.contains(label), "missing {label}: {output}");
+    }
+    let (_, further_y) = find(&wide, "Look further").unwrap();
+    let (_, events_y) = find(&wide, "Key events · this run").unwrap();
+    assert!(further_y < events_y, "{output}");
+    // The tab row link is separate from the tabs: accent, bold, not underlined.
+    let (tab_x, tab_y) = find(&wide, "Open in Telemetry ↗").unwrap();
+    let theme = saddle::theme::Theme::default();
+    assert_eq!(wide[(tab_x, tab_y)].fg, theme.focus);
+    assert!(
+        wide[(tab_x, tab_y)]
+            .modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    );
+    assert!(
+        !wide[(tab_x, tab_y)]
+            .modifier
+            .contains(ratatui::style::Modifier::UNDERLINED)
+    );
+    // The body has the same link; only its own text is clickable.
+    let (x, y) = (tab_y + 1..wide.area.height)
+        .find_map(|y| {
+            (0..wide.area.width - 18)
+                .find(|x| {
+                    "Open in Telemetry ↗"
+                        .chars()
+                        .enumerate()
+                        .all(|(i, c)| wide[(x + i as u16, y)].symbol() == c.to_string())
+                })
+                .map(|x| (x, y))
+        })
+        .expect("link in the body");
+    assert!(y == further_y + 1, "{output}");
+    assert!(q.click(x - 2, y).is_none());
+    assert!(q.telemetry_request.is_none(), "the label beside the link");
+    assert!(q.click(x + 22, y).is_none());
+    assert!(q.telemetry_request.is_none(), "the text after the link");
+    assert!(q.click(x + 10, y).is_none());
+    assert_eq!(
+        q.telemetry_request.take(),
+        Some(saddle_plugin_sdk::protocol::TelemetryFilter {
+            kind: "drover.task".into(),
+            scope: "/tmp/demo".into(),
+            key: "T4".into(),
+            run: None,
+        })
+    );
+    // Scrolled away, the old position is plain text again.
+    for _ in 0..3 {
+        q.key(crossterm::event::KeyEvent::from(
+            crossterm::event::KeyCode::PageDown,
+        ));
+    }
+    let scrolled = render_queue(&mut q, 160, 44);
+    assert!(
+        !text(&scrolled)
+            .lines()
+            .nth(usize::from(y))
+            .unwrap()
+            .contains("Open in Telemetry ↗")
+    );
+    assert!(q.click(x + 10, y).is_none());
+    assert!(q.telemetry_request.is_none());
 }
 
 #[test]

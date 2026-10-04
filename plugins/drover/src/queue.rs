@@ -1822,7 +1822,15 @@ impl Panel {
             ("Links", KeyEvent::from(K::Null), Some(View::Links)),
         ];
         if numbered {
-            tabs.push(("Telemetry ↗", telemetry_click(), None));
+            // The full name when it fits beside the tabs with a gap; otherwise the short one.
+            let used: usize = tabs.iter().map(|(label, ..)| label.width() + 3).sum();
+            let link = crate::detail::TELEMETRY_LINK;
+            let label = if used + link.width() + 4 <= usize::from(area.width) {
+                link
+            } else {
+                "Telemetry ↗"
+            };
+            tabs.push((label, telemetry_click(), None));
         }
         let (mut x, mut y) = (area.x, area.y);
         for (label, key, view) in tabs {
@@ -1831,6 +1839,8 @@ impl Panel {
                 x = area.x;
                 y += 1;
             }
+            // The first free column after tabs on this row; the divider goes only between them.
+            let free = x;
             if view.is_none() {
                 x = area.right().saturating_sub(width);
             }
@@ -1845,9 +1855,18 @@ impl Panel {
                 Style::default()
                     .fg(t.focus)
                     .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            } else if view.is_none() {
+                // An action, not a tab: accent and bold, never underlined like the chosen tab.
+                Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(if view.is_none() { t.text } else { t.muted })
+                Style::default().fg(t.muted)
             };
+            if view.is_none() && free > area.x && rect.x >= free {
+                frame.render_widget(
+                    Paragraph::new("│").style(Style::default().fg(t.border)),
+                    Rect::new(rect.x - 1, y, 1, 1),
+                );
+            }
             frame.render_widget(Paragraph::new(format!(" {label} ")).style(style), rect);
             if shown {
                 self.buttons.push(crate::buttons::Hit {
@@ -1885,10 +1904,12 @@ impl Panel {
         let queried = self.detail_key().is_some();
         let detail = self.content.as_ref().unwrap();
         let live = self.live(detail);
+        let mut links = Vec::new();
         let (lines, top) = match self.view {
             View::Links => unreachable!(),
             View::Details => {
-                let lines = detail.lines(t, live, queried, usize::from(width));
+                let lines;
+                (lines, links) = detail.lines_and_links(t, live, queried, usize::from(width));
                 let max = lines.len().saturating_sub(height);
                 let detail = self.content.as_mut().unwrap();
                 detail.view = (height, max);
@@ -1940,6 +1961,22 @@ impl Panel {
             Paragraph::new(visible),
             Rect::new(body.x, body.y, width, body.height),
         );
+        // The same press as the link beside the tabs, only on the link text now in view.
+        for (row, x, len) in links {
+            if row < top || row >= top + height || x >= width {
+                continue;
+            }
+            self.buttons.push(crate::buttons::Hit {
+                area: Rect::new(
+                    body.x + x,
+                    body.y + (row - top) as u16,
+                    len.min(width - x),
+                    1,
+                ),
+                danger: false,
+                key: telemetry_click(),
+            });
+        }
         if lines.len() > height && height > 0 {
             frame.render_stateful_widget(
                 Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -2647,8 +2684,8 @@ fn help_lines(t: &Theme, width: u16) -> Vec<ratatui::text::Line<'static>> {
                 ("Enter", "Run details"),
                 ("PgUp / PgDn", "Scroll text or details"),
                 (
-                    "Telemetry ↗",
-                    "Saddle's Telemetry page on every run of the selected numbered task",
+                    "Open in Telemetry ↗",
+                    "Saddle's Telemetry page on every run of the selected numbered task; right of the tabs, or Look further in Run details",
                 ),
             ],
         ),

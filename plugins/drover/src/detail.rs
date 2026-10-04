@@ -49,6 +49,7 @@ impl TaskDetail {
         self.view.0.saturating_sub(1).max(1) as isize
     }
     /// `live` is where the list has the task now; `queried` whether task detail read covers it.
+    #[cfg(test)]
     pub(crate) fn lines(
         &self,
         t: &Theme,
@@ -56,10 +57,21 @@ impl TaskDetail {
         queried: bool,
         width: usize,
     ) -> Vec<Line<'static>> {
+        self.lines_and_links(t, live, queried, width).0
+    }
+    /// The lines, and each drawn piece of the Telemetry link as (row, column, width).
+    pub(crate) fn lines_and_links(
+        &self,
+        t: &Theme,
+        live: Option<(&'static str, &Task)>,
+        queried: bool,
+        width: usize,
+    ) -> (Vec<Line<'static>>, Vec<(usize, u16, u16)>) {
         let mut out = Out {
             t,
             width,
             rows: Vec::new(),
+            links: Vec::new(),
         };
         let Some(data) = &self.data else {
             let (group, task) = live.unwrap_or((self.group, &self.task));
@@ -92,7 +104,7 @@ impl TaskDetail {
                         out.note("Retrying automatically every 5s.");
                     }
                 }
-                return out.rows;
+                return (out.rows, out.links);
             }
             out.note(if task.id.is_some() {
                 "From the queue list; task details are unavailable."
@@ -109,7 +121,7 @@ impl TaskDetail {
                 out.field("Reason", &[(reason.clone(), t.text)]);
             }
             out.body(&task.body);
-            return out.rows;
+            return (out.rows, out.links);
         };
         let task = &data.task;
         let group = match task.status.as_deref() {
@@ -136,6 +148,7 @@ impl TaskDetail {
                 time_of_day(data.evidence.observed_at)
             ));
         }
+        out.look_further(task, &data.reports);
         out.overview(task, &data.reports);
         out.reports(&data.reports);
         out.records(task);
@@ -145,14 +158,21 @@ impl TaskDetail {
         }
         out.evidence(&data.evidence);
         out.body(&task.body);
-        out.rows
+        (out.rows, out.links)
     }
 }
+
+/// The Telemetry link inside Run details; drawn and clicked like the one beside the tabs.
+pub(crate) const TELEMETRY_LINK: &str = "Open in Telemetry ↗";
+// Wide enough for the longest fixed label, "Declared verdict".
+const LABEL: usize = 16;
 
 struct Out<'a> {
     t: &'a Theme,
     width: usize,
     rows: Vec<Line<'static>>,
+    /// Each drawn piece of the Telemetry link: row, column and width.
+    links: Vec<(usize, u16, u16)>,
 }
 impl Out<'_> {
     fn banner(&mut self, title: &str, action: &str, color: Color) {
@@ -225,33 +245,71 @@ impl Out<'_> {
         self.banner(title, action, color);
     }
 
+    /// Where the rest of this page and the full chain are, from what was already read.
+    fn look_further(&mut self, task: &Task, reports: &crate::telemetry::Reports) {
+        self.heading("Look further");
+        let spans = vec![
+            self.label("Full chain"),
+            Span::styled(TELEMETRY_LINK, bold(self.t.focus)),
+            Span::styled(
+                format!(
+                    " · every run of {}",
+                    task.id.as_deref().unwrap_or("this task")
+                ),
+                Style::default().fg(self.t.text),
+            ),
+        ];
+        self.push_link(self.value_indent(), spans, Some(1));
+        let recorded = match reports.state.as_str() {
+            "available" if reports.entries.is_empty() => "None recorded for this run".into(),
+            "available" => {
+                let unreadable = reports.entries.iter().filter(|r| r.text.is_none()).count();
+                format!(
+                    "{} recorded below{} · scroll or PgDn",
+                    reports.entries.len(),
+                    match unreadable {
+                        0 => String::new(),
+                        1 => " (1 body unreadable)".into(),
+                        n => format!(" ({n} bodies unreadable)"),
+                    }
+                )
+            }
+            "not_recorded" => "No trace for this run; unknown".into(),
+            _ => "Unavailable; unknown".into(),
+        };
+        self.field("Reports", &[(recorded, self.t.text)]);
+        let mut runs = match task.previous_runs.len() {
+            0 => "This run below".to_owned(),
+            1 => "This run + 1 previous run below".into(),
+            n => format!("This run + {n} previous runs below"),
+        };
+        match task.return_history.len() {
+            0 => {}
+            1 => runs.push_str(" · 1 return this run"),
+            n => runs.push_str(&format!(" · {n} returns this run")),
+        }
+        self.field("Run records", &[(runs, self.t.text)]);
+    }
+
     fn overview(&mut self, task: &Task, reports: &crate::telemetry::Reports) {
         self.heading("Key events · this run");
+        let next = match task.status.as_deref() {
+            Some("running") => {
+                "Check review and closure reports before Submit for review. If evidence is missing, check the controller."
+            }
+            Some("awaiting_release") => {
+                "Awaiting manual acceptance. Accept if satisfied, or Return to pending for rework."
+            }
+            Some("done") => "Task accepted; no further transition needed.",
+            Some("pending") => "Pending dispatch. Check any previous return reason below.",
+            _ => "Follow the task status; telemetry does not advance it automatically.",
+        };
+        self.field("Next step", &[(next.into(), self.t.focus)]);
         let missing = match reports.state.as_str() {
             "available" => "Not recorded (may have occurred)",
             "not_recorded" => "No trace for this run; result unknown",
             _ => "Telemetry unavailable; result unknown",
         };
-        for (stage, label) in [
-            ("agent.send", "Delivery"),
-            ("route", "Routing"),
-            ("agent.start", "Agent start"),
-            ("agent.reply", "Agent reply"),
-        ] {
-            let value = reports
-                .observations
-                .iter()
-                .find(|n| n.stage == stage)
-                .filter(|_| reports.state == "available")
-                .map(|n| {
-                    format!(
-                        "{} · seq {} · {} · {} events",
-                        n.status, n.seq, n.recorded_at, n.count
-                    )
-                })
-                .unwrap_or_else(|| missing.into());
-            self.field(label, &[(value, self.t.text)]);
-        }
         for (kind, label) in [
             ("review.recorded", "Review"),
             ("controller.note", "Closure"),
@@ -311,27 +369,42 @@ impl Out<'_> {
                 });
             self.field(label, &[(text, self.t.text)]);
         }
-        self.note("Latest event per category, not overall success. Review/closure are controller reports. Full reports below; full chain in Telemetry.");
+        for (stage, label) in [
+            ("agent.send", "Delivery"),
+            ("route", "Routing"),
+            ("agent.start", "Agent start"),
+            ("agent.reply", "Agent reply"),
+        ] {
+            let value = reports
+                .observations
+                .iter()
+                .find(|n| n.stage == stage)
+                .filter(|_| reports.state == "available")
+                .map(|n| {
+                    format!(
+                        "{} · seq {} · {} · {} events",
+                        n.status, n.seq, n.recorded_at, n.count
+                    )
+                })
+                .unwrap_or_else(|| missing.into());
+            self.field(label, &[(value, self.t.text)]);
+        }
+        self.note("Latest event per category, not overall success. Review/closure are controller reports.");
         let count: usize = reports.observations.iter().map(|n| n.count).sum();
         if count > reports.observations.len() || reports.entries.len() > 2 {
             self.note("Multiple events/reports may span dispatches or arrive late. Check the full order in Telemetry.");
         }
-        let next = match task.status.as_deref() {
-            Some("running") => {
-                "Check review and closure reports before Submit for review. If evidence is missing, check the controller."
-            }
-            Some("awaiting_release") => {
-                "Awaiting manual acceptance. Accept if satisfied, or Return to pending for rework."
-            }
-            Some("done") => "Task accepted; no further transition needed.",
-            Some("pending") => "Pending dispatch. Check any previous return reason below.",
-            _ => "Follow the task status; telemetry does not advance it automatically.",
-        };
-        self.field("Next step", &[(next.into(), self.t.focus)]);
     }
 
     fn reports(&mut self, reports: &crate::telemetry::Reports) {
-        self.heading("Controller reports · this run");
+        if reports.state == "available" {
+            self.heading(&format!(
+                "Controller reports · this run ({})",
+                reports.entries.len()
+            ));
+        } else {
+            self.heading("Controller reports · this run");
+        }
         self.note("Recorded declarations, not task acceptance. Submit / Accept remain manual.");
         match reports.state.as_str() {
             "available" => {}
@@ -350,7 +423,7 @@ impl Out<'_> {
         if reports.entries.is_empty() {
             self.note("No review or closure report recorded for this run.");
         }
-        self.note("All recorded reports below; later reports may revise earlier ones. Full chain: Telemetry.");
+        self.note("All recorded reports below; later reports may revise earlier ones.");
         for report in &reports.entries {
             let label = if report.kind == "review.recorded" {
                 "Review"
@@ -376,20 +449,21 @@ impl Out<'_> {
                         .unwrap_or("Body unavailable; open Telemetry."),
                 ),
             }
-            self.field("Event", &[(report.event_id.clone(), self.t.text)]);
+            // Identifiers for matching events in Telemetry: kept whole, shown as secondary.
             self.field(
-                "Dispatch",
+                "Event",
                 &[(
-                    report
-                        .dispatch_id
-                        .clone()
-                        .unwrap_or_else(|| "trace-level".into()),
-                    self.t.text,
+                    format!(
+                        "{} · Dispatch {}",
+                        report.event_id,
+                        report.dispatch_id.as_deref().unwrap_or("trace-level")
+                    ),
+                    self.t.muted,
                 )],
             );
         }
         if let Some(trace) = &reports.trace_id {
-            self.field("Trace", &[(trace.clone(), self.t.text)]);
+            self.field("Trace", &[(trace.clone(), self.t.muted)]);
         }
     }
     fn evidence(&mut self, evidence: &crate::drover::Evidence) {
@@ -489,26 +563,31 @@ impl Out<'_> {
     /// Adds one logical line, wrapped to the width at spaces where possible; continuation rows
     /// start `indent` columns in. Control characters are dropped, so text is never interpreted.
     fn push(&mut self, indent: usize, spans: Vec<Span<'static>>) {
+        self.push_link(indent, spans, None);
+    }
+    /// Like `push`; where each wrapped piece of the span at `link` lands is recorded.
+    fn push_link(&mut self, indent: usize, spans: Vec<Span<'static>>, link: Option<usize>) {
         let width = self.width.max(1);
         let indent = indent.min(width / 2);
-        let cells: Vec<(char, Style)> = spans
+        let cells: Vec<(char, Style, bool)> = spans
             .iter()
-            .flat_map(|span| {
+            .enumerate()
+            .flat_map(|(index, span)| {
                 crate::queue::clean(&span.content)
                     .replace('\t', "    ")
                     .chars()
-                    .map(|c| (c, span.style))
+                    .map(|c| (c, span.style, link == Some(index)))
                     .collect::<Vec<_>>()
             })
             .collect();
-        for (number, paragraph) in cells.split(|(c, _)| *c == '\n').enumerate() {
+        for (number, paragraph) in cells.split(|(c, _, _)| *c == '\n').enumerate() {
             let mut rest = paragraph;
             let mut lead = if number == 0 { 0 } else { indent };
             loop {
                 let mut used = lead;
                 let fit = rest
                     .iter()
-                    .position(|(c, _)| {
+                    .position(|(c, _, _)| {
                         used += c.width().unwrap_or(0);
                         used > width
                     })
@@ -516,17 +595,29 @@ impl Out<'_> {
                 let (end, next) = if fit == rest.len() {
                     (fit, fit)
                 } else {
-                    match rest[..=fit].iter().rposition(|(c, _)| *c == ' ') {
+                    match rest[..=fit].iter().rposition(|(c, _, _)| *c == ' ') {
                         Some(space) if space > 0 => (space, space + 1),
                         _ => (fit.max(1), fit.max(1)),
                     }
                 };
                 let mut row = vec![Span::raw(" ".repeat(lead))];
-                for (c, style) in &rest[..end] {
+                let (mut column, mut piece) = (lead, None);
+                for (c, style, linked) in &rest[..end] {
+                    if *linked {
+                        piece.get_or_insert(column);
+                    } else if let Some(start) = piece.take() {
+                        self.links
+                            .push((self.rows.len(), start as u16, (column - start) as u16));
+                    }
+                    column += c.width().unwrap_or(0);
                     match row.last_mut() {
                         Some(span) if span.style == *style => span.content.to_mut().push(*c),
                         _ => row.push(Span::styled(c.to_string(), *style)),
                     }
+                }
+                if let Some(start) = piece {
+                    self.links
+                        .push((self.rows.len(), start as u16, (column - start) as u16));
                 }
                 self.rows.push(Line::from(row));
                 rest = &rest[next..];
@@ -565,18 +656,23 @@ impl Out<'_> {
     }
     /// A labelled value whose wrapped rows line up under the value.
     fn field(&mut self, label: &str, value: &[(String, Color)]) {
-        // Wide enough for the longest fixed label, "Declared verdict".
-        const LABEL: usize = 16;
-        let mut spans = vec![Span::styled(
-            format!("  {} ", crate::ui::pad(label, LABEL)),
-            Style::default().fg(self.t.muted),
-        )];
+        let mut spans = vec![self.label(label)];
         spans.extend(
             value
                 .iter()
                 .map(|(text, color)| Span::styled(text.clone(), Style::default().fg(*color))),
         );
-        self.push(if self.width >= 44 { LABEL + 3 } else { 4 }, spans);
+        self.push(self.value_indent(), spans);
+    }
+    fn label(&self, label: &str) -> Span<'static> {
+        Span::styled(
+            format!("  {} ", crate::ui::pad(label, LABEL)),
+            Style::default().fg(self.t.muted),
+        )
+    }
+    /// Where wrapped rows of a field value start.
+    fn value_indent(&self) -> usize {
+        if self.width >= 44 { LABEL + 3 } else { 4 }
     }
     fn header(
         &mut self,
@@ -718,12 +814,62 @@ mod report_tests {
             text.contains("Not submitted") && text.contains("Not accepted"),
             "{text}"
         );
-        assert!(text.find("Key events · this run").unwrap() < text.find("Run records").unwrap());
+        // The raw section heading, not the pointer to it under Look further.
+        assert!(
+            text.find("Key events · this run").unwrap() < text.find("\nRun records\n").unwrap()
+        );
         assert!(text.contains("OLD RETURN REASON"), "{text}");
         assert_eq!(
             view.data.as_ref().unwrap().task.status.as_deref(),
             Some("running")
         );
+    }
+    #[test]
+    fn look_further_counts_reports_by_read_state_and_tracks_the_wrapped_link() {
+        let mut data: Detail = serde_json::from_value(json!({"project":"/synthetic", "task":{
+            "id":"T1","run_id":"r1","status":"running","title":"Example"},
+            "evidence":{"scope":"repository_reference","controls_transition":false,"observed_at":0,
+                "git":{"state":"available"},"last_check":{"state":"unknown"}},
+            "reports":{"state":"available"}
+        }))
+        .unwrap();
+        let render = |data: &Detail, width| {
+            let mut view = TaskDetail::new("Current", data.task.clone());
+            view.data = Some(Box::new(data.clone()));
+            view.lines_and_links(&Theme::default(), None, true, width)
+        };
+        let text = |rows: &[Line]| rows.iter().map(ToString::to_string).collect::<Vec<_>>();
+        for (state, expected) in [
+            ("available", "None recorded for this run"),
+            ("not_recorded", "No trace for this run; unknown"),
+            ("unavailable", "Unavailable; unknown"),
+        ] {
+            data.reports.state = state.into();
+            let all = text(&render(&data, 120).0).join("\n");
+            assert!(all.contains(expected), "{state}: {all}");
+            assert!(!all.contains("0 recorded"), "{all}");
+            assert!(all.contains("This run below"), "{all}");
+            assert!(
+                !all.contains("this run ·"),
+                "no returns, none counted: {all}"
+            );
+        }
+        // Narrow enough that the link itself wraps: each piece is tracked where it is drawn.
+        let (rows, links) = render(&data, 30);
+        let rows = text(&rows);
+        assert!(links.len() >= 2, "{links:?}\n{}", rows.join("\n"));
+        let link: String = links
+            .iter()
+            .map(|&(row, x, width)| {
+                let cells: Vec<char> = rows[row].chars().collect();
+                cells[usize::from(x)..usize::from(x + width)]
+                    .iter()
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(link, "Open in Telemetry ↗");
+        assert!(links.windows(2).all(|w| w[1].0 == w[0].0 + 1), "{links:?}");
     }
     #[test]
     fn headline_distinguishes_a_report_to_review_from_acceptance_and_unknown() {
