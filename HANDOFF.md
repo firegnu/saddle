@@ -1,6 +1,15 @@
 # Saddle 交接
 
-更新：2026-10-04。主控 `saddle/main`，分支 `main`。交接前提交 `ac4eb43` 已推送，工作区干净；本次只更新交接文档。
+更新：2026-10-04。主控 `saddle/main`，分支 `main`。T77 正式启动，前一轮完成记录保留于下文。
+
+## 当前优先续接：T77
+
+- 用户明确：“就是正式派发。你和委派出去的agent针对需求设计并达成一致后，持续推进落地”。旧任务正文的 Pending 限制已被此次授权取代；主控与 agent 对齐设计后继续实现、审查、合并推送，无须再次等待用户确认设计。
+- 主要整理 Drover 的任务遥测展示层次和进一步查看入口，完整保留历史数据及查看路径；不改采集、存储、查询协议和任务状态。保持英文产品 UI，不默认扩展宿主 Telemetry，不自动部署、Submit/Accept/Return 或关闭 task trace。
+- 设计 agent：`saddle/dev-t77-design-1`，instance `0994bb2200d8`，Claude Code `opus[1m]` / `high`，role=implementer。worktree `../saddle-worktrees/t77-telemetry-ui`，同名分支；基线 `25263c9`，任务书提交 `413453b`。
+- 先读 worktree 内 `docs/任务/T77-遥测展示整理设计.md`；方案输出 `docs/T77-遥测展示整理方案.md`。本轮只设计；主控核对公开 status/reply 与方案后，同一 agent/worktree 继续实施。路由不要求独立交叉审查；设计不跑 Cargo，实施按实际范围选择验证，阶段集成集中全量一次，不重复全量。
+- 记录目录 `/tmp/saddle-t77-20261004/`；trace `e588f2f5-cb18-4071-aa63-c093fc449032`，run `97aa8e9954855bb2cbd15ee61e47d012`，handoff dispatch `4b13392a-9b36-4827-8a65-6ae06ea61eb7`，设计 dispatch `41531fc1-1cee-4a04-8417-1c7ed57d0cd8`；reply context 为该目录 `reply-context.json`。实际启动回执与记录已保存，未重发业务。
+- 本节优先于下方上一轮“等待新指令”的历史表述。当前日常安装仍为 `b9ff8e0`，T77 尚无产品实现或部署。
 
 ## 会话摘要
 
