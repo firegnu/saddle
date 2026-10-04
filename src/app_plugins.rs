@@ -66,15 +66,7 @@ impl App {
         let notices = self.plugins.notices.lock().unwrap();
         self.plugin_toast_shown = notices.items.front().cloned();
         let toast = self.plugin_toast_shown.as_ref()?;
-        if workspace.width < 12 || workspace.height < 4 {
-            return None;
-        }
-        let area = Rect::new(
-            workspace.right().saturating_sub(workspace.width.min(48)),
-            workspace.bottom().saturating_sub(4),
-            workspace.width.min(48),
-            4,
-        );
+        let area = crate::terminals::toast_area(workspace)?;
         frame.render_widget(ratatui::widgets::Clear, area);
         frame.render_widget(
             ratatui::widgets::Paragraph::new(toast.text.as_str())
@@ -292,19 +284,21 @@ impl App {
                 Rect::new(o.area.right() - 2, o.area.y, 1, 1),
             );
         }
-        frame.render_widget(ratatui::widgets::Clear, panes.status);
         let notices = [o.notice.as_str(), o.panel.note.as_str()]
             .into_iter()
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(" · ");
-        frame.render_widget(
-            ratatui::widgets::Paragraph::new(format!(
-                " Input ▸ {} · {escape} · Ctrl-] Agents {}",
-                o.panel.name, notices
-            ))
-            .style(self.config.colors.base()),
+        ui::status_bar(
+            &self.config.colors,
+            frame,
             panes.status,
+            &o.panel.name,
+            &if notices.is_empty() {
+                format!("{escape}  Ctrl-] Agents")
+            } else {
+                format!("{escape}  Ctrl-] Agents  · {notices}")
+            },
         );
     }
     pub(super) fn plugin_overlay_event(&mut self, event: &Event) {
