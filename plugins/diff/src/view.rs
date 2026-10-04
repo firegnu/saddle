@@ -334,6 +334,7 @@ fn code(
     line: Option<&TextLine>,
     mark: &str,
     bg: Color,
+    muted: Color,
     offset: usize,
 ) {
     if area.width == 0 || area.height == 0 {
@@ -350,7 +351,7 @@ fn code(
         area.y,
         area.width.min(8),
         &prefix,
-        Style::default().fg(Color::DarkGray).bg(bg),
+        Style::default().fg(muted).bg(bg),
     );
     let mut x = 0;
     let mut col = 0;
@@ -367,14 +368,21 @@ fn code(
         }
     }
 }
-pub fn draw_row(buf: &mut Buffer, area: Rect, row: &Row, split: bool, offset: usize) {
+/// `background` and `muted` are the theme roles received from the host; changed lines keep
+/// their own diff colors.
+pub fn draw_row(
+    buf: &mut Buffer,
+    area: Rect,
+    row: &Row,
+    split: bool,
+    offset: usize,
+    (background, muted): (Color, Color),
+) {
     if row.left.is_none() && row.right.is_none() {
         let style = if row.header {
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD)
+            Style::default().add_modifier(Modifier::BOLD)
         } else if row.hunk {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(muted)
         } else {
             Style::default()
         };
@@ -390,7 +398,8 @@ pub fn draw_row(buf: &mut Buffer, area: Rect, row: &Row, split: bool, offset: us
             Rect::new(area.x, area.y, half, 1),
             row.left.as_ref(),
             if row.changed { "−" } else { " " },
-            if row.changed { red } else { Color::Reset },
+            if row.changed { red } else { background },
+            muted,
             offset,
         );
         code(
@@ -403,7 +412,8 @@ pub fn draw_row(buf: &mut Buffer, area: Rect, row: &Row, split: bool, offset: us
             ),
             row.right.as_ref(),
             if row.changed { "+" } else { " " },
-            if row.changed { green } else { Color::Reset },
+            if row.changed { green } else { background },
+            muted,
             offset,
         );
         put(
@@ -412,7 +422,7 @@ pub fn draw_row(buf: &mut Buffer, area: Rect, row: &Row, split: bool, offset: us
             area.y,
             1,
             "│",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(muted),
         );
     } else {
         let added = row.changed && row.right.is_some();
@@ -433,8 +443,9 @@ pub fn draw_row(buf: &mut Buffer, area: Rect, row: &Row, split: bool, offset: us
             } else if row.changed {
                 red
             } else {
-                Color::Reset
+                background
             },
+            muted,
             offset,
         );
     }
@@ -493,7 +504,14 @@ mod tests {
                 let area = Rect::new(0, 0, width, rows.len() as u16);
                 let mut b = Buffer::empty(area);
                 for (i, row) in rows.iter().enumerate() {
-                    draw_row(&mut b, Rect::new(0, i as u16, width, 1), row, split, 1);
+                    draw_row(
+                        &mut b,
+                        Rect::new(0, i as u16, width, 1),
+                        row,
+                        split,
+                        1,
+                        (Color::Reset, Color::DarkGray),
+                    );
                 }
                 saddle_plugin_sdk::frame(&b, 1, 1).unwrap();
             }

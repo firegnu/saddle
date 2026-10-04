@@ -21,6 +21,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use unicode_width::UnicodeWidthStr;
 
 const INTERVAL: Duration = Duration::from_millis(750);
 type ScanResult = Result<Option<(Arc<Snapshot>, Document)>>;
@@ -385,24 +386,93 @@ impl Plugin for DiffPlugin {
             }
             self.split = split;
         }
-        let status = if self.error.is_some() {
-            "STALE / error"
+        let (fg, muted, accent) = (color("text"), color("muted"), color("accent"));
+        let muted_style = Style::default().fg(muted);
+        let (status, status_style) = if self.error.is_some() {
+            (
+                "STALE / error",
+                Style::default()
+                    .fg(color("error"))
+                    .add_modifier(Modifier::BOLD),
+            )
         } else if self.snapshot.is_none() {
-            "Loading"
+            ("Loading", muted_style)
         } else {
-            "Live"
+            ("Live", Style::default().fg(fg))
         };
         let count = self.snapshot.as_ref().map_or(0, |s| s.files.len());
+        // Modes on the left with the current one as a solid bold block; the file count and
+        // status sit at the right edge. A narrow pane gives up, in order, the other modes'
+        // names, the file count, then the other modes' keys; the current mode and the status
+        // are kept.
+        let summary = format!("{count} files  ·  ");
+        let modes = [Mode::All, Mode::Unstaged, Mode::Staged];
+        let labels = |level: u8| -> Vec<(Mode, String)> {
+            modes
+                .into_iter()
+                .enumerate()
+                .filter(|&(_, m)| level < 2 || m == self.mode)
+                .map(|(i, m)| {
+                    let label = if level == 0 || m == self.mode {
+                        format!(" {} {} ", i + 1, m.label())
+                    } else {
+                        format!(" {} ", i + 1)
+                    };
+                    (m, label)
+                })
+                .collect()
+        };
+        let fits = |level: u8, count: bool| {
+            let modes = labels(level)
+                .iter()
+                .map(|(_, l)| l.width() + 1)
+                .sum::<usize>();
+            let right = status.width() + if count { summary.width() } else { 0 };
+            modes + right <= usize::from(area.width)
+        };
+        let (level, show_count) = [(0, true), (1, true), (1, false), (2, false)]
+            .into_iter()
+            .find(|&(level, count)| fits(level, count))
+            .unwrap_or((2, false));
+        let mut x = 0;
+        for (mode, label) in labels(level) {
+            let style = if mode == self.mode {
+                Style::default()
+                    .fg(fg)
+                    .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+            } else {
+                muted_style
+            };
+            view::put(
+                &mut buffer,
+                x,
+                0,
+                area.width.saturating_sub(x),
+                &label,
+                style,
+            );
+            x = x.saturating_add(label.width() as u16 + 1);
+        }
+        // When even the current mode and status do not fit, the status starts after the mode.
+        let status_x = area.width.saturating_sub(status.width() as u16).max(x);
+        if show_count {
+            let summary_x = status_x - summary.width() as u16;
+            view::put(
+                &mut buffer,
+                summary_x,
+                0,
+                summary.width() as u16,
+                &summary,
+                muted_style,
+            );
+        }
         view::put(
             &mut buffer,
+            status_x,
             0,
-            0,
-            area.width,
-            &format!(
-                "{}  ·  {count} files  ·  {status}     1 All   2 Unstaged   3 Staged",
-                self.mode.label()
-            ),
-            Style::default().add_modifier(Modifier::BOLD),
+            area.width.saturating_sub(status_x),
+            status,
+            status_style,
         );
         if area.height > 1 {
             let root = self
@@ -413,14 +483,7 @@ impl Plugin for DiffPlugin {
             let text = root
                 .map(|p| view::display_path(p))
                 .unwrap_or_else(|| "Open Diff from an agent or terminal in a Git worktree.".into());
-            view::put(
-                &mut buffer,
-                0,
-                1,
-                area.width,
-                &text,
-                Style::default().fg(Color::DarkGray),
-            );
+            view::put(&mut buffer, 0, 1, area.width, &text, muted_style);
         }
         if area.height > 2
             && let Some(error) = &self.error
@@ -431,7 +494,7 @@ impl Plugin for DiffPlugin {
                 2,
                 area.width,
                 error,
-                Style::default().fg(Color::Red),
+                Style::default().fg(color("error")),
             );
         }
         let height = area.height.saturating_sub(4);
@@ -448,7 +511,7 @@ impl Plugin for DiffPlugin {
                     y + 3,
                     1,
                     "│",
-                    Style::default().fg(Color::DarkGray),
+                    muted_style,
                 );
             }
             let current = self.current_file();
@@ -461,19 +524,20 @@ impl Plugin for DiffPlugin {
                 .take(height.into())
                 .enumerate()
             {
-                let style = if i == current {
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD)
+                let (marker, style) = if i == current {
+                    (
+                        "▎",
+                        Style::default().fg(accent).add_modifier(Modifier::BOLD),
+                    )
                 } else {
-                    Style::default().fg(Color::DarkGray)
+                    (" ", muted_style)
                 };
                 view::put(
                     &mut buffer,
                     0,
                     y as u16 + 3,
                     self.sidebar_width - 2,
-                    &format!("{} {}", file.status, view::display_path(&file.path)),
+                    &format!("{marker}{} {}", file.status, view::display_path(&file.path)),
                     style,
                 );
             }
@@ -492,6 +556,7 @@ impl Plugin for DiffPlugin {
                 row,
                 split,
                 self.horizontal,
+                (color("background"), muted),
             );
         }
         if count == 0 && self.snapshot.is_some() && height > 0 {
@@ -505,21 +570,239 @@ impl Plugin for DiffPlugin {
             );
         }
         if area.height >= 4 {
-            let footer = format!(
-                "↑↓ scroll · [] files · n/p hunks · v {} · f files · r refresh · Esc close   {}/{}",
-                self.layout.label(),
+            let y = area.height - 1;
+            // The row position keeps its own slot at the right edge.
+            let position = format!(
+                "{}/{}",
                 self.top + 1,
                 self.document.rows(split).len().max(1)
             );
+            let position_x = area.width.saturating_sub(position.width() as u16);
             view::put(
                 &mut buffer,
-                0,
-                area.height - 1,
+                position_x,
+                y,
                 area.width,
-                &footer,
-                Style::default().fg(Color::DarkGray),
+                &position,
+                muted_style,
             );
+            let layout = match self.layout {
+                Layout::Split if !split => "Split layout (narrow)".into(),
+                layout => format!("{} layout", layout.label()),
+            };
+            let list = if self.sidebar && self.sidebar_width == 0 {
+                "list (narrow)"
+            } else {
+                "file list"
+            };
+            // (key, action, drop rank): a narrow pane drops whole items, highest rank first.
+            let items = [
+                ("↑↓", "scroll", 1),
+                ("[ ]", "prev/next file", 2),
+                ("n/p", "hunk", 5),
+                ("v", layout.as_str(), 4),
+                ("f", list, 3),
+                ("r", "refresh", 6),
+                ("Esc", "close", 0),
+            ];
+            let room = usize::from(position_x.saturating_sub(2));
+            let mut keep = [false; 7];
+            let mut used = 0;
+            let mut order: Vec<usize> = (0..items.len()).collect();
+            order.sort_by_key(|&i| items[i].2);
+            for i in order {
+                let (key, action, _) = items[i];
+                let w = key.width() + 1 + action.width() + if used > 0 { 2 } else { 0 };
+                if used + w <= room {
+                    used += w;
+                    keep[i] = true;
+                }
+            }
+            let mut x = 0;
+            for (i, (key, action, _)) in items.into_iter().enumerate() {
+                if !keep[i] {
+                    continue;
+                }
+                view::put(
+                    &mut buffer,
+                    x,
+                    y,
+                    key.width() as u16,
+                    key,
+                    Style::default().fg(fg),
+                );
+                x += key.width() as u16 + 1;
+                view::put(
+                    &mut buffer,
+                    x,
+                    y,
+                    action.width() as u16,
+                    action,
+                    muted_style,
+                );
+                x += action.width() as u16 + 2;
+            }
         }
         Ok(buffer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::git::FileDiff;
+    use serde_json::json;
+
+    const BG: Color = Color::Rgb(10, 20, 30);
+    const TEXT: Color = Color::Rgb(220, 220, 220);
+    const MUTED: Color = Color::Rgb(120, 120, 120);
+    const ACCENT: Color = Color::Rgb(240, 200, 60);
+    const ERROR: Color = Color::Rgb(230, 80, 80);
+
+    fn theme() -> Value {
+        let c = saddle_plugin_sdk::color;
+        json!({"text":c(TEXT),"muted":c(MUTED),"background":c(BG),"accent":c(ACCENT),"error":c(ERROR)})
+    }
+    fn plugin() -> DiffPlugin {
+        let snapshot = Snapshot {
+            root: "/tmp/synthetic-repo".into(),
+            files: vec![
+                FileDiff {
+                    path: "src/a.rs".into(),
+                    status: "M".into(),
+                    patch: "@@ -1,2 +1,2 @@\n-fn old() {}\n+fn new() {}\n common()\n".into(),
+                },
+                FileDiff {
+                    path: "notes.txt".into(),
+                    status: "?".into(),
+                    patch: "@@ -0,0 +1 @@\n+second\n".into(),
+                },
+            ],
+        };
+        let mut p = DiffPlugin::new(Some("/tmp/synthetic-repo".into()));
+        p.document = Document::build(&snapshot);
+        p.snapshot = Some(Arc::new(snapshot));
+        p
+    }
+    fn lines(b: &Buffer) -> Vec<String> {
+        (0..b.area.height)
+            .map(|y| {
+                (0..b.area.width)
+                    .map(|x| b[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+    fn find(b: &Buffer, text: &str) -> Option<(u16, u16)> {
+        lines(b).iter().enumerate().find_map(|(y, l)| {
+            l.find(text)
+                .map(|i| (l[..i].chars().count() as u16, y as u16))
+        })
+    }
+    fn render(p: &mut DiffPlugin, w: u16, h: u16) -> Buffer {
+        p.render(Rect::new(0, 0, w, h), &theme()).unwrap()
+    }
+
+    #[test]
+    fn header_body_and_footer_use_theme_roles_and_keep_states_distinct() {
+        let mut p = plugin();
+        let b = render(&mut p, 120, 12);
+        let cell = |b: &Buffer, text: &str| b[find(b, text).unwrap()].clone();
+        // Current mode: solid bold block; other modes stay muted in their original order.
+        let all = cell(&b, "1 All");
+        assert!(all.modifier.contains(Modifier::BOLD | Modifier::REVERSED));
+        assert_eq!(cell(&b, "2 Unstaged").fg, MUTED);
+        assert!(find(&b, "1 All").unwrap().0 < find(&b, "2 Unstaged").unwrap().0);
+        assert!(find(&b, "2 Unstaged").unwrap().0 < find(&b, "3 Staged").unwrap().0);
+        assert_eq!(cell(&b, "/tmp/synthetic-repo").fg, MUTED);
+        // Unchanged code sits on the theme background, not the terminal default.
+        let (x, y) = find(&b, "common").unwrap();
+        assert_eq!(b[(x - 1, y)].bg, BG);
+        let current = cell(&b, "▎M src/a.rs");
+        assert_eq!((current.fg, current.modifier), (ACCENT, Modifier::BOLD));
+        assert!(lines(&b)[11].ends_with("1/10"));
+        assert!(lines(&b)[11].contains("[ ] prev/next file"));
+        assert!(lines(&b)[11].contains("f file list"));
+
+        p.mode = Mode::Staged;
+        p.error = Some("fatal: not a git repository".into());
+        let b = render(&mut p, 90, 10);
+        assert!(cell(&b, "3 Staged").modifier.contains(Modifier::REVERSED));
+        assert!(!cell(&b, "1 All").modifier.contains(Modifier::REVERSED));
+        assert_eq!(cell(&b, "STALE / error").fg, ERROR);
+        assert_eq!(cell(&b, "fatal").fg, ERROR);
+        // Narrow error pane: the current mode and the error status both stay; the file count
+        // and the other mode names give way first.
+        let b = render(&mut p, 34, 10);
+        println!("|{}|", lines(&b)[0]);
+        let current = find(&b, "3 Staged").expect("current mode stays visible");
+        assert!(b[current].modifier.contains(Modifier::REVERSED));
+        assert_eq!(cell(&b, "STALE / error").fg, ERROR);
+        assert!(find(&b, "1").unwrap().0 < find(&b, "2").unwrap().0);
+        assert!(find(&b, "2").unwrap().0 < current.0);
+
+        // Narrow: the list preference is still on and `f` still toggles it, so it is shown
+        // as narrow rather than disabled; Esc and the position stay visible.
+        let mut p = plugin();
+        let b = render(&mut p, 70, 12);
+        let footer = &lines(&b)[11];
+        assert!(footer.contains("f list (narrow)") && footer.contains("Esc close"));
+        assert!(footer.ends_with("1/10"));
+        assert!(find(&b, "Live").is_some());
+        for (w, h) in (1..130).flat_map(|w| (1..7).map(move |h| (w, h))) {
+            saddle_plugin_sdk::frame(&render(&mut p, w, h), 1, 1).unwrap();
+        }
+    }
+
+    /// Prints synthetic frames for review: `cargo test -p saddle-diff-plugin dump -- --nocapture`.
+    #[test]
+    fn dump_synthetic_frames() {
+        let scenes: Vec<(&str, DiffPlugin, u16, u16)> = vec![
+            ("wide, file list", plugin(), 120, 12),
+            ("narrow, file list preference on", plugin(), 70, 12),
+            (
+                "error",
+                {
+                    let mut p = plugin();
+                    p.error = Some("fatal: not a git repository".into());
+                    p
+                },
+                90,
+                10,
+            ),
+            ("loading", DiffPlugin::new(Some("/tmp/x".into())), 60, 6),
+            ("tiny", plugin(), 34, 8),
+        ];
+        for (name, mut p, w, h) in scenes {
+            let b = render(&mut p, w, h);
+            println!("--- {name} ({w}x{h})");
+            for l in lines(&b) {
+                println!("|{l}|");
+            }
+            let probe = |label: &str, at: Option<(u16, u16)>| {
+                if let Some((x, y)) = at {
+                    let c = &b[(x, y)];
+                    println!(
+                        "  {label}: fg={:?} bg={:?} mod={:?}",
+                        c.fg, c.bg, c.modifier
+                    );
+                }
+            };
+            probe("mode All", find(&b, "All"));
+            probe("mode Unstaged", find(&b, "Unstaged"));
+            probe(
+                "status",
+                find(&b, "Live")
+                    .or(find(&b, "STALE"))
+                    .or(find(&b, "Loading")),
+            );
+            probe("path", find(&b, "/tmp/"));
+            probe("error", find(&b, "fatal"));
+            probe(
+                "unchanged code",
+                find(&b, "common").map(|(x, y)| (x.saturating_sub(1), y)),
+            );
+            probe("current file", find(&b, "M src/a.rs"));
+        }
     }
 }
