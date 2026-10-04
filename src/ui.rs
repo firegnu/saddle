@@ -25,6 +25,7 @@ pub struct Hits {
     pub list: Rect,
     pub reply: Rect,
     pub plugins: Rect,
+    pub pinned: Rect,
 }
 
 pub struct View<'a> {
@@ -59,6 +60,14 @@ pub struct Workspace<'a> {
     pub settings: Option<&'a mut crate::settings::Settings>,
     /// Installed updates need the user, or could not be confirmed: a dot beside Settings.
     pub updates: bool,
+    /// The plugin the user pinned to the Agents header, if any.
+    pub pinned: Option<Pinned<'a>>,
+}
+/// The plugin action the user pinned to the Agents header; the host knows only its title.
+pub struct Pinned<'a> {
+    pub title: &'a str,
+    /// Opening would show its view now; otherwise the entry is dimmed and explains why.
+    pub available: bool,
 }
 /// The Attention entry's items and, while open, its popup.
 pub struct Attention<'a> {
@@ -83,6 +92,7 @@ pub fn draw_workspace(
         attention,
         mut settings,
         updates,
+        pinned,
     ) = match workspace {
         Some(w) => (
             Some(w.terminals),
@@ -100,6 +110,7 @@ pub fn draw_workspace(
             w.attention,
             w.settings,
             w.updates,
+            w.pinned,
         ),
         None => (
             None,
@@ -116,6 +127,7 @@ pub fn draw_workspace(
             },
             None,
             false,
+            None,
         ),
     };
     let t = view.colors;
@@ -130,9 +142,18 @@ pub fn draw_workspace(
         } else {
             0
         };
+    // A pinned title (at most 12 columns) sits left of Telemetry and wraps with it; when even
+    // the wrapped row cannot hold both it is hidden first, so the fixed entries never move.
+    let pin_label = pinned
+        .as_ref()
+        .filter(|_| show_plugins)
+        .map(|p| clip(p.title, 12))
+        .filter(|label| usize::from(header.width) >= label.width() + 2 + TELEMETRY.width());
+    let telemetry_group =
+        TELEMETRY.width() + pin_label.as_ref().map_or(0, |label| label.width() + 2);
     let shared_rows = show_plugins
         && usize::from(header.width)
-            >= (format!("Agents · {}", panel.agents.len()).width() + 2 + TELEMETRY.width())
+            >= (format!("Agents · {}", panel.agents.len()).width() + 2 + telemetry_group)
                 .max(attention_width + 2 + pair_width);
     let action_row = if show_plugins {
         if shared_rows { 1 } else { 3 }
@@ -191,6 +212,32 @@ pub fn draw_workspace(
                 crossterm::event::KeyModifiers::NONE,
             ),
         });
+        if let (Some(label), Some(pinned)) = (&pin_label, &pinned) {
+            let width = label.width() as u16;
+            let rect = Rect::new(
+                header.right() - TELEMETRY.width() as u16 - 2 - width,
+                header.y.saturating_add(telemetry_row),
+                width,
+                1,
+            )
+            .intersection(inner(view.panes.agents));
+            let hovered = view.pointer.hover.is_some_and(|point| rect.contains(point));
+            frame.render_widget(
+                Paragraph::new(label.as_str()).style(
+                    Style::default()
+                        .fg(if !pinned.available {
+                            t.muted
+                        } else if hovered {
+                            t.bright
+                        } else {
+                            t.agents_text
+                        })
+                        .remove_modifier(Modifier::BOLD),
+                ),
+                rect,
+            );
+            hits.pinned = rect;
+        }
     }
     let attention_row = Rect {
         y: header.y.saturating_add(1),
@@ -401,10 +448,19 @@ pub fn draw_workspace(
             }
         }
     }
+    // The pinned entry opens for the selected agent, not the pane last viewed.
+    let agents_help = pinned.as_ref().map(|p| {
+        format!(
+            " ↑↓ Select  ↵ Attach  / Search  a Attention  p {} (selected)  n New  z Fold  , Settings  t Telemetry  Tab Viewer  q Quit",
+            clip(p.title, 12)
+        )
+    });
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  t Telemetry  Tab Viewer  q Quit",
+            agents_help.as_deref().unwrap_or(
+                " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  t Telemetry  Tab Viewer  q Quit",
+            ),
         ),
         Focus::Viewer => (
             view.showing

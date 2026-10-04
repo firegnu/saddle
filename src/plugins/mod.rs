@@ -349,6 +349,34 @@ impl Manager {
         self.errors.remove(id);
         Ok(())
     }
+    /// The registered plugin row the launcher would list for `id`.
+    fn external_item(&self, id: &str) -> Option<palette::Item> {
+        self.palette_items(&BTreeSet::new())
+            .into_iter()
+            .find(|i| !i.builtin && i.id == id)
+    }
+    /// Only a plugin with a view to open can be pinned; a built-in or background one cannot.
+    pub fn pinnable(&self, id: &str) -> bool {
+        self.external_item(id).is_some_and(|i| i.has_view)
+    }
+    pub fn pinned(&self) -> Option<&str> {
+        self.registry.pinned.as_deref()
+    }
+    /// The pinned plugin as the launcher lists it: its action title and whether it opens now.
+    pub fn pinned_item(&self) -> Option<palette::Item> {
+        self.external_item(self.pinned()?)
+    }
+    /// Pins `id` to the Agents header, replacing any other pin; `None` unpins. Lifecycle is
+    /// untouched.
+    pub fn pin(&mut self, id: Option<&str>) -> Result<()> {
+        if let Some(id) = id {
+            ensure!(
+                self.pinnable(id),
+                "No view to open; this plugin cannot be pinned"
+            );
+        }
+        self.registry.pin(id)
+    }
     pub fn add(&mut self, dir: &Path, preview: &Manifest) -> Result<()> {
         self.registry.add(dir, preview)?;
         self.catalog();

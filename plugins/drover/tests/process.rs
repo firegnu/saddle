@@ -24,6 +24,10 @@ impl Running {
         Self::start_with_legacy_arg(false)
     }
     fn start_with_legacy_arg(legacy: bool) -> Self {
+        Self::start_prepared(legacy, |_| {})
+    }
+    /// `prepare` runs after the native project exists and before the plugin starts.
+    fn start_prepared(legacy: bool, prepare: impl FnOnce(&std::path::Path)) -> Self {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir(root.path().join(".drover")).unwrap();
         std::fs::write(
@@ -58,6 +62,7 @@ impl Running {
             "dlog",
             "#!/bin/sh\necho forbidden >> \"$(dirname \"$0\")/dlog-calls\"\nprintf '{\"dispatches\":[]}'\n",
         );
+        prepare(root.path());
         let mut command = Command::new(env!("CARGO_BIN_EXE_saddle-drover"));
         if legacy {
             command.args(["--dispatch-log", &dlog]);
@@ -678,4 +683,258 @@ fn project_onboarding_ui_browses_selects_receiver_saves_and_preserves_tasks() {
     );
     assert!(!p.root.path().join("data/tasks.state").exists());
     assert!(!p.root.path().join(".drover/new-repo/tasks.state").exists());
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+        .args(args)
+        .current_dir(dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+/// The native project becomes a Git repository with a worktree `wt`, an added empty
+/// project `other`, and an unregistered repository `lone`.
+fn repositories(root: &std::path::Path) {
+    git(root, &["init", "-q"]);
+    git(root, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    git(root, &["worktree", "add", "-q", "wt"]);
+    let other = root.join("other");
+    std::fs::create_dir_all(other.join("data")).unwrap();
+    git(&other, &["init", "-q"]);
+    std::fs::write(other.join(".drover.conf"), "HANDOFF_DIR=data\n").unwrap();
+    std::fs::write(other.join("data/queue.md"), "").unwrap();
+    std::fs::write(
+        root.join(".drover/projects"),
+        format!("{}\n{}\n", root.display(), other.display()),
+    )
+    .unwrap();
+    let lone = root.join("lone");
+    std::fs::create_dir(&lone).unwrap();
+    git(&lone, &["init", "-q"]);
+}
+impl Running {
+    fn text(&self) -> String {
+        let b = buffer(self.frame.as_ref().unwrap()).unwrap();
+        b.content.iter().map(|c| c.symbol()).collect()
+    }
+    /// Keep recording frames for `wait`, so a later result has had time to arrive.
+    fn pump_for(&mut self, wait: Duration) {
+        let end = Instant::now() + wait;
+        while let Some(left) = end.checked_duration_since(Instant::now()) {
+            if let Ok(message) = self.output.recv_timeout(left) {
+                self.record(&message);
+            }
+        }
+    }
+    /// Like `see`, but the frame already shown may hold the text.
+    fn see_now(&mut self, text: &str) {
+        if !self.text().contains(text) {
+            self.see(text);
+        }
+    }
+    fn open_from(&mut self, cwd: &std::path::Path) {
+        self.send(Message::event(
+            "optional.view_context",
+            json!({"cwd": cwd.display().to_string()}),
+        ));
+    }
+}
+
+#[test]
+fn opening_from_an_added_project_without_tasks_shows_that_project() {
+    let mut p = Running::start_prepared(false, repositories);
+    let other = p.root.path().join("other");
+    p.open_from(&other);
+    p.see_now("other ▾ c");
+    p.see_now("Showing other · from ");
+    assert!(!p.text().contains("Native queue task"), "{}", p.text());
+    // A worktree belongs to its added repository, preferring the same top level.
+    let wt = p.root.path().join("wt");
+    p.open_from(&wt);
+    p.see("Native queue task");
+    p.see_now(&format!("Showing {} · from ", p.shown_name()));
+    assert!(p.text().contains("/wt "), "{}", p.text());
+}
+
+#[test]
+fn opening_from_an_unmatched_or_unreadable_source_keeps_the_shown_project_and_says_why() {
+    let mut p = Running::start_prepared(false, repositories);
+    let lone = p.root.path().join("lone");
+    p.open_from(&lone);
+    p.see_now("no added project matches");
+    assert!(p.text().contains("Native queue task"));
+    assert!(!p.text().contains("not a Tasks project"));
+    let plain = tempfile::tempdir().unwrap();
+    p.open_from(plain.path());
+    p.see_now("couldn't match");
+    assert!(p.text().contains("Native queue task"));
+    assert!(!p.text().contains("no added project matches"));
+}
+
+#[test]
+fn opening_over_a_draft_or_preferences_keeps_the_page_and_names_the_shown_project() {
+    let mut p = Running::start_prepared(false, repositories);
+    let other = p.root.path().join("other");
+    p.key("a");
+    p.see("Save ^s");
+    p.input(json!({"type":"paste","text":"kept draft"}));
+    p.see("kept draft");
+    p.open_from(&other);
+    p.see_now("kept your current page");
+    p.pump_for(Duration::from_millis(600));
+    assert!(p.text().contains("kept draft"));
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Native queue task");
+    assert!(!p.text().contains("other ▾ c"));
+
+    p.key("N");
+    p.see("Task notifications");
+    p.open_from(&other);
+    p.see_now("kept your current page");
+    p.pump_for(Duration::from_millis(600));
+    assert!(p.text().contains("Task notifications"));
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Native queue task");
+    assert!(!p.text().contains("other ▾ c"));
+}
+
+#[test]
+fn input_while_locating_discards_the_result_but_hovering_does_not() {
+    let mut p = Running::start_prepared(false, |root| {
+        repositories(root);
+        common::script(
+            root,
+            "git",
+            "#!/bin/sh\nsleep 1\nexec /usr/bin/git \"$@\"\n",
+        );
+    });
+    let other = p.root.path().join("other");
+    p.open_from(&other);
+    p.see_now("locating");
+    p.key("j");
+    p.see_now("not applied");
+    p.pump_for(Duration::from_secs(4));
+    assert!(p.text().contains("Native queue task"));
+    assert!(!p.text().contains("other ▾ c"));
+
+    p.open_from(&other);
+    p.see_now("locating");
+    p.input(json!({"type":"mouse","action":"move","button":null,"x":5,"y":5,"dx":0,"dy":0,"modifiers":[]}));
+    p.see_now("other ▾ c");
+}
+
+impl Running {
+    /// Close the view and open it again from `cwd` at `cols`×`rows`, as the host does.
+    fn reopen_from(&mut self, cwd: &std::path::Path, cols: u16, rows: u16, revision: u64) {
+        self.send(Message::event("panel.close", json!({})));
+        self.open_from(cwd);
+        self.send(Message::event(
+            "panel.open",
+            json!({"cols":cols,"rows_count":rows,"size_revision":revision}),
+        ));
+        self.send(Message::event("panel.focus", json!({"focused":true})));
+    }
+    fn resize(&mut self, cols: u16, rows: u16, revision: u64) {
+        self.send(Message::event(
+            "panel.resize",
+            json!({"cols":cols,"rows_count":rows,"size_revision":revision}),
+        ));
+    }
+    fn first_row(&self) -> String {
+        let b = buffer(self.frame.as_ref().unwrap()).unwrap();
+        (0..b.area.width).map(|x| b[(x, 0)].symbol()).collect()
+    }
+    fn shown_name(&self) -> String {
+        self.root
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into()
+    }
+}
+
+#[test]
+fn a_kept_draft_names_the_shown_project_in_an_80_by_24_window() {
+    // An 80×24 Saddle gives the Tasks overlay a 62×17 inside.
+    let mut p = Running::start_prepared(false, repositories);
+    p.resize(62, 17, 2);
+    p.see("Native queue task");
+    p.key("a");
+    p.see("Save ^s");
+    p.input(json!({"type":"paste","text":"kept draft"}));
+    p.see("kept draft");
+    let other = p.root.path().join("other");
+    p.reopen_from(&other, 62, 17, 3);
+    p.see_now("kept your");
+    p.pump_for(Duration::from_millis(400));
+    let shown = format!("Showing {}", p.shown_name());
+    assert!(p.text().contains(&shown), "{shown} missing:\n{}", p.text());
+    assert!(p.text().contains("kept your current page"), "{}", p.text());
+    assert!(p.text().contains("kept draft"));
+}
+
+#[test]
+fn reopened_setup_and_preferences_keep_a_source_row_the_form_does_not_cover() {
+    // A 120×36 Saddle gives a 94×26 inside, where the setup form is as tall as the view.
+    let mut p = Running::start_prepared(false, repositories);
+    p.resize(94, 26, 2);
+    p.see("Native queue task");
+    let other = p.root.path().join("other");
+    p.key("c");
+    p.see("Status / receiver");
+    p.key("a");
+    p.see("Add project");
+    p.reopen_from(&other, 94, 26, 3);
+    p.see_now("Add project");
+    p.pump_for(Duration::from_millis(400));
+    let shown = format!("Showing {}", p.shown_name());
+    assert!(
+        p.first_row().contains(&shown) && p.first_row().contains("kept your current page"),
+        "{}",
+        p.text()
+    );
+    assert!(p.text().contains("Add project"));
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Status / receiver");
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Native queue task");
+
+    // Preferences in the 80×24 inside are centred on the first row unless it is kept.
+    p.resize(62, 17, 4);
+    p.see("Native queue task");
+    p.key("N");
+    p.see("Task notifications");
+    p.reopen_from(&other, 62, 17, 5);
+    p.see_now("Task notifications");
+    p.pump_for(Duration::from_millis(400));
+    assert!(
+        p.first_row().contains(&shown) && p.first_row().contains("kept your current page"),
+        "{}",
+        p.text()
+    );
+}
+
+#[test]
+fn a_matched_project_whose_queue_cannot_be_read_opens_on_its_read_error() {
+    let mut p = Running::start_prepared(false, |root| {
+        repositories(root);
+        let queue = root.join("other/data/queue.md");
+        std::fs::remove_file(&queue).unwrap();
+        std::fs::create_dir(&queue).unwrap();
+    });
+    let other = p.root.path().join("other");
+    p.open_from(&other);
+    p.see_now("other ▾ c");
+    p.see_now("Read failed");
+    p.pump_for(Duration::from_millis(400));
+    assert!(!p.text().contains("Add project"), "{}", p.text());
+    assert!(p.text().contains("Showing other"), "{}", p.text());
+    // Nothing was written or repaired.
+    assert!(other.join("data/queue.md").is_dir());
+    assert!(!other.join("data/tasks.state").exists());
 }

@@ -383,6 +383,7 @@ impl App {
                 .collect();
             let items = self.attention_items();
             let loading = self.board.loading();
+            let pinned = self.plugins.pinned_item();
             let mut sprite = None;
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
@@ -423,6 +424,10 @@ impl App {
                             .as_mut()
                             .filter(|_| self.plugin_page.is_none()),
                         updates: self.updates.attention(),
+                        pinned: pinned.as_ref().map(|item| ui::Pinned {
+                            title: &item.title,
+                            available: item.action().is_some(),
+                        }),
                     }),
                 );
                 self.draw_plugin_overlay(frame, panes);
@@ -1733,15 +1738,17 @@ impl App {
             }
         }
     }
-    /// The public cwd of the agent input was on: the one selected in Agents, or the one in the
-    /// active pane in Viewer, never the sidebar's selection there.
+    /// The source directory of an ordinary plugin opening: the public cwd of the agent selected
+    /// in Agents, or of the active pane in Viewer (never the sidebar's selection there). A
+    /// terminal gives the directory it started in, not a live one: a later `cd` is not followed.
     fn focused_agent_cwd(&self, focus: Focus) -> Option<String> {
         let (name, cwd) = match focus {
             Focus::Agents => (self.panel.selected.clone()?, None),
             Focus::Viewer => {
-                let viewer = &self.viewer.active_pane().viewer;
+                let pane = self.viewer.active_pane();
+                let viewer = &pane.viewer;
                 if viewer.shell.is_some() {
-                    return None;
+                    return pane.source_cwd().map(str::to_owned);
                 }
                 (
                     viewer.target()?.to_owned(),
@@ -1767,6 +1774,7 @@ impl App {
             KeyCode::Char('/') => self.search = Some(Default::default()),
             KeyCode::Char(',') => self.open_settings(Focus::Agents),
             KeyCode::Char('t') => self.open_telemetry(Focus::Agents, None, None),
+            KeyCode::Char('p') => self.open_pinned(),
             KeyCode::Char('a') => {
                 self.attention = Some(Default::default());
             }

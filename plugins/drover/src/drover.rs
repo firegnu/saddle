@@ -303,45 +303,58 @@ impl Drop for PendingLoad {
     }
 }
 
-/// Finds the registered project of the repository holding `cwd`, answering it only when its
-/// queue has any task; `None` whenever that cannot be established. Worktrees and subdirectories
-/// belong to their repository; a project at the same worktree top is preferred.
+/// Where an opening's source directory belongs among the registered projects.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Located {
+    Project(String),
+    /// Every repository was read and none is the source's.
+    NoMatch,
+    /// Git could not answer for the source or for some registered project.
+    Unknown(String),
+}
+/// Finds the registered project of the repository holding `cwd`. Worktrees and
+/// subdirectories belong to their repository; a project at the same worktree top is
+/// preferred. The queue is not read here: an empty or unreadable queue still belongs to its
+/// project and shows as such once opened.
 pub struct RepoTasks {
-    pub result: std::sync::mpsc::Receiver<Option<String>>,
+    pub result: std::sync::mpsc::Receiver<Located>,
     cancel: std::sync::Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl RepoTasks {
-    pub fn start(corral: String, cwd: String, projects: Vec<String>) -> Self {
+    pub fn start(cwd: String, projects: Vec<String>) -> Self {
         let (send, result) = std::sync::mpsc::channel();
         let cancel = std::sync::Arc::new(AtomicBool::new(false));
         let quitting = cancel.clone();
         let thread = std::thread::spawn(move || {
             let find = || {
-                let (top, common) = crate::git::repository("git", &cwd, &quitting)?;
+                let Some((top, common)) = crate::git::repository("git", &cwd, &quitting) else {
+                    return Located::Unknown("Git could not read this directory".into());
+                };
+                let mut unreadable = false;
                 let matching: Vec<_> = projects
                     .iter()
                     .filter_map(|project| {
-                        let (project_top, project_common) =
-                            crate::git::repository("git", project, &quitting)?;
+                        let Some((project_top, project_common)) =
+                            crate::git::repository("git", project, &quitting)
+                        else {
+                            unreadable = true;
+                            return None;
+                        };
                         (project_common == common).then_some((project, project_top == top))
                     })
                     .collect();
-                let (project, _) = matching
+                match matching
                     .iter()
                     .find(|(_, same_top)| *same_top)
-                    .or(matching.first())?;
-                let snapshot = Client {
-                    corral,
-                    cwd: project.into(),
+                    .or(matching.first())
+                {
+                    Some((project, _)) => Located::Project(project.to_string()),
+                    None if unreadable => {
+                        Located::Unknown("an added project could not be checked".into())
+                    }
+                    None => Located::NoMatch,
                 }
-                .read(&quitting)
-                .ok()?;
-                let any = snapshot.current.is_some()
-                    || snapshot.awaiting.is_some()
-                    || !snapshot.pending.is_empty()
-                    || !snapshot.history.is_empty();
-                any.then(|| project.to_string())
             };
             let _ = send.send(find());
         });

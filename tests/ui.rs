@@ -1050,6 +1050,7 @@ fn tab_hover_and_press_cover_the_whole_frame_with_separate_close_targets() {
                         },
                         settings: None,
                         updates: false,
+                        pinned: None,
                     }),
                 );
             })
@@ -1752,6 +1753,7 @@ fn render_header(
                     },
                     settings: None,
                     updates,
+                    pinned: None,
                 }),
             );
         })
