@@ -258,30 +258,28 @@ fn cut_plugin_buttons_still_show_keyboard_focus() {
 }
 
 #[test]
-fn a_pinned_entry_joins_telemetry_wraps_with_it_and_gives_way_first() {
+fn a_pinned_entry_joins_more_wraps_with_it_and_gives_way_first() {
     let sample = || vec![agent("saddle/main", "claude", "idle", None)];
     let pin = |title, available| Some(ui::Pinned { title, available });
     let fixed = |lines: &[String]| {
         let all = lines.join("\n");
-        for entry in ["Telemetry", "Plugins", "Settings"] {
-            assert!(all.contains(entry), "{entry} missing:\n{all}");
-        }
+        assert!(all.contains('⋯'), "More missing:\n{all}");
     };
-    // Wide: the pin shares the title row, left of Telemetry, and its hit area is that text.
+    // Wide: the pin shares the title row, left of More, and its hit area is that text.
     let ((lines, hits), _) = agents_column_pinned(120, sample(), &[], pin("Tasks", true));
     let row = usize::from(hits.pinned.y);
-    assert!(lines[row].contains("Agents · 1") && lines[row].contains("Tasks  Telemetry"));
+    assert!(lines[row].contains("Agents · 1") && lines[row].contains("Tasks   ⋯"));
     assert_eq!(hits.pinned.width, 5);
     fixed(&lines);
     // A long title takes at most 12 columns.
     let ((lines, hits), _) =
         agents_column_pinned(120, sample(), &[], pin("Extraordinarily long", true));
-    assert!(lines.join("\n").contains("Extraordina…  Telemetry"));
+    assert!(lines.join("\n").contains("Extraordina…   ⋯"));
     assert_eq!(hits.pinned.width, 12);
     // Narrow: the group wraps below the title together.
-    let ((lines, hits), _) = agents_column_pinned(52, sample(), &[], pin("Tasks", true));
+    let ((lines, hits), _) = agents_column_pinned(40, sample(), &[], pin("Tasks", true));
     let row = usize::from(hits.pinned.y);
-    assert!(lines[row].contains("Tasks  Telemetry") && !lines[row].contains("Agents ·"));
+    assert!(lines[row].contains("Tasks   ⋯") && !lines[row].contains("Agents ·"));
     fixed(&lines);
     // When even the wrapped row cannot hold both, the pin is hidden and nothing else moves.
     let ((plain, _), _) = agents_column_pinned(40, sample(), &[], None);

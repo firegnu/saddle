@@ -1325,7 +1325,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
         .collect();
     // Row for row as in the design (spinner frames as drawn at this instant).
     let expected = [
-        " Agents · 4                              Settings ",
+        " Agents · 4                                    ⋯  ",
         " Attention · 0                                    ",
         " ──────────────────────────────────────────────── ",
         " corral/ ──────────────────────────────────── (1) ",
@@ -1659,41 +1659,21 @@ fn attached_reads_in_text_color_but_offers_no_second_attach_click() {
 }
 
 #[test]
-fn settings_entry_shares_title_row_and_wraps_below_status_when_narrow() {
-    use crossterm::event::KeyCode;
+fn more_entry_shares_title_row_and_wraps_below_status_when_narrow() {
     let (mut a, mut q) = fixture();
     let (buffer, hits) = render(160, 30, &mut a, &mut q, Focus::Agents);
     let lines = agents_lines(&buffer);
-    assert!(
-        lines[1].trim_matches('┃').trim_end().ends_with("Settings")
-            && lines[2].contains("Attention · 0"),
-        "{lines:#?}"
-    );
-    assert!(lines[3].contains('─'), "{lines:#?}");
-    let entry = hits
-        .buttons
-        .iter()
-        .find(|h| h.key.code == KeyCode::Char(','))
-        .expect("Settings entry is clickable");
-    assert_eq!((entry.area.y, entry.area.width), (1, 8));
-    assert_eq!(entry.area.right(), 52 - 2);
-
-    // A narrow column puts Settings on its own row; the list moves down one row.
-    let (buffer, hits) = render(40, 30, &mut a, &mut q, Focus::Agents);
+    assert!(lines[1].contains("Agents · 1") && lines[1].contains('⋯'));
+    assert!(lines[2].contains("Attention · 0"));
+    assert!(lines[3].contains('─'));
+    assert_eq!((hits.more.y, hits.more.width), (1, 3));
+    assert_eq!(hits.more.right(), 52 - 2);
+    let (buffer, hits) = render(32, 30, &mut a, &mut q, Focus::Agents);
     let lines = agents_lines(&buffer);
-    assert!(!lines[2].contains("Settings"), "{lines:#?}");
-    assert!(lines[2].contains("Attention"), "{lines:#?}");
-    assert!(
-        lines[3].trim_matches('┃').trim_end().ends_with("Settings"),
-        "{lines:#?}"
-    );
-    assert!(lines[4].contains('─'), "{lines:#?}");
-    let entry = hits
-        .buttons
-        .iter()
-        .find(|h| h.key.code == KeyCode::Char(','))
-        .unwrap();
-    assert_eq!(entry.area.y, 3);
+    assert!(lines[2].contains("Attention"));
+    assert!(lines[3].contains('⋯'));
+    assert!(lines[4].contains('─'));
+    assert_eq!(hits.more.y, 3);
     assert!(hits.agents.iter().all(|(row, _)| *row >= 5));
 }
 
@@ -1762,82 +1742,52 @@ fn render_header(
 }
 
 #[test]
-fn header_actions_align_with_title_and_attention_when_they_fit() {
+fn header_actions_leave_only_more_beside_title_and_attention() {
     use crossterm::event::KeyCode;
-    use saddle::theme;
-    for (width, plugin_y, settings_y, telemetry_y) in [
-        (52, 2, 2, 1),
-        (36, 2, 2, 1),
-        (35, 4, 4, 3),
-        (30, 4, 4, 3),
-        (20, 4, 5, 3),
-    ] {
+    for width in [52, 36, 35, 30, 20] {
         let (buffer, hits) = render_header_actions(width, &Pointer::default(), &[]);
-        let settings = hits
-            .buttons
-            .iter()
-            .find(|h| h.key.code == KeyCode::Char(','))
-            .unwrap()
-            .area;
         let attention = hits
             .buttons
             .iter()
             .find(|h| h.key.code == KeyCode::Char('a'))
             .unwrap()
             .area;
-        let telemetry = hits
-            .buttons
-            .iter()
-            .find(|h| h.key.code == KeyCode::Char('t'))
-            .expect("Telemetry entry is clickable")
-            .area;
-        assert_eq!(settings.y, settings_y, "width {width}: Settings row");
-        assert_eq!(hits.plugins.y, plugin_y, "width {width}: Plugins row");
-        assert_eq!(telemetry.y, telemetry_y, "width {width}: Telemetry row");
-        assert!(!telemetry.intersects(settings) && !telemetry.intersects(hits.plugins));
-        assert!(!telemetry.intersects(attention));
-        assert!(hits.list.y > telemetry.y);
-        assert_eq!(attention.y, 2, "Attention keeps its own second row");
-        assert!(!settings.intersects(hits.plugins));
-        assert!(!settings.intersects(attention));
-        assert!(!hits.plugins.intersects(attention));
-        assert!(hits.list.y > settings.y.max(attention.y));
-        assert_eq!(settings.right(), width - 2);
-        assert_eq!(telemetry.right(), settings.right());
-        for (rect, label) in [
-            (settings, "Settings"),
-            (hits.plugins, "Plugins"),
-            (telemetry, "Telemetry"),
-        ] {
-            let text: String = (rect.x..rect.right())
-                .map(|x| buffer[(x, rect.y)].symbol())
-                .collect();
-            assert_eq!(text, label);
-            assert_eq!(buffer[(rect.x, rect.y)].fg, theme::AGENTS_TEXT);
+        assert_eq!(hits.more.y, 1);
+        assert_eq!(attention.y, 2);
+        assert!(!hits.more.intersects(attention));
+        assert!(hits.list.y > attention.y);
+        assert_eq!(hits.more.right(), width - 2);
+        let text: String = (hits.more.x..hits.more.right())
+            .map(|x| buffer[(x, hits.more.y)].symbol())
+            .collect();
+        assert_eq!(text, " ⋯ ");
+        assert!(
+            hits.buttons
+                .iter()
+                .all(|h| !matches!(h.key.code, KeyCode::Char(',' | 't')))
+        );
+        let header: String = (0..4)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .map(|p| buffer[p].symbol())
+            .collect();
+        for removed in ["Plugins", "Telemetry", "Settings"] {
+            assert!(!header.contains(removed));
         }
     }
 }
 
 #[test]
 fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
-    use crossterm::event::KeyCode;
     use saddle::{
         attention::{Item, Kind, Target},
         theme,
     };
     let (_, hits) = render_header_actions(52, &Pointer::default(), &[]);
-    let settings = hits
-        .buttons
-        .iter()
-        .find(|h| h.key.code == KeyCode::Char(','))
-        .unwrap()
-        .area;
-    for rect in [hits.plugins, settings] {
-        let mut pointer = Pointer::default();
-        pointer.hover = Some((rect.x, rect.y).into());
-        let (buffer, _) = render_header_actions(52, &pointer, &[]);
-        assert_eq!(buffer[(rect.x, rect.y)].fg, theme::BRIGHT);
-    }
+    let rect = hits.more;
+    let mut pointer = Pointer::default();
+    pointer.hover = Some((rect.x, rect.y).into());
+    let (buffer, _) = render_header_actions(52, &pointer, &[]);
+    assert_eq!(buffer[(rect.x, rect.y)].fg, theme::BRIGHT);
     let item = Item {
         target: Target::Agent("demo/main".into()),
         kind: Kind::Waiting,
@@ -1853,21 +1803,15 @@ fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
 }
 
 #[test]
-fn a_dot_beside_settings_shows_that_installed_updates_need_the_user() {
-    use crossterm::event::KeyCode;
+fn a_dot_beside_more_shows_that_installed_updates_need_the_user() {
     for width in [52, 30, 20] {
         for (updates, dot) in [(false, " "), (true, "●")] {
             let (buffer, hits) = render_header(width, &Pointer::default(), &[], updates);
-            let settings = hits
-                .buttons
-                .iter()
-                .find(|h| h.key.code == KeyCode::Char(','))
-                .unwrap()
-                .area;
+            let settings = hits.more;
             let text: String = (settings.x..settings.right())
                 .map(|x| buffer[(x, settings.y)].symbol())
                 .collect();
-            assert_eq!(text, "Settings", "width {width}");
+            assert_eq!(text, " ⋯ ", "width {width}");
             assert_eq!(
                 buffer[(settings.right(), settings.y)].symbol(),
                 dot,

@@ -162,7 +162,7 @@ impl Harness {
         self.log("native-data/queue.md")
     }
     fn open_tasks(&mut self) {
-        self.click("Plugins");
+        self.header_tool("Plugins");
         self.see("Background");
         self.send(b"Drover\r");
         self.see("Input ▸ Drover");
@@ -422,6 +422,11 @@ while True:
             self.pump();
         }
     }
+    fn header_tool(&mut self, label: &str) {
+        self.click("⋯");
+        self.see("Input ▸ More");
+        self.click(label);
+    }
     fn click(&mut self, label: &str) {
         self.settle();
         let (col, row) = self.press_button(label);
@@ -429,7 +434,9 @@ while True:
     }
     fn press_button(&mut self, label: &str) -> (u16, u16) {
         self.see(label);
-        let first_col = if self.contents().contains("Input ▸ Drover") && label != "Plugins" {
+        let first_col = if self.contents().contains("Input ▸ Drover")
+            && !matches!(label, "⋯" | "Plugins" | "Telemetry" | "Settings")
+        {
             self.locate(" Drover ·", 0).map_or(0, |(col, _)| col)
         } else {
             0
@@ -1005,21 +1012,21 @@ fn buttons_require_release_on_the_same_target() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.press_button("Plugins");
+    h.press_button("⋯");
     let deadline = Instant::now() + Duration::from_millis(400);
     while Instant::now() < deadline {
         h.pump();
     }
     assert!(
-        !h.contents().contains("Close Esc"),
-        "Down must not open Plugins"
+        !h.contents().contains("Input ▸ More"),
+        "Down must not open More"
     );
     h.send(b"\x1b[<32;130;4M\x1b[<0;130;4m"); // Drag/release over Viewer cancels, without sending a stray release.
     let deadline = Instant::now() + Duration::from_millis(250);
     while Instant::now() < deadline {
         h.pump();
     }
-    assert!(!h.contents().contains("Close Esc"));
+    assert!(!h.contents().contains("Input ▸ More"));
     assert!(
         !h.log("events").contains("input p/a "),
         "A management button gesture must not leak into Viewer"
@@ -4493,7 +4500,7 @@ fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
 }
 
 fn open_fixture_palette(h: &mut Harness) {
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Search plugins");
     h.until(|h| h.contents().contains("Background") || h.contents().contains("View open"));
     // Built-ins precede process plugins; select the fixture, not the first row.
@@ -4671,7 +4678,7 @@ view = "main"
         },
     );
     h.see("Synthetic title");
-    h.see("Plugins");
+    h.see("⋯");
     h
 }
 #[test]
@@ -4772,7 +4779,7 @@ fn unified_search_opens_plugins_and_routes_disabled_entries_to_management() {
 #[test]
 fn plugin_palette_searches_and_never_exposes_per_plugin_sidebar_buttons() {
     let mut h = plugin_entry_harness("overlay");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Search plugins");
     h.see("Background");
     h.send(b"missing");
@@ -4863,7 +4870,10 @@ fn plugin_overlay_protects_host_actions_and_restores_viewer_focus() {
         "overlay-busy",
     ]);
     assert_eq!(reply["error"]["code"], "busy", "{reply}");
-    h.click("Settings");
+    h.header_tool("Settings"); // Unavailable while a plugin overlay owns input.
+    h.see("Input ▸ More");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ More"));
     h.send(b",q");
     for _ in 0..4 {
         h.pump();
@@ -4899,7 +4909,7 @@ fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
     h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Fixture Counter");
     h.see("Disabled");
     h.click("Fixture Counter");
@@ -4930,7 +4940,7 @@ fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
             std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"demo.counter\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
         },
     );
-    h.see("Plugins");
+    h.see("⋯");
     h.send(b",");
     h.see("Settings");
     h.send(b"\x1b[17~"); // entry shortcut cannot replace the current dialog
@@ -4941,7 +4951,7 @@ fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
     assert!(!h.screen.screen().contents().contains("Clicks:"));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.send(b"\r");
     h.see("Clicks: 0");
@@ -4958,7 +4968,7 @@ fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
     assert!(h.screen.screen().contents().contains("Clicks: 2"));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.send(b"\r");
     h.see("Clicks: 2");
@@ -5019,7 +5029,7 @@ fn plugin_palette_switches_overlays_and_blocks_background_layout_writes() {
 fn plugin_palette_empty_and_settings_are_not_replaced() {
     let mut h = Harness::start();
     let tabs = h.ctl(&["inspect"])["tabs"].clone();
-    h.click("Plugins");
+    h.header_tool("Plugins");
     // No external views are registered; the disabled built-in remains visible.
     h.see("Dispatch");
     h.see("Dispatch · Built-in");
@@ -5036,7 +5046,7 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     h.see("ID: dispatch");
     h.send(b"\x1b");
     h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.click("Plugins"); // fixed host entry remains behind Settings; cannot replace it
+    h.click("⋯"); // More remains behind Settings; cannot replace the current modal
     for _ in 0..3 {
         h.pump();
     }
@@ -5047,7 +5057,7 @@ fn plugin_palette_empty_and_settings_are_not_replaced() {
     h.send(b"\r");
     h.see("READY");
     let before = h.log("events");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Dispatch");
     h.see("Dispatch · Built-in");
     h.see("Disabled");
@@ -5184,7 +5194,7 @@ fn plugin_real_attention_updates_withdraws_and_opens_the_selected_target() {
             std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"demo.attention\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
         },
     );
-    h.see("Plugins");
+    h.see("⋯");
     let original = h.ctl(&["inspect"])["tabs"].clone();
     h.send(b"a");
     h.see("Demo item 2");
@@ -5211,7 +5221,7 @@ fn plugin_real_attention_updates_withdraws_and_opens_the_selected_target() {
     h.send(b"a");
     h.see("Nothing needs attention.");
     h.send(b"\x1b");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.send(b"\r");
     h.see("Items: 0"); // Same running process, no duplicate source or implicit restart.
@@ -5265,7 +5275,7 @@ fn drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli() {
     h.see("Native queue task");
     h.click("Close Esc");
     h.see("Input ▸ Agents");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.click("Tasks");
     h.see("› Tasks");
@@ -5306,7 +5316,7 @@ fn drover_plugin_opens_in_a_split_and_closes_only_its_view() {
     h.send(b"\x1b");
     h.until(|h| h.ctl(&["inspect"])["tabs"] == before);
     assert_eq!(h.native_queue(), queue);
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.click("Tasks");
     h.see("› Tasks");
@@ -5448,7 +5458,7 @@ fn plugin_real_diff_continuous_live_overlay_split_and_tab() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/b READY");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.send(b"\r");
     h.see("first_change");
@@ -5572,7 +5582,7 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
     };
     assert!(!visible(&h), "startup config disables the mascot");
     let original = h.ctl(&["inspect"])["tabs"].clone();
-    h.click("Settings");
+    h.header_tool("Settings");
     h.see("Mascot");
     h.see("Disabled");
     h.click("Mascot");
@@ -5585,12 +5595,12 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
         toml::from_str::<toml::Value>(&h.log("config.toml")).unwrap()["mascot_enabled"].as_bool(),
         Some(true)
     );
-    h.click("Settings");
+    h.header_tool("Settings");
     h.click("Mascot");
     h.see("Disabled");
     h.send(b"\x1b");
     h.until(|h| !h.contents().contains("General F1") && visible(h));
-    h.click("Settings");
+    h.header_tool("Settings");
     h.send(b"\x1b[B\x1b[B \x13");
     h.until(|h| !h.contents().contains("General F1") && !visible(h));
     assert_eq!(
@@ -5753,8 +5763,8 @@ fn a_recorded_dispatch_goes_once_through_the_host_agent_entry_and_is_queryable()
 #[test]
 fn pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled() {
     let mut h = Harness::start_tasks();
-    h.see("Telemetry");
-    assert!(!h.contents().contains("Tasks  Telemetry"), "no default pin");
+    h.see("⋯");
+    assert!(!h.contents().contains("Tasks   ⋯"), "no default pin");
     h.send(b"p");
     h.see("Pin one in Settings → Plugins");
     h.send(b",\x1b[15~");
@@ -5776,7 +5786,7 @@ fn pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled() {
     h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.see("Tasks  Telemetry");
+    h.see("Tasks   ⋯");
     h.see("p Tasks (selected)");
     h.send(b"p");
     h.see("Native queue task");
@@ -5806,7 +5816,7 @@ fn pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled() {
     h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.see("Tasks  Telemetry");
+    h.see("Tasks   ⋯");
     h.send(b"p");
     h.see("Search plugins");
     h.see("› Tasks");
@@ -5836,7 +5846,7 @@ fn pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled() {
     h.until(|h| !h.contents().contains("Changes apply immediately."));
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    h.until(|h| !h.contents().contains("Tasks  Telemetry"));
+    h.until(|h| !h.contents().contains("Tasks   ⋯"));
 }
 
 #[test]
@@ -5846,11 +5856,64 @@ fn a_terminal_gives_its_launch_directory_as_the_tasks_source() {
     h.click("│ + │");
     h.click_in("Open content in a new tab", "Terminal");
     h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
-    h.click("Plugins");
+    h.header_tool("Plugins");
     h.see("Background");
     h.click("Tasks");
     h.see("› Tasks");
     h.send(b"\r");
     h.see("Native queue task");
     h.see(" · from ");
+}
+
+#[test]
+fn header_more_menu_opens_tools_and_restores_terminal_focus() {
+    let mut h = Harness::start();
+    h.see("Synthetic title");
+    h.send(b"\r");
+    h.see("READY");
+    let before = h.log("events");
+    h.click("⋯");
+    h.see("Input ▸ More");
+    h.see("Plugins");
+    h.see("Telemetry");
+    h.see("Settings");
+    assert_eq!(
+        h.ctl(&[
+            "open",
+            "--relative-to",
+            "active",
+            "--place",
+            "tab",
+            "--shell"
+        ])["error"]["code"],
+        "busy"
+    );
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ More"));
+    assert_eq!(h.ctl(&["inspect"])["focus"], "viewer");
+    h.click("⋯");
+    // Close on a terminal-area press; neither half of the click reaches the agent.
+    h.send(b"\x1b[<0;70;12M\x1b[<0;70;12m");
+    h.until(|h| !h.contents().contains("Input ▸ More"));
+    h.click("⋯");
+    h.send(b"\x1b[B\r");
+    h.see("Input ▸ Telemetry");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Input ▸ Telemetry"));
+    h.click("⋯");
+    h.click("Settings");
+    h.see("General F1");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("General F1"));
+    h.click("⋯");
+    h.click("Plugins");
+    h.see("Search plugins");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Search plugins"));
+    assert_eq!(h.ctl(&["inspect"])["focus"], "viewer");
+    assert_eq!(
+        h.log("events").matches("input ").count(),
+        before.matches("input ").count(),
+        "menu input never reaches the agent"
+    );
 }

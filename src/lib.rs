@@ -10,6 +10,7 @@ pub mod control;
 pub mod corral;
 pub mod diagnostics;
 pub mod git;
+mod header_menu;
 pub mod history;
 pub mod input;
 pub mod kitty;
