@@ -1,6 +1,7 @@
 //! Drover's optional dispatch recording through the public `saddle telemetry`/`saddle agent` CLI
 //! of the real debug host, with a fake Corral and isolated telemetry state.
-mod common;
+#[path = "common/interpreted_script.rs"]
+mod fixture;
 use saddle_drover_plugin::{
     core,
     drover::{Operation, Transition},
@@ -46,7 +47,7 @@ impl Project {
         )
         .unwrap();
         std::fs::write(root.join("data/queue.md"), "## T1 First\nBody\n").unwrap();
-        common::script(dir.path(), "corral", CORRAL);
+        fixture::script(dir.path(), "corral", CORRAL);
         Self { dir, root }
     }
     fn path(&self, name: &str) -> PathBuf {
@@ -60,7 +61,7 @@ impl Project {
         self.host_with_state(&self.path("state"))
     }
     fn host_with_state(&self, state: &Path) -> PathBuf {
-        common::script(
+        fixture::script(
             self.dir.path(),
             "host",
             &format!(
@@ -74,7 +75,7 @@ impl Project {
     }
     /// A host whose agent entry runs Corral once but leaves `stderr` instead of its receipt.
     fn host_without_receipt(&self, stderr: &str) -> PathBuf {
-        common::script(
+        fixture::script(
             self.dir.path(),
             "host",
             &format!(
@@ -251,6 +252,50 @@ fn without_a_record_context_the_delivery_goes_the_plain_way_once() {
 }
 
 #[test]
+fn slow_host_startup_exhausts_preparation_budget_and_sends_plain_once() {
+    let p = Project::new("");
+    p.enable(true);
+    let host = fixture::script(
+        p.dir.path(),
+        "slow-host",
+        &format!(
+            r#"#!/usr/bin/python3
+import os, sys, time
+from pathlib import Path
+root = Path(__file__).parent
+(root / 'startup-pid').write_text(str(os.getpid()))
+# Deliberate startup delay: the real host must not run before the preparation deadline.
+time.sleep(3)
+(root / 'host-started').touch()
+os.environ['XDG_STATE_HOME'] = {state:?}
+os.execv({saddle:?}, [{saddle:?}] + sys.argv[1:])
+"#,
+            state = p.path("state"),
+            saddle = env!("CARGO_BIN_EXE_saddle"),
+        ),
+    );
+    let began = Instant::now();
+    let v = p.dispatch(Some(true), Some(Path::new(&host)));
+    let elapsed = began.elapsed();
+    let pid: i32 = std::fs::read_to_string(p.path("startup-pid"))
+        .expect("slow-start fixture entered before preparation timed out")
+        .parse()
+        .unwrap();
+    assert_eq!(unsafe { libc::kill(pid, 0) }, -1, "slow host was reaped");
+    assert!(!p.path("host-started").exists());
+    assert!(elapsed >= Duration::from_millis(300) && elapsed < Duration::from_secs(1));
+    assert_eq!(v["telemetry"]["status"], "no_context", "{v}");
+    assert_eq!(v["telemetry"]["reason"], "budget_exhausted", "{v}");
+    assert_eq!(v["delivery"]["status"], "confirmed", "{v}");
+    assert_eq!(v["record"]["status"], "recorded", "{v}");
+    assert_eq!(v["state"], "running");
+    let calls = p.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["args"], plain_message());
+    assert_eq!(p.telemetry(&["list"])["traces"], json!([]));
+}
+
+#[test]
 fn a_recorded_dispatch_sends_once_with_its_context_and_follows_each_transition() {
     let p = Project::new("TELEMETRY_RECORD=on\n");
     p.enable(true);
@@ -409,6 +454,7 @@ fn only_a_paired_executed_false_receipt_says_nothing_was_sent() {
     let host = p.host();
     let missing = p.path("no-such-corral").display().to_string();
     let v = p.dispatch_with(None, &missing, Some(&host), &AtomicBool::new(false));
+    assert_eq!(v["telemetry"]["status"], "context", "{v}");
     assert_eq!(v["telemetry"]["send"]["receipt"], "matched", "{v}");
     assert_eq!(v["telemetry"]["send"]["executed"], false, "{v}");
     assert_eq!(v["delivery"]["status"], "not_executed", "{v}");
@@ -422,6 +468,7 @@ fn only_a_paired_executed_false_receipt_says_nothing_was_sent() {
         std::fs::write(p.path("code"), code).unwrap();
         let host = p.host();
         let v = p.dispatch(None, Some(&host));
+        assert_eq!(v["telemetry"]["status"], "context", "{v}");
         assert_eq!(v["telemetry"]["send"]["receipt"], "matched", "{v}");
         assert_eq!(v["telemetry"]["send"]["executed"], true, "{v}");
         assert_eq!(v["delivery"]["status"], "unknown", "{code}: {v}");
@@ -453,6 +500,7 @@ fn cancelling_a_recorded_delivery_stops_its_process_group_and_stays_unknown() {
     let v = p.dispatch_with(None, &p.corral(), Some(&host), &cancel);
     stopper.join().unwrap();
     assert!(began.elapsed() < Duration::from_secs(10));
+    assert_eq!(v["telemetry"]["status"], "context", "{v}");
     assert_eq!(v["delivery"]["status"], "unknown", "{v}");
     assert_eq!(v["telemetry"]["send"]["receipt"], "missing", "{v}");
     assert_eq!(v["record"]["status"], "not_attempted");
@@ -480,6 +528,7 @@ fn task_records_and_telemetry_failures_are_reported_apart() {
     p.enable(true);
     let host = p.host();
     let v = p.dispatch(None, Some(&host));
+    assert_eq!(v["telemetry"]["status"], "context", "{v}");
     let trace = v["telemetry"]["trace_id"].as_str().unwrap().to_owned();
     p.enable(false);
     let v = p.transition(Transition::Submit, Some(&host));
@@ -499,6 +548,7 @@ fn task_records_and_telemetry_failures_are_reported_apart() {
     let host = p.host();
     let v = p.dispatch(None, Some(&host));
     std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(v["telemetry"]["status"], "context", "{v}");
     assert_eq!(v["delivery"]["status"], "confirmed", "{v}");
     assert_eq!(v["record"]["status"], "unknown", "{v}");
     assert_eq!(
@@ -582,6 +632,7 @@ fn returning_a_run_records_the_committed_reason_on_that_trace() {
     p.enable(true);
     let host = p.host();
     let sent = p.dispatch(Some(true), Some(&host));
+    assert_eq!(sent["telemetry"]["status"], "context", "{sent}");
     let trace = sent["telemetry"]["trace_id"].as_str().unwrap();
     p.transition(Transition::Submit, Some(&host));
     let returned = p.transition(Transition::Return, Some(&host));
@@ -613,6 +664,7 @@ fn returning_a_run_records_the_committed_reason_on_that_trace() {
     assert_eq!(out.stdout, b"needs revision");
     assert_eq!(p.calls().len(), 1, "return must never send again");
     let next = p.dispatch(Some(true), Some(&host));
+    assert_eq!(next["telemetry"]["status"], "context", "{next}");
     assert_ne!(next["run_id"], sent["run_id"]);
     assert_ne!(next["telemetry"]["trace_id"], trace);
     assert!(
@@ -624,6 +676,7 @@ fn returning_a_run_records_the_committed_reason_on_that_trace() {
 }
 
 fn append_report(p: &Project, sent: &Value, id: &str, review: bool, text: &str) {
+    assert_eq!(sent["telemetry"]["status"], "context", "{sent}");
     let body = p.path(&format!("{id}.txt"));
     std::fs::write(&body, text).unwrap();
     let event = json!({"schema_version":1,"event_id":id,"trace_id":sent["telemetry"]["trace_id"],
@@ -721,7 +774,7 @@ fn report_queries_do_not_initialize_a_store_or_hide_query_errors_as_no_records()
         !p.path("state").exists(),
         "read must not initialize storage"
     );
-    let broken = common::script(
+    let broken = fixture::script(
         p.dir.path(),
         "broken-host",
         "#!/bin/sh\necho '{\"ok\":false}'\nexit 1\n",
@@ -736,7 +789,7 @@ fn report_queries_do_not_initialize_a_store_or_hide_query_errors_as_no_records()
 }
 
 fn terminal_host(p: &Project, mode: &str) -> PathBuf {
-    common::script(p.dir.path(), "terminal-host", &format!(r#"#!/usr/bin/python3
+    fixture::script(p.dir.path(), "terminal-host", &format!(r#"#!/usr/bin/python3
 import json, sys, time
 from pathlib import Path
 root = Path({root:?})

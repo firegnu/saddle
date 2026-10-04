@@ -1,8 +1,9 @@
+#[path = "common/interpreted_script.rs"]
+mod fixture;
 use saddle::telemetry::*;
 use serde_json::{Value, json};
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     process::{Command, Output},
 };
 
@@ -13,9 +14,13 @@ struct Fixture {
 impl Fixture {
     fn new(script: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("fake corral");
-        fs::write(&path, format!("#!/usr/bin/python3\nimport os, sys, json, time, signal\nwith open(os.environ['CALLS'], 'ab') as f: f.write(b'call\\n')\n{script}\n")).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        fixture::script(
+            dir.path(),
+            "fake corral",
+            &format!(
+                "#!/usr/bin/python3\nimport os, sys, json, time, signal\nwith open(os.environ['CALLS'], 'ab') as f: f.write(b'call\\n')\n{script}\n"
+            ),
+        );
         Self { dir }
     }
     fn command(&self) -> Command {
@@ -277,6 +282,10 @@ fn timeout_reaps_only_the_direct_client_and_reports_execution_as_unknown() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert!(
+        pidfile.exists(),
+        "client installed SIGTERM handler before timeout"
+    );
     assert_eq!(out.stdout, b"partial\0\xff");
     assert_eq!(receipt(&out)["executed"], true);
     assert_eq!(receipt(&out)["outcome"]["kind"], "timed_out");
@@ -982,6 +991,11 @@ fn terminal_receipt_cannot_extend_timeout_when_stderr_is_already_full() {
         .spawn()
         .unwrap();
     let out = Running(Some(child)).finish();
+    assert_eq!(
+        f.calls(),
+        1,
+        "client reached its scripted exit under backpressure"
+    );
     assert_eq!(
         out.status.code(),
         Some(3),
