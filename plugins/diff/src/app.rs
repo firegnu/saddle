@@ -556,7 +556,7 @@ impl Plugin for DiffPlugin {
                 row,
                 split,
                 self.horizontal,
-                (color("background"), muted),
+                (color("background"), muted, fg),
             );
         }
         if count == 0 && self.snapshot.is_some() && height > 0 {
@@ -752,6 +752,162 @@ mod tests {
         for (w, h) in (1..130).flat_map(|w| (1..7).map(move |h| (w, h))) {
             saddle_plugin_sdk::frame(&render(&mut p, w, h), 1, 1).unwrap();
         }
+    }
+
+    /// Unchanged code on the default theme (Reset background, not inferable) and on an explicit
+    /// light theme. Prints each syntax color's contrast: `cargo test -p saddle-diff-plugin
+    /// light_theme -- --nocapture`.
+    #[test]
+    fn light_theme_keeps_unchanged_code_readable() {
+        fn linear(c: Color) -> [f64; 3] {
+            let Color::Rgb(r, g, b) = c else {
+                unreachable!()
+            };
+            [r, g, b].map(|v| {
+                let v = f64::from(v) / 255.0;
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            })
+        }
+        fn lum(c: Color) -> f64 {
+            let [r, g, b] = linear(c);
+            0.2126 * r + 0.7152 * g + 0.0722 * b
+        }
+        // CIELAB (D65), for the perceived difference between two syntax classes.
+        fn lab(c: Color) -> [f64; 3] {
+            let [r, g, b] = linear(c);
+            let f = |t: f64| {
+                if t > 0.008856 {
+                    t.cbrt()
+                } else {
+                    7.787 * t + 16.0 / 116.0
+                }
+            };
+            let x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047);
+            let y = f(0.2126 * r + 0.7152 * g + 0.0722 * b);
+            let z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+            [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
+        }
+        let contrast = |a: Color, b: Color| {
+            let (x, y) = (lum(a), lum(b));
+            (x.max(y) + 0.05) / (x.min(y) + 0.05)
+        };
+        let c = saddle_plugin_sdk::color;
+        let dune = json!({"text":c(Color::Reset),"muted":c(Color::Gray),"background":c(Color::Reset),"accent":c(Color::Yellow),"error":c(Color::Red)});
+        let light_bg = Color::Rgb(0xf6, 0xf6, 0xf4);
+        let light_text = Color::Rgb(0x24, 0x29, 0x2f);
+        let light_accent = Color::Rgb(0x09, 0x69, 0xda);
+        let light = json!({"text":c(light_text),"muted":c(Color::Rgb(0x6e,0x77,0x81)),"background":c(light_bg),"accent":c(light_accent),"error":c(Color::Rgb(0xcf,0x22,0x2e))});
+        let snapshot = Snapshot {
+            root: "/tmp/synthetic-repo".into(),
+            files: vec![FileDiff {
+                path: "src/config.rs".into(),
+                status: "M".into(),
+                patch: "@@ -1,7 +1,7 @@\n // Read the limit from the config file.\n use std::fs;\n-const LIMIT: u32 = 10;\n+const LIMIT: u32 = 20;\n pub fn load(path: &str) -> String {\n     let text = fs::read_to_string(path).unwrap_or_default();\n     format!(\"{text} {}\", 42)\n"
+                    .into(),
+            }],
+        };
+        let mut p = DiffPlugin::new(Some("/tmp/synthetic-repo".into()));
+        p.document = Document::build(&snapshot);
+        p.snapshot = Some(Arc::new(snapshot));
+        let mut classes = vec![];
+        // Smallest CIELAB difference (ΔE76) between two syntax classes, to catch classes merging.
+        let closest = |seen: &[(Color, String)]| {
+            let mut min = (f64::MAX, String::new());
+            for (i, (a, ta)) in seen.iter().enumerate() {
+                for (b, tb) in &seen[i + 1..] {
+                    let (a, b) = (lab(*a), lab(*b));
+                    let d = (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>().sqrt();
+                    if d < min.0 {
+                        min = (d, format!("{ta} / {tb}"));
+                    }
+                }
+            }
+            println!("  closest classes: ΔE {:.1} ({})", min.0, min.1);
+            min.0
+        };
+        let mut distances = vec![];
+        for (name, theme) in [("default (Dune)", &dune), ("explicit light", &light)] {
+            let b = p.render(Rect::new(0, 0, 100, 14), theme).unwrap();
+            println!("--- {name}");
+            for l in lines(&b) {
+                println!("|{l}|");
+            }
+            // Code cells of unchanged rows: right of the 8-column number gutter, theme background.
+            let mut seen: Vec<(Color, String)> = vec![];
+            for y in 3..b.area.height - 1 {
+                let gutter: String = lines(&b)[y as usize].chars().skip(30).take(5).collect();
+                if gutter.trim().parse::<usize>().is_err() {
+                    continue;
+                }
+                for x in 38..b.area.width {
+                    let cell = &b[(x, y)];
+                    let changed = [Color::Rgb(52, 28, 30), Color::Rgb(23, 48, 35)];
+                    if cell.symbol().trim().is_empty() || changed.contains(&cell.bg) {
+                        continue;
+                    }
+                    match seen.iter_mut().find(|(fg, _)| *fg == cell.fg) {
+                        Some((_, text)) => text.push_str(cell.symbol()),
+                        None => seen.push((cell.fg, cell.symbol().into())),
+                    }
+                }
+            }
+            for (fg, text) in &seen {
+                let cell = b[find(&b, "use std").unwrap()].clone();
+                match (fg, cell.bg) {
+                    (Color::Rgb(..), Color::Rgb(..)) => {
+                        println!("  fg={fg:?} contrast={:.2} {text}", contrast(*fg, cell.bg))
+                    }
+                    _ => println!("  fg={fg:?} bg={:?}: not inferable {text}", cell.bg),
+                }
+            }
+            classes.push(seen.len());
+            distances.push(closest(&seen));
+            if theme == &light {
+                for (fg, text) in &seen {
+                    assert!(
+                        contrast(*fg, light_bg) >= 4.5,
+                        "{fg:?} on {light_bg:?} is unreadable: {text}"
+                    );
+                }
+                // Changed rows keep their red/green backgrounds and word emphasis.
+                let (x, y) = find(&b, "20").unwrap();
+                assert_eq!(b[(x, y)].bg, Color::Rgb(23, 48, 35));
+                assert!(
+                    b[(x, y)]
+                        .modifier
+                        .contains(Modifier::BOLD | Modifier::UNDERLINED)
+                );
+                assert_eq!(b[find(&b, "10").unwrap()].bg, Color::Rgb(52, 28, 30));
+                // Current mode and current file cues stay.
+                assert!(
+                    b[find(&b, "1 All").unwrap()]
+                        .modifier
+                        .contains(Modifier::REVERSED)
+                );
+                let current = b[find(&b, "▎M src/config.rs").unwrap()].clone();
+                assert_eq!(
+                    (current.fg, current.modifier),
+                    (light_accent, Modifier::BOLD)
+                );
+            } else {
+                // Reset background: syntax colors are left exactly as highlighted.
+                let highlighted: Vec<_> = p
+                    .document
+                    .unified
+                    .iter()
+                    .flat_map(|r| r.left.iter().chain(&r.right))
+                    .flat_map(|l| l.spans.iter().map(|(_, s)| s.fg))
+                    .collect();
+                assert!(seen.iter().all(|(fg, _)| highlighted.contains(&Some(*fg))));
+            }
+        }
+        // Syntax classes stay as distinct as on the default theme.
+        assert_eq!(classes[0], classes[1]);
+        assert!(distances[1] >= distances[0] / 2.0, "syntax classes merge");
     }
 
     /// Prints synthetic frames for review: `cargo test -p saddle-diff-plugin dump -- --nocapture`.

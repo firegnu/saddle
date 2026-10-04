@@ -61,6 +61,65 @@ fn syntax() -> &'static (SyntaxSet, ThemeSet) {
         )
     })
 }
+/// Syntax colors always come from this dark theme, whatever the host theme is.
+const THEME: &str = "base16-ocean.dark";
+fn linear(c: u8) -> f64 {
+    let c = f64::from(c) / 255.0;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+/// WCAG relative luminance; `None` when the terminal decides the color (Reset, ANSI, indexed).
+fn luminance(color: Color) -> Option<f64> {
+    let Color::Rgb(r, g, b) = color else {
+        return None;
+    };
+    Some(0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b))
+}
+/// On a known light background (dark text reads better above about 0.18 luminance), the syntax
+/// theme's plain foreground follows the host text color and other colors are darkened with their
+/// hue kept: classes the syntax theme itself keeps under 4.5:1 (comments, variables) to 4.5:1,
+/// the rest to 7:1, so dim classes stay lighter than the others. Dark or unknown backgrounds
+/// keep the highlighted colors.
+fn readable(style: Style, bg: Color, text: Color) -> Style {
+    let (Some(fg), Some(light)) = (style.fg, luminance(bg)) else {
+        return style;
+    };
+    let (Color::Rgb(r, g, b), Some(l)) = (fg, luminance(fg)) else {
+        return style;
+    };
+    if light < 0.18 {
+        return style;
+    }
+    let settings = &syntax().1.themes[THEME].settings;
+    if settings
+        .foreground
+        .is_some_and(|c| (c.r, c.g, c.b) == (r, g, b))
+    {
+        return style.fg(text);
+    }
+    let dim = settings
+        .background
+        .and_then(|c| luminance(Color::Rgb(c.r, c.g, c.b)))
+        .is_some_and(|source| (l + 0.05) / (source + 0.05) < 4.5);
+    let target = (light + 0.05) / if dim { 4.5 } else { 7.0 } - 0.05;
+    if l <= target {
+        return style;
+    }
+    // Scaling the linear channels keeps the hue; rounding down only adds contrast.
+    let darken = |c: u8| {
+        let v = linear(c) * target / l;
+        let v = if v <= 0.0031308 {
+            v * 12.92
+        } else {
+            1.055 * v.powf(1.0 / 2.4) - 0.055
+        };
+        (v * 255.0).floor() as u8
+    };
+    style.fg(Color::Rgb(darken(r), darken(g), darken(b)))
+}
 /// Escape terminal controls and pathological graphemes before putting them into a panel frame.
 pub fn safe(text: &str) -> String {
     let mut out = String::new();
@@ -151,7 +210,7 @@ fn emphasis(old: &str, new: &str) -> (Vec<Range<usize>>, Vec<Range<usize>>) {
 impl Document {
     pub fn build(snapshot: &Snapshot) -> Self {
         let (ss, ts) = syntax();
-        let theme = &ts.themes["base16-ocean.dark"];
+        let theme = &ts.themes[THEME];
         let mut doc = Self::default();
         for (file, diff) in snapshot.files.iter().enumerate() {
             let header = Row::note(
@@ -334,7 +393,7 @@ fn code(
     line: Option<&TextLine>,
     mark: &str,
     bg: Color,
-    muted: Color,
+    (muted, text): (Color, Color),
     offset: usize,
 ) {
     if area.width == 0 || area.height == 0 {
@@ -355,11 +414,12 @@ fn code(
     );
     let mut x = 0;
     let mut col = 0;
-    for (text, style) in &line.spans {
-        for g in text.graphemes(true) {
+    for (part, style) in &line.spans {
+        let style = readable(*style, bg, text).bg(bg);
+        for g in part.graphemes(true) {
             let w = g.width();
             if col >= offset && x + w <= usize::from(area.width.saturating_sub(8)) {
-                buf.set_string(area.x + 8 + x as u16, area.y, g, style.bg(bg));
+                buf.set_string(area.x + 8 + x as u16, area.y, g, style);
                 x += w;
             } else if col >= offset {
                 return;
@@ -368,15 +428,15 @@ fn code(
         }
     }
 }
-/// `background` and `muted` are the theme roles received from the host; changed lines keep
-/// their own diff colors.
+/// `background`, `muted` and `text` are the theme roles received from the host; changed lines
+/// keep their own diff colors.
 pub fn draw_row(
     buf: &mut Buffer,
     area: Rect,
     row: &Row,
     split: bool,
     offset: usize,
-    (background, muted): (Color, Color),
+    (background, muted, text): (Color, Color, Color),
 ) {
     if row.left.is_none() && row.right.is_none() {
         let style = if row.header {
@@ -399,7 +459,7 @@ pub fn draw_row(
             row.left.as_ref(),
             if row.changed { "−" } else { " " },
             if row.changed { red } else { background },
-            muted,
+            (muted, text),
             offset,
         );
         code(
@@ -413,7 +473,7 @@ pub fn draw_row(
             row.right.as_ref(),
             if row.changed { "+" } else { " " },
             if row.changed { green } else { background },
-            muted,
+            (muted, text),
             offset,
         );
         put(
@@ -445,7 +505,7 @@ pub fn draw_row(
             } else {
                 background
             },
-            muted,
+            (muted, text),
             offset,
         );
     }
@@ -510,7 +570,7 @@ mod tests {
                         row,
                         split,
                         1,
-                        (Color::Reset, Color::DarkGray),
+                        (Color::Reset, Color::DarkGray, Color::Reset),
                     );
                 }
                 saddle_plugin_sdk::frame(&b, 1, 1).unwrap();
