@@ -129,3 +129,20 @@ fn delete_path_and_empty_wording_is_current() {
     assert!(screen.contains("No active tasks · Add task a"), "{screen}");
     assert!(!screen.contains("No history yet"), "{screen}");
 }
+
+#[test]
+fn short_task_editor_keeps_a_body_line_and_normal_size_keeps_the_hint() {
+    let mut q = pending_panel();
+    let editor = || Page::Add {
+        title: queue::Input::new("Short title".into()),
+        body: queue::Input::new("Visible body line".into()),
+        body_focus: false,
+    };
+    q.page = editor();
+    let screen = text(&render(&mut q, 80, 10));
+    assert!(screen.contains("Visible body line"), "80x10\n{screen}");
+    q.page = editor();
+    let screen = text(&render(&mut q, 120, 36));
+    assert!(screen.contains("Visible body line"), "{screen}");
+    assert!(screen.contains("Tab Switch field"), "{screen}");
+}
