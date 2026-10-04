@@ -1,15 +1,16 @@
 # Saddle 交接
 
-更新：2026-10-04。主控 `saddle/main`，分支 `main`。T77 已完成源码合并与清理；本次交接随后随 main 推送。
+更新：2026-10-04。主控 `saddle/main`，分支 `main`。T77 已完成源码合并、清理及授权部署；安装 aab70c8，待用户重开 Saddle 生效。
 
-## 当前优先续接：T77 已落地，未部署
+## 当前优先续接：T77 已部署，待重开生效
 
 - 用户授权主控与 agent 达成设计一致后持续落地。T77 实现 `8988d58`，主控审查记录 `6643d32`，合并 `dc0f8f9`，空收尾 `2d25baf`。
 - 仅整理 Drover 任务详情：突出 `Open in Telemetry ↗`，状态之后新增紧凑 `Look further`，支持正文同源链接，调整关键信息顺序并弱化技术 ID。原始内容、历史信息、全部轮次筛选保留；采集、查询、存储、宿主和任务状态未改。
 - 主控 T77 范围审查通过，**全仓并非全绿**：全目标首次覆盖 694 passed / 14 failed / 9 ignored；11 项失败定向复核为 10 passed / 1 failed。仍有 3 项宿主 app 旧头部入口断言失败，及 `without_a_record_context_the_delivery_goes_the_plain_way_once` 的 budget_exhausted/disabled 不符。后者根因未定位，不宣称修复；相关源码均无 T77 修改。本任务不搭车修复这些问题。全仓 Clippy、fmt/diff 通过。
 - 细节见 `docs/任务/T77-遥测展示整理主控审查.md`，日志 `/tmp/saddle-t77-integration/`。首次因 app 失败停止后，只续跑未执行目标；没有重跑整套，未删测试、放宽断言/超时或改串行。
 - `t77-telemetry-ui` worktree 与分支已安全删除；原 agent `saddle/dev-t77-design-1` / instance `0994bb2200d8` idle、attached=0 后，随工作目录一并关闭。不要处理迟到提醒或重发实施。
-- **未部署**：日常安装仍是 `b9ff8e0`，不能把源码合并当成界面已更新。后续部署只按用户新指令执行。本轮未 Submit/Accept/Return、未关闭 task trace、未派发下一项；T77 仍待用户验收操作。
+- 用户追加“编译+部署”后，从干净 `aab70c8` release 构建宿主和 Drover 成功（7.83秒），安装 `~/.local/share/saddle/versions/aab70c8`；入口和 Drover 登记已切换，其他产物/配置/Corral 链接保持。宿主 help、二进制校验和、隔离 Drover initialize 通过；未重复全量。备份 `~/.local/share/saddle/backups/t77-deploy-20261004-224400/`。
+- **待正常重开 Saddle 生效**：现场宿主 PID28742 仍加载 b9ff8e0、Drover PID28745 仍加载29c94d4，主控 instance9f8a73396d8a未变。未强制重启；用户重开后再核实际加载版本，不能把安装切换当成运行进程已更新。未 Submit/Accept/Return、未关闭 task trace、未派发下一项；T77仍待用户验收操作。
 - 本任务记录目录 `/tmp/saddle-t77-20261004/`；trace `e588f2f5-cb18-4071-aa63-c093fc449032`，run `97aa8e9954855bb2cbd15ee61e47d012`，实施 dispatch `97ef21ba-0239-463b-be45-4b73d5b31ac5`，主控实施审查 dispatch `378a4b14-54a7-430b-94c8-5cfcf6ae2bb1`。属于 task trace，由用户任务验收/退回流程结束，主控不 close。
 
 下方为前一轮历史交接，涉及“本轮”和待办状态时以上方 T77 最新说明为准。
