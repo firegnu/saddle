@@ -6,7 +6,7 @@
 
 用户接受剩余 UI 整理及 Agents 小幅方案，明确授权可并行则直接开干。按独占文件已派出三个 Claude Code opus[1m]/high 实现者：`saddle/dev-ui2-host-1`（ui2-host，公共提示+Agents/终端）、`saddle/dev-ui2-settings-1`（ui2-settings，Settings 剩余内页）、`saddle/dev-ui2-diff-1`（ui2-diff）。起点任务书提交 `85ed2fe`；具体 instance、完成提醒 request_id、范围见 `docs/任务/UI第二批-分组与派发-2026-10-04.md` 和三份组任务书。
 
-- 任务书和公开派发记录已提交；三组尚未审查/合并/部署。完成提醒到达后按组读取 status/reply、检查 diff 与展示结果，原 agent 同任务返工，再集成；不要只停在复述 DONE。不走 Tasks 队列，不开启遥测。
+- Diff 初版 `eb5b36a` 已审查：范围与业务边界通过，1 项必须改（34 列 Staged+error 时当前模式完全被挤掉）；已交回原 agent 窄幅返工，提醒 `735ed5da-c3e8-459d-9825-6d73c20f8907`。初版完成提醒已处理；等待新 status/reply 后复核再纳入集成。宿主与 Settings 本次仍 working。三组尚未合并/部署。完成提醒到达后按组读取 status/reply、检查 diff 与展示结果，原 agent 同任务返工，再集成；不要只停在复述 DONE。不走 Tasks 队列，不开启遥测。
 - 公共区域与 Agents 同组避免 ui.rs/terminals.rs 交叉写；Settings、Diff 可独立并行。保留 Agents 3a、行高、入口顺序和业务行为，不重做卡片。所有边界见任务书。
 - cargo 必须用 `/tmp/saddle-ui2-cargo.py`，对整条命令串行加锁并设置共享 target，避免检查期间另一 worktree 替换产物。三组只跑一条直接展示检查，不跑全套/Clippy；跨组旧文本断言报告给主控，不能削弱业务断言。
 - 上一批与红点调整已收尾；以下当前安装/历史验证记录保留，第二批未完成时不能覆盖成已部署。
