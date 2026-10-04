@@ -459,8 +459,14 @@ impl Page {
             if *enabled {
                 buffer.set_style(area, Style::default().fg(t.focus));
             }
+            // A cut button has no closing mark; its label runs to the last column.
+            let cut = buffer[(area.right() - 1, area.y)].symbol() != "›";
+            let label = label_area(area);
             buffer.set_style(
-                label_area(area),
+                Rect {
+                    width: label.width + u16::from(cut),
+                    ..label
+                },
                 Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             );
         }
@@ -851,8 +857,13 @@ fn label_area(button: Rect) -> Rect {
     }
 }
 /// Where the compact button `‹label›` was drawn in `area`; disabled buttons have no hit area.
+/// A button wider than `area` is drawn cut on a row of its own, so its visible start counts.
 fn drawn(frame: &mut Frame, area: Rect, label: &str) -> Option<Rect> {
-    let want: Vec<String> = format!("‹{label}›").chars().map(String::from).collect();
+    let want: Vec<String> = format!("‹{label}›")
+        .chars()
+        .map(String::from)
+        .take(usize::from(area.width))
+        .collect();
     let width = want.len() as u16;
     let buffer = frame.buffer_mut();
     (area.top()..area.bottom()).find_map(|y| {
