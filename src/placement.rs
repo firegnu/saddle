@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
 };
@@ -89,6 +89,14 @@ pub fn candidates(
     .collect()
 }
 
+/// Where the fixed actions end and existing agents begin, when the list has both.
+fn divider(candidates: &[(Choice, bool)]) -> Option<usize> {
+    let at = candidates
+        .iter()
+        .position(|(choice, _)| matches!(choice, Choice::Agent(_)))?;
+    (at > 0).then_some(at)
+}
+
 pub fn draw(
     t: &Theme,
     frame: &mut Frame,
@@ -104,7 +112,7 @@ pub fn draw(
                 .get(placement.pane)
                 .and_then(|p| p.viewer.showing.as_deref());
             (
-                name.map_or(" Split pane ".into(), |n| format!(" Split {n} ")),
+                name.map_or("Split pane".into(), |n| format!("Split {n}")),
                 26,
                 9,
             )
@@ -117,21 +125,28 @@ pub fn draw(
                 .unwrap_or(0);
             (
                 match place {
-                    Place::Tab => " Open content in a new tab ",
-                    Place::Left => " Open content on the left ",
-                    Place::Right => " Open content on the right ",
-                    Place::Up => " Open content above ",
-                    Place::Down => " Open content below ",
-                    Place::Current => " Open content here ",
+                    Place::Tab => "Open content in a new tab",
+                    Place::Left => "Open content on the left",
+                    Place::Right => "Open content on the right",
+                    Place::Up => "Open content above",
+                    Place::Down => "Open content below",
+                    Place::Current => "Open content here",
                 }
                 .into(),
                 (longest as u16 + 16).clamp(32, 60),
-                candidates.len().clamp(1, ROWS) as u16 + 4,
+                (candidates.len().clamp(1, ROWS) + usize::from(divider(&candidates).is_some()))
+                    as u16
+                    + 4,
             )
         }
     };
     let screen = frame.area();
     let (width, height) = (width.min(screen.width), height.min(screen.height));
+    // Long agent names in the title are cut by display width, inside the border.
+    let title = format!(
+        " {} ",
+        crate::ui::clip(&title, usize::from(width).saturating_sub(4))
+    );
     // A new tab opens below the tab strip; a split opens over the pane's lower right corner,
     // keeping its Split control in view.
     let (x, y) = match terminals
@@ -164,9 +179,18 @@ pub fn draw(
     );
     let mut hits: Vec<Hit> = cancel.into_iter().map(|h| (h, Control::Cancel)).collect();
     if placement.place.is_none() {
+        // Pad the names so the 2×2 buttons share one width and their columns line up.
+        let names = SIDES.map(|(label, ..)| label.rsplit_once(' ').unwrap_or((label, "")));
+        let widest = names
+            .iter()
+            .map(|(name, _)| name.width())
+            .max()
+            .unwrap_or(0);
+        let labels = names.map(|(name, arrow)| format!("{} {arrow}", crate::ui::pad(name, widest)));
         let buttons: Vec<_> = SIDES
             .iter()
-            .map(|(label, key, _)| Button::new(label, *key, true))
+            .zip(&labels)
+            .map(|((_, key, _), label)| Button::new(label, *key, true))
             .collect();
         let (_, sides) = buttons::draw_outlined_top(t, frame, body, &buttons);
         hits.extend(sides.into_iter().filter_map(|h| {
@@ -188,25 +212,49 @@ pub fn draw(
         return hits;
     }
     let selected = placement.selected.min(candidates.len() - 1);
+    // A rule row separates the fixed actions from existing agents; it is not pickable.
+    let mut lines: Vec<Option<usize>> = (0..candidates.len()).map(Some).collect();
+    if let Some(at) = divider(&candidates) {
+        lines.insert(at, None);
+    }
     let rows = usize::from(list.height);
-    let top = selected.saturating_sub(rows.saturating_sub(1));
-    for (offset, (index, (name, open))) in candidates
+    let at = lines
         .iter()
-        .enumerate()
-        .skip(top)
-        .take(rows)
-        .enumerate()
-    {
+        .position(|line| *line == Some(selected))
+        .unwrap_or(0);
+    let top = at.saturating_sub(rows.saturating_sub(1));
+    for (offset, line) in lines.into_iter().skip(top).take(rows).enumerate() {
         let row = Rect::new(list.x, list.y + offset as u16, list.width, 1);
+        let Some(index) = line else {
+            frame.render_widget(
+                Paragraph::new(format!(
+                    " {}",
+                    "─".repeat(usize::from(row.width).saturating_sub(2))
+                ))
+                .style(Style::default().fg(t.border)),
+                row,
+            );
+            continue;
+        };
+        let (name, open) = &candidates[index];
         let tag = if *open { "Move here " } else { "" };
-        let room = usize::from(row.width).saturating_sub(tag.width() + 2);
+        let room = usize::from(row.width).saturating_sub(tag.width() + 3);
         let name = crate::ui::clip(name.label(), room);
+        let chosen = index == selected;
         frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::raw(crate::ui::pad(&format!(" {name}"), room + 2)),
+                Span::raw(if chosen { "› " } else { "  " }),
+                Span::styled(
+                    crate::ui::pad(&name, room + 1),
+                    if chosen {
+                        Style::default().add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    },
+                ),
                 Span::styled(tag, Style::default().fg(t.connected)),
             ]))
-            .style(if index == selected {
+            .style(if chosen {
                 Style::default().bg(t.selected)
             } else {
                 Style::default()

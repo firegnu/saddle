@@ -9,7 +9,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Position, Rect},
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Clear, Paragraph},
 };
@@ -126,14 +126,15 @@ impl Search {
             crate::ui::inner(area),
             &[Button::new("Cancel Esc", KeyCode::Esc, true)],
         );
-        // A bordered input when there is room, otherwise a single line.
+        // A bordered input when there is room, otherwise a single line. The popup already has
+        // the thick focus frame, so the input keeps a thin one and shows focus by its cursor.
         let boxed = body.height >= 5;
         let input = Rect {
             height: if boxed { 3 } else { 1 }.min(body.height),
             ..body
         };
         let inside = if boxed {
-            let block = t.block(" Project or name ", true);
+            let block = t.block(" Project or name ", false);
             let inside = block.inner(input);
             frame.render_widget(block, input);
             inside
@@ -174,14 +175,24 @@ impl Search {
             let name = crate::ui::clip(&agent.name, room);
             let project = crate::ui::clip(project(agent), room.saturating_sub(name.width() + 2));
             let text = format!(" {name}  {project}");
+            let chosen = index == self.selected;
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::raw(format!(" {name}  ")),
+                    Span::raw(if chosen { "›" } else { " " }),
+                    Span::styled(
+                        name,
+                        if chosen {
+                            Style::default().add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        },
+                    ),
+                    Span::raw("  "),
                     Span::styled(project, Style::default().fg(t.muted)),
                     Span::raw(" ".repeat((room + 1).saturating_sub(text.width()))),
                     Span::styled(tag, Style::default().fg(t.connected)),
                 ]))
-                .style(if index == self.selected {
+                .style(if chosen {
                     Style::default().bg(t.selected)
                 } else {
                     Style::default()
