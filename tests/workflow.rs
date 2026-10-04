@@ -1514,7 +1514,7 @@ fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
     h.click("Name");
     h.send(b"\x15review-draft");
     h.see("review-draft");
-    h.click("Project:");
+    h.click("▾ Ctrl-P");
     h.see("Choose project");
     h.click("Back Esc");
     h.see("review-draft");
@@ -1689,13 +1689,13 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     let mut h = Harness::start_with_projects(&script, true);
     h.send(b"n");
     h.see("main");
-    h.click("Project:");
-    h.click("project-one ·");
+    h.click("▾ Ctrl-P");
+    h.click("project-one  ");
     h.click("Create agent");
     h.see("main-actual READY");
     h.see("Controller · agents/main-actual");
     h.send(b"\x1dn");
-    h.click("Project:");
+    h.click("▾ Ctrl-P");
     h.click("project-two ·");
     h.click("Claude");
     h.see("main");
@@ -1744,8 +1744,8 @@ fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
     let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
     h.send(b"n");
     h.see("New agent");
-    h.click("Project:");
-    h.click("project-one ·");
+    h.click("▾ Ctrl-P");
+    h.click("project-one  ");
     h.click("Regular");
     h.click("Prefix");
     h.send(b"\x15p");
@@ -1883,7 +1883,7 @@ fn starting_in_a_hidden_tab_preserves_focus_and_exit_detaches_every_tab() {
     h.click("Name");
     h.send(b"\x15hidden");
     h.click("Advanced");
-    h.click("Open in: Current pane");
+    h.click("Current pane (←/→)");
     h.send(b"\x13");
     h.event("start p/hidden");
     h.send(b"\x1b");
@@ -2012,10 +2012,10 @@ fn split_and_new_tab_choose_the_place_before_the_agent_and_cancel_leaves_no_layo
     h.click("Cancel Esc");
     h.until(|h| !h.contents().contains("Open content in a new tab"));
     h.click("Split ▾");
-    h.see("Left ←");
+    h.see("Left  ←");
     h.send(b"\x1d"); // Ctrl-] closes the menu and returns to Agents.
     h.see("Input ▸ Agents");
-    assert!(!h.contents().contains("Left ←"));
+    assert!(!h.contents().contains("Left  ←"));
     assert_eq!(h.contents().matches(" ×│").count(), 1, "{}", h.contents());
     assert_eq!(
         h.contents().matches("Controller · p/a").count(),
@@ -2787,10 +2787,10 @@ fn t51_location_new_can_choose_the_originating_pane_with_existing_confirmation()
     h.click_in("Open content in a new tab", "New agent…");
     h.see("Create agent");
     h.click("Advanced");
-    h.see("Open in: New tab");
-    h.click("Open in: New tab"); // Split left
+    h.see("New tab (←/→)");
+    h.click("New tab (←/→)"); // Split left
     h.send(b"\x1b[D\x1b[D");
-    h.see("Open in: Current pane");
+    h.see("Current pane (←/→)");
     h.send(b"\x13");
     h.see("End these running terminals");
     h.click("End shells y");
@@ -3250,7 +3250,7 @@ fn t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell() {
     h.click("│ + │");
     h.click_in("Open content in a new tab", "New agent…");
     h.see("Create agent");
-    let form_uses_source = h.popup("New agent").contains("Project: agent-project");
+    let form_uses_source = h.popup("New agent").contains("agent-project ▾ Ctrl-P");
     h.click("Cancel Esc");
     h.until(|h| !h.contents().contains("Input ▸ New agent"));
     let shell_pane = shell["pane"].as_u64().unwrap().to_string();
@@ -3343,7 +3343,7 @@ fn t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases() {
     h.click("│ + │");
     h.click_in("Open content in a new tab", "New agent…");
     h.see("Create agent");
-    let form_uses_original = h.popup("New agent").contains("Project: original-project");
+    let form_uses_original = h.popup("New agent").contains("original-project ▾ Ctrl-P");
     h.click("Cancel Esc");
     h.until(|h| !h.contents().contains("Input ▸ New agent"));
     std::fs::remove_file(h.dir.path().join("hold-detach")).unwrap();
@@ -4542,7 +4542,7 @@ fn plugin_split_picker_cancels_opens_and_moves_one_live_view() {
     assert_eq!(moved["tabs"].as_array().unwrap().len(), 2);
 
     h.click("Split ▾");
-    h.click("Left ←");
+    h.click("Left  ←");
     h.click_in("Open content on the left", "Plugin…");
     // Dispatch can be managed here, but the current pane's view cannot be split
     // into itself. Query that view explicitly instead of assuming an empty list.
