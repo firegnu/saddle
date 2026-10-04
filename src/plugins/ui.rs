@@ -14,6 +14,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{
         Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
     },
@@ -26,6 +27,8 @@ pub struct Page {
     detail_area: Rect,
     focus: usize,
     pub message: String,
+    /// `message` reports a failure rather than a result.
+    error: bool,
     adding: Option<Adding>,
     hits: Vec<(Rect, usize)>,
     rows: Vec<(Rect, usize)>,
@@ -293,6 +296,7 @@ impl Page {
                 let enable = m.core_state(&id) != Some(State::Enabled);
                 match m.core_enabled(&id, enable) {
                     Ok(()) if !enable => {
+                        self.error = false;
                         self.message = "Disabled. Installed resources are kept; Remove resources deletes unmodified ones.".into();
                         return Outcome::Stay;
                     }
@@ -323,6 +327,7 @@ impl Page {
             Action::Refresh => m.refresh(),
             Action::Back => return Outcome::Back,
         };
+        self.error = result.is_err();
         self.message = result.err().map(|e| format!("{e:#}")).unwrap_or_default();
         Outcome::Stay
     }
@@ -336,6 +341,7 @@ impl Page {
                 }
                 Err(e) => {
                     add.preview = None;
+                    self.error = true;
                     self.message = format!("{e:#}");
                 }
             },
@@ -344,10 +350,14 @@ impl Page {
                     match m.add(&crate::config::expand_home(&add.input.text), manifest) {
                         Ok(()) => {
                             self.adding = None;
+                            self.error = false;
                             self.message = "Added disabled. Enable to start it.".into();
                             self.selected = rows(m).len().saturating_sub(1);
                         }
-                        Err(e) => self.message = format!("{e:#}"),
+                        Err(e) => {
+                            self.error = true;
+                            self.message = format!("{e:#}");
+                        }
                     }
                 }
             }
@@ -408,15 +418,52 @@ impl Page {
                 .collect()
         };
         let focus = self.adding.as_ref().map_or(self.focus, |a| a.focus);
+        // Add local's main step is reading the manifest, then adding it; the management page
+        // acts on whichever plugin is selected and has no single main action.
+        let primary = self
+            .adding
+            .as_ref()
+            .map(|a| if a.preview.is_some() { 1 } else { 0 });
         let buttons: Vec<_> = choices
             .iter()
             .enumerate()
             .map(|(i, (name, enabled))| {
                 let b = Button::new(name, KeyCode::F(i as u8 + 1), *enabled);
-                if focus == i + 1 { b.primary() } else { b }
+                if primary == Some(i) { b.primary() } else { b }
             })
             .collect();
         let (body, hits) = buttons::draw_compact(t, frame, inside, &buttons);
+        // F(i) only numbers the hit areas: these labels have no key, so none of their words is
+        // drawn in the key colour.
+        for hit in &hits {
+            if let KeyCode::F(i) = hit.key.code
+                && primary != Some(usize::from(i) - 1)
+            {
+                frame
+                    .buffer_mut()
+                    .set_style(label_area(hit.area), Style::default().fg(t.text));
+            }
+        }
+        // Keyboard focus: underlined label in the focus colour, distinct from a primary action;
+        // a disabled control keeps its dim colour but still shows where focus is.
+        let bar = Rect::new(
+            inside.x,
+            body.bottom(),
+            inside.width,
+            inside.bottom().saturating_sub(body.bottom()),
+        );
+        if let Some((name, enabled)) = focus.checked_sub(1).and_then(|i| choices.get(i))
+            && let Some(area) = drawn(frame, bar, name)
+        {
+            let buffer = frame.buffer_mut();
+            if *enabled {
+                buffer.set_style(area, Style::default().fg(t.focus));
+            }
+            buffer.set_style(
+                label_area(area),
+                Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            );
+        }
         self.hits = hits
             .into_iter()
             .filter_map(|h| {
@@ -432,9 +479,42 @@ impl Page {
             let field = t.block(" Plugin directory ", add.focus == 0);
             add.field = field.inner(field_area);
             frame.render_widget(field, field_area);
-            let preview=add.preview.as_ref().map(|p|format!("{}  {} · {}\nProgram: {}\n\nRuns with your user permissions when enabled.\nAdding does not start the plugin.",p.name,p.version,p.id,p.program(&crate::config::expand_home(&add.input.text)).map(|p|p.display().to_string()).unwrap_or_default())).unwrap_or_else(||"Enter a directory, then Read manifest.".into());
+            let text = Style::default().fg(t.text);
+            let muted = Style::default().fg(t.muted);
+            // The manifest read leads; its warning stays readable; the result or error follows.
+            let mut lines = match &add.preview {
+                Some(p) => vec![
+                    Line::styled(
+                        format!("{}  {} · {}", p.name, p.version, p.id),
+                        text.add_modifier(Modifier::BOLD),
+                    ),
+                    Line::from(vec![
+                        Span::styled("Program: ", muted),
+                        Span::styled(
+                            p.program(&crate::config::expand_home(&add.input.text))
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_default(),
+                            text,
+                        ),
+                    ]),
+                    Line::default(),
+                    Line::styled("Runs with your user permissions when enabled.", text),
+                    Line::styled("Adding does not start the plugin.", muted),
+                ],
+                None => vec![Line::styled(
+                    "Enter a directory, then Read manifest.",
+                    muted,
+                )],
+            };
+            lines.push(Line::default());
+            let result = Style::default().fg(if self.error { t.danger } else { t.muted });
+            lines.extend(
+                self.message
+                    .lines()
+                    .map(|line| Line::styled(line.to_owned(), result)),
+            );
             frame.render_widget(
-                Paragraph::new(format!("{preview}\n\n{}", self.message)).wrap(Wrap { trim: false }),
+                Paragraph::new(lines).wrap(Wrap { trim: false }),
                 Rect::new(
                     body.x,
                     body.y + 4.min(body.height),
@@ -443,7 +523,7 @@ impl Page {
                 ),
             );
             add.input
-                .draw(frame, add.field, add.focus == 0, "Plugin directory", t);
+                .draw(frame, add.field, add.focus == 0, "/path/to/plugin", t);
         } else {
             let (body, tabs) =
                 settings.draw_header(t, frame, body, Some(crate::settings::Page::Plugins));
@@ -472,7 +552,10 @@ impl Page {
                 );
                 body.height -= 1;
             }
-            let message = m.registry.error.as_deref().unwrap_or(&self.message);
+            let (message, error) = match &m.registry.error {
+                Some(error) => (error.as_str(), true),
+                None => (self.message.as_str(), self.error),
+            };
             if !message.is_empty() && body.height > 2 {
                 let height = (wrapped(message, body.width as usize) as u16)
                     .min(3)
@@ -480,7 +563,7 @@ impl Page {
                 frame.render_widget(
                     Paragraph::new(message)
                         .wrap(Wrap { trim: false })
-                        .style(Style::default().fg(t.focus)),
+                        .style(Style::default().fg(if error { t.danger } else { t.muted })),
                     Rect::new(body.x, body.bottom() - height, body.width, height),
                 );
                 body.height -= height;
@@ -538,22 +621,40 @@ impl Page {
                         m.state(&e.id),
                     ),
                 };
+                // Selection: background, weight and marker; the marker also shows list focus.
+                let selected = i == self.selected;
+                let style = if selected {
+                    Style::default()
+                        .fg(t.text)
+                        .bg(t.agent_selected)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(t.text)
+                };
+                let failing = |bad: bool| if bad { style.fg(t.danger) } else { style };
                 frame.render_widget(
-                    Paragraph::new(format!(
-                        "{} {} {:4} {}",
-                        if i == self.selected { "›" } else { " " },
-                        crate::ui::pad(&crate::ui::clip(&name, name_width), name_width),
-                        enabled,
-                        runtime
-                    ))
-                    .style(if i == self.selected {
-                        Style::default()
-                            .fg(t.focus)
-                            .bg(t.agent_selected)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(t.text)
-                    }),
+                    Paragraph::new(Line::from(vec![
+                        Span::styled(
+                            if selected { "›" } else { " " },
+                            style.fg(if self.focus == 0 { t.focus } else { t.muted }),
+                        ),
+                        Span::raw(" "),
+                        Span::raw(crate::ui::pad(
+                            &crate::ui::clip(&name, name_width),
+                            name_width,
+                        )),
+                        Span::raw(" "),
+                        Span::styled(format!("{enabled:4}"), failing(enabled == "!")),
+                        Span::raw(" "),
+                        Span::styled(
+                            runtime.clone(),
+                            failing(matches!(
+                                runtime.as_str(),
+                                "Failed" | "Unresponsive" | "Unavailable"
+                            )),
+                        ),
+                    ]))
+                    .style(style),
                     r,
                 );
                 self.rows.push((r, i));
@@ -609,7 +710,7 @@ impl Page {
                 .border_style(Style::default().fg(t.border))
                 .title(ratatui::text::Line::styled(
                     format!(" {name} "),
-                    Style::default().fg(t.focus).add_modifier(Modifier::BOLD),
+                    Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
                 ));
             let viewport = block.inner(detail);
             frame.render_widget(block, detail);
@@ -634,6 +735,8 @@ impl Page {
                                 | "Setup files"
                         ) {
                             Style::default().fg(t.muted).add_modifier(Modifier::BOLD)
+                        } else if problem(line) {
+                            Style::default().fg(t.danger)
                         } else {
                             Style::default().fg(t.text)
                         },
@@ -732,6 +835,35 @@ fn core_detail(m: &Manager, c: &saddle_core_plugin::Manifest) -> String {
         lines.push(result);
     }
     lines.join("\n")
+}
+/// Problems the host itself wrote into the details, drawn in the error role.
+fn problem(line: &str) -> bool {
+    line.starts_with("Resources unavailable: ")
+        || line.starts_with("An external plugin uses this ID")
+        || line.contains(" — not installable (")
+}
+/// A compact button's label, inside its ‹ › marks.
+fn label_area(button: Rect) -> Rect {
+    Rect {
+        x: button.x + 1.min(button.width),
+        width: button.width.saturating_sub(2),
+        ..button
+    }
+}
+/// Where the compact button `‹label›` was drawn in `area`; disabled buttons have no hit area.
+fn drawn(frame: &mut Frame, area: Rect, label: &str) -> Option<Rect> {
+    let want: Vec<String> = format!("‹{label}›").chars().map(String::from).collect();
+    let width = want.len() as u16;
+    let buffer = frame.buffer_mut();
+    (area.top()..area.bottom()).find_map(|y| {
+        (area.left()..area.right().saturating_sub(width.saturating_sub(1)))
+            .find(|&x| {
+                want.iter()
+                    .zip(x..)
+                    .all(|(c, x)| buffer[(x, y)].symbol() == c)
+            })
+            .map(|x| Rect::new(x, y, width, 1))
+    })
 }
 /// Rows a word-wrapped paragraph needs, plus one spare so the result line is never cut.
 fn wrapped(text: &str, width: usize) -> usize {

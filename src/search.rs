@@ -152,8 +152,16 @@ impl Search {
         };
         self.rows.clear();
         if matches.is_empty() {
+            // An empty list and a query that matches nothing are different situations.
+            let empty = if agents.is_empty() {
+                "No agents to search.".to_owned()
+            } else {
+                let query = self.input.text.trim();
+                let room = usize::from(list.width).saturating_sub("No agents match “”.".width());
+                format!("No agents match “{}”.", crate::ui::clip(query, room))
+            };
             frame.render_widget(
-                Paragraph::new("No matching agents.").style(Style::default().fg(t.muted)),
+                Paragraph::new(empty).style(Style::default().fg(t.muted)),
                 list,
             );
             return hits;

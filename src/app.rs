@@ -428,21 +428,17 @@ impl App {
                 self.draw_plugin_overlay(frame, panes);
                 if let Some((page, _)) = &mut self.telemetry {
                     page.draw(&self.config.colors, frame, panes.agents.union(panes.viewer));
-                    frame.render_widget(ratatui::widgets::Clear, panes.status);
-                    frame.render_widget(
-                        ratatui::widgets::Paragraph::new(page.status())
-                            .style(self.config.colors.base()),
-                        panes.status,
-                    );
+                    ui::status_text(&self.config.colors, frame, panes.status, page.status());
                 }
                 self.draw_closing(frame);
                 if let (Some(page), Some(settings)) = (&mut self.plugin_page, &self.settings) {
                     page.draw(&self.config.colors, frame, &self.plugins, settings);
-                    frame.render_widget(ratatui::widgets::Clear, panes.status);
-                    frame.render_widget(
-                        ratatui::widgets::Paragraph::new(" Input ▸ Plugin settings · Esc Back")
-                            .style(self.config.colors.base()),
+                    ui::status_bar(
+                        &self.config.colors,
+                        frame,
                         panes.status,
+                        "Plugin settings",
+                        "Esc Back",
                     );
                 }
                 self.plugin_toast = if self.plugin_page.is_none() && self.telemetry.is_none() {
@@ -451,19 +447,21 @@ impl App {
                     None
                 };
                 if !self.layout_store.notice.is_empty() {
-                    frame.render_widget(
-                        ratatui::widgets::Paragraph::new(self.layout_store.notice.as_str())
-                            .style(self.config.colors.base()),
+                    ui::status_notice(
+                        &self.config.colors,
+                        frame,
                         panes.status,
+                        &self.layout_store.notice,
                     );
                 }
                 if let Some(palette) = &mut self.plugin_palette {
                     palette.draw(frame, &self.config.colors);
-                    frame.render_widget(ratatui::widgets::Clear, panes.status);
-                    frame.render_widget(
-                        ratatui::widgets::Paragraph::new(" Input ▸ Plugins · Esc Close")
-                            .style(self.config.colors.base()),
+                    ui::status_bar(
+                        &self.config.colors,
+                        frame,
                         panes.status,
+                        "Plugins",
+                        "Esc Close",
                     );
                 }
                 // Last, so a popup drawn over the pet hides its picture.

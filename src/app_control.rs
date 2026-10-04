@@ -618,46 +618,11 @@ impl App {
         let Some(closing) = &self.closing else {
             return;
         };
-        let t = &self.config.colors;
-        let area = crate::theme::centered(frame.area(), 72, 18);
-        frame.render_widget(ratatui::widgets::Clear, area);
-        frame.render_widget(
-            t.block(" Close terminals ", true)
-                .style(t.base().bg(t.overlay)),
-            area,
-        );
-        let (body, hits) = crate::buttons::draw_compact(
-            t,
+        let hits = ui::draw_close_terminals(
+            &self.config.colors,
             frame,
-            ui::inner(area),
-            &[
-                crate::buttons::Button::new("Cancel Esc", KeyCode::Esc, true),
-                crate::buttons::Button::new("End shells y", KeyCode::Char('y'), true).danger(),
-            ],
-        );
-        let mut text = String::from(
-            "End these running terminals and their foreground tasks?\nScroll: ↑/↓ or mouse wheel\n\n",
-        );
-        for pane in closing
-            .snapshot
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|p| p["running_shell"] == true)
-        {
-            text.push_str(&format!(
-                "Pane {} · {}\n  {}\n",
-                pane["pane"],
-                pane["shell"].as_str().unwrap_or("shell"),
-                pane["cwd"].as_str().unwrap_or("")
-            ));
-        }
-        text.push_str("\nAgent displays will only detach. Corral agents keep running.");
-        frame.render_widget(
-            ratatui::widgets::Paragraph::new(text)
-                .wrap(Default::default())
-                .scroll((closing.scroll, 0)),
-            body,
+            &closing.snapshot,
+            closing.scroll,
         );
         self.hits.buttons = hits;
         self.hits.agents.clear();

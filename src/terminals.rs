@@ -782,6 +782,20 @@ pub enum Control {
     Cancel,
 }
 pub type Hit = (crate::buttons::Hit, Control);
+/// Where a plugin toast sits in the terminal area: bottom right, one row above the bottom
+/// border so the active pane's Split/Zoom/Close controls there stay visible and clickable.
+pub fn toast_area(area: Rect) -> Option<Rect> {
+    if area.width < 12 || area.height < 4 {
+        return None;
+    }
+    let width = area.width.min(48);
+    Some(Rect::new(
+        area.right() - width,
+        area.bottom().saturating_sub(5).max(area.y),
+        width,
+        4,
+    ))
+}
 pub fn draw(
     t: &crate::theme::Theme,
     frame: &mut ratatui::Frame,
@@ -945,15 +959,18 @@ pub fn draw(
             if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some()) {
                 format!(" {} ", plugin.name)
             } else if let Some(shell) = &pane.viewer.shell {
-                format!(
-                    " Terminal · {} · {} ",
+                let head = format!(
+                    " Terminal · {} · ",
                     if shell.state == "exited" {
                         format!("exited {}", shell.exit_code.unwrap_or(0))
                     } else {
                         shell.state.into()
                     },
-                    shell.cwd
-                )
+                );
+                // A long directory keeps its last levels, which tell the panes apart.
+                let room = usize::from(rect.width.saturating_sub(2))
+                    .saturating_sub(unicode_width::UnicodeWidthStr::width(head.as_str()) + 1);
+                format!("{head}{} ", crate::ui::agent_path(&shell.cwd, "", room))
             } else {
                 crate::ui::pane_title(
                     pane.viewer
@@ -963,6 +980,8 @@ pub fn draw(
                     agents,
                 )
             };
+        // Anything still too wide for the top border ends in … rather than at the corner.
+        let title = crate::ui::clip(&title, usize::from(rect.width.saturating_sub(2)));
         frame.render_widget(t.block(title.clone(), focused && active), rect);
         let inside = crate::ui::inner(rect);
         if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some()) {
@@ -981,36 +1000,37 @@ pub fn draw(
                 frame.set_cursor_position(cursor);
             }
         } else {
-            frame.render_widget(
-                Paragraph::new(
-                    pane.requested
-                        .as_ref()
-                        .map(|n| {
-                            format!(
-                                "{} {n}…",
-                                if pane.starting {
-                                    "Starting"
-                                } else {
-                                    "Attaching"
-                                }
-                            )
-                        })
-                        .unwrap_or_else(|| {
-                            if pane.placeholder() {
-                                format!(
-                                    "{}\n{}\n{}",
-                                    pane.viewer.remembered.name().unwrap_or("Saved terminal"),
-                                    pane.viewer.remembered.cwd().unwrap_or("Directory unknown"),
-                                    pane.viewer.note
-                                )
-                            } else {
-                                pane.viewer.note.clone()
-                            }
-                        }),
-                )
-                .wrap(Default::default()),
-                inside,
-            );
+            let width = usize::from(inside.width);
+            let text = match &pane.requested {
+                Some(n) => ratatui::text::Text::from(format!(
+                    "{} {n}…",
+                    if pane.starting {
+                        "Starting"
+                    } else {
+                        "Attaching"
+                    }
+                )),
+                // The saved name, then its directory as secondary text keeping the last levels.
+                None if pane.placeholder() => {
+                    let mut text = ratatui::text::Text::from(vec![
+                        Line::from(crate::ui::clip(
+                            pane.viewer.remembered.name().unwrap_or("Saved terminal"),
+                            width,
+                        )),
+                        Line::styled(
+                            pane.viewer.remembered.cwd().map_or_else(
+                                || crate::ui::clip("Directory unknown", width),
+                                |cwd| crate::ui::agent_path(cwd, "", width),
+                            ),
+                            Style::default().fg(t.muted),
+                        ),
+                    ]);
+                    text.extend(ratatui::text::Text::from(pane.viewer.note.clone()));
+                    text
+                }
+                None => ratatui::text::Text::from(pane.viewer.note.clone()),
+            };
+            frame.render_widget(Paragraph::new(text).wrap(Default::default()), inside);
         }
         if let Some(plugin) = pane.plugin.as_ref().filter(|_| pane.plugin_id().is_some())
             && !plugin.interactive
@@ -1052,11 +1072,23 @@ pub fn draw(
                 crate::layout_state::Content::Empty
                 | crate::layout_state::Content::Plugin { .. } => vec![],
             };
-            // Reserve the last body rows for actions, even in a short split.
-            let first = inside
-                .bottom()
-                .saturating_sub(choices.len() as u16)
+            // Actions follow the explanation after one blank row; the last body rows stay
+            // reserved for them, even in a short split.
+            let written = (inside.y..inside.bottom()).rev().find(|&y| {
+                (inside.x..inside.right()).any(|x| frame.buffer_mut()[(x, y)].symbol() != " ")
+            });
+            let first = written
+                .map_or(inside.y, |y| y + 2)
+                .min(inside.bottom().saturating_sub(choices.len() as u16))
                 .max(inside.y);
+            for y in first..inside.bottom().min(first + choices.len() as u16) {
+                frame.buffer_mut().set_string(
+                    inside.x,
+                    y,
+                    " ".repeat(usize::from(inside.width)),
+                    Style::default(),
+                );
+            }
             for ((label, control), y) in choices.into_iter().zip(first..inside.bottom()) {
                 button(
                     frame,
