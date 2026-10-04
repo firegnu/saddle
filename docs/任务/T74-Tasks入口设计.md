@@ -61,3 +61,13 @@ worktree：/Users/firegnu/Developer/personal_projs/saddle-worktrees/t74-tasks-en
 关键取舍（待用户确定）：①是否把已批准的“只保留固定 Plugins 入口”改为“插件不能自加控件，用户可固定一个”；②Agents 焦点按键 `p` 加不加；③普通终端窗格是否以启动目录作为来源；④固定数量限 1。备选：只改 Plugins 面板（不改规则但层级仍在）；每 repo 侧栏入口（需新增插件入口快照能力，交 T76）。
 
 未做：未实施、未测试/编译/截图，未操作真实队列、配置或 agent，未合并 main、未推送；未吸收 T63/T76 范围。验证仅为 `git diff --check` 与上述代码核对。
+
+## 复核修订记录（2026-10-04，依据 `T74-Tasks入口设计复核.md`）
+
+仍只改 `docs/Tasks入口设计.md` 与本记录，保留单个顶部固定入口方向，未扩产品范围。
+
+- 项目识别（复核 1）：不再根据 `None` 声称未接入。设计改为 Drover 内部把 `RepoTasks` 结果分成匹配 / 确认无匹配 / 无法判断（带原因）三种；git 失败、超时、非仓库及任一登记项目查询失败都算无法判断，只提示“Couldn't match … · showing <当前项目>”。定位只判断仓库，已登记空项目与队列读取失败都切换，失败由列表页已有读取错误展示，与空队列区分。Add project 改用现有路径 `c` → Projects → `a`，说明列表页 `a` 是 Add task、Projects 的 `a` 预填当前项目路径。公共协议不变。
+- 保留现场（复核 2）：新增 §2.5，按 `Event::Opened` 的启动条件和 `input_revision` 作废规则列出 List 页、草稿/setup/确认/通知偏好/其他页、busy、定位中输入、关闭重开时的行为；来源行始终标出来源路径和当前实际项目，未切换时不让旧项目被当成 X；不覆盖草稿、不取消操作、不把作废结果留到下次静默切换。§2.2 结果列加了前提；Ctrl-] → `p` 明确使用 Agents 高亮选中项，底栏提示 `p Tasks (selected)`。
+- 建议项：Pin 只对有可打开视图的插件可用，内置 Dispatch/后台插件禁用并说明；标题最多 12 列截断，放不下时先隐藏固定入口、不挤掉其他入口；没有默认固定，需先在管理页 Pin 一次。
+
+核对：`plugins/drover/src/plugin.rs`（Event::Opened 条件、lookup 的 input_revision 校验、Closed 只清 detail/confirmation、preferences 不在检查条件内）、`plugins/drover/src/drover.rs`（RepoTasks）、`plugins/drover/src/git.rs`（失败/超时均为 None，5 秒超时）、`plugins/drover/src/queue.rs`（列表 `a`=Add task，`c`=Projects，Projects 内 `a` 预填当前项目）。`git diff --check` 通过；未测试、编译，未改 DESIGN 或产品代码，未合并推送，未操作任务状态。

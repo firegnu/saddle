@@ -34,6 +34,12 @@
 
 窄侧栏沿用现有换行兜底：`Tasks` 与 Telemetry 作为一组，同组一起换到下方并右对齐，不与标题、Attention 或列表重叠；绘制与点击使用同一矩形。没有固定插件时头部与现在完全相同。
 
+最小退让：固定入口的标题在头部最多占 12 列，超出以 `…` 截断；连换行后都放不下时，先隐藏固定入口，Telemetry、Plugins、Settings 按现状保留。隐藏时仍可用按键（取舍 2）或 Plugins 面板打开。
+
+可固定的范围：只有清单声明了可打开视图的插件（有 `panel.v1`，面板中会出现 Open/Switch 动作的那类）才能 Pin。内置 Dispatch 和只在后台运行的插件没有打开动作，Pin 按钮禁用并说明 `No view to open`，不会被当成 Tasks 式入口。
+
+首次设置：没有默认固定，安装或升级后头部不会自动出现 `Tasks`。用户需要先做一次 Plugins → Manage plugins → 选中 Tasks → Pin to header；在此之前访问路径与现在相同。
+
 管理页现有操作为 Open panel / Disable / Restart / Add local… / Remove / Refresh / Back（`src/plugins/ui.rs`）。在 Restart 之后加一个按选中插件切换的操作（示意）：
 
 ```
@@ -47,12 +53,14 @@
 
 | 起点 | 操作 | 结果 |
 | --- | --- | --- |
-| Agents 列表选中 repo X 的 agent | 点头部 `Tasks`，或按 Agents 焦点下的固定入口键（见 §4 取舍 2） | Tasks 覆盖界面打开并显示 X 的项目 |
+| Agents 列表选中 repo X 的 agent | 点头部 `Tasks`，或按 Agents 焦点下的固定入口键（见 §4 取舍 2） | Tasks 打开，顶部显示来源 X；Tasks 停在列表页且未在操作时，定位完成后切到 X 的项目（§2.5） |
 | 正在 Viewer 里看 repo X 的 agent 窗格 | 鼠标点头部 `Tasks`（焦点仍在该窗格，来源取窗格） | 同上 |
-| 同上，但用键盘 | Ctrl-] 回 Agents → 按键 | 来源变为 Agents 选中项；Ctrl-] 返回时选中项通常就是刚看的 agent，但不保证 |
+| 同上，但用键盘 | Ctrl-] 回 Agents → 按键 | **来源是 Agents 列表中高亮的选中项，不是刚才看的窗格**。两者不同（例如用鼠标切过窗格）时会打开选中项的 repo；Tasks 顶部的来源行会显示实际用到的路径 |
 | Tasks 已在工作区 tab/split 打开 | 同上 | 按现有规则聚焦已有视图，不新开 |
 
-即：选中/聚焦 X 的 agent → 一次点击或一个键。项目对不上时，仍可在 Tasks 内按 `c` 换项目。
+即：选中/聚焦 X 的 agent → 一次点击或一个键，前提是 Tasks 上次停在列表页、没有草稿或进行中的操作（否则保留现场，见 §2.5）。项目对不上时，仍可在 Tasks 内按 `c` 进 Projects 换项目。
+
+推荐流程的提示文字：Agents 底栏写 `p Tasks (selected)`，让键盘用户知道用的是列表选中项。
 
 ### 2.3 目标项目如何确定
 
@@ -64,12 +72,18 @@
 | cwd 在已登记项目的某个 worktree | 同一 git common dir 的登记项目，优先 toplevel 相同者 | 无 |
 | 同一仓库登记了多个项目（如主目录和某 worktree 各登记一次），且没有 toplevel 相同者 | 按登记顺序取第一个 | 无；这类歧义罕见，Tasks 顶部的项目名可见，`c` 可改 |
 | 已登记但还没有任何任务 | **仍切到该项目**（显示空队列） | 现在因“没有任务”不切换，会留在上一个项目，看起来像打开错了 repo；属 Drover 内部改动 |
-| 不是 git 仓库或未登记 | 保留当前项目，并在 Tasks 顶部显示一行提示：`Opened from <path> · not a Tasks project · a Add project`（示意） | 现在静默保留上一个项目；属 Drover 内部改动 |
+| 匹配到已登记项目，但读取其队列失败 | 仍切到该项目，由列表页现有的读取错误显示原因，不显示成空队列 | 现在读取失败也返回 `None`，与“没有任务”混在一起；改动后定位只判断仓库，读取结果交给正常加载 |
+| 确认没有匹配：来源和全部已登记项目的 git 查询都成功，但没有同仓库者 | 保留当前项目，来源行提示 `No added project matches <path> · c Projects → a Add project`（示意） | 现在静默保留 |
+| 无法判断：来源不是 git 仓库、git 失败或超时、某个已登记项目查询失败 | 保留当前项目，来源行提示 `Couldn't match <path>: <reason> · showing <当前项目>`；不说“未接入” | 现在静默保留 |
 | 普通终端窗格 | 传该窗格的启动目录（`source_cwd`） | 现在传 `None`；宿主小改，协议字段不变。限制：这是启动目录，shell 中 `cd` 后不跟随（见 §4 取舍 3） |
 | Agents 焦点没有选中 agent | 不传 cwd，Drover 用当前/初始项目 | 无 |
 | 从 Attention 或通知打开 | 用插件目标，不被 cwd 覆盖 | 无 |
 
 Agents 列表按名字前缀分组（`saddle/` 等），组不等于 repo（同组 agent 可能在不同 worktree 或仓库），因此不以分组作为项目依据。
+
+区分上表各行的方法只在 Drover 内部：把 `RepoTasks` 的结果从 `Option<String>` 改成插件内部的三种结果——匹配到项目、确认无匹配、无法判断（带原因）。`git::repository` 现在把非仓库、执行失败和超时都合并为 `None`，所以“不是 git 仓库”也归入“无法判断”，不单独声称未接入。宿主协议、`view.context.v1` 字段和 Saddle 代码都不变。
+
+“Add project” 走现有路径：列表页按 `c` 进 Projects，再按 `a`（列表页的 `a` 是 Add task，不复用）。Projects 中 `a` 预填的是当前项目路径，用户需改成来源路径；本提案不新增专用动作，也不改预填。
 
 ### 2.4 插件不可用时
 
@@ -82,6 +96,25 @@ Agents 列表按名字前缀分组（`saddle/` 等），组不等于 repo（同�
 | 已从登记中移除 | 不显示，固定随之清除 | — |
 
 Settings、确认框、New agent 等编辑界面打开时，沿用 Plugins 入口的忙碌规则，不打开、不丢草稿。
+
+### 2.5 保留现场与异步定位
+
+直达入口不覆盖 Tasks 里已有的工作。现状（`plugins/drover/src/plugin.rs`）：关闭视图时只清掉 detail 和 confirmation，项目接入表单（setup）和当前页面（Add/Edit/Delete/Projects/All pending 等）都保留；`Event::Opened` 只在无 setup、非 busy、处于 List 页时启动定位；定位结果回来时还要求 `input_revision` 未变，期间送达插件的任何按键、粘贴或鼠标输入都会作废结果。
+
+| 重新打开时 Tasks 的状态 | 行为 |
+| --- | --- |
+| List 页，无 setup，不在执行操作 | 启动定位。来源行显示 `From <path> · locating…`，项目名仍是当前项目，直到结果回来才切换 |
+| 有 setup 表单、Add/Edit/Delete 等草稿、确认页、通知偏好（`N`），或其他非 List 页 | 不定位、不切换、不丢草稿（通知偏好现在不在 `Event::Opened` 的检查条件里，实施时补上）。来源行显示 `From <path> · kept your current page · project: <当前项目>` |
+| 正在执行操作（busy，如派发、保存） | 不定位，不取消操作。来源行同上，提示仍是 `<当前项目>` |
+| 定位中用户开始操作（`input_revision` 变化） | 结果作废，不切换。来源行改为 `From <path> · not applied · project: <当前项目>` |
+| 定位中关闭视图，或从别的来源再次打开 | 关闭时丢弃；再次打开用新来源，旧结果不落到新的打开上 |
+
+约束：
+
+- 不为直达覆盖草稿、不自动取消正在执行的操作，也不把作废的结果留到下一次打开时再静默切换。下一次打开按那时的来源重新定位。
+- 只要来源行没有显示已切换，Tasks 显示的就是标出的当前项目；用户不会把旧项目当成 X。来源行在用户切换项目、关闭视图或下一次打开时更新。
+- git 查询每次最多 5 秒，已登记项目较多时定位可能需要数秒，期间 `locating…` 一直可见。
+- 来源行和这些状态都在 Drover 画面内实现，不需要宿主新能力。
 
 ## 3. 改变的已批准规则
 
@@ -120,7 +153,7 @@ Settings、确认框、New agent 等编辑界面打开时，沿用 Plugins 入�
 
 ## 7. 实施范围（获批后，供拆任务参考）
 
-- 宿主：`plugins.toml` 固定字段读写；管理页 Pin/Unpin；Agents 头部绘制与点击区域（与 Telemetry 同组换行）；不可用时打开 Plugins 面板并预选；（取舍 2）Agents 焦点按键与底栏提示；（取舍 3）终端窗格来源 cwd。
-- Drover：已登记的空项目也切换；来源未匹配时显示提示行。
+- 宿主：`plugins.toml` 固定字段读写；管理页 Pin/Unpin（仅限有可打开视图的插件）；Agents 头部绘制与点击区域（与 Telemetry 同组换行，标题截断，放不下时先隐藏固定入口）；不可用时打开 Plugins 面板并预选；（取舍 2）Agents 焦点按键与底栏提示；（取舍 3）终端窗格来源 cwd。
+- Drover：定位结果改为插件内部三态（匹配/确认无匹配/无法判断），已登记的空项目和读取失败的项目也切换；来源行显示 locating、已切换、未匹配、无法判断、保留现场、结果作废等状态；通知偏好打开时不定位。
 - 协议、SDK、插件清单格式：不变。没有发现必须新增的接口。
-- 验证建议：相关 UI 回归组（Agents 头部宽/窄、管理页）、Drover 项目匹配的单元测试（空项目、未登记、worktree）。
+- 验证建议：相关 UI 回归组（Agents 头部宽/窄、管理页）、Drover 项目匹配的单元测试（空项目、读取失败、确认无匹配、git 失败/超时、worktree）和保留现场测试（草稿、busy、定位中输入、关闭后重开）。
