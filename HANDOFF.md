@@ -1,49 +1,30 @@
 # Saddle 交接
 
-更新：2026-10-04。本轮完成宿主与插件的只读 UI 审查、Codex/Claude 讨论及两份共识文档；已记录并整理待办。用户要求关闭已用完的 Claude agent，handoff 后提交推送，再等待后续指令。本轮没有实施 UI、业务或协议改动。
+更新：2026-10-04。用户已认可设计语言 HTML，要求按清单逐页调整，后授权可独占文件的 UI 并行分派，并明确要求继续修正、集成和实际画面预览。本轮不走 Tasks 队列。
 
-## 当前完成状态
+## 当前状态
 
-- 分支 `main`，本轮文档提交前 HEAD 为 `dc557b1`。本轮仅提交本文和下列两份新文档；最终提交号、远端一致性和主工作区是否干净，以 `git log -3`、`git status -sb`、`git ls-remote origin refs/heads/main` 回读为准。
-- `docs/UI设计语言.md`：长期的轻量视觉规则，覆盖语义角色、组件类型、间距与尺寸、操作提示、状态和插件主题边界。
-- `docs/调研/UI整理清单-2026-10-03.md`：宿主及全部插件的逐界面意见、证据、撤回/降级项、建议顺序、待渲染确认项和双方讨论记录。
-- 两份文档已达成双方一致：Claude 最终要求六项文字修正，明确修完无需再回传；主控已全部落实。共同意见不等于用户已批准所有具体外观，宽度、色彩效果等仍须通过代表性画面确定。
-- Claude `saddle/dev-claude-1`（instance `2f8f5cde8704`）已按本次用户授权停止；stop 回执 ok=true，SIGHUP，随后公开 `corral ls` 已无该实例。当前列表只剩 `saddle/main`（instance `495ec65fc41e`），不复用旧身份进行后续操作。
-- 本轮文档只做链接、空白与改动范围检查，不重新编译、不部署、不跑 UI/真实 agent 测试。审查基于源码和设计资料；代码确认、未运行复现、待实际画面确认分别标明。
+- 主目录 `main` 保留此前直接完成的 Settings 未提交候选（DESIGN、settings、plugins/ui、ui 与 tests/settings）及未跟踪设计语言 HTML；不要覆盖、丢弃或夹带提交。
+- 独立集成分支/worktree：`ui-integration-preview` / `../saddle-worktrees/ui-integration-preview`。已纳入上述 Settings 精确副本、宿主弹窗 `f704c1b`、Telemetry `1f68d2b`、Drover `59f91f1` 与修正 `b1573bf`。源码无合并冲突；任务书合并保留实现与审查记录。
+- 三组主控审查已完成。Drover 极矮窗口新增帮助挤掉正文的问题已由原实现者修正，集成画面确认 80×10 正文恢复。其余候选取舍与验证边界见任务书；不宣称全套通过。
+- 33 页实际 Ratatui 合成画面 HTML：`file:///Users/firegnu/Developer/personal_projs/saddle-ui-preview/2026-10-04-first-batch/index.html`。可切换 Settings、Tasks、宿主弹窗、Telemetry、Search 四主题。临时生成器与日志在 `/tmp/saddle-ui-integration-preview/`；只使用临时配置和合成数据。预览不等于真实终端/手机 SSH 验收。
+- 记录：`docs/任务/UI并行-分组与派发-2026-10-04.md`、三份组任务书及 `docs/任务/UI第一批-集成与预览-2026-10-04.md`。
 
-## 下一项：等待用户触发 T73
+## 下一步
 
-- 用户要求“明天第一项”为 **T73：依据设计语言与 UI 整理清单，细调 Saddle 及插件 UI/UX**。先读两份文档，再按用户实际授权开始；Pending 第一位不构成自动实施或派发许可。
-- **T74：重新设计各 repo 的 Tasks 入口，缩短任务访问路径**，收尾时公开列表位于第二。这是单独的入口设计任务，不借 T73 的纯展示整理顺手改导航。
-- T73 保持展示范围：不改任务状态机、权限、升级语义、查询/分页、数据结构、生命周期、快捷键映射或危险确认行为；沿用英文产品界面，用户正文保持原文。
-- 保留已批准的 Agents 3a、工作区圆角 Tab、插件灰细外框、Drover 居中面板和 Plugins 面板设计。不同类型组件允许合理差异，不全局强行一种外框/一种尺寸/一种选中态。
-- 不扩插件主题协议，不创建通用 UI 框架，不因配色整理新增快捷键。主题仅使用已有能力；第三方插件契约不改。具体设计取舍在两份文档内，不在本交接重开讨论。
+- 当前已经推进到具体画面回看；按用户针对画面的反馈继续同任务微调。不要再次停在泛泛的“可以继续”；不需重复询问已授权的修正、集成、审查操作。
+- 外观回看后按项目规矩完成合并、推送、适用的安装验收与清理；此时尚未把候选合入 main，也未安装/升级真实实例。主目录 Settings 副本须在安全核对一致性后处理，不能强行 checkout 覆盖。
+- Diff、Settings 剩余项、公共状态栏/Toast/notice/终端和 Agents 公共绘制尚在后续清单，留待串行/后续批次。本批结束不等于整份 UI 清单完成。
+- T73 仅展示，T74 导航改造与移动端能力不搭车；不推进 Tasks 队列、不打开本轮未选择的遥测。
 
-## 队列快照
+## 保留 agent 与 worktree
 
-通过运行中的 Saddle/Drover 公开接口回读，Pending 共 `23` 项；`current=null`、`awaiting=null`、`paused=false`。没有派发或推进任务。paused=false 只允许显式派发，不表示自动执行。
+- `saddle/dev-ui-drover-1` → `ui-drover-polish`；`saddle/dev-ui-dialogs-1` → `ui-host-dialogs`；`saddle/dev-ui-reading-1` → `ui-telemetry-polish`。实现完成后空闲保留，供画面反馈与返修。不要影响其他用户 agent。
+- Drover 修正提醒 `fa520d88-d267-448d-b195-e3805c0aa9c0` 已主动读取状态/回复并处理；重复到达时不重做。
+- 历史 `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow` 原样保留。
 
-当前顺序：
+## 验证与运行边界
 
-T73 → T74 → T68 → T66 → T63 → T62 → T67 → T49 → T64 → T65 → T59 → T69 → T53 → T61 → T70 → T56 → T34 → T32 → T60 → T50 → T71 → T72 → T75
-
-- T59 恢复 Owlet 开发；T69 用真实 Owlet 开发验证 Saddle 流程，两者侧重点不同。
-- T61 插件开发文档、T70 最小规范示例分别保留；T63 统一可搜索入口、T74 repo Tasks 入口不自动合并。
-- T75 是“补齐 Saddle / Corral 产品化基础能力”总任务，完整七项及建议先后已保存在任务正文：安装升级卸载、首次使用、兼容性与发布验证、诊断恢复、数据保障、权限信任说明、版本与文档一致性。仅登记，未拆分启动。
-- T71 宣传 landing page/产品视频、T72 RSI 为队列中既有用户条目，本轮保留，不解释为已授权实施。
-- 队列数据由 Drover 管理，不在本轮 Git 文档提交内。接续时先 `saddle ctl instances` 选实例，再用 `saddle ctl plugin` 的 list/show 与 request 回读；超过 20 条要分页，不能只凭本快照行动。
-
-## 已安装版本与未解决回归
-
-- 既有功能提交 `a542931`（Settings 已安装更新提示及 Upgrade all）已合并、构建、安装；对应收尾 `74c93fc`、交接 `dc557b1` 已推送。
-- 本轮 `lsof` 仍确认 Saddle PID `15011` 加载 `~/.local/share/saddle/versions/a542931/bin/saddle`；本轮只改文档，不需要重新编译安装。
-- Corral、Drover、Diff 沿用 `711ab18` 二进制；旧包保留，活跃 pen/hook 可能仍引用。没有升级或恢复用户 agent。
-- **10 项标准测试失败仍未解决**：agent_capture 1 项（500ms 内未得到预期部分 stdout），drover_telemetry 9 项（多为 budget_exhausted/no_context 或缺 trace）。根因及是否既有问题未确认，已登记 T68；不能称全套绿。
-- 既有直接回归 71 passed，宿主 all-targets clippy 和最后布局修正后的 lib clippy 通过；这是实施阶段结果，不是本轮重跑。完整首次结果、限定复跑及原始日志路径见 `docs/任务/已安装更新提示-实施.md`。
-- 已安装功能尚未做真实端到端验收，用户表示使用时再验证；本轮未扩大测试。部署和备份见 `docs/任务/已安装更新提示-部署记录.md`、`docs/任务/Corral通用升级-部署记录.md`。
-
-## 保留工作区与后续边界
-
-- 本轮未新建开发分支或 worktree。历史 `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow` 保留，不顺手清理；此前 `review-telemetry-design` 有 6 个未提交文件，接续时重新核对，本轮不纳入提交。
-- 前一功能任务用户要求主控直接实施；本轮用户另行授权 Claude 只读审查及双方讨论。不要把这次审查授权扩展为后续开发派发许可。
-- 本轮提交推送并回读后停止，等待用户。不要自动开发第一项、处理队列其余项或重开已经完成的审查。
+- 本轮仅局部展示与集成检查，最终数量/结果见集成记录。此前全套在 agent_capture 出现 4 项失败，根因未核实；历史 T68 测试问题不在本批搭车修复。
+- 本轮未安装、未升级 Corral、未停止或重启用户 agent，已运行版本不能按候选提交号推断。
+- 设计语言与具体取舍以 `docs/UI设计语言.md`、整理清单及集成分支 `docs/DESIGN.md` 为准，交接不重新决策。
