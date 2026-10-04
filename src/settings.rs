@@ -43,13 +43,13 @@ pub enum Page {
     Plugins,
     Updates,
 }
-const PAGES: [(Page, &str, u8); 6] = [
-    (Page::General, "General F1", 1),
-    (Page::Colors, "Colors F2", 2),
-    (Page::Advanced, "Advanced F3", 3),
-    (Page::Diagnostics, "Diagnostics F4", 4),
-    (Page::Plugins, "Plugins F5", 5),
-    (Page::Updates, "Updates F6", 6),
+pub(crate) const PAGES: [(Page, &str, u8); 6] = [
+    (Page::General, "General", 1),
+    (Page::Colors, "Colors", 2),
+    (Page::Advanced, "Advanced", 3),
+    (Page::Diagnostics, "Diagnostics", 4),
+    (Page::Plugins, "Plugins", 5),
+    (Page::Updates, "Updates", 6),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -547,6 +547,12 @@ impl Settings {
         self.page = page;
         self.selected = self.page_fields()[0];
         self.top = 0;
+    }
+
+    /// Navigate exactly as the existing page tab does, including special-page outcomes.
+    pub fn open_page(&mut self, page: Page) -> Outcome {
+        let (_, _, key) = PAGES.iter().find(|&&(p, _, _)| p == page).unwrap();
+        self.key(KeyEvent::new(KeyCode::F(*key), KeyModifiers::NONE))
     }
 
     pub fn key(&mut self, key: KeyEvent) -> Outcome {
@@ -1204,9 +1210,14 @@ impl Settings {
             return (body, Vec::new());
         };
         // Compact tabs wrap when the dialog cannot fit all pages.
+        let labels: Vec<_> = PAGES
+            .iter()
+            .map(|&(_, label, n)| format!("{label} F{n}"))
+            .collect();
         let tabs: Vec<_> = PAGES
             .iter()
-            .map(|&(page, label, n)| {
+            .zip(&labels)
+            .map(|(&(page, _, n), label)| {
                 let button = Button::new(label, KeyCode::F(n), true);
                 if page == active {
                     button.primary()

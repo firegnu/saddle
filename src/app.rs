@@ -204,6 +204,7 @@ struct App {
     reply_due: Instant,
     placement: Option<Placement>,
     search: Option<crate::search::Search>,
+    search_return: Focus,
     board: crate::attention::Board,
     attention: Option<crate::attention::Popup>,
     native_mouse: bool,
@@ -328,6 +329,7 @@ impl App {
             reply_due: Instant::now(),
             placement: None,
             search: None,
+            search_return: Focus::Agents,
             board: Default::default(),
             attention: None,
             native_mouse: false,
@@ -506,6 +508,7 @@ impl App {
         }
         self.sync_plugins(panes, focused);
         self.update_plugin_palette();
+        self.update_search();
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
@@ -1061,6 +1064,7 @@ impl App {
             return Ok(false);
         }
         self.update_plugin_palette();
+        self.update_search();
         if let Some(palette) = &mut self.plugin_palette {
             let outcome = palette.event(&event);
             self.plugin_palette_outcome(outcome);
@@ -1310,6 +1314,13 @@ impl App {
                 let captured = self.pointer.captured();
                 if let Some((focus, key)) = self.pointer.event(mouse, &controls) {
                     if focus == Focus::Agents
+                        && key.code == KeyCode::Char('/')
+                        && self.search.is_none()
+                    {
+                        self.open_search(self.focus);
+                        return Ok(false);
+                    }
+                    if focus == Focus::Agents
                         && key.code == KeyCode::Char(',')
                         && self.settings.is_none()
                         && self.closing.is_none()
@@ -1345,15 +1356,15 @@ impl App {
                 if captured || self.pointer.captured() {
                     return Ok(false);
                 }
-                // The search popup takes all mouse input: a row opens the agent drawn on it.
+                // Search takes all mouse input; a row carries the destination last drawn.
                 if let Some(search) = &mut self.search {
                     match mouse.kind {
                         MouseEventKind::Down(MouseButton::Left) => {
-                            if let Some(name) = search.click(point) {
+                            if let Some(outcome) = search.click(point) {
                                 // The popup closes on the press; the rest of the gesture
                                 // must not reach the terminal that opening focuses.
+                                self.search_outcome(outcome);
                                 self.native_mouse = true;
-                                self.search_outcome(crate::search::Outcome::Open(name));
                             }
                         }
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => search
@@ -1552,14 +1563,47 @@ impl App {
         }
         Ok(false)
     }
-    /// Closing the search keeps Agents as the input target; opening uses the normal attach,
-    /// which jumps to a pane already showing the agent.
+    fn open_search(&mut self, back: Focus) {
+        self.search_return = back;
+        self.search = Some(Default::default());
+        self.update_search();
+    }
+    fn update_search(&mut self) {
+        if self.search.is_none() {
+            return;
+        }
+        let items = self.plugin_palette_items();
+        if let Some(search) = &mut self.search {
+            search.update_plugins(items);
+        }
+    }
+    /// Navigate using the existing entry paths, checking a plugin again at activation.
     fn search_outcome(&mut self, outcome: crate::search::Outcome) {
         match outcome {
             crate::search::Outcome::Stay => {}
             crate::search::Outcome::Cancel => {
                 self.search = None;
-                self.focus = Focus::Agents;
+                self.focus = self.search_return;
+            }
+            crate::search::Outcome::Settings(page) => {
+                self.search = None;
+                self.open_settings(self.search_return);
+                if let Some(settings) = &mut self.settings {
+                    let outcome = settings.open_page(page);
+                    self.settings_outcome(outcome);
+                }
+            }
+            crate::search::Outcome::Plugin(item) => {
+                if !self.plugin_palette_items().contains(&item) {
+                    return;
+                }
+                self.search = None;
+                self.focus = self.search_return;
+                if item.builtin || item.action().is_none() {
+                    self.manage_plugin(Some(&item.id));
+                } else {
+                    self.plugin_palette_outcome(crate::plugins::palette::Outcome::Open(item));
+                }
             }
             crate::search::Outcome::Open(name) => {
                 self.search = None;
@@ -1771,7 +1815,7 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.panel.move_selection(-1, now()),
             KeyCode::Down | KeyCode::Char('j') => self.panel.move_selection(1, now()),
             KeyCode::Enter => self.attach(),
-            KeyCode::Char('/') => self.search = Some(Default::default()),
+            KeyCode::Char('/') => self.open_search(Focus::Agents),
             KeyCode::Char(',') => self.open_settings(Focus::Agents),
             KeyCode::Char('t') => self.open_telemetry(Focus::Agents, None, None),
             KeyCode::Char('p') => self.open_pinned(),

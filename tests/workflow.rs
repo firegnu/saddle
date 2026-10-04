@@ -3415,35 +3415,37 @@ fn t23_search_opens_agents_by_name_or_project_and_jumps_to_open_panes() {
     h.see("/ Search");
     // `/` in Agents opens the popup; typing filters and never reaches a terminal.
     h.send(b"/");
-    h.see("Search agents");
-    h.see("Input ▸ Search agents");
+    h.see("Search ━");
+    h.see("Input ▸ Search");
     h.send(b"zebra");
+    h.settle(); // filtering resizes the popup; wait for its complete frame
     h.until(|h| {
-        let popup = h.popup("Search agents");
+        let popup = h.popup("Search ━");
         popup.contains("p/b") && !popup.contains("p/a") && !popup.contains("p/taken")
     });
     h.send(b"\r");
     h.see("p/b READY");
-    h.until(|h| !h.contents().contains("Search agents"));
+    h.until(|h| !h.contents().contains("Search ━"));
     h.send(b"B");
     h.event("input p/b 42");
     // Esc cancels and keeps the display target; nothing is attached.
     h.send(b"\x1d/a");
-    h.see("Search agents");
+    h.see("Search ━");
     h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Search agents"));
+    h.until(|h| !h.contents().contains("Search ━"));
     h.see("Input ▸ Agents");
     // The bar entry opens it too; clicking a candidate opens that agent by its name.
     h.click("/ Search");
-    h.see("Search agents");
+    h.see("Search ━");
     h.send(b"p/a");
+    h.settle(); // filtering resizes the popup; wait for its complete frame
     h.until(|h| {
-        let popup = h.popup("Search agents");
+        let popup = h.popup("Search ━");
         popup.contains("p/a") && !popup.contains("p/b")
     });
-    h.click_in("Search agents", "p/a  demo");
+    h.click_in("Search ━", "p/a  demo");
     h.see("p/a READY");
-    h.until(|h| !h.contents().contains("Search agents"));
+    h.until(|h| !h.contents().contains("Search ━"));
     // Put p/b beside p/a and focus p/a; searching p/b jumps to its open pane.
     h.click("Split ▾");
     h.click("Right →");
@@ -3452,14 +3454,15 @@ fn t23_search_opens_agents_by_name_or_project_and_jumps_to_open_panes() {
     h.click("Agent · p/a");
     h.see("Input ▸ p/a");
     h.send(b"\x1d/");
-    h.see("Search agents");
+    h.see("Search ━");
     h.send(b"p/");
+    h.settle(); // filtering resizes the popup; wait for its complete frame
     h.until(|h| {
-        let popup = h.popup("Search agents");
+        let popup = h.popup("Search ━");
         popup.contains("p/taken") && popup.matches("Open").count() == 2
     });
     h.click("Cancel Esc");
-    h.until(|h| !h.contents().contains("Search agents"));
+    h.until(|h| !h.contents().contains("Search ━"));
     let attaches = |h: &Harness| {
         h.log("events")
             .lines()
@@ -3468,10 +3471,11 @@ fn t23_search_opens_agents_by_name_or_project_and_jumps_to_open_panes() {
     };
     let before = attaches(&h);
     h.send(b"/p/b");
-    h.see("Search agents");
-    h.until(|h| h.popup("Search agents").contains("p/b  zebra-project"));
+    h.see("Search ━");
+    h.settle();
+    h.until(|h| h.popup("Search ━").contains("p/b  zebra-project"));
     h.send(b"\r");
-    h.until(|h| !h.contents().contains("Search agents"));
+    h.until(|h| !h.contents().contains("Search ━"));
     h.see("Input ▸ p/b");
     h.send(b"Q");
     h.event("input p/b 51");
@@ -3564,9 +3568,10 @@ fn t23_search_click_on_an_open_agent_consumes_the_whole_mouse_gesture() {
     h.send(b"\r");
     h.see("p/a READY");
     h.send(b"\x1d/p/a");
-    h.see("Input ▸ Search agents");
+    h.see("Input ▸ Search");
+    h.settle(); // the filtered popup has fewer rows than the initial search
     h.until(|h| {
-        let popup = h.popup("Search agents");
+        let popup = h.popup("Search ━");
         popup.contains("p/a  demo") && !popup.contains("p/b") && !popup.contains("p/taken")
     });
     // Press on the row body over the Viewer; the popup closes and p/a takes focus before the
@@ -4669,6 +4674,101 @@ view = "main"
     h.see("Plugins");
     h
 }
+#[test]
+fn unified_search_opens_each_settings_page_and_keeps_terminal_input_local() {
+    let mut h = Harness::start();
+    let config = h.log("config.toml");
+    for (page, content) in [
+        ("General", "Sidebar width"),
+        ("Colors", "Interface"),
+        ("Advanced", "corral command"),
+        ("Diagnostics", "Copy summary c"),
+        ("Plugins", "Changes apply immediately."),
+        ("Updates", "Refresh r"),
+    ] {
+        h.send(format!("/{page}").as_bytes());
+        h.see(&format!("Settings › {page}"));
+        h.send(b"\r");
+        h.see(content);
+        if page == "Plugins" {
+            h.see("Changes apply immediately.");
+            h.send(b"\x1b");
+            h.until(|h| !h.contents().contains("Changes apply immediately."));
+        }
+        h.send(b"\x1b");
+        h.see("Input ▸ Agents");
+    }
+    assert_eq!(
+        h.log("config.toml"),
+        config,
+        "navigation must not save settings"
+    );
+    h.send(b"/Tasks");
+    h.see("No entries match “Tasks”.");
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"\r");
+    h.see("p/a READY");
+    h.send(b"/");
+    h.event("input p/a 2f");
+    h.click("/ Search");
+    h.see("Input ▸ Search");
+    h.send(b"Colors");
+    h.see("Settings › Colors");
+    h.send(b"\x1b");
+    h.see("Input ▸ p/a");
+    h.click("/ Search");
+    h.send(b"General\r");
+    h.see("Sidebar width");
+    h.send(b"\x1570/"); // edit a draft: slash stays in the field
+    h.see("70/");
+    assert!(!h.contents().contains("Search ━"));
+    h.send(b"\x1b");
+    h.see("Input ▸ p/a");
+    assert_eq!(h.log("config.toml"), config);
+    h.quit();
+    assert_eq!(h.input_hex("p/a"), "2f", "search and settings input leaked");
+}
+
+#[test]
+fn unified_search_opens_plugins_and_routes_disabled_entries_to_management() {
+    let mut h = plugin_entry_harness("overlay");
+    h.send(b"/fixture counter");
+    h.see("Plugin · Fixture Counter");
+    h.see("Background");
+    h.send(b"\r");
+    h.see("Clicks: 0");
+    h.settle();
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    h.send(b"\x1d");
+    h.see("Input ▸ Agents");
+    h.send(b"/test.entry");
+    h.see("Plugin · Fixture Counter");
+    h.send(b"\r");
+    h.see("Clicks: 1");
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+
+    h.send(b"\x1d,\x1b[15~");
+    h.see("Changes apply immediately.");
+    h.click_in("Settings ━", "Entry fixture");
+    h.see("ID: test.entry");
+    h.click("Disable");
+    h.see("Disabled");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.send(b"/fixture counter");
+    h.see("Disabled");
+    h.see("Manage");
+    h.send(b"\r");
+    h.see("Changes apply immediately.");
+    h.see("ID: test.entry");
+    assert!(h.ctl(&["inspect"])["overlay"].is_null());
+    assert_eq!(h.log("plugin/starts").lines().count(), 1);
+}
+
 #[test]
 fn plugin_palette_searches_and_never_exposes_per_plugin_sidebar_buttons() {
     let mut h = plugin_entry_harness("overlay");

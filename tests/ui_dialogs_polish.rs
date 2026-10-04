@@ -102,6 +102,21 @@ fn open_content_rules_off_fixed_actions_from_existing_agents() {
 }
 
 #[test]
+fn unified_search_finds_a_settings_page_without_agents() {
+    let mut search = Search::default();
+    search.paste("cOLors");
+    let mut screen = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    screen
+        .draw(|f| {
+            search.draw(&Theme::default(), f, &[], |_| false);
+        })
+        .unwrap();
+    let text = rows(screen.backend().buffer()).join("\n");
+    assert!(text.contains("Settings › Colors"), "{text}");
+    assert!(!text.contains("Settings › General"), "{text}");
+}
+
+#[test]
 fn search_input_drops_the_second_thick_frame() {
     let agents = [agent("p/alpha", "/tmp/demo"), agent("p/beta", "/tmp/demo")];
     let mut search = Search::default();
@@ -113,9 +128,15 @@ fn search_input_drops_the_second_thick_frame() {
         .unwrap();
     let text = rows(screen.backend().buffer());
     println!("{}", text.join("\n"));
-    let input = text.iter().find(|r| r.contains("Project or name")).unwrap();
-    assert!(input.contains("┌ Project or name"), "{input}");
-    assert!(text.iter().any(|r| r.contains("›p/alpha  demo")));
+    let input = text
+        .iter()
+        .find(|r| r.contains("Project, agent, plugin or settings"))
+        .unwrap();
+    assert!(
+        input.contains("┌ Project, agent, plugin or settings"),
+        "{input}"
+    );
+    assert!(text.iter().any(|r| r.contains("›Agent · p/alpha  demo")));
 }
 
 #[test]

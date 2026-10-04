@@ -297,7 +297,7 @@ fn no_agents_and_a_search_without_matches_read_differently() {
         &mut empty,
     );
     show("search, no agents", &buffer);
-    find(&buffer, "No agents to search.");
+    find(&buffer, "Settings › General");
 
     let mut some = panel(vec![agent("p/alpha", "/tmp/p")]);
     let mut search = Search::default();
@@ -310,7 +310,7 @@ fn no_agents_and_a_search_without_matches_read_differently() {
         &mut some,
     );
     let text = show("search, no match", &buffer).join("\n");
-    assert!(text.contains("No agents match “zzz”."), "{text}");
+    assert!(text.contains("No entries match “zzz”."), "{text}");
     assert!(!text.contains("No agents to search"));
 }
 

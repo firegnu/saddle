@@ -491,7 +491,7 @@ pub fn draw_workspace(
         };
     }
     if search.is_some() {
-        target = "Search agents".into();
+        target = "Search".into();
         help = " Type to filter  ↑↓ Select  Enter Open  Esc Cancel";
     }
     if attention_popup.is_some() {
