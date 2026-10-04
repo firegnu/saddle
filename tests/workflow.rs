@@ -2314,7 +2314,7 @@ fn tasks_open_on_the_focused_agents_repository_even_without_tasks() {
     h.open_tasks();
     h.see("Input ▸ Drover");
     h.see("project-three ▾ c");
-    h.see("showing project-three");
+    h.see("Showing project-three · from ");
     assert!(!h.contents().contains("Queue project-two"));
     // Pick project-one by hand, so the next opening has something to switch from.
     h.click("project-three ▾ c");
@@ -5752,5 +5752,5 @@ fn a_terminal_gives_its_launch_directory_as_the_tasks_source() {
     h.see("› Tasks");
     h.send(b"\r");
     h.see("Native queue task");
-    h.see("From ");
+    h.see(" · from ");
 }

@@ -2,7 +2,8 @@
 use crate::{
     attention::{Target, project_name},
     config::expand_home,
-    drover, notify, queue,
+    drover, notify,
+    queue::{self, Source},
     theme::Theme,
 };
 use anyhow::Result;
@@ -17,55 +18,6 @@ use std::{
 
 const REFRESH: Duration = Duration::from_secs(2);
 type ProjectState = Option<Result<Box<drover::Snapshot>, String>>;
-/// What became of the latest ordinary opening's source directory.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Source {
-    Locating,
-    Shown,
-    NoMatch,
-    Unknown(String),
-    /// The view was on a draft, sub-page or action, so it was not located.
-    Kept,
-    /// The person started working before the result arrived.
-    NotApplied,
-}
-impl Source {
-    /// The source, its outcome and the project actually shown, so an old project is never
-    /// mistaken for the source's.
-    fn line(&self, path: &str, project: &str) -> String {
-        let shown = std::path::Path::new(project)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
-        let outcome = match self {
-            Source::Locating => "locating… · ".into(),
-            Source::Shown => String::new(),
-            Source::NoMatch => "no added project matches (c Projects → a Add project) · ".into(),
-            Source::Unknown(why) => format!("couldn't match: {why} · "),
-            Source::Kept => "kept your current page · ".into(),
-            Source::NotApplied => "not applied · ".into(),
-        };
-        format!("From {} · {outcome}showing {shown}", tail(path, 32))
-    }
-}
-/// The last `width` columns of a path, so its final directories stay readable.
-fn tail(path: &str, width: usize) -> String {
-    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-    let clean: String = path.chars().filter(|c| !c.is_control()).collect();
-    if clean.width() <= width {
-        return clean;
-    }
-    let mut used = 1;
-    let mut kept: Vec<char> = vec![];
-    for c in clean.chars().rev() {
-        used += c.width().unwrap_or(0);
-        if used > width {
-            break;
-        }
-        kept.push(c);
-    }
-    std::iter::once('…').chain(kept.into_iter().rev()).collect()
-}
 pub struct Drover {
     commands: crate::api::Worker,
     setup: Option<crate::project_setup::Setup>,
@@ -255,8 +207,14 @@ impl Drover {
                     return;
                 }
                 let target = expand_home(&path);
-                if !crate::core::project::inspect(&target).is_ok_and(|v| v["state"] == "registered")
-                {
+                // An added, configured project opens on its list even when its queue cannot be
+                // read, where the list reports that error; only other directories go to setup.
+                let added = crate::core::project::inspect(&target).is_ok_and(|v| {
+                    v["state"] == "registered"
+                        || (v["registered"] == true
+                            && std::fs::symlink_metadata(target.join(".drover.conf")).is_ok())
+                });
+                if !added {
                     self.setup = Some(crate::project_setup::Setup::new(
                         self.corral.clone(),
                         path,
@@ -547,9 +505,13 @@ impl Drover {
                 match located {
                     drover::Located::Project(project) => {
                         if project != self.panel.project {
-                            self.request(drover::Request::Project(project));
+                            self.request(drover::Request::Project(project.clone()));
                         }
-                        Source::Shown
+                        if self.showing(&project) {
+                            Source::Shown
+                        } else {
+                            Source::NotApplied
+                        }
                     }
                     drover::Located::NoMatch => Source::NoMatch,
                     drover::Located::Unknown(why) => Source::Unknown(why),
@@ -627,6 +589,14 @@ impl Drover {
             context.redraw();
         }
         Ok(())
+    }
+    /// Whether the list now shows `project`, not setup or another project.
+    fn showing(&self, project: &str) -> bool {
+        let canonical = |p: &str| {
+            let p = expand_home(p);
+            p.canonicalize().unwrap_or(p)
+        };
+        self.setup.is_none() && canonical(project) == canonical(&self.panel.project)
     }
     /// Locating may change the project only on the plain list: never under a draft or other
     /// page, project setup, notification preferences or a running action.
@@ -950,29 +920,33 @@ impl Plugin for Drover {
                 *field = saddle_plugin_sdk::terminal_color(&color);
             }
         }
-        self.panel.source = self
-            .source
-            .as_ref()
-            .map(|(path, state)| state.line(path, &self.panel.project));
+        self.panel.source = self.source.clone();
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))?;
         terminal.draw(|frame| {
-            // Setup and preferences are centred dialogs; the source sits above them when room allows.
-            if (self.setup.is_some() || self.preferences)
-                && let Some(line) = &self.panel.source
+            // Setup and preferences are centred dialogs; the source keeps its own first row so a
+            // dialog as tall as the view cannot cover it.
+            let form = match self
+                .panel
+                .source_line(area.width)
+                .filter(|_| (self.setup.is_some() || self.preferences) && area.height > 1)
             {
-                frame.render_widget(
-                    ratatui::widgets::Paragraph::new(line.as_str())
-                        .style(ratatui::style::Style::default().fg(t.muted)),
-                    Rect { height: area.height.min(1), ..area },
-                );
-            }
+                Some(line) => {
+                    frame.render_widget(
+                        ratatui::widgets::Paragraph::new(line)
+                            .style(ratatui::style::Style::default().fg(t.muted)),
+                        Rect { height: 1, ..area },
+                    );
+                    Rect { y: area.y + 1, height: area.height - 1, ..area }
+                }
+                None => area,
+            };
             if let Some(setup) = &mut self.setup {
-                self.panel.buttons = setup.draw(&t, frame, area);
+                self.panel.buttons = setup.draw(&t, frame, form);
                 self.rows.clear();
             } else if self.preferences {
                 use crate::buttons::Button as B;
                 let ready = matches!(self.preference, Some(Ok(_))) && !self.preference_saving;
-                let body = crate::ui::dialog(&t, frame, area, "Task notifications", 76, 16);
+                let body = crate::ui::dialog(&t, frame, form, "Task notifications", 76, 16);
                 let controls = [B::control("Save ^s", KeyCode::Char('s'), ready).primary(), B::new("Cancel Esc", KeyCode::Esc, !self.preference_saving)];
                 let (body, hits) = crate::buttons::draw_compact(&t, frame, body, &controls);
                 self.panel.buttons = hits;

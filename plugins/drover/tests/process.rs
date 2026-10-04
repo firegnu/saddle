@@ -750,13 +750,14 @@ fn opening_from_an_added_project_without_tasks_shows_that_project() {
     let other = p.root.path().join("other");
     p.open_from(&other);
     p.see_now("other ▾ c");
-    p.see_now("From ");
+    p.see_now("Showing other · from ");
     assert!(!p.text().contains("Native queue task"), "{}", p.text());
     // A worktree belongs to its added repository, preferring the same top level.
     let wt = p.root.path().join("wt");
     p.open_from(&wt);
     p.see("Native queue task");
-    p.see_now("wt · showing");
+    p.see_now(&format!("Showing {} · from ", p.shown_name()));
+    assert!(p.text().contains("/wt "), "{}", p.text());
 }
 
 #[test]
@@ -824,4 +825,116 @@ fn input_while_locating_discards_the_result_but_hovering_does_not() {
     p.see_now("locating");
     p.input(json!({"type":"mouse","action":"move","button":null,"x":5,"y":5,"dx":0,"dy":0,"modifiers":[]}));
     p.see_now("other ▾ c");
+}
+
+impl Running {
+    /// Close the view and open it again from `cwd` at `cols`×`rows`, as the host does.
+    fn reopen_from(&mut self, cwd: &std::path::Path, cols: u16, rows: u16, revision: u64) {
+        self.send(Message::event("panel.close", json!({})));
+        self.open_from(cwd);
+        self.send(Message::event(
+            "panel.open",
+            json!({"cols":cols,"rows_count":rows,"size_revision":revision}),
+        ));
+        self.send(Message::event("panel.focus", json!({"focused":true})));
+    }
+    fn resize(&mut self, cols: u16, rows: u16, revision: u64) {
+        self.send(Message::event(
+            "panel.resize",
+            json!({"cols":cols,"rows_count":rows,"size_revision":revision}),
+        ));
+    }
+    fn first_row(&self) -> String {
+        let b = buffer(self.frame.as_ref().unwrap()).unwrap();
+        (0..b.area.width).map(|x| b[(x, 0)].symbol()).collect()
+    }
+    fn shown_name(&self) -> String {
+        self.root
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into()
+    }
+}
+
+#[test]
+fn a_kept_draft_names_the_shown_project_in_an_80_by_24_window() {
+    // An 80×24 Saddle gives the Tasks overlay a 62×17 inside.
+    let mut p = Running::start_prepared(false, repositories);
+    p.resize(62, 17, 2);
+    p.see("Native queue task");
+    p.key("a");
+    p.see("Save ^s");
+    p.input(json!({"type":"paste","text":"kept draft"}));
+    p.see("kept draft");
+    let other = p.root.path().join("other");
+    p.reopen_from(&other, 62, 17, 3);
+    p.see_now("kept your");
+    p.pump_for(Duration::from_millis(400));
+    let shown = format!("Showing {}", p.shown_name());
+    assert!(p.text().contains(&shown), "{shown} missing:\n{}", p.text());
+    assert!(p.text().contains("kept your current page"), "{}", p.text());
+    assert!(p.text().contains("kept draft"));
+}
+
+#[test]
+fn reopened_setup_and_preferences_keep_a_source_row_the_form_does_not_cover() {
+    // A 120×36 Saddle gives a 94×26 inside, where the setup form is as tall as the view.
+    let mut p = Running::start_prepared(false, repositories);
+    p.resize(94, 26, 2);
+    p.see("Native queue task");
+    let other = p.root.path().join("other");
+    p.key("c");
+    p.see("Status / receiver");
+    p.key("a");
+    p.see("Add project");
+    p.reopen_from(&other, 94, 26, 3);
+    p.see_now("Add project");
+    p.pump_for(Duration::from_millis(400));
+    let shown = format!("Showing {}", p.shown_name());
+    assert!(
+        p.first_row().contains(&shown) && p.first_row().contains("kept your current page"),
+        "{}",
+        p.text()
+    );
+    assert!(p.text().contains("Add project"));
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Status / receiver");
+    p.input(json!({"type":"key","code":{"name":"esc"},"modifiers":[],"phase":"press"}));
+    p.see("Native queue task");
+
+    // Preferences in the 80×24 inside are centred on the first row unless it is kept.
+    p.resize(62, 17, 4);
+    p.see("Native queue task");
+    p.key("N");
+    p.see("Task notifications");
+    p.reopen_from(&other, 62, 17, 5);
+    p.see_now("Task notifications");
+    p.pump_for(Duration::from_millis(400));
+    assert!(
+        p.first_row().contains(&shown) && p.first_row().contains("kept your current page"),
+        "{}",
+        p.text()
+    );
+}
+
+#[test]
+fn a_matched_project_whose_queue_cannot_be_read_opens_on_its_read_error() {
+    let mut p = Running::start_prepared(false, |root| {
+        repositories(root);
+        let queue = root.join("other/data/queue.md");
+        std::fs::remove_file(&queue).unwrap();
+        std::fs::create_dir(&queue).unwrap();
+    });
+    let other = p.root.path().join("other");
+    p.open_from(&other);
+    p.see_now("other ▾ c");
+    p.see_now("Read failed");
+    p.pump_for(Duration::from_millis(400));
+    assert!(!p.text().contains("Add project"), "{}", p.text());
+    assert!(p.text().contains("Showing other"), "{}", p.text());
+    // Nothing was written or repaired.
+    assert!(other.join("data/queue.md").is_dir());
+    assert!(!other.join("data/tasks.state").exists());
 }

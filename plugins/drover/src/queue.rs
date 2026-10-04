@@ -160,8 +160,68 @@ pub struct Panel {
     pub record: Option<bool>,
     /// A Telemetry ↗ press for the plugin to hand to the host, taken from the input callback.
     pub telemetry_request: Option<saddle_plugin_sdk::protocol::TelemetryFilter>,
-    /// Where the view was last opened from and the project it shows, set by the plugin.
-    pub source: Option<String>,
+    /// Where the view was last opened from and what became of it, set by the plugin.
+    pub source: Option<(String, Source)>,
+}
+/// Prefixes the source line while an action runs.
+const RUNNING: &str = "Running action… · ";
+/// What became of the latest ordinary opening's source directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    Locating,
+    Shown,
+    NoMatch,
+    Unknown(String),
+    /// The view was on a draft, sub-page or action, so it was not located.
+    Kept,
+    /// The person started working before the result arrived, or the project could not be
+    /// shown.
+    NotApplied,
+}
+impl Source {
+    /// One line of at most `width` columns. The project actually shown and whether the view
+    /// switched come first, so an old project is never mistaken for the source's; a reason and
+    /// then the source directory use whatever room is left.
+    pub fn line(&self, path: &str, project: &str, width: usize) -> String {
+        use unicode_width::UnicodeWidthStr;
+        let shown = std::path::Path::new(project)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let status = match self {
+            Source::Locating => " · locating…".into(),
+            Source::Shown => String::new(),
+            Source::NoMatch => " · no added project matches (c Projects → a Add project)".into(),
+            Source::Unknown(why) => format!(" · couldn't match: {why}"),
+            Source::Kept => " · kept your current page".into(),
+            Source::NotApplied => " · not applied".into(),
+        };
+        let status = format!("Showing {shown}{status}");
+        let room = width.saturating_sub(status.width() + " · from ".width());
+        if room >= 8 {
+            format!("{status} · from {}", tail(path, room.min(32)))
+        } else {
+            crate::ui::clip(&status, width)
+        }
+    }
+}
+/// The last `width` columns of a path, so its final directories stay readable.
+fn tail(path: &str, width: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    let clean: String = path.chars().filter(|c| !c.is_control()).collect();
+    if clean.width() <= width {
+        return clean;
+    }
+    let mut used = 1;
+    let mut kept: Vec<char> = vec![];
+    for c in clean.chars().rev() {
+        used += c.width().unwrap_or(0);
+        if used > width {
+            break;
+        }
+        kept.push(c);
+    }
+    std::iter::once('…').chain(kept.into_iter().rev()).collect()
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -173,6 +233,12 @@ pub struct DetailKey {
 /// A registered project and its pending tasks: `None` while loading, `Err` with the read error.
 pub type ProjectPending = (String, Option<Result<Vec<Task>, String>>);
 impl Panel {
+    /// The source line fitted to `width` columns, naming the project this panel shows.
+    pub fn source_line(&self, width: u16) -> Option<String> {
+        self.source
+            .as_ref()
+            .map(|(path, state)| state.line(path, &self.project, usize::from(width)))
+    }
     pub fn click(&mut self, column: u16, row: u16) -> Option<Request> {
         if self.view == View::Links
             && matches!(self.page, Page::List)
@@ -1314,7 +1380,7 @@ impl Panel {
             let body = ui::dialog(t, frame, area, "Projects", 104, height);
             let (mut body, hits) = buttons::draw_compact(t, frame, body, &self.controls());
             self.buttons = hits;
-            if let Some(source) = self.source.as_deref().filter(|_| body.height > 1) {
+            if let Some(source) = self.source_line(body.width).filter(|_| body.height > 1) {
                 frame.render_widget(
                     Paragraph::new(source).style(Style::default().fg(t.muted)),
                     Rect::new(body.x, body.y, body.width, 1),
@@ -1355,15 +1421,24 @@ impl Panel {
             self.buttons = hits;
             if !body.is_empty() {
                 frame.render_widget(
-                    Paragraph::new(match (&self.source, self.busy) {
-                        (Some(source), true) => format!("Running action… · {source}"),
-                        (Some(source), false) => source.clone(),
-                        (None, true) => "Running action…".into(),
-                        (None, false) if matches!(self.page, Page::AllPending) => {
-                            "All registered projects".into()
-                        }
-                        (None, false) => ui::clip(&self.project, body.width as usize),
-                    })
+                    Paragraph::new(
+                        match (
+                            self.source_line(body.width.saturating_sub(if self.busy {
+                                RUNNING.width() as u16
+                            } else {
+                                0
+                            })),
+                            self.busy,
+                        ) {
+                            (Some(source), true) => format!("{RUNNING}{source}"),
+                            (Some(source), false) => source,
+                            (None, true) => "Running action…".into(),
+                            (None, false) if matches!(self.page, Page::AllPending) => {
+                                "All registered projects".into()
+                            }
+                            (None, false) => ui::clip(&self.project, body.width as usize),
+                        },
+                    )
                     .style(Style::default().fg(if self.busy {
                         t.agent_working
                     } else {
@@ -1537,7 +1612,15 @@ impl Panel {
                 ratatui::text::Span::styled(format!("─{heading}"), Style::default().fg(t.bright)),
             );
         }
-        if let Some(source) = self.source.as_deref().filter(|_| heading.is_empty()) {
+        let marker = if self.busy {
+            "─ Running action… ".width()
+        } else {
+            0
+        };
+        if let Some(source) = self
+            .source_line(rule.width.saturating_sub(marker as u16 + 3))
+            .filter(|_| heading.is_empty())
+        {
             line.insert(
                 usize::from(self.busy),
                 ratatui::text::Span::styled(format!("─ {source} "), Style::default().fg(t.muted)),

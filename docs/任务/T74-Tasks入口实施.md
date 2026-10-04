@@ -65,7 +65,7 @@
 - 只能固定有视图的插件；内置 Dispatch 不出现 Pin，无视图插件 Pin 禁用并在详情写 `No view to open; cannot be pinned.`。标题最多 12 列；窄栏与 Telemetry 同组换行，放不下时先隐藏固定入口，Telemetry/Plugins/Settings 位置不变。
 - 停用、失败等状态下入口保留并弱化；点击或 `p` 打开 Plugins 面板并预选该插件，显示原有原因说明，不启停或重启。启停、增加其他插件保留固定；移除该插件清除固定。固定存于宿主 `plugins.toml` 的 `pinned`，沿用登记锁和“已被修改，先刷新”保护。
 - 来源：Agents 选中 agent、Viewer 当前 agent 窗格；普通终端现在传启动目录（不跟随 `cd`）。宿主只传 cwd，不读 Drover 数据。
-- Drover：已登记的空项目也会切过去；Tasks 内来源行写明 `From <路径> · <结果> · showing <实际项目>`，结果为 locating…、no added project matches（附 `c Projects → a Add project`）、couldn't match: <原因>、kept your current page、not applied。草稿/确认/通知偏好/项目接入/执行中操作不切换；定位中按键、粘贴、点击、拖动、滚动作废结果，悬停不作废；关闭、Attention/通知打开清除来源，再次打开重新定位。协议、SDK、清单格式未改。
+- Drover：已登记的空项目也会切过去；Tasks 内来源行写明 `Showing <实际项目> · <结果> · from <来源>`（第一轮返工后的格式，实际项目与状态优先占宽），结果为 locating…、no added project matches（附 `c Projects → a Add project`）、couldn't match: <原因>、kept your current page、not applied。已登记项目即使队列读不出也切到其列表并显示 Read failed（第一轮返工补齐）。草稿/确认/通知偏好/项目接入/执行中操作不切换；定位中按键、粘贴、点击、拖动、滚动作废结果，悬停不作废；关闭、Attention/通知打开清除来源，再次打开重新定位。协议、SDK、清单格式未改。
 
 ### RED / GREEN
 
@@ -93,3 +93,38 @@
 
 - 管理页按钮名用 `Pin`/`Unpin`：`Pin to header` 在 48 列下多占一行、挤掉详情（被现有测试发现）。悬停不作废定位：否则鼠标点入口后移入 Tasks 即失效。均已写入 `docs/Tasks入口设计.md` 实施说明与 DESIGN。
 - 未改协议/SDK/清单，未合并 main、未推送、未部署或重启，未动真实配置、队列或 agent；HANDOFF.md 未改。基线对照用的临时 worktree 已删除。
+
+## 第一轮定向返工记录（2026-10-04，依据主仓库 `docs/任务/T74-Tasks入口实施返工.md` 与独立审查 R1/R2）
+
+起点 e6edaca，只修 R1/R2；Pin/Unpin 文案、悬停不作废定位及其余通过项未动。
+
+### R1：保留现场时看清实际项目与未切换状态
+
+- 来源行改为 `Showing <实际项目>[ · <结果>] · from <来源>`，按实际可用宽度排版：先保实际项目和结果，其次原因，最后来源路径（剩余不足 8 列时省略）。`Source` 移到 `plugins/drover/src/queue.rs`，由列表分隔线、对话框顶行、Projects 页按各自宽度绘制。
+- 项目接入与通知偏好：覆盖区第一行留给来源行，对话框在其下的区域居中绘制，不再被盖住；表单命中区来自绘制结果，随之下移。草稿与按钮命中保持。
+- 实测（插件内区，对应宿主窗口）：62×17（80×24）的 Add task 草稿重开显示 `Showing project-alpha · kept your current page`，来源因宽度省略，草稿保留；94×26（120×36）的接入表单第一行为 `Showing project-alpha · kept your current page · from …work/case-…/project-beta`，表单完整；62×17 的通知偏好第一行同样保留。
+
+### R2：已登记但队列读不出时切到目标列表
+
+- `Request::Project`：已登记且有 `.drover.conf` 的项目直接建立列表与 worker，队列读取错误进入原有 `read_error`（显示 `Read failed`）；未登记、缺配置的目录仍走原接入检查。不写入、不修复数据。
+- 定位结果只有在列表确实显示目标项目（无 setup、项目一致）后才记为已切换，否则为 not applied。
+- 实测（94×26）：`project-beta ▾ c`、`Read failed`、`Showing project-beta · from …`，没有 Add project；`queue.md` 仍为目录，未生成 tasks.state。
+
+### RED / GREEN
+
+- 新增 `plugins/drover/tests/process.rs`：`a_kept_draft_names_the_shown_project_in_an_80_by_24_window`、`reopened_setup_and_preferences_keep_a_source_row_the_form_does_not_cover`、`a_matched_project_whose_queue_cannot_be_read_opens_on_its_read_error`。
+- RED（修复前，`/tmp/saddle-t74-rework/red.log`）：草稿页断言 `Showing .tmp… missing`（帧中只有 `From …/other · kept your current`）；接入表单第一行是对话框边框；R2 停在 `other ▾ c`，帧为 Add project 表单。首轮运行另有两项因 resize 后用旧帧号发键被插件拒收而卡住，属测试自身问题，补“等新帧”后重跑得到上述 RED。
+- GREEN（`/tmp/saddle-t74-rework/green.log`）：3 项通过。来源行格式变更后，原先断言旧格式的 3 处同步为新格式：process 的空项目/worktree 用例（`Showing other · from `、`Showing <root> · from ` 且含 `/wt `）、workflow 的 `Showing project-three · from `、终端来源的 ` · from `，断言强度不降。
+- 审查探针复制到 `/tmp/saddle-t74-rework/probe.py`（仅改输出目录，并把复现断言改为修复后预期），`visual()`、`unreadable()` 在新构建上通过，画面存于同目录 `draft-host80x24.txt`、`setup-host120x36.txt`、`matched-unreadable-queue-host120x36.txt` 等。
+
+### 本轮运行的检查（均加共享 CARGO_TARGET_DIR，日志 `/tmp/saddle-t74-rework/regression.log`）
+
+- `cargo test -p saddle-drover-plugin --test process --test ui --test ui_drover_polish --test project_setup`：19 / 23 / 3 / 2 通过；格式化后 process 再跑 19 通过。
+- `cargo test -p saddle --test workflow -- --exact tasks_open_on_the_focused_agents_repository_even_without_tasks a_terminal_gives_its_launch_directory_as_the_tasks_source pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled`：3 通过。
+- `cargo clippy -p saddle-drover-plugin -p saddle --all-targets -- -D warnings`：无告警；`cargo fmt --check`、`git diff --check`：通过。
+- 未跑全工作区、整个 workflow 或所有 UI 组（留主控阶段集成）；未处理既有 `native_mouse…:851` 时序失败。
+
+### 未决
+
+- 列表页的 NoMatch/Unknown 在 94 列下仍会省略来源路径或截断原因（实际项目与结果始终在前）；这是按宽度退让的结果。
+- 从 Projects 页手动选择“已登记但队列读不出”的项目，现在同样进入其列表并显示 Read failed，而不是接入表单（与 R2 同一判断）。
