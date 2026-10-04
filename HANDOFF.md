@@ -1,16 +1,18 @@
 # Saddle 交接
 
-更新：2026-10-04。T68 诊断已完成、主控审查通过；只交付文档，未实施测试/产品修复。用户已明确本轮正式派发且记录遥测；其余任务不自动启动。
+更新：2026-10-04。T68 诊断及用户追加的测试夹具修复已完成、主控审查通过并合并 main。任务仍待用户放行，不自动 Accept/Return 或推进下一项。
 
-## 当前：T68 已提交待验收（2026-10-04）
+## 当前：T68 修复完成，等待用户放行
 
-- 实现 `3951269`，主控审查 `b8b5a64`，main 合并 `ad41fb5`，收尾 `a5d101d`。报告 `docs/调研/T68-测试失败根因与回归判断-2026-10-04.md`；审查与收尾见 `docs/任务/T68-测试失败根因排查.md`。
-- 已确认主要触发因素：新可执行脚本首次启动延迟耗尽 300/500ms，造成测试正文尚未运行、空输出或 prepare 无上下文；九项 Drover 多为同一上游失败。原检查串行 2+9 败、并行 1+9 败；临时预热对照 24/24、14/14 通过，仅为因果证据，正式测试未修复。历史额外五项逐项保留推断强度；macOS 底层来源和真实 release 冷启动未知。
-- 主控核对范围、源码、日志和原断言保留情况，通过；未重跑套件。建议下一步另行授权仅修测试夹具，保留产品预算/业务/回执/取消断言；不自动创建或派发修复任务。
-- 开发 worktree/分支 `t68-test-diagnosis` 已安全清理；对应自建 `saddle/dev-t68-diagnosis-1`（instance `1783273956d5`）idle、attached=0 后随目录关闭。四个历史 worktree 沿用下文保留理由。
-- 已通过公开 submit 将 T68/run `62df4a09a0d3976795853fdec8651038` 提交为 `awaiting_release`，record=recorded、telemetry=stored。未 Accept、未派下一项。下方全部 Pending 是排序完成时快照，T68 当前待用户验收。
-- 本轮 trace `65382f38-6fc9-4ef5-a9a4-90dff5df9f54`；implementation `8410dccb-4554-4466-933f-fcab69e0cadc`；主控 review `cc7388d4-6f31-416b-87c2-16716ec79702`。reply、review 已存；原始记录上下文 `/tmp/saddle-t68-20261004/`，诊断原始日志与临时实验 `/tmp/saddle-t68-diagnosis-20261004/`。本任务绑定 trace 留待 Drover Accept/Return 关闭，不由主控 close；不用于下一独立任务。
-- 完成提醒已处理（request_id `961e3400-e4bf-42c8-a60a-d0bead3c68f6`）；重复提醒不再读取已关闭 agent、不重做/重发。文档提交与推送结果以公开 Git 回读及本轮遥测收尾记录为准，无构建/安装/部署。
+- 夹具修复 `ee4ad30`，用户批准的 UI 测试类型别名 `d90bbaf`，最终主控复核 `7cbeb12`，main 合并 `75a1ee0`，收尾 `669ad6b`。任务记录 `docs/任务/T68-测试夹具修复.md`；先前诊断报告 `docs/调研/T68-测试失败根因与回归判断-2026-10-04.md` 保留原阶段证据与未知项。
+- 修复仅测试侧：两组夹具复用小型 Rust 启动器，以 exec 调解释器，避免新脚本首次执行成本；保留产品预算和原业务/回执/超时/取消/回收断言，新增受控慢启动用例。UI 告警仅提取等价类型别名。产品源码、原公共夹具不改，无安装部署需要。
+- 有效 RED：agent 1 项、Drover 9 项；修复后串行 agent 24/24、Drover 15/15。主控标准默认并行全套 74目标、683 passed / 0 failed / 9 ignored；类型别名后目标 UI 7/7、标准 Clippy `--all-targets -- -D warnings` exit 0，差异检查通过。等价别名后未重复全套。
+- 实现者早期全套有 viewer 超时，限定复跑及主控全套均通过；保留偶发失败事实，不声称修复了它的未知根因。macOS 底层首次启动原因和 release 冷启动仍未外推。日志 `/tmp/saddle-t68-fixture-fix-20261004-fHUMoq/`、主控 `/tmp/saddle-t68-fix-review-20261004/`。
+- 开发 worktree/分支 `t68-fixture-fix` 已安全清理，自建 `saddle/dev-t68-fix-1`（instance `d67e8bb598fb`）idle/attached=0 后随目录关闭。公开列表只留主控，四个历史 worktree 保留；重复完成提醒不重做。
+- T68 公开最终核对仍 `awaiting_release`，run `62df4a09a0d3976795853fdec8651038`。本修复阶段没有 Accept/Return/重复 Submit/新派发；用户说修完后自行放行。
+- 同一 trace `65382f38-6fc9-4ef5-a9a4-90dff5df9f54`：修复 implementation `2d27fa30-7231-4818-80f3-1bd3f7a01d40`，补充修正 `4aa0b847-7f10-4522-b5db-6540335b45e8`，最终 review `4b1a0fc4-9fe0-4322-af80-bce10602801a` / passed event `6d34a615-cddf-4131-b8fc-9a53794c6c27`。reply/审查已存；上下文与后续真实推送收尾记录在 `/tmp/saddle-t68-fix-20261004/`。trace 绑定 Tasks，留待用户 Accept 后由 Drover 关闭，不由主控提前 close。
+- 修复初次遥测决策引用被拒后，启动入口配对 executed=false/unreadable_context；核对未创建 agent 后修正记录、另作有效启动。两次回执均保留，不冒充未知结果重发或完整无缺口历史。
+- 前阶段诊断 `3951269` 已随 `ad41fb5` 合并，诊断开发目录和 agent 当时已清理。旧目录 `/tmp/saddle-t68-20261004/`、诊断实验 `/tmp/saddle-t68-diagnosis-20261004/` 保留，旧派发身份不用于后续独立任务。
 
 ## 当前待办排序已重估（2026-10-04）
 
