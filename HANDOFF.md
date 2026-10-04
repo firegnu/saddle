@@ -1,26 +1,17 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`。当前 T63 用户已批准轻量范围，原 Codex 实施中；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
+更新：2026-10-04。当前分支 `main`。当前 T63 已审查、合并并清理；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
 
-## 当前：T63 轻量范围已批准，原 Codex 实施中
+## 当前：T63 已合并并清理，待用户验收/部署指令
 
-- 用户已派发 T63「统一可搜索的操作入口」，随后明确“不交claude，还是codex来做”。Claude 未创建；只派一个 Codex，由 saddle/main 主控。
-- 用户需求：在已有 Agent 搜索和插件面板基础上，用统一可搜索入口找项目、切换 agent、打开任务、进入具体设置页，减少记忆入口位置。先做简短推荐方案和文字线框，给用户确认后再实施；不扩成通用命令平台。
-- Codex `saddle/dev-t63-design-1` / instance `bd7efad2d99a`，`gpt-6-astra / xhigh`、role=implementer；路由重/不要交叉审查/看得见。本轮仅源码核对和文档diff检查，不编译或测试，不独立交叉审查。
-- worktree `../saddle-worktrees/t63-unified-search`，分支同名，基线 `b6f93d9`；任务书 `docs/任务/T63-统一搜索入口设计.md`，产出 `docs/T63-统一搜索入口方案.md`，均在该worktree。只改这两份文档，不改产品、测试或已批准 DESIGN。
-- 公开 Drover 核对为 Running，run `1aceb478636a305c942d7b155e57bc79`；宿主新实例 `dc9cd32ad965b34b`，主控 Corral instance仍 `9f8a73396d8a`。T74已重启核实宿主/Drover均加载29c94d4。
-- T63 trace `16b9ad30-24fa-46c1-b07b-f3ea48e8656f` 开放、采集开启，controller_handoff `86502084-b6b3-4153-aa91-75756da5eaaa`；设计dispatch `e6073356-3b04-44b4-93fb-a09fab8308b2`。不要复用T74记录身份。
-- 记录目录 `/tmp/saddle-t63-20261004/`，公开回复上下文 `reply-context.json`。start operation `42079751-a7e5-4bbe-9838-ceb571095672`；完成提醒 `f31e9bec-9488-458b-b84f-ad0b9f6ec060` pending=true，不代表已送达。收到提醒先核对实例、状态和公开回复，不重复处理迟到提醒。
-- 设计完成 `c91e3da`，主控审查 `b96cf7b`（均在原分支），公开状态idle/DONE、instance不变；方案仅两份文档。主控核对源码与diff，认可扩展 `/ Search`，无设计返工，不编译或跑测试。
-- 方案推荐已知Agent项目 + Drover登记项目，并提出跨项目按编号/标题搜索具体任务。主控建议首版只搜项目、切Agent、打开项目任务列表、直达六个设置页，单条任务内容搜索不自动纳入。登记项目无Agent也可到达仍需插件候选/项目跳转接口，不说成完全无协议改动。等待用户选择范围。
-- 完成提醒 `f31e9bec-9488-458b-b84f-ad0b9f6ec060` 已处理；reply operation `1ff9cfce-81bd-4650-9b0e-24302a2fe284`；主控审查dispatch `5678171b-ad5a-442f-8ca9-1de8b7ebf9cb`，passed event `3f2d408d-ce63-448a-b28b-acac3f2e454d` 只表示设计可呈现，不表示用户批准实施。
-- 原Codex idle、worktree/分支保留供同任务续接。不自动实施、合并设计、Submit/Accept、部署或关闭task trace。T74已完成记录如下，历史worktree保留。
-
-- 用户随后强调主体是Saddle内部搜索、Tasks主要处理插件可用性，并明确“好的，继续吧”。主控已说明项目名沿用已有Agent搜索数据，本轮不新增Drover登记项目枚举或单条任务搜索接口。
-- 原Codex、原worktree继续，实施任务书 `docs/任务/T63-统一搜索入口实施.md`。先同步方案和DESIGN的最终范围；统一Agent/项目名、插件入口及六个设置页，Tasks不依赖Pin，可用时复用打开，不可用解释并到管理，不自动启停。
-- 实施路由：tier拿不准（倾向常规），交叉审查不要，影响面改行为；沿用原实例gpt-6-astra/xhigh。目标RED/GREEN、直接相关组与定向Clippy；主控阶段集成集中全量一次，不重复全量或整个workflow。
-- 实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`，authorization `55fe0491-cf8b-464f-8a7e-0dedccf233a4`，decision `4fcf763f-c88f-4e03-be7e-32f133fc60f1`；send request `ee9c2b2c-7d15-4892-bac2-15fc012bab50` confirmed=true。公开reply context `/tmp/saddle-t63-20261004/implementation-reply-context.json`；完成提醒回执在同目录 `implementation-reminder.out`，pending不代表送达。
-- 上方设计等待确认条目已由最新实施授权替代。不自动Submit/Accept、部署、关闭task trace或派发下一项。
+- 用户批准轻量统一搜索，并指定 Codex；实现 `2a36dbd`，主控审查记录 `aac20cb`，合并 `40bdf5c`，清理后空提交 `e5940dc`。本交接提交随后推送 origin/main，以实际推送回执为准。
+- 入口仍为 Agents 焦点 `/` 或现有 Search 点击；查 Agent 名、已有 Agent 的 cwd 末级项目名、插件标题/ID及 General/Colors/Advanced/Diagnostics/Plugins/Updates 六页。项目搜索返回 Agent，没有 Drover 登记项目或单条任务查询。
+- Tasks 复用普通插件入口，不要求 Pin；未安装无条目，停用/失败/无响应显示状态并转管理，正常时打开/切换原视图。刷新与激活均检查可用性，不自动启停。T74 Pin、Plugins/Settings及终端透传保持。
+- 主控按任务书审查，无阻塞项；路由不要独立交叉审查，未另派。集中全量一次 **702 passed / 1 failed / 9 ignored**；唯一失败 `native_mouse_buttons_cover_forms_and_stop_confirmation:851` 限定复核一次通过。未修改断言/超时/并行参数，不能称首次全量全绿或根因已修复。全量 Clippy、fmt、diff通过，日志 `/tmp/saddle-t63-integration/`。
+- 合并后核对产品代码与受检候选一致，差异仅主控文档。原 worktree/分支 `t63-unified-search` 已安全删除；原 Codex `saddle/dev-t63-design-1` / `bd7efad2d99a` 在 idle、attached=0、clean和已合并核对后随工作目录删除一并关闭。公开列表只剩主控；四个历史 worktree 保留。
+- 本轮没有 release 编译、安装部署、Submit/Accept、关闭 task trace或派发下一项；已安装产品仍为 T74 `29c94d4`。需要本功能在用户当前 Saddle 生效，仍须用户触发部署。
+- T63 trace `16b9ad30-24fa-46c1-b07b-f3ea48e8656f`，run `1aceb478636a305c942d7b155e57bc79`，controller_handoff `86502084-b6b3-4153-aa91-75756da5eaaa`；绑定Tasks，不由主控关闭。任务状态未操作，当前业务状态需按公开接口查询。
+- 实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`，主控审查dispatch `f7bb95d9-f4fb-41a8-91eb-c9400f163f93`；公开reply operation `2bb6ecaa-f52f-452b-9f11-b0f2c057693a`，静态审查 `b788668c-12c5-482e-bbc2-2f4166d150b8`，集成审查记录预备ID `40fd53c0-560d-40bf-9b1e-f31103d1f5e9`（以append回执为准）。记录目录 `/tmp/saddle-t63-20261004/`；实施提醒 `80909340-c726-40a5-bf36-e433293901e2` 已处理，迟到提醒不重复执行。
 
 ## 上一项：T74 已合并、安装并重启验证
 
@@ -83,4 +74,4 @@
 
 ## 下一步
 
-等待原Codex的T63轻量实施结果，核对公开状态/回复、实际diff和目标检查；按路由不另派独立审查。主控通过后集中阶段集成全量一次，再按项目规矩合并推送清理。不得搭车做Drover内容/项目搜索平台、部署或Tasks状态流转。
+等待用户验收、部署指令或同任务反馈。T63已完成主控审查和一次集中集成，不重复全量；不自动推进Tasks状态、关闭trace或派发下一项。
