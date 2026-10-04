@@ -1,8 +1,8 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`。当前 T63 由 Codex 完成设计，等待用户确认范围；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
+更新：2026-10-04。当前分支 `main`。当前 T63 用户已批准轻量范围，原 Codex 实施中；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
 
-## 当前：T63 设计已审查，等待用户确认范围
+## 当前：T63 轻量范围已批准，原 Codex 实施中
 
 - 用户已派发 T63「统一可搜索的操作入口」，随后明确“不交claude，还是codex来做”。Claude 未创建；只派一个 Codex，由 saddle/main 主控。
 - 用户需求：在已有 Agent 搜索和插件面板基础上，用统一可搜索入口找项目、切换 agent、打开任务、进入具体设置页，减少记忆入口位置。先做简短推荐方案和文字线框，给用户确认后再实施；不扩成通用命令平台。
@@ -15,6 +15,12 @@
 - 方案推荐已知Agent项目 + Drover登记项目，并提出跨项目按编号/标题搜索具体任务。主控建议首版只搜项目、切Agent、打开项目任务列表、直达六个设置页，单条任务内容搜索不自动纳入。登记项目无Agent也可到达仍需插件候选/项目跳转接口，不说成完全无协议改动。等待用户选择范围。
 - 完成提醒 `f31e9bec-9488-458b-b84f-ad0b9f6ec060` 已处理；reply operation `1ff9cfce-81bd-4650-9b0e-24302a2fe284`；主控审查dispatch `5678171b-ad5a-442f-8ca9-1de8b7ebf9cb`，passed event `3f2d408d-ce63-448a-b28b-acac3f2e454d` 只表示设计可呈现，不表示用户批准实施。
 - 原Codex idle、worktree/分支保留供同任务续接。不自动实施、合并设计、Submit/Accept、部署或关闭task trace。T74已完成记录如下，历史worktree保留。
+
+- 用户随后强调主体是Saddle内部搜索、Tasks主要处理插件可用性，并明确“好的，继续吧”。主控已说明项目名沿用已有Agent搜索数据，本轮不新增Drover登记项目枚举或单条任务搜索接口。
+- 原Codex、原worktree继续，实施任务书 `docs/任务/T63-统一搜索入口实施.md`。先同步方案和DESIGN的最终范围；统一Agent/项目名、插件入口及六个设置页，Tasks不依赖Pin，可用时复用打开，不可用解释并到管理，不自动启停。
+- 实施路由：tier拿不准（倾向常规），交叉审查不要，影响面改行为；沿用原实例gpt-6-astra/xhigh。目标RED/GREEN、直接相关组与定向Clippy；主控阶段集成集中全量一次，不重复全量或整个workflow。
+- 实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`，authorization `55fe0491-cf8b-464f-8a7e-0dedccf233a4`，decision `4fcf763f-c88f-4e03-be7e-32f133fc60f1`；send request `ee9c2b2c-7d15-4892-bac2-15fc012bab50` confirmed=true。公开reply context `/tmp/saddle-t63-20261004/implementation-reply-context.json`；完成提醒回执在同目录 `implementation-reminder.out`，pending不代表送达。
+- 上方设计等待确认条目已由最新实施授权替代。不自动Submit/Accept、部署、关闭task trace或派发下一项。
 
 ## 上一项：T74 已合并、安装并重启验证
 
@@ -77,4 +83,4 @@
 
 ## 下一步
 
-等待用户确认T63设计范围，尤其是否包含跨项目单条任务搜索；主控推荐先统一导航至项目任务列表。用户确认后再写明最小接口并交原Codex实施。不要重新开Claude、不自动把可选搜索范围当成批准。T74旧完成提醒均已处理。
+等待原Codex的T63轻量实施结果，核对公开状态/回复、实际diff和目标检查；按路由不另派独立审查。主控通过后集中阶段集成全量一次，再按项目规矩合并推送清理。不得搭车做Drover内容/项目搜索平台、部署或Tasks状态流转。
