@@ -134,3 +134,9 @@
 2026-10-04：独立审查发现 R1/R2 后由原实现者修复于 `439c5e3`；原 Codex 定向复核通过、阻塞0。主控阶段集成首次覆盖 697 passed / 2 failed / 9 ignored，两项失败各一次限定复核通过；全量Clippy、fmt及差异检查通过。原始失败和完整命令保存在 `docs/任务/T74-Tasks入口独立审查.md` 及 `/tmp/saddle-t74-integration/`，不能称默认并行全套稳定全绿。
 
 已合并 `a62eecf` 并推送，两个 T74 worktree 与分支已清理，对应实现/审查 agent 随工作目录删除一并关闭。没有部署、Submit/Accept 或关闭 task trace；等待用户后续触发。
+
+### 用户追加授权后的部署
+
+用户随后明确“编译+部署”。从干净 main `29c94d4` 运行 `cargo build -p saddle -p saddle-drover-plugin --bins --release --locked --target aarch64-apple-darwin`（共享 target），退出0；没有重复全量测试。安装包 `~/.local/share/saddle/versions/29c94d4` 更新宿主和 Drover，其余产物沿用原包并在 BUILD.txt 声明；旧包保留。Saddle 入口原子切换，Drover登记目录在原锁及内容比对保护下仅替换路径，配置/其他登记/启用状态和Corral链接不变。入口help和两份release二进制SHA256回读通过。
+
+备份与日志 `~/.local/share/saddle/backups/t74-deploy-20261004-201807/`。公开实例和进程映像核对：宿主PID68447仍运行d7da5b4、Drover PID68450仍运行5f39f88；用户正常重开Saddle才加载新版。主控agent instance不变。没有 Submit/Accept、部署后任务派发或关闭task trace。

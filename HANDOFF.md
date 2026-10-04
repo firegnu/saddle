@@ -2,7 +2,7 @@
 
 更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。用户已批准设计并要求在同一 T74 继续实施；下方 T66 记录为此前完成快照。
 
-## 当前：T74 已合并、推送并清理，未部署
+## 当前：T74 已合并并安装，当前窗口需重开加载新版
 
 - 用户已批准同一 T74 实施。实现 `e6edaca`，两项返工 `439c5e3`；原独立 Codex 定向复核 R1/R2 通过、阻塞0，主控阶段集成完成。合并提交 `a62eecf` 已推送；本节随收尾更新。
 - 入口：Settings → Plugins 给 Tasks 设置 Pin 后，Agents 头部出现 Tasks，Agents 焦点按 p 可打开；Viewer 按键透传。普通终端使用启动 cwd。停用保留入口并解释不可用，移除清除固定。没有默认自动固定。
@@ -10,7 +10,7 @@
 - 标准全量命令只跑一次，在 workflow 失败后停止：555 passed / 2 failed / 9 ignored。只补跑未执行的插件目标142 passed、宿主examples退出0；首次覆盖合计 **697 passed / 2 failed / 9 ignored**。两项失败各限定复核一次均通过，未改代码/断言/超时。全量Clippy、fmt、diff检查通过。
 - 两项失败为 `mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends:1257` 与 `native_mouse_buttons_cover_forms_and_stop_confirmation:851`。不能称默认并行全套稳定全绿；后一项与实现者旧基线报告相同，但主控未重跑旧基线确认归因。没有搭车修复时序测试。完整日志 `/tmp/saddle-t74-integration/`。
 - 主控确认合并后代码与受检候选一致，差异只有主控文档。两个 T74 worktree 和分支已安全清理；原 Claude `saddle/dev-t74-design-1` / `0f81bd0e76e9`、Codex `saddle/dev-t74-review-1` / `80d99546d75c` 在 idle、未attach、clean及祖先检查后随工作目录删除一并关闭。公开 corral ls 只剩本主控，四个历史worktree保留。
-- 未发布编译、安装部署、重启或推进 Tasks。上次公开 T74 为 Running，run `5e378db26877a85fefe4684199d17910`；本轮未改状态，不把本地合并当 Submit/Accept。后续部署等待用户触发。
+- 用户随后明确“编译+部署”。已从干净 main `29c94d4` release 构建并安装 Saddle + Drover 到 `~/.local/share/saddle/versions/29c94d4`，入口及 Drover 登记目录已切换。config、其他插件、启用状态及 Corral 命令链接保持；旧包与备份保留。没有改 Tasks 状态、Submit/Accept 或关闭 trace。
 - trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c` 继续开放，绑定 T74 同run；不由主控关闭。记录目录 `/tmp/saddle-t74-20261004/`；原审查/返工/复核提醒均已处理，后续迟到提醒不重复执行。
 - 最后复核 dispatch `91cb9789-6afd-4c81-b95f-109baece7230`，主控passed事件 `aceb863e-63a3-4d94-b7aa-61eedea39304`。审查报告 `docs/任务/T74-Tasks入口独立审查.md` 保存各阶段真实证据和集成判断；源阶段任务书已随合并保留。
 - 用户指出入口任务耗时过长，后续坚持缩小范围、避免重复检查；本次未追加新需求。T76等下一项未获本轮实施授权。
@@ -63,4 +63,4 @@
 
 ## 下一步
 
-T74 已合并推送清理，等待用户决定部署或 Tasks 提交/验收。不要自动部署、Submit/Accept、关闭 task trace 或派发下一任务。收到同任务反馈再处理；旧完成提醒只核对已处理事实。
+T74 已安装，用户正常重开 Saddle 后加载新版；Settings → Plugins 选 Drover → Pin，然后可从 Agents 头部 Tasks 或按 p 打开。当前宿主 PID68447 仍加载 d7da5b4，Drover PID68450 仍加载5f39f88，本轮未重启进程或升级 agent。构建与安装校验日志/配置备份：`~/.local/share/saddle/backups/t74-deploy-20261004-201807/`。等待用户 Tasks 提交/验收或反馈；不自动 Submit/Accept、关闭 task trace 或派发下一任务。
