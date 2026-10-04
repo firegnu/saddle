@@ -2,6 +2,19 @@
 
 更新：2026-10-04。用户认可设计语言和 33 页实际绘制预览，要求确认未破坏逻辑后合并部署。第一批 UI 已完成审查、合并、推送、安装与开发目录清理；本轮未走 Tasks 队列或开启遥测。
 
+## 当前：UI 收尾核对已派发（2026-10-04）
+
+用户在看过第二批后批准继续：更新总清单、核对 Agents/按钮窄窗和 Diff 浅色表现，仅修复确认的展示问题。总清单已按两批记录更新，明确 D2–D3、All pending、New 极窄 Edit path 等保留项，未冒充全部改完。产品基线 `593ff8a`，任务书/清单提交 `1b48172`。
+
+| 实现者 | instance | worktree | 完成提醒 request_id |
+| --- | --- | --- | --- |
+| saddle/dev-ui-final-host-1 | bd43f863e4e6 | ../saddle-worktrees/ui-final-host | ae9de27e-79a6-4d80-a8bd-365863b89ce4 |
+| saddle/dev-ui-final-diff-1 | f85f97a47591 | ../saddle-worktrees/ui-final-diff | 65a95bc3-7c33-4690-8158-9a82dee0737c |
+
+两组 Claude Code opus[1m]/high、role=implementer，路由常规（Diff 档位 null 主控选常规）/不交叉审查/看得见；start ok，完成提醒 pending。宿主独占 ui.rs/plugins/ui.rs，Diff 独占 plugins/diff；具体任务书 `docs/任务/UI收尾-{宿主窄窗,Diff主题}-2026-10-04.md`。后续读取 status/reply 并主控审查；两组集成后统一合并部署，不把 DONE 直接当通过。
+
+cargo 仍用 `/tmp/saddle-ui2-cargo.py` 共享 target 串行锁；本批只做针对展示检查，不重跑全套/Clippy，不推进 Tasks 队列或开启遥测。窄栏名称优先的用户批准已回写 DESIGN。第二批安装状态见下文，不能把本次候选说成已部署。
+
 ## 第二批已完成（2026-10-04）
 
 用户批准剩余 UI 整理及 Agents 限定方案，三组并行实现和主控审查均已完成。宿主 `29357c3`、Settings `8735ff8`、Diff 返工 `60f7bf1` 统一集成；34 列 Staged+error 必须改项已关闭。main 合并 `6189921`，收尾 `3b2f6b6`。
