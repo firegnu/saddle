@@ -75,7 +75,7 @@ cargo fmt --check
 | 界面 / 场景 | 现有样例与检查重点 |
 |---|---|
 | 宿主正常、弹窗 | [ui_dialogs_polish.rs](../tests/ui_dialogs_polish.rs)：`split_sides_share_one_width_and_line_up`（60×20），`open_content_rules_off_fixed_actions_from_existing_agents`（80×24）；分割选项对齐、固定操作与 agent 列表分隔 |
-| 宿主空白 / 无匹配 | [ui_second_host.rs](../tests/ui_second_host.rs)：`no_agents_and_a_search_without_matches_read_differently`（100×20），区分没有 agent 与搜索没有结果 |
+| 宿主空白 / 无匹配 | [ui_second_host.rs](../tests/ui_second_host.rs)：`no_agents_and_a_search_without_matches_read_differently`（100×20），没有 Agent 时仍可搜索设置页，搜索无匹配单独提示；[ui_dialogs_polish.rs](../tests/ui_dialogs_polish.rs) 的 `unified_search_finds_a_settings_page_without_agents` 检查大小写匹配和设置结果 |
 | 宿主报错 | [ui_dialogs_polish.rs](../tests/ui_dialogs_polish.rs)：`attention_failed_source_reads_as_not_openable_even_when_selected`（80×24），失败来源不可打开；[ui_second_host.rs](../tests/ui_second_host.rs) 保留停止/关闭后果提示和状态栏通知检查 |
 | 宿主长文本 / 窄矮窗 | [ui_second_host.rs](../tests/ui_second_host.rs)：`long_shell_directories_keep_their_last_levels_in_the_pane_title`（120/60/40×10）；`saved_pane_actions_sit_right_below_their_explanation`（80×24/9），长路径保留末级、恢复操作贴近说明 |
 | Agents 正常 / 长文本 | [ui.rs](../tests/ui.rs)：`multi_agent_layout_gives_names_room_and_keeps_every_field_with_its_agent`、`paths_show_in_full_when_they_fit_and_lose_leading_levels_only_when_too_wide`、`git_summary_line_follows_each_agents_directory_and_wraps_when_narrow`，固定 agent、状态和时间，字段不串行、路径和 Git 摘要退让 |

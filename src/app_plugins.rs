@@ -383,7 +383,7 @@ impl App {
 }
 
 impl App {
-    fn plugin_palette_items(&self) -> Vec<crate::plugins::palette::Item> {
+    pub(super) fn plugin_palette_items(&self) -> Vec<crate::plugins::palette::Item> {
         let mut opened: std::collections::BTreeSet<String> = self
             .viewer
             .tabs
@@ -475,6 +475,15 @@ impl App {
         }
         false
     }
+    pub(super) fn manage_plugin(&mut self, selected: Option<&str>) {
+        self.close_plugin_overlay(false);
+        self.open_settings(self.focus);
+        let mut page = crate::plugins::ui::Page::default();
+        if let Some(id) = selected {
+            page.select_plugin(id, &self.plugins);
+        }
+        self.plugin_page = Some(page);
+    }
     pub(super) fn plugin_palette_outcome(&mut self, outcome: crate::plugins::palette::Outcome) {
         use crate::plugins::palette::Outcome;
         match outcome {
@@ -489,13 +498,7 @@ impl App {
                     .and_then(|p| p.selected_id())
                     .map(str::to_owned);
                 self.plugin_palette = None;
-                self.close_plugin_overlay(false);
-                self.open_settings(self.focus);
-                let mut page = crate::plugins::ui::Page::default();
-                if let Some(id) = selected {
-                    page.select_plugin(&id, &self.plugins);
-                }
-                self.plugin_page = Some(page);
+                self.manage_plugin(selected.as_deref());
             }
             Outcome::Open(item) => {
                 if !self.plugin_palette_items().contains(&item) || item.action().is_none() {

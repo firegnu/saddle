@@ -396,6 +396,86 @@ view = "main"
     }
 }
 #[test]
+fn unified_search_refreshes_plugin_states_without_activating_old_results() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use saddle::{
+        plugins::palette::Item,
+        search::{Outcome, Search},
+    };
+    let mut item = Item {
+        id: "test.tasks".into(),
+        title: "Tasks".into(),
+        state: "Running".into(),
+        note: String::new(),
+        has_view: true,
+        opened: false,
+        pid: Some(7),
+        builtin: false,
+    };
+    let mut search = Search::default();
+    let draw = |search: &mut Search| {
+        let mut screen =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 24)).unwrap();
+        screen
+            .draw(|f| {
+                search.draw(&Default::default(), f, &[], |_| false);
+            })
+            .unwrap();
+        let buffer = screen.backend().buffer();
+        let lines: Vec<String> = (0..24)
+            .map(|y| (0..100).map(|x| buffer[(x, y)].symbol()).collect())
+            .collect();
+        let y = lines
+            .iter()
+            .position(|s| s.contains("Plugin · Tasks"))
+            .unwrap() as u16;
+        let x = lines[usize::from(y)]
+            .chars()
+            .position(|c| c == '›')
+            .unwrap() as u16;
+        (lines.join("\n"), ratatui::layout::Position::new(x, y))
+    };
+    let enter =
+        |search: &mut Search| search.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &[]);
+    search.paste("TASKS");
+    search.update_plugins(vec![item.clone()]);
+    let (text, hit) = draw(&mut search);
+    assert!(text.contains("Background · Open"), "{text}");
+    assert_eq!(enter(&mut search), Outcome::Plugin(item.clone()));
+    for state in ["Disabled", "Failed", "Unresponsive"] {
+        item.state = state.into();
+        search.update_plugins(vec![item.clone()]);
+        assert_eq!(enter(&mut search), Outcome::Stay, "unseen state: {state}");
+        assert!(search.click(hit).is_none(), "old mouse row: {state}");
+        let (text, hit) = draw(&mut search);
+        assert!(text.contains(&format!("{state} · Manage")), "{text}");
+        assert!(!text.contains("Background · Open"), "{text}");
+        assert_eq!(search.click(hit), Some(Outcome::Plugin(item.clone())));
+        let Outcome::Plugin(selected) = enter(&mut search) else {
+            panic!("missing management destination");
+        };
+        assert!(selected.action().is_none());
+    }
+    item.state = "Running".into();
+    item.opened = true;
+    search.update_plugins(vec![item.clone()]);
+    assert_eq!(enter(&mut search), Outcome::Stay);
+    let (text, _) = draw(&mut search);
+    assert!(text.contains("View open · Switch"), "{text}");
+    assert_eq!(enter(&mut search), Outcome::Plugin(item));
+    search.update_plugins(vec![]);
+    assert_eq!(enter(&mut search), Outcome::Stay);
+    // Removing the plugin leaves no task entry, and never invents a Tasks destination.
+    let mut screen = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 24)).unwrap();
+    screen
+        .draw(|f| {
+            search.draw(&Default::default(), f, &[], |_| false);
+        })
+        .unwrap();
+    assert_eq!(enter(&mut search), Outcome::Stay);
+}
+
+#[test]
 fn palette_filters_preserves_selection_and_gates_every_runtime_state() {
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     use saddle::plugins::palette::{Item, Outcome, Palette};
