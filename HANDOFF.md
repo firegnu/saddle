@@ -5,7 +5,7 @@
 ## 当前状态
 
 - `main`：UI 合并 `5f39f88`，收尾空提交 `85a780b`；之后仅补部署与交接记录。Settings 原未提交候选已核对后安全提交 `0452406`，设计语言 HTML 已入库。
-- 新安装包：`~/.local/share/saddle/versions/5f39f88`；Saddle 入口和 Drover 注册目录已切换。Corral、Diff、其他插件和主配置未改；旧不可变包保留。
+- 新安装包：Saddle 入口指向 `~/.local/share/saddle/versions/4ac4691`（更新圆点微调），Drover 注册仍为 `5f39f88`。Corral、Diff、其他插件和主配置未改；旧不可变包保留。
 - **当前窗口尚未热更新**：核验时宿主 PID 72000 仍加载 `a542931`，已有 Drover 进程仍加载 `711ab18`。正常关闭并重开 Saddle 即可加载新版，不需要退出主控或其他 agent；不要擅自杀进程。
 - 第一批包含 Settings 家族、Drover、宿主弹窗和 Telemetry 展示整理。80×10 Add/Edit 正文被帮助行挤掉的问题已修正；workflow 旧文字定位已适配，业务断言保留。
 - 预览：`file:///Users/firegnu/Developer/personal_projs/saddle-ui-preview/2026-10-04-first-batch/index.html`。独立文件未随 worktree 删除。实际 Ratatui 合成画面，不冒充真实终端或手机 SSH 验收。
@@ -28,3 +28,9 @@
 - 用户正常重开 Saddle 后回看本批实际界面，有反馈则继续对应 UI 小修。部署成功与运行窗口已更新应分别核验。
 - Diff、Settings 剩余 H18/H19、公共状态栏/Toast/notice/终端和 Agents 公共绘制仍是后续批次；本批完成不等于整份 UI 清单完成，不自动启动下一项。
 - 保持设计语言与整理清单两份文档。设计与批准取舍看 `docs/DESIGN.md`、`docs/UI设计语言.md` 和 `docs/调研/UI整理清单-2026-10-03.md`；分组和各组审查见 `docs/任务/UI并行-分组与派发-2026-10-04.md`。T74 导航改造、移动端能力不搭车，不推进 Tasks 队列。
+
+## Settings 更新圆点微调（2026-10-04）
+
+用户看到更新提示后反馈「这个小红点有点小。你自己调整一下吧」。本次主控直接改为加粗实心圆 `●`（原 `•`），仍单列、原色、原位置；更新检测与 Settings 命中区域不变。实现 `e23fd89`，合并 `b25fa21`，收尾 `4ac4691`，开发 worktree/分支已清理，无新委派。
+
+现有 UI 检查 31 项通过（含 52/30/20 列的更新提示）、宿主 lib Clippy 与 release 构建通过；纯视觉小改不制造失败测试、不重跑刚完成的全套，旧基线失败状态沿用上文。部署 `4ac4691` 仅替换 Saddle，配置/注册表 hash 未变，入口和 `--help` 回读成功；备份与日志在 `~/.local/share/saddle/backups/update-dot-20261004-125029/`。本次未重启正在使用的宿主或任何 agent，正常重开 Saddle 后加载。
