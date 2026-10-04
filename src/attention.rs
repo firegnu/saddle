@@ -299,13 +299,24 @@ impl Popup {
             for i in group {
                 let item = &items[i];
                 let (mark, color) = item.look(t);
+                // Selection is the marker and row fill; a failed source has nothing to open,
+                // so its name stays muted and plain while its reason stays readable.
+                let chosen = selected == Some(i);
+                let label = if matches!(item.target, Target::Source(_)) {
+                    Style::default().fg(t.muted)
+                } else if chosen {
+                    Style::default().add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                };
                 lines.push((
                     Line::from(vec![
-                        Span::styled(format!(" {mark} "), Style::default().fg(color)),
-                        Span::raw(crate::ui::pad(
-                            &crate::ui::clip(&item.label, label_width),
-                            label_width,
-                        )),
+                        Span::raw(if chosen { "›" } else { " " }),
+                        Span::styled(format!("{mark} "), Style::default().fg(color)),
+                        Span::styled(
+                            crate::ui::pad(&crate::ui::clip(&item.label, label_width), label_width),
+                            label,
+                        ),
                         Span::raw("  "),
                         Span::styled(item.reason(), Style::default().fg(color)),
                         Span::styled(sep(&item.note), Style::default().fg(t.muted)),

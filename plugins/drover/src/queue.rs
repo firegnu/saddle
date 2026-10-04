@@ -1211,6 +1211,30 @@ impl Panel {
             t.agent_idle
         }
     }
+    /// An action result: the headline carries its outcome color; the details stay plain, so a
+    /// failure report with recorded parts does not read as all error.
+    fn result_lines(&self, t: &Theme, text: &str, width: u16) -> Vec<ratatui::text::Line<'static>> {
+        use ratatui::style::{Modifier, Style};
+        let (head, rest) = text.split_once('\n').unwrap_or((text, ""));
+        let mut lines: Vec<_> = wrap_text(head, width)
+            .into_iter()
+            .map(|l| {
+                l.style(
+                    Style::default()
+                        .fg(self.message_color(t))
+                        .add_modifier(Modifier::BOLD),
+                )
+            })
+            .collect();
+        if text.contains('\n') {
+            lines.extend(
+                wrap_text(rest, width)
+                    .into_iter()
+                    .map(|l| l.style(Style::default().fg(t.text))),
+            );
+        }
+        lines
+    }
     /// Whether the selected Pending task's dispatch will be recorded: its own choice, or the
     /// project default.
     fn recording(&self) -> bool {
@@ -1342,10 +1366,10 @@ impl Panel {
                 && !matches!(&self.page, Page::Feedback(text) if text == &self.message)
                 && body.height > 3
             {
-                let lines = wrap_text(&self.message, body.width);
+                let lines = self.result_lines(t, &self.message, body.width);
                 let height = (lines.len() as u16).min(body.height / 3).max(1);
                 frame.render_widget(
-                    Paragraph::new(lines).style(Style::default().fg(self.message_color(t))),
+                    Paragraph::new(lines),
                     Rect::new(body.x, body.bottom() - height, body.width, height),
                 );
                 body.height -= height;
@@ -1521,10 +1545,13 @@ impl Panel {
             &[B::new(close, K::Esc, true)],
         );
         self.buttons.extend(hits);
-        let mut controls = vec![
+        // Queue-wide actions, then the selected task's, then other views; same order as before,
+        // with a divider between groups.
+        let queue_controls = vec![
             B::new("Add task a", K::Char('a'), ready),
             B::new("Notifications N", K::Char('N'), !self.busy),
         ];
+        let mut controls = Vec::new();
         if self
             .tasks()
             .get(self.selected)
@@ -1563,7 +1590,7 @@ impl Panel {
             );
             button.key = record_click();
             controls.push(button);
-            let mut button = B::new("Dispatch selected", K::Null, dispatchable);
+            let mut button = B::new("Dispatch selected", K::Null, dispatchable).primary();
             button.key = dispatch_selected_click();
             controls.push(button);
         }
@@ -1573,23 +1600,25 @@ impl Panel {
             } else {
                 "Accept"
             };
-            let mut button = B::new(label, K::Null, ready);
+            let mut button = B::new(label, K::Null, ready).primary();
             button.key = transition_click();
             controls.push(button);
             let mut button = B::new("Return to pending…", K::Null, ready);
             button.key = return_click();
             controls.push(button);
         }
-        controls.push(B::new("All pending A", K::Char('A'), !self.busy));
-        controls.push(B::new("Help ?", K::Char('?'), true));
-        let (middle, hits) = buttons::draw_compact(
+        let view_controls = vec![
+            B::new("All pending A", K::Char('A'), !self.busy),
+            B::new("Help ?", K::Char('?'), true),
+        ];
+        let (middle, hits) = draw_groups(
             t,
             frame,
             Rect {
                 width: body.width.saturating_sub(close_width + 1),
                 ..body
             },
-            &controls,
+            &[queue_controls, controls, view_controls],
         );
         self.buttons.extend(hits);
         if middle.height < 2 {
@@ -1861,15 +1890,18 @@ impl Panel {
                 }
                 let tasks = self.tasks();
                 if tasks.is_empty() {
-                    frame.render_widget(
-                        Paragraph::new(if self.snapshot.is_some() {
-                            "No active tasks · Add a\n\nHistory · 0\nNo history yet"
-                        } else {
-                            "Loading tasks…"
-                        })
-                        .wrap(Wrap { trim: false }),
-                        body,
-                    );
+                    let muted = Style::default().fg(t.muted);
+                    let lines = if self.snapshot.is_some() {
+                        vec![
+                            Line::styled("No active tasks · Add task a", muted),
+                            Line::raw(""),
+                            Line::styled("History 0", muted.add_modifier(Modifier::BOLD)),
+                            Line::styled("No history yet", muted),
+                        ]
+                    } else {
+                        vec![Line::styled("Loading tasks…", muted)]
+                    };
+                    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), body);
                     return hits;
                 }
                 let text_width = body.width.saturating_sub(1);
@@ -1881,7 +1913,7 @@ impl Panel {
                 {
                     rows.push((
                         None,
-                        Line::styled("No active tasks · Add a", Style::default().fg(t.muted)),
+                        Line::styled("No active tasks · Add task a", Style::default().fg(t.muted)),
                     ));
                     rows.push((None, Line::raw("")));
                 }
@@ -2024,7 +2056,7 @@ impl Panel {
                     let label = format!(
                         "{} {} {}",
                         if index == self.project_selected {
-                            "▎"
+                            "›"
                         } else {
                             " "
                         },
@@ -2050,13 +2082,24 @@ impl Panel {
                     .iter()
                     .position(|(i, _)| *i == Some(self.project_selected))
                     .unwrap_or(0);
+                // Registry error rows lead the list.
+                let errors = self
+                    .registry_error
+                    .as_ref()
+                    .map_or(0, |error| wrap_text(error, body.width).len());
                 let top = selected.saturating_sub(height.saturating_sub(1));
                 for (offset, (index, line)) in lines.iter().skip(top).take(height).enumerate() {
                     let row = Rect::new(body.x, body.y + offset as u16, body.width, 1);
                     frame.render_widget(
                         Paragraph::new(line.as_str()).style(
                             if *index == Some(self.project_selected) {
-                                Style::default().bg(t.selected)
+                                Style::default().bg(t.selected).add_modifier(Modifier::BOLD)
+                            } else if index.is_none() {
+                                Style::default().fg(if top + offset < errors {
+                                    t.agent_error
+                                } else {
+                                    t.muted
+                                })
                             } else {
                                 Style::default()
                             },
@@ -2074,7 +2117,7 @@ impl Panel {
                     .unwrap_or(&self.project);
                 frame.render_widget(
                     Paragraph::new(crate::project_setup::safe(&format!(
-                        "{}\n{}\nClick / Enter to open · a Add · s Settings",
+                        "{}\n{}",
                         path,
                         self.project_status
                             .get(path)
@@ -2092,7 +2135,7 @@ impl Panel {
                 );
             }
             Page::Project(path) => {
-                let field = Block::bordered().title("Project path · Enter Apply · Esc Cancel");
+                let field = t.block(" Directory ", focused);
                 let field_area = Rect::new(body.x, body.y, body.width, body.height.min(3));
                 let inner = field.inner(field_area);
                 frame.render_widget(field, field_area);
@@ -2106,7 +2149,14 @@ impl Panel {
                     frame.set_cursor_position((inner.x + width.min(inner.width - 1), inner.y));
                 }
                 if body.height > 3 {
-                    frame.render_widget(Paragraph::new("Enter a project registered with drover. Ctrl-U clears.\nFor this session only; set queue.cwd for a default.").wrap(Wrap { trim: false }), Rect::new(body.x, body.y + 3, body.width, body.height - 3));
+                    frame.render_widget(
+                        Paragraph::new(
+                            "Type a registered project directory. Ctrl-U clears.\nApplies to this session only.",
+                        )
+                        .style(Style::default().fg(t.muted))
+                        .wrap(Wrap { trim: false }),
+                        Rect::new(body.x, body.y + 3, body.width, body.height - 3),
+                    );
                 }
             }
             Page::Add { .. } | Page::Edit { .. } => {
@@ -2128,19 +2178,21 @@ impl Panel {
                     frame.render_widget(Paragraph::new("Enlarge the window to edit a task"), body);
                     return hits;
                 }
+                // Field titles name the field; the key hint for switching fields sits below, only
+                // when the Body field still keeps a text row (title 3 + body borders 2 + hint 1).
+                let hint = u16::from(body.height >= 7);
                 let title_area = Rect::new(body.x, body.y, body.width, 3);
-                let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3);
+                let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3 - hint);
                 self.fields = vec![(title_area, false), (text_area, true)];
-                let title_block = Block::bordered().title("Title").border_style(
-                    Style::default().fg(if !*body_focus { t.focus } else { t.border }),
-                );
-                let text_block = Block::bordered()
-                    .title("Body · Tab Switch · Ctrl-S Save · Esc Cancel")
-                    .border_style(Style::default().fg(if *body_focus {
-                        t.focus
-                    } else {
-                        t.border
-                    }));
+                let title_block = t.block(" Title ", !*body_focus);
+                let text_block = t.block(" Body ", *body_focus);
+                if hint > 0 {
+                    frame.render_widget(
+                        Paragraph::new("Tab Switch field · Ctrl-S Save")
+                            .style(Style::default().fg(t.muted)),
+                        Rect::new(body.x, text_area.bottom(), body.width, 1),
+                    );
+                }
                 let title_inner = title_block.inner(title_area);
                 let text_inner = text_block.inner(text_area);
                 frame.render_widget(title_block, title_area);
@@ -2175,29 +2227,54 @@ impl Panel {
                 }
             }
             _ => {
-                let text=match &self.page {
-                    Page::Help=>"Tasks help\nTop actions control explicit dispatch; bottom actions control the selected task.\nc: Projects; a: Add project / s: Project settings (in Projects); e: Set path\nUp/Down / j k: Select task or project\nt: Task text; Enter: Run details\nPgUp/PgDn: Scroll text or details\nr: Refresh; p: Pause / Resume explicit dispatch\na: Add task; A: All pending\ne: Edit pending; u / d: Move pending; x: Delete pending\nDispatch selected: explicitly send the selected Pending task\nR: Record default for this project; [ ] Record beside Dispatch selected changes it for that dispatch only. Saddle's Telemetry recording switch still decides.\nTelemetry ↗: Saddle's Telemetry page on every run of the selected numbered task\nSubmit for review: selected Running to Awaiting\nAccept: selected Awaiting to Done\nReturn to pending: Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.\nTab: Switch field; Ctrl-S: Save\nEsc: Back or close Tasks; Ctrl-]: Agents".into(),
-                    Page::Delete{pending,index}=>{let t=&pending[*index];format!("Delete pending task {}?\n{} {}\n\nThis removes it from the queue with drover drop;\ndrover keeps it in History as Dropped.\ny / Delete confirms · Esc / Cancel keeps it.\n\n{}",index+1,t.id.as_deref().unwrap_or("·"),t.title,t.body)},
-                    Page::Feedback(text)=>text.clone(),
-                    _=>unreachable!(),
+                let width = body.width.saturating_sub(1);
+                let lines = match &self.page {
+                    Page::Help => help_lines(t, width),
+                    Page::Delete { pending, index } => {
+                        let task = &pending[*index];
+                        let mut lines: Vec<Line<'static>> =
+                            wrap_text(&format!("Delete pending task {}?", index + 1), width)
+                                .into_iter()
+                                .map(|l| {
+                                    l.style(
+                                        Style::default().fg(t.danger).add_modifier(Modifier::BOLD),
+                                    )
+                                })
+                                .collect();
+                        lines.extend(
+                            wrap_text(
+                                &format!("{} · {}", task.id.as_deref().unwrap_or("·"), task.title),
+                                width,
+                            )
+                            .into_iter()
+                            .map(|l| {
+                                l.style(Style::default().fg(t.bright).add_modifier(Modifier::BOLD))
+                            }),
+                        );
+                        lines.push(Line::raw(""));
+                        lines.extend(wrap_text(
+                            "Removes it from Pending; it stays in History as Dropped.",
+                            width,
+                        ));
+                        lines.push(Line::raw(""));
+                        lines.push(Line::styled("Body", Style::default().fg(t.muted)));
+                        if task.body.is_empty() {
+                            lines.push(Line::styled("No body", Style::default().fg(t.muted)));
+                        } else {
+                            lines.extend(wrap_text(&task.body, width));
+                        }
+                        lines
+                    }
+                    Page::Feedback(text) => self.result_lines(t, text, width),
+                    _ => unreachable!(),
                 };
-                let wrapped = wrap_text(&text, body.width.saturating_sub(1));
-                let total = wrapped.len();
+                let total = lines.len();
                 self.scroll = self
                     .scroll
-                    .min(wrapped.len().saturating_sub(usize::from(body.height)));
-                let paragraph =
-                    Paragraph::new(wrapped).style(if matches!(self.page, Page::Feedback(_)) {
-                        Style::default().fg(self.message_color(t))
-                    } else {
-                        Style::default()
-                    });
+                    .min(lines.len().saturating_sub(usize::from(body.height)));
                 frame.render_widget(
-                    paragraph.scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
-                    Rect {
-                        width: body.width.saturating_sub(1),
-                        ..body
-                    },
+                    Paragraph::new(lines).scroll((self.scroll.min(u16::MAX as usize) as u16, 0)),
+                    Rect { width, ..body },
                 );
                 crate::ui::scrollbar(t, frame, body, total, self.scroll);
             }
@@ -2220,7 +2297,7 @@ impl Panel {
             layout::Rect,
             style::{Modifier, Style},
             text::Line,
-            widgets::{Block, Paragraph},
+            widgets::Paragraph,
         };
         let Page::Confirm(confirmation) = &self.page else {
             return;
@@ -2246,9 +2323,10 @@ impl Panel {
                 format!("{} · {}", confirmation.key.id, confirmation.title),
                 t.bright,
             ),
+            ("Run", confirmation.run_id.clone(), t.muted),
         ] {
             lines.extend(
-                wrap_text(&format!("{label}  {value}"), width)
+                wrap_text(&format!("{}{value}", crate::ui::pad(label, 9)), width)
                     .into_iter()
                     .map(|line| {
                         line.style(Style::default().fg(color).add_modifier(Modifier::BOLD))
@@ -2276,10 +2354,6 @@ impl Panel {
                 }))
             }));
         }
-        lines.extend(wrap_text(
-            &format!("Run      {}", confirmation.run_id),
-            width,
-        ));
         let reason_height = if confirmation.action == Transition::Return {
             3
         } else {
@@ -2301,9 +2375,7 @@ impl Panel {
             return;
         }
         let field_area = Rect::new(body.x, body.bottom() - 3, body.width, 3);
-        let field = Block::bordered()
-            .title("Reason (required) · Enter Return to pending · Esc Cancel")
-            .border_style(Style::default().fg(t.focus));
+        let field = t.block(" Reason (required) ", true);
         let inner = field.inner(field_area);
         frame.render_widget(field, field_area);
         let reason_width =
@@ -2418,6 +2490,211 @@ impl Panel {
         }
         lines
     }
+}
+
+/// Tasks help: grouped like the popup, with keys or button names in one column.
+fn help_lines(t: &Theme, width: u16) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::{
+        style::{Modifier, Style},
+        text::{Line, Span},
+    };
+    const KEY: usize = 21;
+    let groups: [(&str, &[(&str, &str)]); 4] = [
+        (
+            "Top · project and dispatch",
+            &[
+                (
+                    "c",
+                    "Projects; inside: a Add project, s Project settings, e Set path",
+                ),
+                ("r", "Refresh"),
+                ("p", "Pause / Resume explicit dispatch"),
+                ("R", "Record default for this project"),
+            ],
+        ),
+        (
+            "Bottom · tasks",
+            &[
+                ("a", "Add task"),
+                ("N", "Notifications"),
+                ("e", "Edit pending"),
+                ("u / d", "Move pending"),
+                ("x", "Delete pending"),
+                ("m", "Mark a failed task seen in Attention"),
+                (
+                    "Dispatch selected",
+                    "Explicitly send the selected Pending task",
+                ),
+                (
+                    "[ ] Record",
+                    "Beside Dispatch selected; changes the Record default for that dispatch only. Saddle's Telemetry recording switch still decides.",
+                ),
+                ("Submit for review", "Selected Running to Awaiting"),
+                ("Accept", "Selected Awaiting to Done"),
+                (
+                    "Return to pending",
+                    "Running or Awaiting; reason and work stopped confirmation required. Pause setting is unchanged.",
+                ),
+                ("A", "All pending"),
+            ],
+        ),
+        (
+            "List and views",
+            &[
+                ("Up/Down / j k", "Select task or project"),
+                ("t", "Task text"),
+                ("Enter", "Run details"),
+                ("PgUp / PgDn", "Scroll text or details"),
+                (
+                    "Telemetry ↗",
+                    "Saddle's Telemetry page on every run of the selected numbered task",
+                ),
+            ],
+        ),
+        (
+            "Forms and pages",
+            &[
+                ("Tab", "Switch field"),
+                ("Ctrl-S", "Save"),
+                ("Esc", "Back or close Tasks"),
+                ("Ctrl-]", "Agents"),
+            ],
+        ),
+    ];
+    let width = usize::from(width);
+    // Narrow windows put each description under its key.
+    let column = if width >= KEY + 20 { KEY } else { 2 };
+    let mut lines = Vec::new();
+    for (index, (heading, rows)) in groups.iter().enumerate() {
+        if index > 0 {
+            lines.push(Line::raw(""));
+        }
+        lines.push(Line::styled(
+            *heading,
+            Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
+        ));
+        for (key, text) in rows.iter() {
+            let key_span = Span::styled(
+                crate::ui::pad(&format!("  {key}"), column),
+                Style::default().fg(t.muted),
+            );
+            let wrapped = wrap_words(text, width.saturating_sub(column).max(1));
+            if column == KEY {
+                for (row, line) in wrapped.into_iter().enumerate() {
+                    let lead = if row == 0 {
+                        key_span.clone()
+                    } else {
+                        Span::raw(" ".repeat(column))
+                    };
+                    let mut spans = vec![lead];
+                    spans.extend(line.spans);
+                    lines.push(Line::from(spans));
+                }
+            } else {
+                lines.push(Line::from(key_span));
+                for line in wrapped {
+                    let mut spans = vec![Span::raw(" ".repeat(column))];
+                    spans.extend(line.spans);
+                    lines.push(Line::from(spans));
+                }
+            }
+        }
+    }
+    lines
+}
+
+/// Wraps at spaces where it can; a word longer than the width is split like `wrap_text`.
+fn wrap_words(text: &str, width: usize) -> Vec<ratatui::text::Line<'static>> {
+    use unicode_width::UnicodeWidthStr;
+    let mut rows = Vec::new();
+    let mut row = String::new();
+    for word in text.split(' ') {
+        if !row.is_empty() && row.width() + 1 + word.width() > width {
+            rows.push(std::mem::take(&mut row));
+        }
+        if !row.is_empty() {
+            row.push(' ');
+        }
+        row.push_str(word);
+    }
+    rows.push(row);
+    rows.iter()
+        .flat_map(|row| wrap_text(row, width as u16))
+        .collect()
+}
+
+/// A compact button bar at the bottom of `area`, like `buttons::draw_compact`, with a divider
+/// between non-empty groups that share a row. Returns the area left above the bar.
+fn draw_groups(
+    t: &Theme,
+    frame: &mut ratatui::Frame,
+    area: ratatui::layout::Rect,
+    groups: &[Vec<crate::buttons::Button<'_>>],
+) -> (ratatui::layout::Rect, Vec<crate::buttons::Hit>) {
+    use ratatui::{layout::Rect, style::Style, widgets::Paragraph};
+    use unicode_width::UnicodeWidthStr;
+    const GAP: u16 = 3;
+    if area.height == 0 || area.width < 3 {
+        return (area, Vec::new());
+    }
+    // Relative placements: buttons and the dividers drawn between groups.
+    let mut placed = Vec::new();
+    let mut dividers = Vec::new();
+    let (mut x, mut y) = (0u16, 0u16);
+    for group in groups.iter().filter(|g| !g.is_empty()) {
+        let mut first = true;
+        for button in group {
+            let width = (button.label.width() as u16 + 2).min(area.width);
+            let gap = match (x, first) {
+                (0, _) => 0,
+                (_, true) => GAP,
+                _ => 1,
+            };
+            if x > 0 && x + gap + width > area.width {
+                x = 0;
+                y += 1;
+            } else if gap == GAP {
+                dividers.push((x + 1, y));
+                x += gap;
+            } else {
+                x += gap;
+            }
+            placed.push((Rect::new(x, y, width, 1), button));
+            x += width;
+            first = false;
+        }
+    }
+    let height = if placed.is_empty() {
+        0
+    } else {
+        (y + 1).min(area.height)
+    };
+    let start = area.bottom() - height;
+    let mut hits = Vec::new();
+    for (relative, button) in placed {
+        if relative.y >= height {
+            break;
+        }
+        let rect = Rect::new(area.x + relative.x, start + relative.y, relative.width, 1);
+        let (_, button_hits) =
+            crate::buttons::draw_compact(t, frame, rect, std::slice::from_ref(button));
+        hits.extend(button_hits);
+    }
+    for (dx, dy) in dividers {
+        if dy < height {
+            frame.render_widget(
+                Paragraph::new("│").style(Style::default().fg(t.border)),
+                Rect::new(area.x + dx, start + dy, 1, 1),
+            );
+        }
+    }
+    (
+        Rect {
+            height: area.height - height,
+            ..area
+        },
+        hits,
+    )
 }
 
 /// The same task across refreshes: by id, or by title and body if unnumbered.

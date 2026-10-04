@@ -9,9 +9,11 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Clear, Paragraph},
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[path = "launch_edit.rs"]
 pub(crate) mod edit;
@@ -25,6 +27,29 @@ const CONTROLLER: usize = 10;
 const REGULAR: usize = 11;
 const PREFIX: usize = 12;
 const CODEX_COMMAND: &str = "codex --yolo";
+/// Columns for the field labels before their values: the widest label and a gap.
+const LABEL: u16 = 9;
+
+/// A path cut from the front to `width` columns, so its last levels stay readable.
+fn clip_tail(path: &str, width: usize) -> String {
+    let clean: String = path.chars().filter(|c| !c.is_control()).collect();
+    if clean.width() <= width {
+        return clean;
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let (mut used, mut kept) = (1, Vec::new());
+    for c in clean.chars().rev() {
+        let w = c.width().unwrap_or(0);
+        if used + w > width {
+            break;
+        }
+        kept.push(c);
+        used += w;
+    }
+    std::iter::once('…').chain(kept.into_iter().rev()).collect()
+}
 
 pub struct Form {
     fields: [edit::Input; 4],
@@ -484,8 +509,13 @@ impl Form {
             hits.extend(controls);
             if list.height > 0 {
                 frame.render_widget(
-                    Paragraph::new("Choose project · ↑↓ select · Enter confirm")
-                        .style(Style::default().fg(t.muted)),
+                    Paragraph::new(Line::from(vec![
+                        Span::styled(
+                            "Choose project",
+                            Style::default().add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" · ↑↓ select · Enter confirm", Style::default().fg(t.muted)),
+                    ])),
                     Rect::new(list.x, list.y, list.width, 1),
                 );
                 list.y += 1;
@@ -500,6 +530,20 @@ impl Form {
                 let top = self
                     .project_index
                     .saturating_sub(list.height.saturating_sub(1) as usize);
+                let name = |project: &str| {
+                    std::path::Path::new(project)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned()
+                };
+                // Names in one column, paths after them in the secondary colour.
+                let name_width = projects
+                    .iter()
+                    .map(|p| name(p).width())
+                    .max()
+                    .unwrap_or(0)
+                    .min(usize::from(list.width) / 3);
                 for (i, project) in projects
                     .iter()
                     .enumerate()
@@ -507,22 +551,31 @@ impl Form {
                     .take(list.height as usize)
                 {
                     let rect = Rect::new(list.x, list.y + (i - top) as u16, list.width, 1);
-                    let name = std::path::Path::new(project)
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy();
+                    let chosen = i == self.project_index;
+                    let room = usize::from(rect.width).saturating_sub(name_width + 4);
                     frame.render_widget(
-                        Paragraph::new(format!(
-                            "{} {name} · {project}",
-                            if i == self.project_index { "▸" } else { " " }
-                        ))
-                        .style(Style::default().fg(t.text).bg(
-                            if i == self.project_index {
+                        Paragraph::new(Line::from(vec![
+                            Span::raw(if chosen { "› " } else { "  " }),
+                            Span::styled(
+                                crate::ui::pad(
+                                    &crate::ui::clip(&name(project), name_width),
+                                    name_width + 2,
+                                ),
+                                if chosen {
+                                    Style::default().add_modifier(Modifier::BOLD)
+                                } else {
+                                    Style::default()
+                                },
+                            ),
+                            Span::styled(clip_tail(project, room), Style::default().fg(t.muted)),
+                        ]))
+                        .style(
+                            Style::default().fg(t.text).bg(if chosen {
                                 t.selected
                             } else {
                                 t.overlay
-                            },
-                        )),
+                            }),
+                        ),
                         rect,
                     );
                     self.project_hits.push((rect, i));
@@ -530,12 +583,12 @@ impl Form {
             }
             return hits;
         }
-        // Outlined buttons take three rows.
+        // Outlined buttons take three rows; their labels sit in a left column on the middle row.
         let mut sections = vec![(PROJECT, 5)];
         if self.edit_path {
             sections.push((0, 3));
         }
-        sections.extend([(CODEX, 4), (CONTROLLER, 4), (1, 4), (ADVANCED, 3)]);
+        sections.extend([(CODEX, 3), (CONTROLLER, 4), (1, 4), (ADVANCED, 3)]);
         if self.advanced {
             sections.extend([(2, 4), (3, 6), (4, 4), (PREVIEW, 4)]);
         }
@@ -561,6 +614,7 @@ impl Form {
         if sections.iter().map(|(_, h)| h).sum::<u16>() <= body.height {
             self.scroll_start = 0;
         }
+        let label_width = LABEL.min(body.width / 4);
         let mut y = body.y;
         for (id, height) in sections.into_iter().skip(self.scroll_start) {
             let remaining = body.bottom().saturating_sub(y);
@@ -577,15 +631,35 @@ impl Form {
                     height.min(remaining)
                 },
             );
+            // Values start after the label column; Advanced stays a full-width section toggle.
+            let value = if id == ADVANCED {
+                rect
+            } else {
+                Rect {
+                    x: rect.x + label_width,
+                    width: rect.width - label_width,
+                    ..rect
+                }
+            };
+            let label = |frame: &mut Frame, text: &str| {
+                if rect.height > 1 {
+                    frame.render_widget(
+                        Paragraph::new(crate::ui::clip(text, usize::from(label_width)))
+                            .style(Style::default().fg(t.muted)),
+                        Rect::new(rect.x, rect.y + 1, label_width, 1),
+                    );
+                }
+            };
             match id {
                 PROJECT => {
+                    label(frame, "Project");
                     let path = &self.fields[0].text;
                     let name = std::path::Path::new(path)
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy();
-                    let label = format!(
-                        "Project: {} ▾ Ctrl-P",
+                    let choice = format!(
+                        "{} ▾ Ctrl-P",
                         if name.is_empty() {
                             "Choose project"
                         } else {
@@ -595,18 +669,18 @@ impl Form {
                     let (rest, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
-                        rect,
+                        value,
                         &[
-                            Button::control(&label, KeyCode::Char('p'), enabled),
+                            Button::control(&choice, KeyCode::Char('p'), enabled),
                             Button::control("Edit path Ctrl-E", KeyCode::Char('e'), enabled),
                         ],
                     );
                     hits.extend(controls);
                     frame.render_widget(
                         Paragraph::new(if path.is_empty() {
-                            "Directory is required — choose a project or edit path"
+                            "Directory is required — choose a project or edit path".into()
                         } else {
-                            path
+                            clip_tail(path, usize::from(rest.width))
                         })
                         .style(Style::default().fg(if path.is_empty() {
                             t.danger
@@ -628,61 +702,62 @@ impl Form {
                     } else {
                         "○ Claude"
                     };
-                    let label = if command == CODEX_COMMAND || command == "claude" {
-                        "Agent"
-                    } else {
-                        "Agent · Custom command (Advanced)"
-                    };
-                    frame.render_widget(
-                        Paragraph::new(label).style(Style::default().fg(t.muted)),
-                        Rect::new(rect.x, rect.y, rect.width, 1),
+                    label(frame, "Agent");
+                    let (_, controls) = buttons::draw_outlined_top(
+                        t,
+                        frame,
+                        value,
+                        &[
+                            Button::new(codex, KeyCode::F(2), enabled),
+                            Button::new(claude, KeyCode::F(3), enabled),
+                        ],
                     );
-                    if rect.height > 1 {
-                        let (_, controls) = buttons::draw_outlined_top(
-                            t,
-                            frame,
-                            Rect::new(rect.x, rect.y + 1, rect.width, rect.height - 1),
-                            &[
-                                Button::new(codex, KeyCode::F(2), enabled),
-                                Button::new(claude, KeyCode::F(3), enabled),
-                            ],
-                        );
-                        hits.extend(controls);
+                    // A custom command is noted beside the choices it replaces.
+                    if command != CODEX_COMMAND && command != "claude" && rect.height > 1 {
+                        let x = controls
+                            .iter()
+                            .map(|h| h.area.right())
+                            .max()
+                            .unwrap_or(value.x)
+                            + 2;
+                        if x < value.right() {
+                            frame.render_widget(
+                                Paragraph::new("Custom command (Advanced)")
+                                    .style(Style::default().fg(t.muted)),
+                                Rect::new(x, rect.y + 1, value.right() - x, 1),
+                            );
+                        }
                     }
+                    hits.extend(controls);
                 }
                 CONTROLLER => {
-                    frame.render_widget(
-                        Paragraph::new("Role").style(Style::default().fg(t.muted)),
-                        Rect::new(rect.x, rect.y, rect.width, 1),
+                    label(frame, "Role");
+                    let (_, controls) = buttons::draw_outlined_top(
+                        t,
+                        frame,
+                        value,
+                        &[
+                            Button::new(
+                                if self.regular {
+                                    "○ Controller"
+                                } else {
+                                    "● Controller"
+                                },
+                                KeyCode::F(6),
+                                enabled,
+                            ),
+                            Button::new(
+                                if self.regular {
+                                    "● Regular"
+                                } else {
+                                    "○ Regular"
+                                },
+                                KeyCode::F(7),
+                                enabled,
+                            ),
+                        ],
                     );
-                    if rect.height > 1 {
-                        let (_, controls) = buttons::draw_outlined_top(
-                            t,
-                            frame,
-                            Rect::new(rect.x, rect.y + 1, rect.width, rect.height - 1),
-                            &[
-                                Button::new(
-                                    if self.regular {
-                                        "○ Controller"
-                                    } else {
-                                        "● Controller"
-                                    },
-                                    KeyCode::F(6),
-                                    enabled,
-                                ),
-                                Button::new(
-                                    if self.regular {
-                                        "● Regular"
-                                    } else {
-                                        "○ Regular"
-                                    },
-                                    KeyCode::F(7),
-                                    enabled,
-                                ),
-                            ],
-                        );
-                        hits.extend(controls);
-                    }
+                    hits.extend(controls);
                 }
                 ADVANCED => {
                     let (_, controls) = buttons::draw_outlined_top(
@@ -702,12 +777,13 @@ impl Form {
                     hits.extend(controls);
                 }
                 4 => {
-                    let label = format!("Open in: {} (←/→)", Place::ALL[self.place].label());
+                    label(frame, "Open in");
+                    let choice = format!("{} (←/→)", Place::ALL[self.place].label());
                     let (_, controls) = buttons::draw_outlined_top(
                         t,
                         frame,
-                        rect,
-                        &[Button::new(&label, KeyCode::F(5), enabled)],
+                        value,
+                        &[Button::new(&choice, KeyCode::F(5), enabled)],
                     );
                     hits.extend(controls);
                 }
@@ -720,8 +796,8 @@ impl Form {
                             )
                         })
                         .unwrap_or_else(|e| e.to_string());
-                    let lines = crate::ui::wrap_text(&preview, rect.width.saturating_sub(2));
-                    let inner_height = rect.height.saturating_sub(2);
+                    let lines = crate::ui::wrap_text(&preview, value.width.saturating_sub(2));
+                    let inner_height = value.height.saturating_sub(2);
                     self.preview_top = self.preview_top.min(
                         lines
                             .len()
@@ -733,9 +809,9 @@ impl Form {
                             .scroll((self.preview_top, 0))
                             .block(t.block(" Preview · PgUp/PgDn / Wheel ", self.field == PREVIEW))
                             .style(Style::default().fg(t.muted)),
-                        rect,
+                        value,
                     );
-                    self.field_hits.push((rect, PREVIEW));
+                    self.field_hits.push((value, PREVIEW));
                 }
                 0..=3 => {
                     let hint = match id {
@@ -748,7 +824,7 @@ impl Form {
                     let input_height = rect
                         .height
                         .saturating_sub(u16::from(!hint.is_empty() && rect.height > 3));
-                    let mut box_rect = Rect::new(rect.x, rect.y, rect.width, input_height);
+                    let mut box_rect = Rect::new(value.x, value.y, value.width, input_height);
                     if id == 1 {
                         // Prefix sits before Name on the same row: `Prefix/Name`.
                         let width = box_rect.width / 3;
@@ -760,7 +836,7 @@ impl Form {
                     if input_height < rect.height {
                         frame.render_widget(
                             Paragraph::new(hint).style(Style::default().fg(t.muted)),
-                            Rect::new(rect.x, rect.y + input_height, rect.width, 1),
+                            Rect::new(value.x, value.y + input_height, value.width, 1),
                         );
                     }
                 }
@@ -810,10 +886,18 @@ impl Form {
         let mut block = t.block(title, focused);
         if error.is_some() {
             block = block.border_style(Style::default().fg(t.danger));
+        } else if !self.editable(id) {
+            // A read-only value: faint frame, secondary text; its hint names it read-only.
+            block = block.border_style(Style::default().fg(t.dim));
         }
         let inside = block.inner(area);
         frame.render_widget(block, area);
         self.input(id).draw(frame, inside, focused, placeholder, t);
+        if !self.editable(id) {
+            frame
+                .buffer_mut()
+                .set_style(inside, Style::default().fg(t.muted));
+        }
         if enabled && self.editable(id) {
             self.field_hits.push((area, id));
         }
@@ -945,12 +1029,15 @@ mod tests {
         let mut form = Form::new("/tmp/demo".into());
         press(&mut form, KeyCode::F(4));
         let (screen, selector) = render(&mut form);
-        assert!(screen.contains("Open in: Current pane (←/→)"), "{screen}");
+        assert!(
+            screen.contains("Open in") && screen.contains("Current pane (←/→)"),
+            "{screen}"
+        );
         assert!(selector);
         // + Tab / Split only supply the default; the same selector reaches the current pane.
         for (place, default, back) in [
-            (Place::Tab, "Open in: New tab (←/→)", 1),
-            (Place::Right, "Open in: Split right (←/→)", 3),
+            (Place::Tab, "New tab (←/→)", 1),
+            (Place::Right, "Split right (←/→)", 3),
         ] {
             let mut form = Form::new("/tmp/demo".into());
             let anchor = Some(Ticket {
@@ -971,7 +1058,7 @@ mod tests {
                 press(&mut form, KeyCode::Left);
             }
             assert_eq!(Place::ALL[form.place], Place::Current);
-            assert!(render(&mut form).0.contains("Open in: Current pane (←/→)"));
+            assert!(render(&mut form).0.contains("Current pane (←/→)"));
             assert_eq!(form.anchor, anchor, "the originating pane stays bound");
         }
     }

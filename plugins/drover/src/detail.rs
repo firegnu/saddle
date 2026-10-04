@@ -565,7 +565,8 @@ impl Out<'_> {
     }
     /// A labelled value whose wrapped rows line up under the value.
     fn field(&mut self, label: &str, value: &[(String, Color)]) {
-        const LABEL: usize = 13;
+        // Wide enough for the longest fixed label, "Declared verdict".
+        const LABEL: usize = 16;
         let mut spans = vec![Span::styled(
             format!("  {} ", crate::ui::pad(label, LABEL)),
             Style::default().fg(self.t.muted),

@@ -58,15 +58,22 @@ impl Panel {
             );
             self.buttons.extend(hits);
             area = body;
-            let mut lines = wrap_text(&reading.title, area.width);
+            let mut lines: Vec<Line<'static>> = wrap_text(&reading.title, area.width)
+                .into_iter()
+                .map(|l| l.style(Style::default().fg(t.bright).add_modifier(Modifier::BOLD)))
+                .collect();
             lines.push(Line::raw(""));
             if reading.commits.is_empty() {
                 lines.extend(wrap_text(&reading.text, area.width));
             } else {
-                lines.extend(wrap_text(
-                    "Recorded range only; commits are not necessarily owned by this task.",
-                    area.width,
-                ));
+                lines.extend(
+                    wrap_text(
+                        "Recorded range only; commits are not necessarily owned by this task.",
+                        area.width,
+                    )
+                    .into_iter()
+                    .map(|l| l.style(Style::default().fg(t.muted))),
+                );
                 let mut selected_row = 0;
                 let mut positions = Vec::new();
                 for (i, (sha, subject)) in reading.commits.iter().enumerate() {
@@ -74,14 +81,23 @@ impl Panel {
                         selected_row = lines.len();
                     }
                     let start = lines.len();
-                    lines.extend(wrap_text(
-                        &format!(
-                            "{} {} {subject}",
-                            if i == reading.selected { "›" } else { " " },
-                            &sha[..12.min(sha.len())]
-                        ),
-                        area.width,
-                    ));
+                    let style = if i == reading.selected {
+                        Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    lines.extend(
+                        wrap_text(
+                            &format!(
+                                "{} {} {subject}",
+                                if i == reading.selected { "›" } else { " " },
+                                &sha[..12.min(sha.len())]
+                            ),
+                            area.width,
+                        )
+                        .into_iter()
+                        .map(|l| l.style(style)),
+                    );
                     positions.push((start, lines.len(), i));
                 }
                 if selected_row < reading.scroll {
@@ -161,11 +177,11 @@ impl Panel {
                 } => format!("{} | instance={instance}", link.label),
                 _ => link.label.clone(),
             };
-            let style = Style::default().fg(if self.links.selected == index {
-                t.focus
+            let style = if self.links.selected == index {
+                Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
             } else {
-                t.text
-            });
+                Style::default().fg(t.text)
+            };
             lines.extend(
                 wrap_text(&format!("{marker} {label}"), area.width)
                     .into_iter()
@@ -186,33 +202,52 @@ impl Panel {
             positions.push((start, lines.len(), index));
         }
         if self.links.entries.is_empty() && self.links.message.is_empty() {
-            lines.push(Line::raw("No explicit links"));
+            lines.push(Line::styled(
+                "No explicit links",
+                Style::default().fg(t.muted),
+            ));
         }
+        // Each notice keeps its own state: in progress, stale or failed.
         let mut notices = Vec::new();
         if !self.links.message.is_empty() {
-            notices.push(self.links.message.clone());
+            let color = if self.links.message.ends_with('…') {
+                t.agent_starting
+            } else {
+                t.agent_blocked
+            };
+            notices.push((self.links.message.clone(), color));
         }
         if self.detail_key().is_some()
             && let Some(detail) = &self.content
         {
             if let Some(error) = &detail.error {
-                notices.push(format!(
-                    "{}\n{error}",
-                    if detail.data.is_some() {
-                        "Recorded range may be stale; details refresh failed:"
-                    } else {
-                        "Recorded range unavailable:"
-                    }
-                ));
+                notices.push(if detail.data.is_some() {
+                    (
+                        format!("Recorded range may be stale; details refresh failed:\n{error}"),
+                        t.agent_blocked,
+                    )
+                } else {
+                    (
+                        format!("Recorded range unavailable:\n{error}"),
+                        t.agent_error,
+                    )
+                });
             } else if detail.data.is_none() {
-                notices.push("Loading recorded range…".into());
+                notices.push(("Loading recorded range…".into(), t.agent_starting));
             }
         }
         if !notices.is_empty() {
-            let notice = wrap_text(&notices.join("\n"), area.width);
+            let notice: Vec<_> = notices
+                .iter()
+                .flat_map(|(text, color)| {
+                    wrap_text(text, area.width)
+                        .into_iter()
+                        .map(|l| l.style(Style::default().fg(*color)))
+                })
+                .collect();
             let height = notice.len().min(area.height as usize) as u16;
             frame.render_widget(
-                Paragraph::new(notice).style(Style::default().fg(t.agent_blocked)),
+                Paragraph::new(notice),
                 Rect::new(
                     area.x,
                     area.bottom().saturating_sub(height),

@@ -1134,11 +1134,11 @@ impl Page {
                     &format!("{} {label}", if chosen { "▸" } else { " " }),
                     list.width as usize,
                 ))
-                .style(t.base().bg(if chosen {
-                    t.agent_selected
+                .style(if chosen {
+                    t.base().patch(chosen_style(t))
                 } else {
-                    t.overlay
-                })),
+                    t.base().bg(t.overlay)
+                }),
                 rect,
             );
             self.rows.push((rect, i));
@@ -1183,16 +1183,21 @@ impl Page {
             if self.form.is_some() {
                 return vec![
                     ("Tab", "Field", Some(K::Tab)),
-                    ("↵", "Apply", Some(K::Enter)),
+                    ("Enter", "Apply", Some(K::Enter)),
                     ("Esc", "Cancel", Some(K::Esc)),
                 ];
             }
+            let failed = matches!(self.list, Load::Done { result: Err(_), .. });
             return vec![
                 ("↑↓", "Select", None),
-                ("↵", "Open", Some(K::Enter)),
+                ("Enter", "Open", Some(K::Enter)),
                 ("f", "Advanced filters", Some(K::Char('f'))),
-                ("F", "Clear", Some(K::Char('F'))),
-                ("r", "Refresh", Some(K::Char('r'))),
+                ("F", "Clear filters", Some(K::Char('F'))),
+                (
+                    "r",
+                    if failed { "Retry" } else { "Refresh" },
+                    Some(K::Char('r')),
+                ),
                 ("Esc", "Close", Some(K::Esc)),
             ];
         };
@@ -1225,27 +1230,38 @@ impl Page {
         if d.picking.is_some() {
             return vec![
                 ("↑↓", "Select", None),
-                ("↵", "Read body", Some(K::Enter)),
+                ("Enter", "Read body", Some(K::Enter)),
                 ("Esc", "Cancel", Some(K::Esc)),
             ];
         }
+        // Reading a body is offered by the panel's own action, not repeated here.
+        let back = |panel| {
+            if d.panel == panel {
+                "Event detail"
+            } else if panel == Panel::Ops {
+                "Operations"
+            } else {
+                "Recording intervals"
+            }
+        };
+        let failed = matches!(d.summary, Load::Done { result: Err(_), .. })
+            || matches!(d.page, Some(Load::Done { result: Err(_), .. }));
         let mut keys = vec![
             ("↑↓", "Select event", None),
             ("Tab", "Switch dispatch", Some(K::Tab)),
-            ("J/K", "Detail", None),
-            ("o", "‹Operations›", Some(K::Char('o'))),
-            ("i", "‹Recording intervals›", Some(K::Char('i'))),
-            ("n", "More", Some(K::Char('n'))),
-            ("r", "Refresh", Some(K::Char('r'))),
-            ("Esc", "Back", Some(K::Esc)),
+            ("J/K", "Scroll detail", None),
+            ("o", back(Panel::Ops), Some(K::Char('o'))),
+            ("i", back(Panel::Intervals), Some(K::Char('i'))),
         ];
-        if d.panel == Panel::Event
-            && d.events
-                .get(d.selected)
-                .is_some_and(|e| e["bodies"].as_array().is_some_and(|b| !b.is_empty()))
-        {
-            keys.insert(1, ("↵", "Read full body", Some(K::Enter)));
+        if d.more && d.page.is_none() {
+            keys.push(("n", "Next page", Some(K::Char('n'))));
         }
+        keys.push((
+            "r",
+            if failed { "Retry" } else { "Refresh" },
+            Some(K::Char('r')),
+        ));
+        keys.push(("Esc", "Back", Some(K::Esc)));
         keys
     }
     fn draw_help(
@@ -1304,6 +1320,7 @@ impl Page {
             Rect::new(toolbar.x, toolbar.y, half, toolbar.height.min(1)),
             &project,
             KeyCode::Char('p'),
+            false,
         );
         control(
             &mut self.controls,
@@ -1317,6 +1334,7 @@ impl Page {
             ),
             &origin,
             KeyCode::Char('t'),
+            false,
         );
         if toolbar.height > 1 {
             let field = Rect::new(toolbar.x, toolbar.y + 1, toolbar.width, 1);
@@ -1341,6 +1359,7 @@ impl Page {
                     field,
                     &label,
                     KeyCode::Char('/'),
+                    false,
                 );
             }
         }
@@ -1381,15 +1400,15 @@ impl Page {
             Load::Pending(_) => "Loading…".to_string(),
             Load::Done { result: Ok(l), .. } if l["initialized"] == true => {
                 let n = self.traces().len();
-                format!("{n} trace{} · r Refresh", if n == 1 { "" } else { "s" })
+                format!("{n} trace{}", if n == 1 { "" } else { "s" })
             }
-            Load::Done { .. } => "r Refresh".to_string(),
+            Load::Done { .. } => String::new(),
         };
         put(
             frame,
             area,
             0,
-            sides(&filter, t.text, &count, t.muted, width),
+            sides(vec![Span::raw(filter)], &count, t.muted, width),
         );
         put(frame, area, 1, rule(t, "", width));
         // The selected trace (or the filter form) takes the bottom four rows.
@@ -1412,7 +1431,7 @@ impl Page {
                 frame,
                 vec![
                     Line::styled(f.text(), Style::default().fg(t.danger)),
-                    Line::raw("Telemetry could not be read; this is not an empty result. r Retry"),
+                    Line::raw("Telemetry could not be read; this is not an empty result."),
                 ],
             ),
             Load::Done { result: Ok(l), .. } if l["initialized"] != true => message(
@@ -1442,17 +1461,19 @@ impl Page {
                     .enumerate()
                 {
                     let chosen = i == self.selected;
-                    let (left, right) = trace_row(trace, wide);
-                    let left = format!("{}{left}", if chosen { "▸ " } else { "  " });
-                    let color = if chosen { t.focus } else { t.text };
-                    put(
-                        frame,
-                        list,
-                        row as u16,
-                        sides(&left, color, &right, t.muted, width),
-                    );
-                    self.rows
-                        .push((Rect::new(list.x, list.y + row as u16, list.width, 1), i));
+                    let (meta, label, rest, right) = trace_row(trace, wide);
+                    let muted = Style::default().fg(t.muted);
+                    let left = vec![
+                        Span::styled(format!("{}{meta}", if chosen { "▸ " } else { "  " }), muted),
+                        Span::styled(label, Style::default().fg(t.text)),
+                        Span::styled(rest, muted),
+                    ];
+                    let rect = Rect::new(list.x, list.y + row as u16, list.width, 1);
+                    put(frame, list, row as u16, sides(left, &right, t.muted, width));
+                    if chosen {
+                        frame.buffer_mut().set_style(rect, chosen_style(t));
+                    }
+                    self.rows.push((rect, i));
                 }
             }
         }
@@ -1526,32 +1547,58 @@ impl Page {
             return;
         };
         let binding = &trace["binding"];
+        let value = |s: String| Span::styled(s, Style::default().fg(t.text));
+        let name = |s: &str| Span::styled(s.to_owned(), Style::default().fg(t.muted));
         let lines = [
-            format!("label  {}", inert(trace["label"].as_str().unwrap_or(""))),
+            field(
+                t,
+                "Label",
+                vec![value(inert(trace["label"].as_str().unwrap_or("")))],
+                width,
+            ),
             if binding.is_object() {
-                format!(
-                    "scope  {}   key {}   run {}",
-                    text(&binding["scope"]),
-                    text(&binding["key"]),
-                    text(&binding["run"])
+                field(
+                    t,
+                    "Scope",
+                    vec![
+                        value(text(&binding["scope"])),
+                        name("   key "),
+                        value(text(&binding["key"])),
+                        name("   run "),
+                        value(text(&binding["run"])),
+                    ],
+                    width,
                 )
             } else {
-                format!("{} · no binding", text(&trace["origin"]))
+                field(
+                    t,
+                    "Binding",
+                    vec![value(format!("{} · no binding", text(&trace["origin"])))],
+                    width,
+                )
             },
-            format!(
-                "coverage_start {} · trace recording {}",
-                text(&trace["coverage_start"]),
-                if trace["closed_at"].is_string() {
-                    format!("ended {}", text(&trace["closed_at"]))
-                } else if trace["capture_enabled"] == true {
-                    "on".into()
-                } else {
-                    "paused".into()
-                }
+            field(
+                t,
+                "Coverage",
+                vec![
+                    value(format!("from {}", text(&trace["coverage_start"]))),
+                    name(" · "),
+                    value(format!(
+                        "trace recording {}",
+                        if trace["closed_at"].is_string() {
+                            format!("ended {}", text(&trace["closed_at"]))
+                        } else if trace["capture_enabled"] == true {
+                            "on".into()
+                        } else {
+                            "paused".into()
+                        }
+                    )),
+                ],
+                width,
             ),
         ];
         for (i, line) in lines.into_iter().enumerate() {
-            put(frame, bottom, i as u16 + 1, Line::raw(clip(&line, width)));
+            put(frame, bottom, i as u16 + 1, line);
         }
     }
 
@@ -1563,9 +1610,7 @@ impl Page {
         // Rows 0–2: the current state as one show(trace) read.
         let (now, counts) = match &d.summary {
             Load::Pending(_) => ("Now: Loading…".to_string(), String::new()),
-            Load::Done { result: Err(f), .. } => {
-                (format!("Now: {} · r Retry", f.text()), String::new())
-            }
+            Load::Done { result: Err(f), .. } => (format!("Now: {}", f.text()), String::new()),
             Load::Done { result: Ok(_), .. } => match summary.filter(|s| s.is_object()) {
                 None => ("Now: trace not found".to_string(), String::new()),
                 Some(s) => (
@@ -1579,17 +1624,29 @@ impl Page {
             },
         };
         let failed = matches!(d.summary, Load::Done { result: Err(_), .. });
+        let muted = Style::default().fg(t.muted);
+        // The query time is metadata; what the trace is now reads as the value.
+        let head = match summary.filter(|s| s.is_object()) {
+            Some(s) => vec![
+                Span::styled(format!("Now (queried {at}) · "), muted),
+                Span::styled(
+                    format!("{} · {}", binding_text(s), description(&s["registration"])),
+                    Style::default().fg(t.text),
+                ),
+            ],
+            None => vec![Span::styled(
+                now.clone(),
+                Style::default().fg(if failed { t.danger } else { t.text }),
+            )],
+        };
         put(
             frame,
             area,
             0,
-            Line::styled(
-                clip(&now, width),
-                Style::default().fg(if failed { t.danger } else { t.text }),
-            ),
+            Line::from(crate::ui::clip_spans(head, width)),
         );
         put(frame, area, 1, Line::raw(clip(&counts, width)));
-        let mut spans = vec![Span::raw("Dispatch: ")];
+        let mut spans = vec![Span::styled("Dispatch: ", muted)];
         let known = summary.map(dispatches).unwrap_or_default();
         let names = std::iter::once("All".to_string()).chain(known.iter().map(|x| {
             format!(
@@ -1599,10 +1656,8 @@ impl Page {
             )
         }));
         for (i, name) in names.enumerate() {
-            if i == 1 {
-                spans.push(Span::styled("  ◂ Tab ▸  ", Style::default().fg(t.muted)));
-            } else if i > 1 {
-                spans.push(Span::raw(" · "));
+            if i > 0 {
+                spans.push(Span::styled(" · ", muted));
             }
             let current = match i.checked_sub(1) {
                 None => d.dispatch.is_none(),
@@ -1612,10 +1667,7 @@ impl Page {
                 }
             };
             spans.push(if current {
-                Span::styled(
-                    name,
-                    Style::default().fg(t.focus).add_modifier(Modifier::BOLD),
-                )
+                Span::styled(name, chosen_style(t).fg(t.text))
             } else {
                 Span::raw(name)
             });
@@ -1626,6 +1678,7 @@ impl Page {
         d.selected = d.selected.min(d.events.len().saturating_sub(1));
         let operations = summary.and_then(|s| s["operations"].as_array());
         let loaded_all = d.dispatch.is_none() && !d.more && d.page.is_none();
+        let now_line = (if failed { Tone::Error } else { Tone::Text }, now.clone());
         let (title, lines) = if d.picking.is_some() {
             let event = d.events.get(d.selected);
             let bodies = event
@@ -1636,12 +1689,16 @@ impl Page {
                 .iter()
                 .enumerate()
                 .map(|(i, b)| {
-                    format!(
-                        "{}{}  {} {} B",
-                        if Some(i) == d.picking { "▸ " } else { "  " },
-                        body_label(event.unwrap(), b),
-                        text(&b["role"]),
-                        grouped(b["bytes"].as_u64().unwrap_or(0))
+                    let chosen = Some(i) == d.picking;
+                    (
+                        if chosen { Tone::Chosen } else { Tone::Text },
+                        format!(
+                            "{}{}  {} {} B",
+                            if chosen { "▸ " } else { "  " },
+                            body_label(event.unwrap(), b),
+                            text(&b["role"]),
+                            grouped(b["bytes"].as_u64().unwrap_or(0))
+                        ),
                     )
                 })
                 .collect();
@@ -1651,18 +1708,20 @@ impl Page {
                 Panel::Ops => (
                     format!("Operations now (queried {at})"),
                     match operations {
-                        None => vec![now.clone()],
-                        Some(ops) if ops.is_empty() => vec!["No operations recorded.".into()],
+                        None => vec![now_line],
+                        Some(ops) if ops.is_empty() => {
+                            vec![(Tone::Text, "No operations recorded.".into())]
+                        }
                         Some(ops) => ops
                             .iter()
-                            .map(|op| op_line(op, &d.events, loaded_all))
+                            .map(|op| (Tone::Text, op_line(op, &d.events, loaded_all)))
                             .collect(),
                     },
                 ),
                 Panel::Intervals => (
                     format!("Recording intervals now (queried {at})"),
                     match summary.filter(|s| s.is_object()) {
-                        None => vec![now.clone()],
+                        None => vec![now_line],
                         Some(s) => intervals(s),
                     },
                 ),
@@ -1674,20 +1733,26 @@ impl Page {
                     if selected.is_none()
                         && let Some(id) = &d.dispatch
                     {
-                        lines.push(format!("dispatch {} · loading…", inert(id)));
+                        lines.push((Tone::Meta, format!("dispatch {} · loading…", inert(id))));
                     }
                     if let Some(x) = selected.filter(|_| d.technical || d.events.is_empty()) {
-                        lines.push(format!(
-                            "dispatch {} · {}",
-                            text(&x["dispatch_id"]),
-                            text(&x["kind"])
+                        lines.push((
+                            Tone::Meta,
+                            format!(
+                                "dispatch {} · {}",
+                                text(&x["dispatch_id"]),
+                                text(&x["kind"])
+                            ),
                         ));
-                        lines.push(format!(
-                            "parent {} · created {}",
-                            x["parent_dispatch_id"]
-                                .as_str()
-                                .map_or("none".into(), inert),
-                            text(&x["created_at"])
+                        lines.push((
+                            Tone::Meta,
+                            format!(
+                                "parent {} · created {}",
+                                x["parent_dispatch_id"]
+                                    .as_str()
+                                    .map_or("none".into(), inert),
+                                text(&x["created_at"])
+                            ),
                         ));
                     }
                     let event = d.events.get(d.selected);
@@ -1701,7 +1766,9 @@ impl Page {
                             d.technical,
                             d.preview.as_ref().map(|(_, load)| load),
                         )),
-                        None if d.dispatch.is_none() => lines.push("No event selected.".into()),
+                        None if d.dispatch.is_none() => {
+                            lines.push((Tone::Text, "No event selected.".into()))
+                        }
                         None => {}
                     }
                     let seq = event.map(|e| format!("seq {}", text(&e["seq"])));
@@ -1733,7 +1800,7 @@ impl Page {
             // The event detail gets the rows it needs, leaving the timeline at least six.
             let needed: usize = lines
                 .iter()
-                .map(|l| crate::ui::wrap_text(l, rest.width).len())
+                .map(|(_, l)| crate::ui::wrap_text(l, rest.width).len())
                 .sum::<usize>()
                 + 3
                 + usize::from(!d.message.is_empty());
@@ -1763,13 +1830,20 @@ impl Page {
             (None, _) => "Events (loading…)".into(),
         };
         put(frame, timeline, 0, rule(t, &bound, tw));
+        // The header shares the rows' column widths.
         put(
             frame,
             timeline,
             1,
             Line::styled(
                 clip(
-                    "  Seq   Time      Event                  Source          Bodies / gaps",
+                    &format!(
+                        "  {:>5} {} {} {} Bodies / gaps",
+                        "Seq",
+                        padded("Time", 9),
+                        padded("Event", 22),
+                        padded("Source", 19)
+                    ),
                     tw,
                 ),
                 Style::default().fg(t.muted),
@@ -1786,7 +1860,7 @@ impl Page {
                 Some(Line::raw("── loading next page… ──"))
             }
             Some(Load::Done { result: Err(f), .. }) => Some(Line::styled(
-                format!("── {} · r Refresh ──", f.text()),
+                format!("── {} ──", f.text()),
                 Style::default().fg(t.danger),
             )),
             None if d.more => Some(Line::styled(
@@ -1808,6 +1882,7 @@ impl Page {
             put(frame, list, 0, Line::raw(text));
         }
         let mut shown = 0;
+        let muted = Style::default().fg(t.muted);
         for (row, (i, event)) in d
             .events
             .iter()
@@ -1816,30 +1891,35 @@ impl Page {
             .take(height)
             .enumerate()
         {
-            let chosen = i == d.selected && d.picking.is_none();
-            let line = format!(
-                "{}{:>5} {:9} {} {} {}",
-                if chosen { "▸ " } else { "  " },
-                text(&event["seq"]),
-                clock_of(&event["recorded_at"]),
-                padded(&event_name(event), 22),
-                padded(source_label(event), 19),
-                concise_notes(event)
-            );
+            // The selected event keeps its marker while a body is being chosen.
+            let marked = i == d.selected;
+            let chosen = marked && d.picking.is_none();
+            let spans = vec![
+                Span::styled(
+                    format!(
+                        "{}{:>5} {:9} ",
+                        if marked { "▸ " } else { "  " },
+                        text(&event["seq"]),
+                        clock_of(&event["recorded_at"]),
+                    ),
+                    muted,
+                ),
+                Span::styled(format!("{} ", padded(&event_name(event), 22)), t.text),
+                Span::styled(format!("{} ", padded(source_label(event), 19)), muted),
+                Span::styled(concise_notes(event), t.text),
+            ];
+            let rect = Rect::new(list.x, list.y + row as u16, list.width, 1);
             put(
                 frame,
                 list,
                 row as u16,
-                Line::styled(
-                    clip(&line, tw),
-                    Style::default()
-                        .fg(if chosen { t.focus } else { t.text })
-                        .bg(if chosen { t.agent_selected } else { t.overlay }),
-                ),
+                Line::from(crate::ui::clip_spans(spans, tw)).style(Style::default().bg(t.overlay)),
             );
+            if chosen {
+                frame.buffer_mut().set_style(rect, chosen_style(t));
+            }
             if d.picking.is_none() {
-                self.rows
-                    .push((Rect::new(list.x, list.y + row as u16, list.width, 1), i));
+                self.rows.push((rect, i));
             }
             shown = row + 1;
         }
@@ -1873,6 +1953,7 @@ impl Page {
                     rect,
                     "‹Read selected body · Enter›",
                     KeyCode::Enter,
+                    true,
                 );
             } else if count > 0 {
                 control(
@@ -1886,6 +1967,7 @@ impl Page {
                         "‹Choose body · Enter›"
                     },
                     KeyCode::Enter,
+                    true,
                 );
             } else {
                 put(
@@ -1907,6 +1989,7 @@ impl Page {
                         "‹Technical details · v›"
                     },
                     KeyCode::Char('v'),
+                    false,
                 );
             }
         }
@@ -1922,10 +2005,11 @@ impl Page {
         let rows: Vec<(usize, Line<'static>)> = lines
             .iter()
             .enumerate()
-            .flat_map(|(i, l)| {
+            .flat_map(|(i, (tone, l))| {
+                let style = tone.style(t);
                 crate::ui::wrap_text(l, body.width)
                     .into_iter()
-                    .map(move |line| (i, line))
+                    .map(move |line| (i, line.style(style)))
             })
             .collect();
         let height = usize::from(body.height);
@@ -1957,8 +2041,11 @@ impl Page {
         {
             put(frame, body, row as u16, line);
             if d.picking.is_some() {
-                self.rows
-                    .push((Rect::new(body.x, body.y + row as u16, body.width, 1), index));
+                let rect = Rect::new(body.x, body.y + row as u16, body.width, 1);
+                if d.picking == Some(index) {
+                    frame.buffer_mut().set_style(rect, chosen_style(t));
+                }
+                self.rows.push((rect, index));
             }
         }
         if !d.message.is_empty() {
@@ -1966,7 +2053,7 @@ impl Page {
                 frame,
                 panel,
                 panel.height.saturating_sub(1),
-                Line::styled(clip(&d.message, pw), Style::default().fg(t.focus)),
+                Line::styled(clip(&d.message, pw), Style::default().fg(t.text)),
             );
         }
     }
@@ -1998,7 +2085,10 @@ impl Page {
                     frame,
                     area,
                     0,
-                    Line::raw(format!("sha256 {short_hash} · {} bytes", grouped(size))),
+                    Line::styled(
+                        format!("sha256 {short_hash} · {} bytes", grouped(size)),
+                        Style::default().fg(t.muted),
+                    ),
                 );
                 put(frame, area, 1, rule(t, "", width));
                 put(frame, content, 0, Line::raw("Loading…"));
@@ -2009,7 +2099,10 @@ impl Page {
                     frame,
                     area,
                     0,
-                    Line::raw(format!("sha256 {short_hash} · {} bytes", grouped(size))),
+                    Line::styled(
+                        format!("sha256 {short_hash} · {} bytes", grouped(size)),
+                        Style::default().fg(t.muted),
+                    ),
                 );
                 put(frame, area, 1, rule(t, "", width));
                 put(
@@ -2022,7 +2115,7 @@ impl Page {
                     frame,
                     content,
                     1,
-                    Line::raw("No body text is shown — this is not an empty body. r Retry"),
+                    Line::raw("No body text is shown — this is not an empty body."),
                 );
                 return;
             }
@@ -2036,13 +2129,28 @@ impl Page {
             View::Hex => "not UTF-8 · hex",
             View::Lossy => "not UTF-8 · lossy (replacement characters)",
         };
-        let meta = format!(
-            "sha256 {short_hash} · {} bytes · hash verified · {kind}",
-            grouped(bytes.len() as u64)
-        );
+        // Identity and size are metadata; whether the bytes check out reads as the value.
+        let meta = vec![
+            Span::styled(
+                format!(
+                    "sha256 {short_hash} · {} bytes · ",
+                    grouped(bytes.len() as u64)
+                ),
+                Style::default().fg(t.muted),
+            ),
+            Span::styled(
+                format!("hash verified · {kind}"),
+                Style::default().fg(t.text),
+            ),
+        ];
         put(frame, area, 1, rule(t, "", width));
         if bytes.is_empty() {
-            put(frame, area, 0, Line::raw(clip(&meta, width)));
+            put(
+                frame,
+                area,
+                0,
+                Line::from(crate::ui::clip_spans(meta, width)),
+            );
             put(
                 frame,
                 content,
@@ -2079,7 +2187,7 @@ impl Page {
             (r.top + height).min(total),
             total
         );
-        put(frame, area, 0, sides(&meta, t.text, &lines, t.focus, width));
+        put(frame, area, 0, sides(meta, &lines, t.muted, width));
     }
 }
 
@@ -2227,6 +2335,7 @@ fn origin_label(origin: &str) -> &str {
         other => other,
     }
 }
+/// A clickable bracketed action; only a layer's main action is drawn with weight.
 fn control(
     controls: &mut Vec<(Focus, Hit)>,
     t: &Theme,
@@ -2234,16 +2343,19 @@ fn control(
     area: Rect,
     label: &str,
     code: KeyCode,
+    primary: bool,
 ) {
     let label = clip(label, area.width as usize);
     let rect = Rect {
         width: (label.width() as u16).min(area.width),
         ..area
     };
-    frame.render_widget(
-        Paragraph::new(label).style(t.base().fg(t.focus).add_modifier(Modifier::BOLD)),
-        rect,
-    );
+    let style = if primary {
+        t.base().fg(t.focus).add_modifier(Modifier::BOLD)
+    } else {
+        t.base().fg(t.text)
+    };
+    frame.render_widget(Paragraph::new(label).style(style), rect);
     if !rect.is_empty() {
         controls.push((
             Focus::Agents,
@@ -2297,7 +2409,7 @@ fn concise_notes(event: &Value) -> String {
     let gaps = event["payload"]["gaps"].as_array().map_or(0, Vec::len);
     let mut parts = Vec::new();
     if count > 0 {
-        parts.push(format!("Bodies {count} ↵"));
+        parts.push(format!("Bodies {count}"));
     }
     if gaps > 0 {
         parts.push(format!("Gaps {gaps}"));
@@ -2307,7 +2419,8 @@ fn concise_notes(event: &Value) -> String {
     }
     parts.join(" · ")
 }
-fn trace_row(trace: &Value, wide: bool) -> (String, String) {
+/// A list row as its time and type, its label, the rest of its binding, and its state.
+fn trace_row(trace: &Value, wide: bool) -> (String, String, String, String) {
     let created = trace["coverage_start"].as_str().unwrap_or("");
     let time = if created.len() >= 19 && created.is_char_boundary(19) {
         if wide {
@@ -2337,16 +2450,19 @@ fn trace_row(trace: &Value, wide: bool) -> (String, String) {
         .as_str()
         .map(scope_label)
         .unwrap_or_else(|| "No project".into());
-    let main = if binding.is_object() {
+    let rest = if binding.is_object() {
         format!(
-            "{label} · {scope} · {} · run {}",
+            " · {scope} · {} · run {}",
             text(&binding["key"]),
             short(&binding["run"], 6)
         )
     } else {
-        format!("{label} · {scope}")
+        format!(" · {scope}")
     };
-    (format!("{time}  {}  {main}", origin_label(origin)), right)
+    // Types share one column so labels line up.
+    let origin = inert(origin_label(origin));
+    let pad = " ".repeat(6usize.saturating_sub(origin.width()));
+    (format!("{time}  {origin}{pad}  "), label, rest, right)
 }
 fn binding_text(record: &Value) -> String {
     let b = &record["binding"];
@@ -2445,7 +2561,7 @@ fn event_lines(
     resolved: Option<&(String, Load<Value>)>,
     technical: bool,
     preview: Option<&Load<Vec<u8>>>,
-) -> Vec<String> {
+) -> Vec<(Tone, String)> {
     let mut lines = Vec::new();
     let mut head = format!(
         "{} · {}",
@@ -2467,37 +2583,52 @@ fn event_lines(
         let kind = operation.map_or(String::new(), |o| format!(" {}", text(&o["kind"])));
         let _ = write!(head, " · op {}{kind}", short(&event["operation_id"], 4));
     }
-    lines.push(head);
+    lines.push((Tone::Head, head));
     if event["source_description"].is_string() {
-        lines.push(description(&event["source_description"]));
+        lines.push((Tone::Text, description(&event["source_description"])));
         if !technical {
-            lines.push(format!("Declared by: {}", text(&event["producer"])));
+            lines.push((
+                Tone::Text,
+                format!("Declared by: {}", text(&event["producer"])),
+            ));
         }
     }
     if technical {
-        lines.push(format!(
-            "event {} · trace {} · dispatch {}",
-            text(&event["event_id"]),
-            text(&event["trace_id"]),
-            text(&event["dispatch_id"])
+        lines.push((
+            Tone::Meta,
+            format!(
+                "event {} · trace {} · dispatch {}",
+                text(&event["event_id"]),
+                text(&event["trace_id"]),
+                text(&event["dispatch_id"])
+            ),
         ));
     }
     let payload = &event["payload"];
     if !technical {
         if payload["from"].is_string() && payload["to"].is_string() {
-            lines.push(format!(
-                "Transition: {} → {}",
-                text(&payload["from"]),
-                text(&payload["to"])
+            lines.push((
+                Tone::Text,
+                format!(
+                    "Transition: {} → {}",
+                    text(&payload["from"]),
+                    text(&payload["to"])
+                ),
             ));
         }
         if payload["outcome"].is_object() {
-            lines.push(format!(
-                "Command outcome: {} · exit code {}",
-                text(&payload["outcome"]["kind"]),
-                text(&payload["outcome"]["exit_code"])
+            lines.push((
+                Tone::Text,
+                format!(
+                    "Command outcome: {} · exit code {}",
+                    text(&payload["outcome"]["kind"]),
+                    text(&payload["outcome"]["exit_code"])
+                ),
             ));
-            lines.push("Command outcome does not establish task completion or acceptance.".into());
+            lines.push((
+                Tone::Meta,
+                "Command outcome does not establish task completion or acceptance.".into(),
+            ));
         }
     }
     // The recorded payload as stored; gaps are listed under Not captured.
@@ -2509,58 +2640,74 @@ fn event_lines(
     for body in event["bodies"].as_array().into_iter().flatten() {
         let label = body_label(event, body);
         if event["kind"] == "brief.snapshot" {
-            lines.push(format!("{label}  {}", text(&payload["absolute_path"])));
-        } else {
-            lines.push(label);
-        }
-        if technical {
-            lines.push(format!(
-                "body {} · {} B · sha256 {}…",
-                text(&body["role"]),
-                grouped(body["bytes"].as_u64().unwrap_or(0)),
-                short(&body["sha256"], 8)
+            lines.push((
+                Tone::Text,
+                format!("{label}  {}", text(&payload["absolute_path"])),
             ));
         } else {
-            lines.push(format!(
-                "{} · {}",
-                text(&body["role"]),
-                size(body["bytes"].as_u64().unwrap_or(0))
+            lines.push((Tone::Text, label));
+        }
+        if technical {
+            lines.push((
+                Tone::Meta,
+                format!(
+                    "body {} · {} B · sha256 {}…",
+                    text(&body["role"]),
+                    grouped(body["bytes"].as_u64().unwrap_or(0)),
+                    short(&body["sha256"], 8)
+                ),
+            ));
+        } else {
+            lines.push((
+                Tone::Meta,
+                format!(
+                    "{} · {}",
+                    text(&body["role"]),
+                    size(body["bytes"].as_u64().unwrap_or(0))
+                ),
             ));
         }
     }
     if !technical && let Some(preview) = preview {
-        lines.push("── Body preview (first item)".into());
+        lines.push((Tone::Meta, "── Body preview (first item)".into()));
         match preview {
-            Load::Pending(_) => lines.push("Loading…".into()),
-            Load::Done { result: Err(f), .. } => lines.push(format!(
-                "{} · Preview unavailable; body is not empty",
-                f.text()
+            Load::Pending(_) => lines.push((Tone::Meta, "Loading…".into())),
+            Load::Done { result: Err(f), .. } => lines.push((
+                Tone::Error,
+                format!("{} · Preview unavailable; body is not empty", f.text()),
             )),
             Load::Done {
                 result: Ok(bytes), ..
-            } if bytes.is_empty() => lines.push("Empty body (verified)".into()),
+            } if bytes.is_empty() => lines.push((Tone::Text, "Empty body (verified)".into())),
             Load::Done {
                 result: Ok(bytes), ..
-            } => {
-                match std::str::from_utf8(bytes) {
-                    Ok(text) => lines.extend(text.lines().take(2).map(|l| {
-                        clip(&escape_body(&l.chars().take(160).collect::<String>()), 100)
-                    })),
-                    Err(_) => lines.push("Non-UTF-8 body; open full body for hex view.".into()),
-                }
-            }
+            } => match std::str::from_utf8(bytes) {
+                Ok(text) => lines.extend(text.lines().take(2).map(|l| {
+                    (
+                        Tone::Text,
+                        clip(&escape_body(&l.chars().take(160).collect::<String>()), 100),
+                    )
+                })),
+                Err(_) => lines.push((
+                    Tone::Meta,
+                    "Non-UTF-8 body; open full body for hex view.".into(),
+                )),
+            },
         }
     }
     let gaps = gaps(event);
     if !gaps.is_empty() {
-        lines.push(format!("Not captured: {gaps}"));
+        lines.push((Tone::Text, format!("Not captured: {gaps}")));
     }
     // The operation as the current summary has it, not as of the event list's bound.
     if let Some(op) = operation {
-        lines.push(format!(
-            "op {} now: {} (queried {at})",
-            short(&op["operation_id"], 4),
-            op_state(op)
+        lines.push((
+            Tone::Text,
+            format!(
+                "op {} now: {} (queried {at})",
+                short(&op["operation_id"], 4),
+                op_state(op)
+            ),
         ));
     }
     if event["late_submission"] == true {
@@ -2568,31 +2715,40 @@ fn event_lines(
             .get("declared_at")
             .filter(|v| !v.is_null())
             .unwrap_or(&event["observed_at"]);
-        lines.push(format!(
-            "late · {}",
-            description(&event["submission_notice"])
+        lines.push((
+            Tone::Text,
+            format!("late · {}", description(&event["submission_notice"])),
         ));
-        lines.push(format!(
-            "declared {} · recorded {}",
-            text(declared),
-            text(&event["recorded_at"])
+        lines.push((
+            Tone::Meta,
+            format!(
+                "declared {} · recorded {}",
+                text(declared),
+                text(&event["recorded_at"])
+            ),
         ));
     } else {
-        lines.push(format!(
-            "recorded {} · source time {}",
-            text(&event["recorded_at"]),
-            text(&event["observed_at"])
+        lines.push((
+            Tone::Meta,
+            format!(
+                "recorded {} · source time {}",
+                text(&event["recorded_at"]),
+                text(&event["observed_at"])
+            ),
         ));
     }
     for link in event["links"].as_array().into_iter().flatten() {
         let target = link["target_event_id"].as_str().unwrap_or("");
         let found = events.iter().find(|e| e["event_id"] == target);
         lines.push(match found {
-            Some(e) => format!(
-                "link {} → seq {} {}",
-                text(&link["relation"]),
-                text(&e["seq"]),
-                text(&e["kind"])
+            Some(e) => (
+                Tone::Meta,
+                format!(
+                    "link {} → seq {} {}",
+                    text(&link["relation"]),
+                    text(&e["seq"]),
+                    text(&e["kind"])
+                ),
             ),
             None => {
                 let head = format!(
@@ -2603,22 +2759,31 @@ fn event_lines(
                 match resolved
                     .filter(|(id, _)| link["relation"] == "carried_from" && id == target_id(link))
                 {
-                    Some((_, Load::Pending(_))) => format!("{head} · reading target trace…"),
-                    Some((_, Load::Done { result: Err(f), .. })) => {
-                        format!("{head} · target trace not read ({})", f.text())
+                    Some((_, Load::Pending(_))) => {
+                        (Tone::Meta, format!("{head} · reading target trace…"))
                     }
+                    Some((_, Load::Done { result: Err(f), .. })) => (
+                        Tone::Error,
+                        format!("{head} · target trace not read ({})", f.text()),
+                    ),
                     Some((_, Load::Done { result: Ok(v), .. })) if v["record"].is_object() => {
                         let r = &v["record"];
-                        format!(
-                            "link {} → trace {} seq {} {}",
-                            text(&link["relation"]),
-                            short(&r["trace_id"], 8),
-                            text(&r["seq"]),
-                            text(&r["kind"])
+                        (
+                            Tone::Meta,
+                            format!(
+                                "link {} → trace {} seq {} {}",
+                                text(&link["relation"]),
+                                short(&r["trace_id"], 8),
+                                text(&r["seq"]),
+                                text(&r["kind"])
+                            ),
                         )
                     }
-                    Some(_) => format!("{head} · target trace not read (not initialized)"),
-                    None => format!("{head} (not in loaded events)"),
+                    Some(_) => (
+                        Tone::Meta,
+                        format!("{head} · target trace not read (not initialized)"),
+                    ),
+                    None => (Tone::Meta, format!("{head} (not in loaded events)")),
                 }
             }
         });
@@ -2626,15 +2791,18 @@ fn event_lines(
     lines
 }
 /// One payload field per line; nested objects as dotted keys, arrays as compact JSON.
-fn fields_of(key: &str, value: &Value, lines: &mut Vec<String>) {
+fn fields_of(key: &str, value: &Value, lines: &mut Vec<(Tone, String)>) {
     match value {
         Value::Object(map) if !map.is_empty() => {
             for (k, v) in map {
                 fields_of(&format!("{key}.{k}"), v, lines);
             }
         }
-        Value::String(s) => lines.push(format!("  {}: {}", inert(key), inert(s))),
-        other => lines.push(format!("  {}: {}", inert(key), inert(&other.to_string()))),
+        Value::String(s) => lines.push((Tone::Text, format!("  {}: {}", inert(key), inert(s)))),
+        other => lines.push((
+            Tone::Text,
+            format!("  {}: {}", inert(key), inert(&other.to_string())),
+        )),
     }
 }
 fn target_id(link: &Value) -> &str {
@@ -2686,34 +2854,41 @@ fn op_line(op: &Value, events: &[Value], loaded_all: bool) -> String {
     }
     line
 }
-fn intervals(record: &Value) -> Vec<String> {
-    let mut lines: Vec<String> = record["recording_intervals"]
+fn intervals(record: &Value) -> Vec<(Tone, String)> {
+    // The state leads so on/off line up whatever the interval's end.
+    let mut lines: Vec<(Tone, String)> = record["recording_intervals"]
         .as_array()
         .into_iter()
         .flatten()
         .map(|i| {
-            format!(
-                "{} → {}  {}",
-                text(&i["start"]),
-                if i["end"].is_null() {
-                    "now".into()
-                } else {
-                    text(&i["end"])
-                },
-                if i["enabled"] == true { "on" } else { "off" }
+            (
+                Tone::Text,
+                format!(
+                    "{:<3}  {} → {}",
+                    if i["enabled"] == true { "on" } else { "off" },
+                    text(&i["start"]),
+                    if i["end"].is_null() {
+                        "now".into()
+                    } else {
+                        text(&i["end"])
+                    }
+                ),
             )
         })
         .collect();
-    lines.push(String::new());
-    lines.push(description(&record["coverage_notice"]));
+    lines.push((Tone::Text, String::new()));
+    lines.push((Tone::Meta, description(&record["coverage_notice"])));
     let gaps = record["known_gaps"].as_array().cloned().unwrap_or_default();
-    lines.push(format!("known gaps {}", gaps.len()));
+    lines.push((Tone::Text, format!("known gaps {}", gaps.len())));
     lines.extend(gaps.iter().map(|g| {
-        format!(
-            "  event {} · {}:{}",
-            short(&g["event_id"], 8),
-            text(&g["gap"]["role"]),
-            text(&g["gap"]["reason"])
+        (
+            Tone::Text,
+            format!(
+                "  event {} · {}:{}",
+                short(&g["event_id"], 8),
+                text(&g["gap"]["role"]),
+                text(&g["gap"]["reason"])
+            ),
         )
     }));
     lines
@@ -2814,23 +2989,58 @@ fn rule(t: &Theme, title: &str, width: usize) -> Line<'static> {
         Style::default().fg(t.border),
     )
 }
-/// Left text and right-aligned text on one row; the left side gives way.
+/// Left spans and right-aligned text on one row; the left side gives way.
 fn sides(
-    left: &str,
-    left_color: ratatui::style::Color,
+    left: Vec<Span<'static>>,
     right: &str,
     right_color: ratatui::style::Color,
     width: usize,
 ) -> Line<'static> {
     let right = clip(right, width);
     let room = width.saturating_sub(right.width() + usize::from(!right.is_empty()));
-    let left = clip(left, room);
-    let gap = width.saturating_sub(left.width() + right.width());
-    Line::from(vec![
-        Span::styled(left, Style::default().fg(left_color)),
-        Span::raw(" ".repeat(gap)),
-        Span::styled(right, Style::default().fg(right_color)),
-    ])
+    let mut spans = crate::ui::clip_spans(left, room);
+    let used: usize = spans.iter().map(Span::width).sum();
+    spans.push(Span::raw(
+        " ".repeat(width.saturating_sub(used + right.width())),
+    ));
+    spans.push(Span::styled(right, Style::default().fg(right_color)));
+    Line::from(spans)
+}
+/// How a detail line reads: a heading, recorded text, secondary metadata, a failure, or the
+/// chosen row of a list.
+#[derive(Clone, Copy)]
+enum Tone {
+    Head,
+    Text,
+    Meta,
+    Error,
+    Chosen,
+}
+impl Tone {
+    fn style(self, t: &Theme) -> Style {
+        match self {
+            Tone::Head => Style::default().fg(t.text).add_modifier(Modifier::BOLD),
+            Tone::Text => Style::default().fg(t.text),
+            Tone::Meta => Style::default().fg(t.muted),
+            Tone::Error => Style::default().fg(t.danger),
+            Tone::Chosen => chosen_style(t).fg(t.text),
+        }
+    }
+}
+/// A selected row: marked by the caller, with the selection background and weight.
+fn chosen_style(t: &Theme) -> Style {
+    Style::default()
+        .bg(t.agent_selected)
+        .add_modifier(Modifier::BOLD)
+}
+/// A label in a fixed muted column, then its value.
+fn field(t: &Theme, label: &str, value: Vec<Span<'static>>, width: usize) -> Line<'static> {
+    let mut spans = vec![Span::styled(
+        padded(label, 10),
+        Style::default().fg(t.muted),
+    )];
+    spans.extend(value);
+    Line::from(crate::ui::clip_spans(spans, width))
 }
 /// Help items left to right with two-column gaps, then one, then wrapping onto rows.
 fn bar_rows(items: &[(&str, &str, Option<KeyCode>)], width: u16) -> Vec<Vec<(u16, usize)>> {
