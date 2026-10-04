@@ -13,7 +13,7 @@
 
 两组 Claude Code opus[1m]/high、role=implementer，路由常规（Diff 档位 null 主控选常规）/不交叉审查/看得见；start ok，完成提醒 pending。宿主独占 ui.rs/plugins/ui.rs，Diff 独占 plugins/diff；具体任务书 `docs/任务/UI收尾-{宿主窄窗,Diff主题}-2026-10-04.md`。后续读取 status/reply 并主控审查；两组集成后统一合并部署，不把 DONE 直接当通过。
 
-Diff 初版 `170b7b3` 已主控审查：独占与业务边界符合，但有 1 项必须改——中等亮度 RGB 背景的 7:1 目标不可达，负目标把多种语法色压黑合并。已在任务书写同任务返工，不纳入集成；Reset 限制保留、不扩协议。原 Diff 完成提醒已处理。宿主组当前仍 working。
+Diff 初版 `170b7b3` 已主控审查：独占与业务边界符合，但有 1 项必须改——中等亮度 RGB 背景的 7:1 目标不可达，负目标把多种语法色压黑合并。已在任务书写同任务返工，不纳入集成；Reset 限制保留、不扩协议。原 Diff 完成提醒已处理。宿主组 `d98cc0a` 已完成主控审查，无必须改项：接受先去时间再去状态文字、保留不同形状状态标记的窄栏取舍；截断按钮焦点仅改绘制。已建立 `ui-final-integration` 纳入宿主组，尚未合 main/部署；宿主完成提醒已处理。Diff 仍在原实例返工，新提醒 `591acd9e-a599-4902-9344-deb4ed406f41` 已挂。
 
 cargo 仍用 `/tmp/saddle-ui2-cargo.py` 共享 target 串行锁；本批只做针对展示检查，不重跑全套/Clippy，不推进 Tasks 队列或开启遥测。窄栏名称优先的用户批准已回写 DESIGN。第二批安装状态见下文，不能把本次候选说成已部署。
 
