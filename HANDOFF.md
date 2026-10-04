@@ -6,7 +6,7 @@
 
 用户接受剩余 UI 整理及 Agents 小幅方案，明确授权可并行则直接开干。按独占文件已派出三个 Claude Code opus[1m]/high 实现者：`saddle/dev-ui2-host-1`（ui2-host，公共提示+Agents/终端）、`saddle/dev-ui2-settings-1`（ui2-settings，Settings 剩余内页）、`saddle/dev-ui2-diff-1`（ui2-diff）。起点任务书提交 `85ed2fe`；具体 instance、完成提醒 request_id、范围见 `docs/任务/UI第二批-分组与派发-2026-10-04.md` 和三份组任务书。
 
-- Diff 返工 `60f7bf1` 已复核通过：34 列 Staged+error 同时可见，主控针对性绘制检查 1 passed，唯一必须改项关闭；初版与返工提醒均已处理。已建立独立 `ui2-integration`，本轮纳入 Diff，保留原 agent/worktree 供集成反馈。Settings `8735ff8` 已审查通过、无必须返工项，本轮纳入 ui2-integration；其完成提醒已处理。宿主组仍待完成。第二批尚未合并 main/部署。完成提醒到达后按组读取 status/reply、检查 diff 与展示结果，原 agent 同任务返工，再集成；不要只停在复述 DONE。不走 Tasks 队列，不开启遥测。
+- Diff 返工 `60f7bf1` 已复核通过：34 列 Staged+error 同时可见，主控针对性绘制检查 1 passed，唯一必须改项关闭；初版与返工提醒均已处理。已建立独立 `ui2-integration`，本轮纳入 Diff，保留原 agent/worktree 供集成反馈。Settings `8735ff8` 已审查通过、无必须返工项，本轮纳入 ui2-integration；其完成提醒已处理。宿主 `29357c3` 已主控审查通过，本轮纳入统一集成；三组完成提醒全部处理。第二批尚未合并 main/部署。完成提醒到达后按组读取 status/reply、检查 diff 与展示结果，原 agent 同任务返工，再集成；不要只停在复述 DONE。不走 Tasks 队列，不开启遥测。
 - 公共区域与 Agents 同组避免 ui.rs/terminals.rs 交叉写；Settings、Diff 可独立并行。保留 Agents 3a、行高、入口顺序和业务行为，不重做卡片。所有边界见任务书。
 - cargo 必须用 `/tmp/saddle-ui2-cargo.py`，对整条命令串行加锁并设置共享 target，避免检查期间另一 worktree 替换产物。三组只跑一条直接展示检查，不跑全套/Clippy；跨组旧文本断言报告给主控，不能削弱业务断言。
 - 上一批与红点调整已收尾；以下当前安装/历史验证记录保留，第二批未完成时不能覆盖成已部署。
