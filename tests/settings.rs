@@ -339,13 +339,13 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
                 tabs = settings
                     .draw(&saddle::theme::Theme::default(), frame)
                     .into_iter()
-                    .filter(|h| matches!(h.key.code, KeyCode::F(1..=5)))
+                    .filter(|h| matches!(h.key.code, KeyCode::F(1..=6)))
                     .collect();
             })
             .unwrap();
         assert_eq!(
             tabs.len(),
-            5,
+            6,
             "width {width}: all pages must remain clickable"
         );
         for (i, hit) in tabs.iter().enumerate() {
@@ -357,10 +357,10 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
                     .all(|other| !hit.area.intersects(other.area))
             );
         }
-        if width >= 76 {
+        if width >= 100 {
             assert!(
                 tabs.iter().all(|h| h.area.y == tabs[0].area.y),
-                "Plugins must share the same row as General"
+                "All six pages must share the same row as General"
             );
         }
         let buffer = terminal.backend().buffer();
@@ -370,6 +370,7 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
             "Advanced F3",
             "Diagnostics F4",
             "Plugins F5",
+            "Updates F6",
         ]) {
             let text: String = (hit.area.x..hit.area.right())
                 .map(|x| buffer[(x, hit.area.y)].symbol())
@@ -512,7 +513,11 @@ fn capybara_is_the_third_pet_and_saves_cancels_and_defaults_like_the_others() {
         press(&mut settings, KeyCode::Down);
     }
     ctrl(&mut settings, 'd');
-    assert_eq!(settings.value("mascot"), Some("clawd"), "Default stays Clawd");
+    assert_eq!(
+        settings.value("mascot"),
+        Some("clawd"),
+        "Default stays Clawd"
+    );
 }
 
 #[test]
@@ -781,4 +786,132 @@ fn settings_offers_lagoon_between_tide_and_terminal() {
         "{}",
         settings.message()
     );
+}
+
+#[test]
+fn settings_pages_keep_the_same_frame_and_tab_positions() {
+    use ratatui::{Terminal, backend::TestBackend};
+    use saddle::plugins::{Manager, resources::Resources, ui::Page};
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let manager = Manager::with_resources(
+        dir.path().join("plugins.toml"),
+        &[],
+        Resources::new(dir.path().join("home"), dir.path().join("state")),
+    );
+    for (width, height) in [(120, 40), (80, 24), (40, 24), (60, 14)] {
+        let mut reference = None;
+        for page in 1..=6 {
+            let mut settings = Settings::open(path.clone(), true);
+            press(&mut settings, KeyCode::F(page));
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal
+                .draw(|frame| {
+                    if page == 5 {
+                        Page::default().draw(
+                            &saddle::theme::Preset::Tide.theme(),
+                            frame,
+                            &manager,
+                            &settings,
+                        );
+                    } else {
+                        settings.draw(&saddle::theme::Preset::Tide.theme(), frame);
+                    }
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let position = |label: &str| {
+                (0..height).find_map(|y| {
+                    let row: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
+                    row.find(label).map(|x| (x, y))
+                })
+            };
+            let positions: Vec<_> = [
+                "Settings",
+                "General F1",
+                "Colors F2",
+                "Advanced F3",
+                "Diagnostics F4",
+                "Plugins F5",
+                "Updates F6",
+            ]
+            .into_iter()
+            .map(|label| {
+                position(label)
+                    .unwrap_or_else(|| panic!("{label}: page {page} at {width}x{height}"))
+            })
+            .collect();
+            if let Some(expected) = &reference {
+                assert_eq!(&positions, expected, "page {page} at {width}x{height}");
+            } else {
+                reference = Some(positions);
+            }
+        }
+    }
+    assert!(!path.exists(), "Rendering must not save the draft");
+}
+
+#[test]
+fn only_the_active_field_shows_its_hint_and_narrow_values_remain_readable() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let dir = tempfile::tempdir().unwrap();
+    let mut settings = Settings::open(dir.path().join("config.toml"), true);
+    let screen = |settings: &mut Settings| {
+        let mut terminal = Terminal::new(TestBackend::new(40, 24)).unwrap();
+        terminal
+            .draw(|frame| {
+                settings.draw(&saddle::theme::Theme::default(), frame);
+            })
+            .unwrap();
+        (0..24)
+            .map(|y| {
+                (0..40)
+                    .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let shown = screen(&mut settings);
+    assert!(
+        !shown.contains("toggle") && !shown.contains("choose"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("Enabled") && shown.contains("1000") && shown.contains(" ms"),
+        "{shown}"
+    );
+    press(&mut settings, KeyCode::Down);
+    press(&mut settings, KeyCode::Down);
+    let shown = screen(&mut settings);
+    assert_eq!(shown.matches("Space/Enter toggle").count(), 1, "{shown}");
+    assert!(!shown.contains("choose"), "{shown}");
+    press(&mut settings, KeyCode::Down);
+    let shown = screen(&mut settings);
+    assert_eq!(shown.matches("←/→ choose").count(), 1, "{shown}");
+    assert!(!shown.contains("toggle"), "{shown}");
+}
+
+#[test]
+fn settings_help_describes_the_current_page_without_offering_edits_on_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    let mut settings = Settings::open(path.clone(), true);
+    assert!(settings.help().contains("F1-F6") && settings.help().contains("Ctrl-S Save"));
+    for page in [4, 6] {
+        press(&mut settings, KeyCode::F(page));
+        let help = settings.help();
+        assert!(
+            help.contains("Esc Close") && help.contains("r Refresh"),
+            "{help}"
+        );
+        assert!(
+            !help.contains("Save") && !help.contains("Field") && !help.contains("Clear"),
+            "{help}"
+        );
+    }
+    std::fs::write(&path, "not valid toml").unwrap();
+    let settings = Settings::open(path, true);
+    assert!(settings.help().contains("Ctrl-R Reload"));
+    assert!(!settings.help().contains("Ctrl-S Save"));
 }
