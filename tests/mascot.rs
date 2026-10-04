@@ -49,6 +49,7 @@ fn render(
                 },
                 settings: None,
                 updates: false,
+                pinned: None,
             }),
         );
     })

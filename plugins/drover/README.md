@@ -10,7 +10,7 @@ Drover 是一个完整的可选 Saddle 进程插件：同一进程提供任务�
 CARGO_TARGET_DIR="$HOME/Developer/personal_projs/saddle-worktrees/.target" ./plugins/drover/package.sh
 ```
 
-Saddle → Plugins → Manage plugins 添加生成的完整目录 `plugins/drover/dist/drover-plugin`，启用后从 Plugins 选择 Drover。目录须同时包含 `plugin.toml` 和 `bin/saddle-drover`。更新前停用，更新后重新启用。
+Saddle → Plugins → Manage plugins 添加生成的完整目录 `plugins/drover/dist/drover-plugin`，启用后从 Plugins 选择 Tasks；也可在管理页选中 Drover 点 Pin，把 Tasks 固定到 Agents 头部（Agents 焦点按 `p` 打开，使用列表选中的 agent）。目录须同时包含 `plugin.toml` 和 `bin/saddle-drover`。更新前停用，更新后重新启用。
 
 关闭面板只关闭视图，后台继续观察；停用插件或退出 Saddle 停止观察与通知。重开恢复数据、建立通知基线，不补弹此前已等待的任务。每个用户的数据只允许一个 Drover 插件进程持有，第二个实例会明确失败，避免重复通知和并行所有者。插件不自动派发、提交、接受或执行检查命令。
 
@@ -22,7 +22,7 @@ Saddle → Plugins → Manage plugins 添加生成的完整目录 `plugins/drove
 args = ["--corral", "corral", "--cwd", "/absolute/project", "--refresh-ms", "2000"]
 ```
 
-默认从 PATH 查找 corral。旧清单中的 `--dispatch-log <值>` 仍兼容解析，但已弃用，值不展开、不读取、不执行；新清单不再提供，不自动修改用户清单。初始项目选择已登记的启动目录，否则第一项；打开时可跟随当前 agent 仓库。旧 Saddle `[queue]` 配置已不生效，旧 `--drover` 参数移除。重新打包会覆盖包清单，应保留本机自定义 args。
+默认从 PATH 查找 corral。旧清单中的 `--dispatch-log <值>` 仍兼容解析，但已弃用，值不展开、不读取、不执行；新清单不再提供，不自动修改用户清单。初始项目选择已登记的启动目录，否则第一项。普通打开时按来源目录（选中 agent、当前 agent 窗格或终端的启动目录）所在 Git 仓库定位已登记项目，worktree 归所属仓库；已登记的空项目也会切换。Tasks 中的来源行写明来源、结果（locating…、no added project matches、couldn't match、kept your current page、not applied）和实际显示的项目；草稿、确认、通知偏好、项目接入或执行中的操作不被切换。Attention 和通知打开仍按其目标。旧 Saddle `[queue]` 配置已不生效，旧 `--drover` 参数移除。重新打包会覆盖包清单，应保留本机自定义 args。
 
 ## 界面操作
 

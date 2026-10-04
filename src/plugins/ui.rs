@@ -72,6 +72,7 @@ enum Action {
     Open,
     Toggle,
     Restart,
+    Pin,
     Add,
     Remove,
     Sync,
@@ -129,6 +130,7 @@ impl Page {
         let state = id.map(|id| m.state(id)).unwrap_or_default();
         let enabled = id.is_some_and(|id| m.enabled_here(id));
         let stopped = id.is_none_or(|id| m.stopped(id));
+        let pinned = id.is_some() && id == m.pinned();
         vec![
             (Action::Open, "Open panel", state == "Running"),
             (
@@ -140,6 +142,11 @@ impl Page {
                 Action::Restart,
                 "Restart",
                 enabled && matches!(state.as_str(), "Running" | "Unresponsive" | "Failed"),
+            ),
+            (
+                Action::Pin,
+                if pinned { "Unpin" } else { "Pin" },
+                pinned || id.is_some_and(|id| m.pinnable(id)),
             ),
             (Action::Add, "Add local…", m.registry.error.is_none()),
             (
@@ -311,6 +318,22 @@ impl Page {
                 }
             }
             Action::Restart => m.restart(&id),
+            Action::Pin => {
+                let pin = m.pinned() != Some(id.as_str());
+                match m.pin(pin.then_some(id.as_str())) {
+                    Ok(()) => {
+                        self.error = false;
+                        self.message = if pin {
+                            "Pinned to the Agents header; press p in Agents to open it."
+                        } else {
+                            "Unpinned from the Agents header."
+                        }
+                        .into();
+                        return Outcome::Stay;
+                    }
+                    result => result,
+                }
+            }
             Action::Add => {
                 self.adding = Some(Adding {
                     input: Input::new(String::new()),
@@ -690,10 +713,17 @@ impl Page {
                         .map(|p| p.name)
                         .unwrap_or_else(|_| e.id.clone()),
                     format!(
-                        "{} · {}\nID: {}\n\nTechnical details\nDirectory\n{}\n\nProgram\n{}\n\n{}\n{}",
+                        "{} · {}\nID: {}{}\n\nTechnical details\nDirectory\n{}\n\nProgram\n{}\n\n{}\n{}",
                         if e.enabled { "Enabled" } else { "Disabled" },
                         m.state(&e.id),
                         e.id,
+                        if m.pinned() == Some(e.id.as_str()) {
+                            "\nPinned to the Agents header."
+                        } else if !m.pinnable(&e.id) {
+                            "\nNo view to open; cannot be pinned."
+                        } else {
+                            ""
+                        },
                         e.directory.display(),
                         m.program(&e.id)
                             .map(|p| p.display().to_string())

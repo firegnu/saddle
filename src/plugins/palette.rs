@@ -111,6 +111,13 @@ impl Default for Palette {
     }
 }
 impl Palette {
+    /// Opens with `id` selected, so its state and guidance show first.
+    pub fn selecting(id: &str) -> Self {
+        Self {
+            selected: Some(id.into()),
+            ..Self::default()
+        }
+    }
     pub fn for_placement(pane: u64, place: crate::terminals::Place) -> Self {
         Self {
             placement: Some((pane, place)),

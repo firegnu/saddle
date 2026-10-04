@@ -114,6 +114,7 @@ fn workspace(
                     },
                     settings: None,
                     updates: false,
+                    pinned: None,
                 }),
             );
         })

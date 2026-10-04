@@ -253,8 +253,8 @@ fn add_local_shows_its_main_step_and_errors() {
     let settings = Settings::open(dir.path().join("config.toml"), true);
     let mut m = manager(dir.path(), &[]);
     let mut page = Page::default();
-    // No plugin rows: Tab past the list and the disabled Open/Enable/Restart to Add local….
-    for _ in 0..4 {
+    // No plugin rows: Tab past the list and the disabled Open/Enable/Restart/Pin to Add local….
+    for _ in 0..5 {
         page.event(key(KeyCode::Tab), &mut m);
     }
     page.event(key(KeyCode::Enter), &mut m);

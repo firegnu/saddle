@@ -1,6 +1,6 @@
 # Tasks 入口设计
 
-2026-10-04，T74 设计阶段。**状态：提案，待用户确认。** 未实施，不修改已批准的 [DESIGN](DESIGN.md)；若获批，实施时先把选定的规则改动写入 DESIGN 再改代码。
+2026-10-04，T74。**状态：用户已批准（§4 四项均按推荐），已在 T74 分支实施，待审查。** 规则改动已写入 [DESIGN](DESIGN.md)「2026-10-04 Tasks 直接入口」。以下为批准时的设计正文；实施中的两处具体选择见文末“实施说明”。
 
 用户原话：现在的每一个repo的tasks入口有点麻烦，需要先打开plugins，之后定位到tasks插件，然后才能打开任务。这个有点深。要重新设计一下。
 
@@ -38,12 +38,12 @@
 
 可固定的范围：只有清单声明了可打开视图的插件（有 `panel.v1`，面板中会出现 Open/Switch 动作的那类）才能 Pin。内置 Dispatch 和只在后台运行的插件没有打开动作，Pin 按钮禁用并说明 `No view to open`，不会被当成 Tasks 式入口。
 
-首次设置：没有默认固定，安装或升级后头部不会自动出现 `Tasks`。用户需要先做一次 Plugins → Manage plugins → 选中 Tasks → Pin to header；在此之前访问路径与现在相同。
+首次设置：没有默认固定，安装或升级后头部不会自动出现 `Tasks`。用户需要先做一次 Plugins → Manage plugins → 选中 Drover → Pin；在此之前访问路径与现在相同。
 
 管理页现有操作为 Open panel / Disable / Restart / Add local… / Remove / Refresh / Back（`src/plugins/ui.rs`）。在 Restart 之后加一个按选中插件切换的操作（示意）：
 
 ```
- Open panel  Disable  Restart  Pin to header  Add local…  Remove  Refresh  Back
+ Open panel  Disable  Restart  Pin  Add local…  Remove  Refresh  Back
                                ↑ 已固定时为 Unpin；固定另一个插件会替换原固定
 ```
 
@@ -99,7 +99,7 @@ Settings、确认框、New agent 等编辑界面打开时，沿用 Plugins 入�
 
 ### 2.5 保留现场与异步定位
 
-直达入口不覆盖 Tasks 里已有的工作。现状（`plugins/drover/src/plugin.rs`）：关闭视图时只清掉 detail 和 confirmation，项目接入表单（setup）和当前页面（Add/Edit/Delete/Projects/All pending 等）都保留；`Event::Opened` 只在无 setup、非 busy、处于 List 页时启动定位；定位结果回来时还要求 `input_revision` 未变，期间送达插件的任何按键、粘贴或鼠标输入都会作废结果。
+直达入口不覆盖 Tasks 里已有的工作。现状（`plugins/drover/src/plugin.rs`）：关闭视图时只清掉 detail 和 confirmation，项目接入表单（setup）和当前页面（Add/Edit/Delete/Projects/All pending 等）都保留；`Event::Opened` 只在无 setup、非 busy、处于 List 页时启动定位；定位结果回来时还要求 `input_revision` 未变，期间送达插件的按键、粘贴或鼠标输入会作废结果（实施时排除单纯鼠标移动，见文末）。
 
 | 重新打开时 Tasks 的状态 | 行为 |
 | --- | --- |
@@ -157,3 +157,9 @@ Settings、确认框、New agent 等编辑界面打开时，沿用 Plugins 入�
 - Drover：定位结果改为插件内部三态（匹配/确认无匹配/无法判断），已登记的空项目和读取失败的项目也切换；来源行显示 locating、已切换、未匹配、无法判断、保留现场、结果作废等状态；通知偏好打开时不定位。
 - 协议、SDK、插件清单格式：不变。没有发现必须新增的接口。
 - 验证建议：相关 UI 回归组（Agents 头部宽/窄、管理页）、Drover 项目匹配的单元测试（空项目、读取失败、确认无匹配、git 失败/超时、worktree）和保留现场测试（草稿、busy、定位中输入、关闭后重开）。
+
+## 实施说明（2026-10-04）
+
+- 管理页按钮写作 `Pin` / `Unpin`，不用 `Pin to header`：48 列窄窗下长名称会让按钮栏多换一行并挤掉详情；“固定到 Agents 头部”由详情行 `Pinned to the Agents header.` 和操作结果说明。
+- 定位期间，按键、粘贴、点击、拖动、滚动作废结果；单纯鼠标移动（悬停）不算操作。宿主会把覆盖界面内的移动也转给插件，若移动也作废，点头部入口后把鼠标移进 Tasks 就会让直达失效。
+- 来源行位置：列表页画在工具栏下的分隔线上（此时不画列表/详情分隔的 `┬`，与 Running action… 相同）；其他页面替换顶部的项目路径行；Projects 页在表头上方加一行；项目接入与通知偏好画在覆盖区第一行，被居中对话框遮住时不显示。

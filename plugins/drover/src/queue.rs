@@ -160,6 +160,8 @@ pub struct Panel {
     pub record: Option<bool>,
     /// A Telemetry ↗ press for the plugin to hand to the host, taken from the input callback.
     pub telemetry_request: Option<saddle_plugin_sdk::protocol::TelemetryFilter>,
+    /// Where the view was last opened from and the project it shows, set by the plugin.
+    pub source: Option<String>,
 }
 /// Which task a detail result belongs to; a reopened page gets a new `seq`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1312,6 +1314,14 @@ impl Panel {
             let body = ui::dialog(t, frame, area, "Projects", 104, height);
             let (mut body, hits) = buttons::draw_compact(t, frame, body, &self.controls());
             self.buttons = hits;
+            if let Some(source) = self.source.as_deref().filter(|_| body.height > 1) {
+                frame.render_widget(
+                    Paragraph::new(source).style(Style::default().fg(t.muted)),
+                    Rect::new(body.x, body.y, body.width, 1),
+                );
+                body.y += 1;
+                body.height -= 1;
+            }
             if !body.is_empty() {
                 let name_width = (usize::from(body.width) / 3).clamp(12, 32);
                 frame.render_widget(
@@ -1345,12 +1355,14 @@ impl Panel {
             self.buttons = hits;
             if !body.is_empty() {
                 frame.render_widget(
-                    Paragraph::new(if self.busy {
-                        "Running action…".into()
-                    } else if matches!(self.page, Page::AllPending) {
-                        "All registered projects".into()
-                    } else {
-                        ui::clip(&self.project, body.width as usize)
+                    Paragraph::new(match (&self.source, self.busy) {
+                        (Some(source), true) => format!("Running action… · {source}"),
+                        (Some(source), false) => source.clone(),
+                        (None, true) => "Running action…".into(),
+                        (None, false) if matches!(self.page, Page::AllPending) => {
+                            "All registered projects".into()
+                        }
+                        (None, false) => ui::clip(&self.project, body.width as usize),
                     })
                     .style(Style::default().fg(if self.busy {
                         t.agent_working
@@ -1525,6 +1537,12 @@ impl Panel {
                 ratatui::text::Span::styled(format!("─{heading}"), Style::default().fg(t.bright)),
             );
         }
+        if let Some(source) = self.source.as_deref().filter(|_| heading.is_empty()) {
+            line.insert(
+                usize::from(self.busy),
+                ratatui::text::Span::styled(format!("─ {source} "), Style::default().fg(t.muted)),
+            );
+        }
         frame.render_widget(Paragraph::new(Line::from(line)), rule);
         // Task actions below the list and content; Close sits apart on the right.
         let close = if self.reading_link() {
@@ -1645,7 +1663,7 @@ impl Panel {
                     Rect::new(divider, y, 1, 1),
                 );
             }
-            if heading.is_empty() && !self.busy {
+            if heading.is_empty() && !self.busy && self.source.is_none() {
                 frame.render_widget(
                     Paragraph::new("┬").style(border),
                     Rect::new(divider, rule.y, 1, 1),

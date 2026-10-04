@@ -2245,7 +2245,7 @@ fn tasks_entry_opens_the_popup_and_closing_returns_to_the_previous_target() {
 }
 
 #[test]
-fn tasks_open_on_the_focused_agents_repository_unless_it_has_no_tasks() {
+fn tasks_open_on_the_focused_agents_repository_even_without_tasks() {
     let script = include_str!("fixtures/drover.py")
         .replace("state_file = root /", "state_file = Path.cwd() /")
         .replace(
@@ -2309,17 +2309,15 @@ fn tasks_open_on_the_focused_agents_repository_unless_it_has_no_tasks() {
     h.see("Queue project-two");
     h.send(b"\x1b");
     h.see("Input ▸ Agents");
-    // Without tasks in p/b's repository the current project stays.
+    // p/b's added repository has no tasks; it is still the project shown, as an empty queue.
     h.send(b"j");
     h.open_tasks();
     h.see("Input ▸ Drover");
-    let deadline = Instant::now() + Duration::from_millis(1500);
-    while Instant::now() < deadline {
-        h.pump();
-    }
-    h.see("Queue project-two");
+    h.see("project-three ▾ c");
+    h.see("showing project-three");
+    assert!(!h.contents().contains("Queue project-two"));
     // Pick project-one by hand, so the next opening has something to switch from.
-    h.click("project-two ▾ c");
+    h.click("project-three ▾ c");
     h.see("Projects");
     h.click("project-one");
     h.see("Queue project-one");
@@ -5650,4 +5648,109 @@ fn a_recorded_dispatch_goes_once_through_the_host_agent_entry_and_is_queryable()
     h.send(b"\x1b");
     h.see("Input ▸ Drover");
     h.quit();
+}
+
+#[test]
+fn pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled() {
+    let mut h = Harness::start_tasks();
+    h.see("Telemetry");
+    assert!(!h.contents().contains("Tasks  Telemetry"), "no default pin");
+    h.send(b"p");
+    h.see("Pin one in Settings → Plugins");
+    h.send(b",\x1b[15~");
+    h.see("Changes apply immediately.");
+    // Built-in Dispatch has no view to open, so it cannot be pinned.
+    h.see("› Dispatch");
+    assert!(!h.contents().contains("‹Pin›"));
+    h.send(b"\x1b[B");
+    h.see("› Drover");
+    h.click("‹Pin›");
+    h.see("‹Unpin›");
+    let registry = h.dir.path().join("plugins.toml");
+    assert!(
+        std::fs::read_to_string(&registry)
+            .unwrap()
+            .contains("pinned = \"drover\"")
+    );
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.see("Tasks  Telemetry");
+    h.see("p Tasks (selected)");
+    h.send(b"p");
+    h.see("Native queue task");
+    h.see("Input ▸ Drover");
+    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");
+    // Wait for the whole frame: an Esc sent with the next keys would read as Alt.
+    h.settle();
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Native queue task"));
+    h.see("Input ▸ Agents");
+    h.click("Tasks");
+    h.see("Input ▸ Drover");
+    h.see("Native queue task");
+    h.settle();
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Native queue task"));
+    h.see("Input ▸ Agents");
+
+    // Disabling keeps the pin; opening explains the state instead of starting it.
+    h.send(b",\x1b[15~");
+    h.see("Changes apply immediately.");
+    h.send(b"\x1b[B");
+    h.see("› Drover");
+    h.click("Disable");
+    h.see("Disabled");
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.see("Tasks  Telemetry");
+    h.send(b"p");
+    h.see("Search plugins");
+    h.see("› Tasks");
+    h.see("Enable this plugin in Manage plugins");
+    h.settle();
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Search plugins"));
+    h.see("Input ▸ Agents");
+    assert!(
+        std::fs::read_to_string(&registry)
+            .unwrap()
+            .contains("pinned = \"drover\"")
+    );
+
+    // Removing the registration clears its pin.
+    h.send(b",\x1b[15~");
+    h.see("Changes apply immediately.");
+    h.send(b"\x1b[B");
+    h.see("› Drover");
+    h.click("‹Remove›");
+    h.until(|_| {
+        !std::fs::read_to_string(&registry)
+            .unwrap()
+            .contains("drover")
+    });
+    h.send(b"\x1b");
+    h.until(|h| !h.contents().contains("Changes apply immediately."));
+    h.send(b"\x1b");
+    h.see("Input ▸ Agents");
+    h.until(|h| !h.contents().contains("Tasks  Telemetry"));
+}
+
+#[test]
+fn a_terminal_gives_its_launch_directory_as_the_tasks_source() {
+    let mut h = Harness::start_tasks();
+    h.see("Synthetic title");
+    h.click("│ + │");
+    h.click_in("Open content in a new tab", "Terminal");
+    h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
+    h.click("Plugins");
+    h.see("Background");
+    h.click("Tasks");
+    h.see("› Tasks");
+    h.send(b"\r");
+    h.see("Native queue task");
+    h.see("From ");
 }

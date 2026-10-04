@@ -129,10 +129,14 @@ struct File {
     plugins: Vec<Entry>,
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     core: std::collections::BTreeMap<String, CoreEntry>,
+    /// The one plugin the user pinned to the Agents header; never set by a plugin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pinned: Option<String>,
 }
 pub struct Registry {
     pub entries: Vec<Entry>,
     pub core: std::collections::BTreeMap<String, CoreEntry>,
+    pub pinned: Option<String>,
     reserved: std::collections::BTreeSet<String>,
     path: PathBuf,
     baseline: Option<Vec<u8>>,
@@ -166,6 +170,7 @@ impl Registry {
         let mut r = Self {
             entries: vec![],
             core: Default::default(),
+            pinned: None,
             reserved: ids.into_iter().map(str::to_owned).collect(),
             path,
             baseline: None,
@@ -178,7 +183,7 @@ impl Registry {
     }
     pub fn refresh(&mut self) -> Result<()> {
         let bytes = read(&self.path)?;
-        let (entries, core) = if let Some(b) = &bytes {
+        let (entries, core, pinned) = if let Some(b) = &bytes {
             ensure!(b.len() <= 1024 * 1024, "registry too large");
             let file: File = toml::from_slice(b)?;
             ensure!(file.version == 1, "unsupported plugins registry version");
@@ -189,12 +194,17 @@ impl Registry {
                     "invalid plugin registry"
                 );
             }
-            (file.plugins, file.core)
+            // A pin left behind for a missing registration (an older Saddle removed it) is dropped.
+            let pinned = file
+                .pinned
+                .filter(|id| file.plugins.iter().any(|e| &e.id == id));
+            (file.plugins, file.core, pinned)
         } else {
-            (vec![], Default::default())
+            (vec![], Default::default(), None)
         };
         self.entries = entries;
         self.core = core;
+        self.pinned = pinned;
         self.baseline = bytes;
         self.error = None;
         Ok(())
@@ -217,7 +227,7 @@ impl Registry {
             directory: dir,
             enabled: false,
         });
-        self.write(entries, self.core.clone())
+        self.write(entries, self.core.clone(), self.pinned.clone())
     }
     pub fn enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
         let mut entries = self.entries.clone();
@@ -226,7 +236,7 @@ impl Registry {
             .find(|e| e.id == id)
             .context("plugin missing")?
             .enabled = enabled;
-        self.write(entries, self.core.clone())
+        self.write(entries, self.core.clone(), self.pinned.clone())
     }
     pub fn remove(&mut self, id: &str) -> Result<()> {
         let mut entries = self.entries.clone();
@@ -235,7 +245,7 @@ impl Registry {
             "disable before removing"
         );
         entries.retain(|e| e.id != id);
-        self.write(entries, self.core.clone())
+        self.write(entries, self.core.clone(), self.pinned.clone())
     }
     /// Management-layer switch only; headless commands never call this.
     pub fn core_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
@@ -246,13 +256,27 @@ impl Registry {
         );
         let mut core = self.core.clone();
         core.insert(id.into(), CoreEntry { enabled });
-        self.write(self.entries.clone(), core)
+        self.write(self.entries.clone(), core, self.pinned.clone())
     }
+    /// Pins one registered plugin to the Agents header, replacing any other; `None` unpins.
+    pub fn pin(&mut self, id: Option<&str>) -> Result<()> {
+        if let Some(id) = id {
+            ensure!(self.entries.iter().any(|e| e.id == id), "plugin missing");
+        }
+        self.write(
+            self.entries.clone(),
+            self.core.clone(),
+            id.map(str::to_owned),
+        )
+    }
+    /// Removing a registration also removes its pin.
     fn write(
         &mut self,
         entries: Vec<Entry>,
         core: std::collections::BTreeMap<String, CoreEntry>,
+        pinned: Option<String>,
     ) -> Result<()> {
+        let pinned = pinned.filter(|id| entries.iter().any(|e| &e.id == id));
         ensure!(self.error.is_none(), "registry unavailable; refresh first");
         let parent = self
             .path
@@ -277,6 +301,7 @@ impl Registry {
             version: 1,
             plugins: entries.clone(),
             core: core.clone(),
+            pinned: pinned.clone(),
         })?
         .into_bytes();
         let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
@@ -285,6 +310,7 @@ impl Registry {
         tmp.persist(&self.path)?;
         self.entries = entries;
         self.core = core;
+        self.pinned = pinned;
         self.baseline = Some(bytes);
         Ok(())
     }

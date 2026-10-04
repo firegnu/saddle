@@ -17,6 +17,55 @@ use std::{
 
 const REFRESH: Duration = Duration::from_secs(2);
 type ProjectState = Option<Result<Box<drover::Snapshot>, String>>;
+/// What became of the latest ordinary opening's source directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Source {
+    Locating,
+    Shown,
+    NoMatch,
+    Unknown(String),
+    /// The view was on a draft, sub-page or action, so it was not located.
+    Kept,
+    /// The person started working before the result arrived.
+    NotApplied,
+}
+impl Source {
+    /// The source, its outcome and the project actually shown, so an old project is never
+    /// mistaken for the source's.
+    fn line(&self, path: &str, project: &str) -> String {
+        let shown = std::path::Path::new(project)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy();
+        let outcome = match self {
+            Source::Locating => "locating… · ".into(),
+            Source::Shown => String::new(),
+            Source::NoMatch => "no added project matches (c Projects → a Add project) · ".into(),
+            Source::Unknown(why) => format!("couldn't match: {why} · "),
+            Source::Kept => "kept your current page · ".into(),
+            Source::NotApplied => "not applied · ".into(),
+        };
+        format!("From {} · {outcome}showing {shown}", tail(path, 32))
+    }
+}
+/// The last `width` columns of a path, so its final directories stay readable.
+fn tail(path: &str, width: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    let clean: String = path.chars().filter(|c| !c.is_control()).collect();
+    if clean.width() <= width {
+        return clean;
+    }
+    let mut used = 1;
+    let mut kept: Vec<char> = vec![];
+    for c in clean.chars().rev() {
+        used += c.width().unwrap_or(0);
+        if used > width {
+            break;
+        }
+        kept.push(c);
+    }
+    std::iter::once('…').chain(kept.into_iter().rev()).collect()
+}
 pub struct Drover {
     commands: crate::api::Worker,
     setup: Option<crate::project_setup::Setup>,
@@ -38,6 +87,8 @@ pub struct Drover {
     seen: HashSet<Target>,
     attention_dirty: bool,
     lookup: Option<(u64, drover::RepoTasks)>,
+    /// The directory the view was last opened from and what became of it.
+    source: Option<(String, Source)>,
     input_revision: u64,
     detail: Option<(queue::DetailKey, drover::DetailWorker)>,
     confirmation: Option<(queue::DetailKey, drover::DetailWorker)>,
@@ -110,6 +161,7 @@ impl Drover {
             seen: HashSet::new(),
             attention_dirty: false,
             lookup: None,
+            source: None,
             input_revision: 0,
             corral,
             refresh,
@@ -483,22 +535,30 @@ impl Drover {
                 self.survey.refresh();
             }
         }
-        if let Some(project) = self
+        if let Some(located) = self
             .lookup
             .as_ref()
             .and_then(|(_, job)| job.result.try_recv().ok())
         {
             let (revision, _) = self.lookup.take().unwrap();
-            if revision == self.input_revision
-                && self.setup.is_none()
-                && !self.panel.busy
-                && matches!(self.panel.page, queue::Page::List)
-                && let Some(project) = project
-                && project != self.panel.project
-            {
-                self.request(drover::Request::Project(project));
-                changed = true;
+            let outcome = if revision != self.input_revision || !self.locatable() {
+                Source::NotApplied
+            } else {
+                match located {
+                    drover::Located::Project(project) => {
+                        if project != self.panel.project {
+                            self.request(drover::Request::Project(project));
+                        }
+                        Source::Shown
+                    }
+                    drover::Located::NoMatch => Source::NoMatch,
+                    drover::Located::Unknown(why) => Source::Unknown(why),
+                }
+            };
+            if let Some((_, state)) = &mut self.source {
+                *state = outcome;
             }
+            changed = true;
         }
         for update in self.worker.updates.try_iter() {
             changed = true;
@@ -568,6 +628,14 @@ impl Drover {
         }
         Ok(())
     }
+    /// Locating may change the project only on the plain list: never under a draft or other
+    /// page, project setup, notification preferences or a running action.
+    fn locatable(&self) -> bool {
+        self.setup.is_none()
+            && !self.preferences
+            && !self.panel.busy
+            && matches!(self.panel.page, queue::Page::List)
+    }
     fn preference_key(&mut self, key: KeyEvent) {
         if self.preference_saving {
             return;
@@ -636,9 +704,16 @@ impl Drover {
         self.panel.key(key)
     }
     fn input(&mut self, value: &Value) {
-        self.input_revision += 1;
-        self.lookup = None;
         let event = &value["event"];
+        // Hovering changes nothing on the page, so it does not discard a pending location.
+        if !(event["type"] == "mouse" && event["action"] == "move") {
+            self.input_revision += 1;
+            if self.lookup.take().is_some()
+                && let Some((_, state)) = &mut self.source
+            {
+                *state = Source::NotApplied;
+            }
+        }
         let request = match event["type"].as_str() {
             Some("key") => {
                 self.pointer.cancel();
@@ -737,6 +812,9 @@ impl Drover {
             _ => None,
         };
         if let Some(request) = request {
+            if matches!(request, drover::Request::Project(_)) {
+                self.source = None;
+            }
             self.request(request);
         }
     }
@@ -813,12 +891,14 @@ impl Plugin for Drover {
             Event::Closed => {
                 self.pointer.cancel();
                 self.lookup = None;
+                self.source = None;
                 self.visible = false;
                 self.detail = None;
                 self.confirmation = None;
             }
             Event::NotificationOpen(open) => {
                 self.lookup = None;
+                self.source = None;
                 if open.target["projects"] == true {
                     self.open_target(Target::Source("projects".into()));
                 } else if let Some(target) = open.target["id"]
@@ -832,26 +912,25 @@ impl Plugin for Drover {
             }
             Event::AttentionOpen(open) => {
                 self.lookup = None;
+                self.source = None;
                 if let Some(target) = self.targets.get(&open.item_id).cloned() {
                     self.open_target(target);
                     context.redraw();
                 }
             }
             Event::Opened(value) => {
-                if self.setup.is_none()
-                    && !self.panel.busy
-                    && matches!(self.panel.page, queue::Page::List)
-                    && let Some(cwd) = value["cwd"].as_str()
-                {
+                // A newer opening replaces any pending result; drafts and actions are kept.
+                self.lookup = None;
+                self.source = value["cwd"].as_str().map(|cwd| {
+                    if !self.locatable() {
+                        return (cwd.to_owned(), Source::Kept);
+                    }
                     self.lookup = Some((
                         self.input_revision,
-                        drover::RepoTasks::start(
-                            self.corral.clone(),
-                            cwd.into(),
-                            self.panel.projects.clone(),
-                        ),
+                        drover::RepoTasks::start(cwd.into(), self.panel.projects.clone()),
                     ));
-                }
+                    (cwd.to_owned(), Source::Locating)
+                });
             }
             _ => {}
         }
@@ -871,8 +950,22 @@ impl Plugin for Drover {
                 *field = saddle_plugin_sdk::terminal_color(&color);
             }
         }
+        self.panel.source = self
+            .source
+            .as_ref()
+            .map(|(path, state)| state.line(path, &self.panel.project));
         let mut terminal = Terminal::new(TestBackend::new(area.width, area.height))?;
         terminal.draw(|frame| {
+            // Setup and preferences are centred dialogs; the source sits above them when room allows.
+            if (self.setup.is_some() || self.preferences)
+                && let Some(line) = &self.panel.source
+            {
+                frame.render_widget(
+                    ratatui::widgets::Paragraph::new(line.as_str())
+                        .style(ratatui::style::Style::default().fg(t.muted)),
+                    Rect { height: area.height.min(1), ..area },
+                );
+            }
             if let Some(setup) = &mut self.setup {
                 self.panel.buttons = setup.draw(&t, frame, area);
                 self.rows.clear();

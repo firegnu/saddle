@@ -1546,7 +1546,8 @@ fn plugin_management_separates_details_and_keeps_full_setup_scrollable() {
             assert!(text.contains(label), "{width}x{height}: {label}\n{text}");
         }
         assert!(!manager.enabled_here("test.peer"));
-        for _ in 0..7 {
+        // Open, Enable, Restart, Pin, Add local…, Remove, Refresh, then Back.
+        for _ in 0..8 {
             page.event(
                 Event::Key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE)),
                 &mut manager,
@@ -1593,4 +1594,69 @@ fn process_plugin_receives_the_hosts_explicit_agent_program() {
         program.display().to_string()
     );
     runtime.stop();
+}
+
+#[test]
+fn a_pin_outlives_other_registry_writes_and_leaves_with_its_registration() {
+    use saddle::plugins::{Manager, registry::Registry};
+    let dir = tempfile::tempdir().unwrap();
+    let plugin = |id: &str, capabilities: &[&str]| {
+        let at = dir.path().join(id);
+        std::fs::create_dir(&at).unwrap();
+        std::os::unix::fs::symlink("/bin/echo", at.join("entry")).unwrap();
+        let manifest = Manifest {
+            manifest_version: 1,
+            view: None,
+            action: None,
+            entry: None,
+            id: id.into(),
+            name: id.into(),
+            version: "1".into(),
+            protocol_major: 1,
+            executable: "entry".into(),
+            args: vec![],
+            required_capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
+        };
+        std::fs::write(at.join("plugin.toml"), toml::to_string(&manifest).unwrap()).unwrap();
+        (at, manifest)
+    };
+    let (view_dir, view) = plugin("demo.view", &["panel.v1"]);
+    let (quiet_dir, quiet) = plugin("demo.quiet", &[]);
+    let path = dir.path().join("plugins.toml");
+    let mut registry = Registry::open(path.clone());
+    registry.add(&view_dir, &view).unwrap();
+    assert_eq!(registry.pinned, None, "nothing is pinned by default");
+    registry.pin(Some("demo.view")).unwrap();
+    // Enabling, adding another plugin and disabling keep the pin.
+    registry.enabled("demo.view", true).unwrap();
+    registry.add(&quiet_dir, &quiet).unwrap();
+    registry.enabled("demo.view", false).unwrap();
+    assert_eq!(
+        Registry::open(path.clone()).pinned.as_deref(),
+        Some("demo.view")
+    );
+    // A stale writer cannot overwrite a newer pin change.
+    let mut stale = Registry::open(path.clone());
+    registry.pin(None).unwrap();
+    assert_eq!(
+        stale.pin(Some("demo.view")).unwrap_err().to_string(),
+        "plugin registry changed; refresh first"
+    );
+    assert_eq!(Registry::open(path.clone()).pinned, None);
+    assert!(registry.pin(Some("demo.missing")).is_err());
+    registry.pin(Some("demo.view")).unwrap();
+    // Only a plugin with a view can be pinned.
+    let mut manager = Manager::open(path.clone());
+    assert!(manager.pinnable("demo.view"));
+    assert!(!manager.pinnable("demo.quiet"));
+    assert!(manager.pin(Some("demo.quiet")).is_err());
+    assert_eq!(manager.pinned(), Some("demo.view"));
+    drop(manager);
+    // Removing the registration removes its pin; a pin left for a missing plugin is ignored.
+    registry.remove("demo.view").unwrap();
+    assert_eq!(Registry::open(path.clone()).pinned, None);
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("pinned"));
+    let text = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, format!("pinned = \"demo.gone\"\n{text}")).unwrap();
+    assert_eq!(Registry::open(path).pinned, None);
 }

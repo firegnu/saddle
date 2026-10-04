@@ -416,6 +416,26 @@ impl App {
             palette.update(items);
         }
     }
+    /// Opens the pinned plugin as the launcher would. When it cannot open now, the launcher
+    /// opens on that plugin to explain why; nothing is enabled, started or restarted.
+    pub(super) fn open_pinned(&mut self) {
+        let Some(item) = self.plugins.pinned_item() else {
+            self.panel.message = "No pinned plugin. Pin one in Settings → Plugins.".into();
+            return;
+        };
+        if self.plugin_ui_busy() {
+            return;
+        }
+        self.pointer.cancel();
+        if item.action().is_none() {
+            self.plugin_palette = Some(crate::plugins::palette::Palette::selecting(&item.id));
+            self.update_plugin_palette();
+            self.native_mouse = false;
+        } else if self.plugin_overlay.as_ref().is_none_or(|o| o.id != item.id) {
+            self.close_plugin_overlay(false);
+            self.open_plugin_view(&item.id);
+        }
+    }
     pub(super) fn plugin_launcher_event(&mut self, event: &Event) -> bool {
         if self.plugin_ui_busy() {
             self.plugin_entry_press = None;
@@ -425,19 +445,25 @@ impl App {
             self.plugin_entry_press = None;
             return false;
         };
-        let over = self.hits.plugins.contains((m.column, m.row).into());
+        // The fixed Plugins entry and the user's pinned entry; each acts on its own release.
+        let point = (m.column, m.row).into();
+        let over = [self.hits.plugins, self.hits.pinned]
+            .into_iter()
+            .find(|r| r.contains(point));
         match m.kind {
-            MouseEventKind::Down(MouseButton::Left) if over => {
-                self.plugin_entry_press = Some(self.hits.plugins);
+            MouseEventKind::Down(MouseButton::Left) if over.is_some() => {
+                self.plugin_entry_press = over;
                 self.pointer.cancel();
                 return true;
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 if let Some(pressed) = self.plugin_entry_press.take() {
-                    if over && pressed == self.hits.plugins {
+                    if over == Some(pressed) && pressed == self.hits.plugins {
                         self.plugin_palette = Some(Default::default());
                         self.update_plugin_palette();
                         self.native_mouse = false;
+                    } else if over == Some(pressed) && pressed == self.hits.pinned {
+                        self.open_pinned();
                     }
                     return true;
                 }
