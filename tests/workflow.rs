@@ -1696,7 +1696,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     h.see("Controller · agents/main-actual");
     h.send(b"\x1dn");
     h.click("▾ Ctrl-P");
-    h.click("project-two ·");
+    h.click("project-two  ");
     h.click("Claude");
     h.see("main");
     h.click("Create agent");
