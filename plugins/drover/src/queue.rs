@@ -2178,8 +2178,9 @@ impl Panel {
                     frame.render_widget(Paragraph::new("Enlarge the window to edit a task"), body);
                     return hits;
                 }
-                // Field titles name the field; the key hint for switching fields sits below.
-                let hint = u16::from(body.height >= 6);
+                // Field titles name the field; the key hint for switching fields sits below, only
+                // when the Body field still keeps a text row (title 3 + body borders 2 + hint 1).
+                let hint = u16::from(body.height >= 7);
                 let title_area = Rect::new(body.x, body.y, body.width, 3);
                 let text_area = Rect::new(body.x, body.y + 3, body.width, body.height - 3 - hint);
                 self.fields = vec![(title_area, false), (text_area, true)];
