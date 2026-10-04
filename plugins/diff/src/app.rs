@@ -754,8 +754,8 @@ mod tests {
         }
     }
 
-    /// Unchanged code on the default theme (Reset background, not inferable) and on an explicit
-    /// light theme. Prints each syntax color's contrast: `cargo test -p saddle-diff-plugin
+    /// Unchanged code on the default theme (Reset background, not inferable) and on explicit
+    /// light and mid-gray backgrounds. Prints each syntax color's contrast: `cargo test -p saddle-diff-plugin
     /// light_theme -- --nocapture`.
     #[test]
     fn light_theme_keeps_unchanged_code_readable() {
@@ -800,7 +800,9 @@ mod tests {
         let light_bg = Color::Rgb(0xf6, 0xf6, 0xf4);
         let light_text = Color::Rgb(0x24, 0x29, 0x2f);
         let light_accent = Color::Rgb(0x09, 0x69, 0xda);
-        let light = json!({"text":c(light_text),"muted":c(Color::Rgb(0x6e,0x77,0x81)),"background":c(light_bg),"accent":c(light_accent),"error":c(Color::Rgb(0xcf,0x22,0x2e))});
+        let light_theme = |bg: Color| json!({"text":c(light_text),"muted":c(Color::Rgb(0x6e,0x77,0x81)),"background":c(bg),"accent":c(light_accent),"error":c(Color::Rgb(0xcf,0x22,0x2e))});
+        // A mid-gray background is still light, but too dark for 7:1 against any color.
+        let mid_bg = Color::Rgb(0x90, 0x90, 0x90);
         let snapshot = Snapshot {
             root: "/tmp/synthetic-repo".into(),
             files: vec![FileDiff {
@@ -813,7 +815,7 @@ mod tests {
         let mut p = DiffPlugin::new(Some("/tmp/synthetic-repo".into()));
         p.document = Document::build(&snapshot);
         p.snapshot = Some(Arc::new(snapshot));
-        let mut classes = vec![];
+        let mut base = (0, 0.0);
         // Smallest CIELAB difference (ΔE76) between two syntax classes, to catch classes merging.
         let closest = |seen: &[(Color, String)]| {
             let mut min = (f64::MAX, String::new());
@@ -829,9 +831,12 @@ mod tests {
             println!("  closest classes: ΔE {:.1} ({})", min.0, min.1);
             min.0
         };
-        let mut distances = vec![];
-        for (name, theme) in [("default (Dune)", &dune), ("explicit light", &light)] {
-            let b = p.render(Rect::new(0, 0, 100, 14), theme).unwrap();
+        for (name, theme, bg) in [
+            ("default (Dune)", dune, None),
+            ("explicit light", light_theme(light_bg), Some(light_bg)),
+            ("explicit mid gray", light_theme(mid_bg), Some(mid_bg)),
+        ] {
+            let b = p.render(Rect::new(0, 0, 100, 14), &theme).unwrap();
             println!("--- {name}");
             for l in lines(&b) {
                 println!("|{l}|");
@@ -864,15 +869,17 @@ mod tests {
                     _ => println!("  fg={fg:?} bg={:?}: not inferable {text}", cell.bg),
                 }
             }
-            classes.push(seen.len());
-            distances.push(closest(&seen));
-            if theme == &light {
+            let distance = closest(&seen);
+            if let Some(bg) = bg {
                 for (fg, text) in &seen {
                     assert!(
-                        contrast(*fg, light_bg) >= 4.5,
-                        "{fg:?} on {light_bg:?} is unreadable: {text}"
+                        contrast(*fg, bg) >= 4.5,
+                        "{fg:?} on {bg:?} is unreadable: {text}"
                     );
                 }
+                // Syntax classes stay as distinct as on the default theme.
+                assert_eq!(seen.len(), base.0, "syntax classes merge on {bg:?}");
+                assert!(distance >= base.1 / 2.0, "syntax classes merge on {bg:?}");
                 // Changed rows keep their red/green backgrounds and word emphasis.
                 let (x, y) = find(&b, "20").unwrap();
                 assert_eq!(b[(x, y)].bg, Color::Rgb(23, 48, 35));
@@ -903,11 +910,9 @@ mod tests {
                     .flat_map(|l| l.spans.iter().map(|(_, s)| s.fg))
                     .collect();
                 assert!(seen.iter().all(|(fg, _)| highlighted.contains(&Some(*fg))));
+                base = (seen.len(), distance);
             }
         }
-        // Syntax classes stay as distinct as on the default theme.
-        assert_eq!(classes[0], classes[1]);
-        assert!(distances[1] >= distances[0] / 2.0, "syntax classes merge");
     }
 
     /// Prints synthetic frames for review: `cargo test -p saddle-diff-plugin dump -- --nocapture`.

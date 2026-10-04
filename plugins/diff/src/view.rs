@@ -81,8 +81,9 @@ fn luminance(color: Color) -> Option<f64> {
 /// On a known light background (dark text reads better above about 0.18 luminance), the syntax
 /// theme's plain foreground follows the host text color and other colors are darkened with their
 /// hue kept: classes the syntax theme itself keeps under 4.5:1 (comments, variables) to 4.5:1,
-/// the rest to 7:1, so dim classes stay lighter than the others. Dark or unknown backgrounds
-/// keep the highlighted colors.
+/// the rest to 7:1 (or, on a mid-light background where 7:1 cannot be reached, half the 4.5:1
+/// luminance), so dim classes stay lighter than the others. Dark or unknown backgrounds keep the
+/// highlighted colors.
 fn readable(style: Style, bg: Color, text: Color) -> Style {
     let (Some(fg), Some(light)) = (style.fg, luminance(bg)) else {
         return style;
@@ -104,21 +105,33 @@ fn readable(style: Style, bg: Color, text: Color) -> Style {
         .background
         .and_then(|c| luminance(Color::Rgb(c.r, c.g, c.b)))
         .is_some_and(|source| (l + 0.05) / (source + 0.05) < 4.5);
-    let target = (light + 0.05) / if dim { 4.5 } else { 7.0 } - 0.05;
+    let room = (light + 0.05) / 4.5 - 0.05;
+    let target = if dim {
+        room
+    } else {
+        ((light + 0.05) / 7.0 - 0.05).max(room / 2.0)
+    };
     if l <= target {
         return style;
     }
-    // Scaling the linear channels keeps the hue; rounding down only adds contrast.
-    let darken = |c: u8| {
-        let v = linear(c) * target / l;
+    // Move the gray part to the target luminance and keep the zero-luminance color part as far as
+    // the gamut allows, so classes stay apart in hue even with little room for lightness. Rounding
+    // down only adds contrast.
+    let part = [r, g, b].map(|c| linear(c) - l);
+    let keep = part
+        .iter()
+        .filter(|&&c| c < 0.0)
+        .fold(1.0_f64, |keep, &c| keep.min(target / -c));
+    let [r, g, b] = part.map(|c| {
+        let v = target + c * keep;
         let v = if v <= 0.0031308 {
             v * 12.92
         } else {
             1.055 * v.powf(1.0 / 2.4) - 0.055
         };
         (v * 255.0).floor() as u8
-    };
-    style.fg(Color::Rgb(darken(r), darken(g), darken(b)))
+    });
+    style.fg(Color::Rgb(r, g, b))
 }
 /// Escape terminal controls and pathological graphemes before putting them into a panel frame.
 pub fn safe(text: &str) -> String {
