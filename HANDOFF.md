@@ -2,7 +2,16 @@
 
 更新：2026-10-04。用户认可设计语言和 33 页实际绘制预览，要求确认未破坏逻辑后合并部署。第一批 UI 已完成审查、合并、推送、安装与开发目录清理；本轮未走 Tasks 队列或开启遥测。
 
-## 当前状态
+## 第二批正在实施（2026-10-04）
+
+用户接受剩余 UI 整理及 Agents 小幅方案，明确授权可并行则直接开干。按独占文件已派出三个 Claude Code opus[1m]/high 实现者：`saddle/dev-ui2-host-1`（ui2-host，公共提示+Agents/终端）、`saddle/dev-ui2-settings-1`（ui2-settings，Settings 剩余内页）、`saddle/dev-ui2-diff-1`（ui2-diff）。起点任务书提交 `85ed2fe`；具体 instance、完成提醒 request_id、范围见 `docs/任务/UI第二批-分组与派发-2026-10-04.md` 和三份组任务书。
+
+- 任务书和公开派发记录已提交；三组尚未审查/合并/部署。完成提醒到达后按组读取 status/reply、检查 diff 与展示结果，原 agent 同任务返工，再集成；不要只停在复述 DONE。不走 Tasks 队列，不开启遥测。
+- 公共区域与 Agents 同组避免 ui.rs/terminals.rs 交叉写；Settings、Diff 可独立并行。保留 Agents 3a、行高、入口顺序和业务行为，不重做卡片。所有边界见任务书。
+- cargo 必须用 `/tmp/saddle-ui2-cargo.py`，对整条命令串行加锁并设置共享 target，避免检查期间另一 worktree 替换产物。三组只跑一条直接展示检查，不跑全套/Clippy；跨组旧文本断言报告给主控，不能削弱业务断言。
+- 上一批与红点调整已收尾；以下当前安装/历史验证记录保留，第二批未完成时不能覆盖成已部署。
+
+## 第一批与圆点调整的已部署状态
 
 - `main`：UI 合并 `5f39f88`，收尾空提交 `85a780b`；之后仅补部署与交接记录。Settings 原未提交候选已核对后安全提交 `0452406`，设计语言 HTML 已入库。
 - 新安装包：Saddle 入口指向 `~/.local/share/saddle/versions/4ac4691`（更新圆点微调），Drover 注册仍为 `5f39f88`。Corral、Diff、其他插件和主配置未改；旧不可变包保留。
@@ -19,14 +28,14 @@
 
 ## 清理与保留
 
-- 三个 UI 开发分支/worktree、集成与 detached 基线 worktree 均已安全移除；对应三个 `saddle/dev-ui-*-1` agent 随工作目录关闭。公开 corral ls 仅余主控 `saddle/main`，instance `0ed54c671118`；原宿主 instance `ab0d3e34a167ecbe` 保留。
+- 三个 UI 开发分支/worktree、集成与 detached 基线 worktree 均已安全移除；对应三个 `saddle/dev-ui-*-1` agent 随工作目录关闭。第一批清理时公开 corral ls 仅余主控 `saddle/main`，instance `0ed54c671118`；原宿主 instance `ab0d3e34a167ecbe` 保留。
 - 旧 UI 完成提醒已处理；关闭 agent 后重复提醒不触发重做、重派或队列放行。
 - 历史 `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow` 四个 worktree 原样保留。
 
 ## 下一步
 
 - 用户正常重开 Saddle 后回看本批实际界面，有反馈则继续对应 UI 小修。部署成功与运行窗口已更新应分别核验。
-- Diff、Settings 剩余 H18/H19、公共状态栏/Toast/notice/终端和 Agents 公共绘制仍是后续批次；本批完成不等于整份 UI 清单完成，不自动启动下一项。
+- Diff、Settings 剩余 H18/H19、公共状态栏/Toast/notice/终端和 Agents 公共绘制现已按上方第二批范围授权实施；本批不包含额外产品能力或其他队列任务。
 - 保持设计语言与整理清单两份文档。设计与批准取舍看 `docs/DESIGN.md`、`docs/UI设计语言.md` 和 `docs/调研/UI整理清单-2026-10-03.md`；分组和各组审查见 `docs/任务/UI并行-分组与派发-2026-10-04.md`。T74 导航改造、移动端能力不搭车，不推进 Tasks 队列。
 
 ## Settings 更新圆点微调（2026-10-04）
