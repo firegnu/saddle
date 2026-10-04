@@ -1,69 +1,51 @@
 # Saddle 交接
 
-更新：2026-10-04。主控 `saddle/main`，分支 `main`。T77 已完成源码合并、清理及授权部署；安装 aab70c8，待用户重开 Saddle 生效。
-
-## 当前优先续接：T77 已部署，待重开生效
-
-- 用户授权主控与 agent 达成设计一致后持续落地。T77 实现 `8988d58`，主控审查记录 `6643d32`，合并 `dc0f8f9`，空收尾 `2d25baf`。
-- 仅整理 Drover 任务详情：突出 `Open in Telemetry ↗`，状态之后新增紧凑 `Look further`，支持正文同源链接，调整关键信息顺序并弱化技术 ID。原始内容、历史信息、全部轮次筛选保留；采集、查询、存储、宿主和任务状态未改。
-- 主控 T77 范围审查通过，**全仓并非全绿**：全目标首次覆盖 694 passed / 14 failed / 9 ignored；11 项失败定向复核为 10 passed / 1 failed。仍有 3 项宿主 app 旧头部入口断言失败，及 `without_a_record_context_the_delivery_goes_the_plain_way_once` 的 budget_exhausted/disabled 不符。后者根因未定位，不宣称修复；相关源码均无 T77 修改。本任务不搭车修复这些问题。全仓 Clippy、fmt/diff 通过。
-- 细节见 `docs/任务/T77-遥测展示整理主控审查.md`，日志 `/tmp/saddle-t77-integration/`。首次因 app 失败停止后，只续跑未执行目标；没有重跑整套，未删测试、放宽断言/超时或改串行。
-- `t77-telemetry-ui` worktree 与分支已安全删除；原 agent `saddle/dev-t77-design-1` / instance `0994bb2200d8` idle、attached=0 后，随工作目录一并关闭。不要处理迟到提醒或重发实施。
-- 用户追加“编译+部署”后，从干净 `aab70c8` release 构建宿主和 Drover 成功（7.83秒），安装 `~/.local/share/saddle/versions/aab70c8`；入口和 Drover 登记已切换，其他产物/配置/Corral 链接保持。宿主 help、二进制校验和、隔离 Drover initialize 通过；未重复全量。备份 `~/.local/share/saddle/backups/t77-deploy-20261004-224400/`。
-- **待正常重开 Saddle 生效**：现场宿主 PID28742 仍加载 b9ff8e0、Drover PID28745 仍加载29c94d4，主控 instance9f8a73396d8a未变。未强制重启；用户重开后再核实际加载版本，不能把安装切换当成运行进程已更新。未 Submit/Accept/Return、未关闭 task trace、未派发下一项；T77仍待用户验收操作。
-- 本任务记录目录 `/tmp/saddle-t77-20261004/`；trace `e588f2f5-cb18-4071-aa63-c093fc449032`，run `97aa8e9954855bb2cbd15ee61e47d012`，实施 dispatch `97ef21ba-0239-463b-be45-4b73d5b31ac5`，主控实施审查 dispatch `378a4b14-54a7-430b-94c8-5cfcf6ae2bb1`。属于 task trace，由用户任务验收/退回流程结束，主控不 close。
-
-下方为前一轮历史交接，涉及“本轮”和待办状态时以上方 T77 最新说明为准。
+更新：2026-10-04。主控 `saddle/main`，分支 `main`。交接前 `dfc8b2d` 已推送，工作区干净；本轮只更新本文件并提交推送。
 
 ## 会话摘要
 
-今天完成 T66 分层 UI 回归约定、T74 Tasks 直接入口、T63 统一搜索，以及最后的 Agents 头部工具菜单。源码均已合并推送，对应工作区已清理；产品已部署，交接现场确认当前 Saddle 已加载最新菜单版 `b9ff8e0`。用户接受 Tasks 缺席时右侧只保留 `⋯` 的布局，本轮结束，等待新指令。
+T77 已完成设计对齐、Drover UI 实施、主控审查、集成、合并清理和用户授权后的部署。交接现场确认宿主和 Drover 均已加载 `aab70c8`；公开任务状态为 Done，绑定 trace 已结束。本轮结束，等待用户后续指令，不启动下一任务。
 
-## 已完成与验证
+## 完成的工作
 
-| 工作 | 交付与提交 | 验证记录 |
-| --- | --- | --- |
-| Agents 头部菜单 | 用户批准并要求主控直接实现、不委派；顶部保留 Tasks + ⋯，Plugins/Telemetry/Settings 收进菜单。实现 `0447361`，合并 `c37e262`，空收尾 `f34dd1b`，部署记录 `ac4eb43` | 菜单 2 项、宿主 UI 51 项最终通过。workflow 首次 104 passed / 2 failed / 4 ignored；两项失败及最终菜单流程定向复核 3 passed。Saddle all-targets Clippy、fmt/diff通过，未跑全仓测试 |
-| T63 统一搜索 | 用户指定 Codex；搜索已有 Agent 名/cwd 末级项目名、插件标题/ID和六个设置页，不增加 Drover 登记项目/单条任务搜索。实现 `2a36dbd`，合并 `40bdf5c`，空收尾 `e5940dc` | 主控审查通过，无独立交叉审查。集中全量首次 702 passed / 1 failed / 9 ignored；唯一失败单项复核通过。全量 Clippy、fmt/diff通过 |
-| T74 Tasks 入口 | Settings → Plugins 固定一个插件入口，Agents 焦点 `p` 打开；项目识别、读取错误及草稿边界经返工/独立复核。实现 `e6edaca`，返工 `439c5e3`，合并 `a62eecf` | 首次覆盖合计 697 passed / 2 failed / 9 ignored；两项失败限定复核通过，Clippy/fmt/diff通过 |
-| T66 UI 回归约定 | 现有样例索引、运行入口与分层验证约定，补一个 Diff 合成样例；无产品运行代码变化。实现 `77f5a4b`，合并 `de5e6b6`，空收尾 `1215793` | 相关四组 135 passed；Diff 定向 Clippy及预览检查通过，未跑全量 |
-
-上述失败首轮结果均保留，不能把单项复核通过写成首次全量全绿。头部菜单的插件弹层测试补了 Esc 后等待关闭，断言/超时不变；另一项启动时序失败未改。T63 的 `native_mouse_buttons_cover_forms_and_stop_confirmation:851` 限定复核通过但根因未定位，不搭车修复。详情及原始命令见对应任务文档；日志 `/tmp/saddle-header-menu-*.log`、`/tmp/saddle-t63-integration/`、`/tmp/saddle-t74-integration/`。
+- T77：突出 `Open in Telemetry ↗`，状态之后新增 `Look further`，提供正文内同源入口，整理关键信息顺序、弱化技术 ID。完整保留原始正文、关联、历史运行及全部轮次跳转；未改采集、查询、存储、协议或任务状态机。
+- 提交：设计一致 `62560ac`，实现 `8988d58`，主控审查 `6643d32`，合并 `dc0f8f9`，空收尾 `2d25baf`，部署记录 `dfc8b2d`，均已推送。
+- `t77-telemetry-ui` worktree/分支已清理，原 agent `saddle/dev-t77-design-1` / instance `0994bb2200d8` 随工作目录一并关闭。迟到提醒不得重复处理或重发实施。
+- 此前 T66 分层 UI 回归约定、T74 Tasks 直接入口、T63 统一搜索和 Agents 头部菜单均已合并、推送、部署与清理；历史详情看各任务文档，不重新打开已确认设计。
 
 ## 当前安装与运行现场
 
-- 安装入口 `~/.local/bin/saddle` → `~/.local/share/saddle/versions/b9ff8e0/bin/saddle`。从干净 `b9ff8e0` release 构建宿主，help与SHA-256校验通过；后续源码提交仅为文档，无须为文档重新部署。
-- **交接现场已确认重启生效**：公开宿主实例 `890a0adae29f8d05`，PID **28742**；`lsof` 显示加载 `versions/b9ff8e0/bin/saddle`。不再沿用此前“待重开”的状态。
-- 本次只更新宿主；Drover仍沿用T74产物，其他插件、配置、登记及Corral链接保持。旧安装包保留，最近备份日志 `~/.local/share/saddle/backups/header-menu-deploy-20261004-213528/`。
-- 公开 `corral ls` 仅有主控 `saddle/main` / instance `9f8a73396d8a`。T74两个agent、T63原Codex均已按流程关闭；头部菜单未创建agent。
-- 本轮新增worktree/分支均清理。四个历史worktree保留：`corral-live-upgrade-research`、`review-telemetry-design`（detached）、`t38-dispatch-study`、`t55-notification-flow`；不擅自删除。
+- 安装入口 `~/.local/bin/saddle` → `~/.local/share/saddle/versions/aab70c8/bin/saddle`；Drover 登记 `versions/aab70c8/plugins/drover`。
+- **已确认重启生效**：公开宿主实例 `5269a2eaf964917d`，宿主 PID **12296**、Drover PID **12299**；`lsof` 确认两者均加载 aab70c8 包。不再沿用“待重开”的旧状态。
+- 从干净 aab70c8 release 构建宿主及 Drover，7.83秒、退出0；help、安装校验和及隔离 Drover initialize 通过。其他产物沿用旧包，配置、其他插件登记/启用/固定状态及 Corral 链接保持。
+- 备份及部署证据：`~/.local/share/saddle/backups/t77-deploy-20261004-224400/`。旧包保留。后续源码提交只写文档，不需要再部署。
+- 公开 `corral ls` 仅有主控 `saddle/main` / instance `9f8a73396d8a`；未重启或迁移主控 agent。
+- 保留四个历史 worktree：`corral-live-upgrade-research`、`review-telemetry-design`（detached）、`t38-dispatch-study`、`t55-notification-flow`，不擅自删除。
 
-## 待完成与授权边界
+## 验证与已知问题
 
-- 本轮实现和部署**暂无已知待完成工作**。没有遗留功能改动待提交；本次文档提交推送后停止，等待用户反馈或下一项。
-- 用户最后已确认：未安装/卸载/未固定时不显示 Tasks，右侧仅 ⋯；已固定但停用时保留弱化入口。完整设计以 `docs/DESIGN.md` 最末节和 Tasks 设计为准，不重新打开已认可的布局决策。
-- 未自动 Submit/Accept/Return、关闭任务 trace 或派发下一项；真实队列状态本次未查询，不能沿用旧 Running/Pending 快照。T76等历史待办不是实施授权。
-- 用户一般允许主控委派；T63明确只用Codex，最后头部菜单明确主控直接做、不委派。后续按当次用户指令和AGENTS执行，不把本次例外扩为永久规则。
-- 验证依 `docs/UI回归.md` 按范围选取；已通过且代码未变不重复全量，不删测试、放宽断言或超时。所有Cargo共享 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。
+- T77 定向 Drover lib/ui/ui_drover_polish：35项通过。全仓 Clippy、fmt/diff 通过。
+- **全仓并非全绿**：全目标首次覆盖 694 passed / 14 failed / 9 ignored；首次在 app 停止后只续跑尚未执行目标，没有重跑整套。11项失败定向复核为10 passed / 1 failed，保留首次结果。
+- 仍有4项未解决失败：宿主 `tests/app.rs` 的3项旧头部 Plugins/Settings/Telemetry 位置断言；`tests/drover_telemetry.rs::without_a_record_context_the_delivery_goes_the_plain_way_once` 期待 disabled，实际为 budget_exhausted。相关路径均无T77修改；后者根因未定位，不宣称修复。鼠标表单流程单项复核通过也不代表根因解决。
+- 详情：`docs/任务/T77-遥测展示整理主控审查.md`；日志 `/tmp/saddle-t77-integration/`。没有删测试、放宽断言/超时或改串行来掩盖问题。不未经授权扩大到这些问题的修复。
+- 本次实现者检查过合成画面与渲染测试，但未记录用户对实际视觉效果的专项确认；不能把部署成功当成视觉验收证据。
 
-## 任务记录续接
+## 最新讨论与待续接边界
 
-以下均是历史任务绑定，不是新授权；主控未关闭这些 task trace。若用户续接同任务，先公开查询当前状态与 `closed_at`，不猜最新run、不重复迟到提醒、不重放业务。
-
-| 任务 | trace_id | run | 记录目录 |
-| --- | --- | --- | --- |
-| T63 | `16b9ad30-24fa-46c1-b07b-f3ea48e8656f` | `1aceb478636a305c942d7b155e57bc79` | `/tmp/saddle-t63-20261004/` |
-| T74 | `0a8a12d6-8ea4-477a-b00c-1e1fe470919c` | `5e378db26877a85fefe4684199d17910` | `/tmp/saddle-t74-20261004/` |
-| T66 | `026876b7-e42a-47f0-a35f-5c0dac7a60ed` | `b3db4bf30d9249bbfe7bb0e023a0322d` | `/tmp/saddle-t66-20261004/` |
-
-T63实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`、审查dispatch `f7bb95d9-f4fb-41a8-91eb-c9400f163f93`；实施提醒 `80909340-c726-40a5-bf36-e433293901e2` 已处理，实际收尾与部署记录已保存。头部菜单是后来独立口头任务，没有复用T63遥测或操作Tasks。
+- 用户问“改动了什么，是否都从SQLite读取”：已说明遥测事件/元信息存SQLite，完整正文另存内容文件；任务状态/正文/运行历史来自Drover任务文件，仓库参考来自Git等路径。Drover通过Saddle公开查询读取遥测，不直接读SQLite。本次只改数据取回后的UI。
+- 用户问“主控生成的任务书在哪看到”：当前路径为 Tasks → Open in Telemetry ↗ → 对应链路 → `Brief snapshot` → Enter / `Read full body`。T77设计快照事件 **#329**；实际实施交付快照 **#341**。快照独立于已删除worktree，仍可读取；仓库当前文档还包含后续完成记录，与派发时快照不同。
+- 当前没有独立“任务书”直达入口。主控指出该层仍不够直观，但用户随后只要求 handoff+提交推送，**没有授权继续开发或登记新任务**。不要据此自动扩大T77或启动新任务。
+- T77现场只读核验：`status=done`，run `97aa8e9954855bb2cbd15ee61e47d012`；本主控未执行 Submit/Accept/Return。trace `e588f2f5-cb18-4071-aa63-c093fc449032` 的 `closed_at=2026-10-04T14:52:06.636826Z`，capture_enabled=false。**本次记录链路已结束，不再追加或复用上下文。**
+- 记录目录 `/tmp/saddle-t77-20261004/`；设计/实施和审查历史身份保存在 ids.json。`handoff-task.json`、`handoff-trace.json` 是本轮公开查询结果。不要把结束链路用于后续独立工作。
+- 用户一般允许主控委派；T63的Codex-only、头部菜单的主控直接实现均为对应任务的选择。下一任务按当次要求和AGENTS执行。
+- 按 `docs/UI回归.md` 选验证范围，已通过且代码未变不重复全量。Cargo共用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。
 
 ## 优先阅读与下一步
 
-- `AGENTS.md`、`docs/UI回归.md`：开发、验证和公开任务操作约定。
-- `docs/任务/Agents头部工具菜单.md`：最新实现、检查、部署记录。
-- `docs/任务/T63-统一搜索入口实施.md`、`docs/任务/T74-Tasks入口实施.md`、`docs/任务/T74-Tasks入口独立审查.md`：已交付功能及验证限制。
-- `docs/任务/T66-UI回归样例.md`：分层测试与样例整理结果。
-- `docs/DESIGN.md`、`docs/UI设计语言.md`：设计与理由；`plugins/drover/README.md`：公开队列接口。
+- `AGENTS.md`、`docs/UI回归.md`：开发、分派、分层验证及公开任务接口规则。
+- `docs/任务/T77-遥测展示整理设计.md`、`docs/T77-遥测展示整理方案.md`：设计和对齐记录。
+- `docs/任务/T77-遥测展示整理实施.md`、`docs/任务/T77-遥测展示整理主控审查.md`：实施、部署及验证限制。
+- `docs/DESIGN.md`、`docs/UI设计语言.md`：长期设计与理由；`plugins/drover/README.md`、`docs/遥测使用.md`：操作及查询说明。
+- `docs/任务/Agents头部工具菜单.md`、T63/T74实施文档、`docs/任务/T66-UI回归样例.md`：此前已交付工作。
 
-等待用户新指令或反馈，不自行启动下一项。
+暂无T77范围内未提交的产品实现。交接提交推送后停止，等待用户新指令；不自动修复遗留测试、不做任务书直达入口、不启动T76或其他待办。
