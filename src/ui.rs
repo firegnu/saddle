@@ -292,13 +292,38 @@ pub fn draw_workspace(
             ],
         );
         let agent = panel.agents.iter().find(|a| &a.name == name);
-        let text = format!(
-            "Stop {name}?\nInstance: {}\nActivity: {}\n\nThis stops the agent, not just the Viewer connection.\nPress y or click Stop to confirm; any other key cancels.",
-            agent
-                .and_then(|a| a.instance.as_deref())
-                .unwrap_or("unknown"),
-            agent.and_then(|a| a.last_tool.as_deref()).unwrap_or("—")
-        );
+        // Target first, its identity as label/value rows, then the consequence and the keys.
+        let field = |label: &'static str, value: &str| {
+            Line::from(vec![
+                Span::styled(label, Style::default().fg(t.muted)),
+                Span::raw(value.to_owned()),
+            ])
+        };
+        let text = vec![
+            Line::styled(
+                format!("Stop {name}?"),
+                Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
+            ),
+            field(
+                "Instance: ",
+                agent
+                    .and_then(|a| a.instance.as_deref())
+                    .unwrap_or("unknown"),
+            ),
+            field(
+                "Activity: ",
+                agent.and_then(|a| a.last_tool.as_deref()).unwrap_or("—"),
+            ),
+            Line::default(),
+            Line::styled(
+                "This stops the agent, not just the Viewer connection.",
+                Style::default().fg(t.danger),
+            ),
+            Line::styled(
+                "Press y or click Stop to confirm; any other key cancels.",
+                Style::default().fg(t.muted),
+            ),
+        ];
         frame.render_widget(Paragraph::new(text).wrap(Default::default()), body);
         hits.buttons = buttons;
         hits.agents.clear();
@@ -425,6 +450,32 @@ pub fn draw_workspace(
         target = "Confirm stop".into();
         help = " y Stop  Any other key cancels";
     }
+    status_bar(
+        t,
+        frame,
+        view.panes.status,
+        &target,
+        if panel.confirm.is_some()
+            || form.is_some()
+            || placement.is_some()
+            || search.is_some()
+            || attention_popup.is_some()
+            || settings.is_some()
+            || panel.message.is_empty()
+        {
+            help
+        } else {
+            &panel.message
+        },
+    );
+    hits
+}
+
+/// The host status bar, shared by the workspace and every host overlay: the input target on
+/// the focus colour, then that target's help or the latest message. It clears the whole row
+/// first, so a shorter text never leaves the end of an earlier one behind.
+pub fn status_bar(t: &Theme, frame: &mut Frame, area: Rect, target: &str, help: &str) {
+    frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(
         Paragraph::new(Line::from(vec![
             Span::styled(
@@ -432,24 +483,87 @@ pub fn draw_workspace(
                 Style::default().fg(t.input_text).bg(t.focus),
             ),
             Span::styled(
-                if panel.confirm.is_some()
-                    || form.is_some()
-                    || placement.is_some()
-                    || search.is_some()
-                    || attention_popup.is_some()
-                    || settings.is_some()
-                    || panel.message.is_empty()
-                {
-                    help
-                } else {
-                    &panel.message
-                },
+                format!(" {}", help.trim_start()),
                 Style::default().fg(t.muted),
             ),
-        ])),
-        view.panes.status,
+        ]))
+        .style(t.base()),
+        area,
+    );
+}
+/// The Close terminals confirmation over the workspace: the question, the shells it ends with
+/// their full directories, then what happens to agent displays. Returns its buttons.
+pub fn draw_close_terminals(
+    t: &Theme,
+    frame: &mut Frame,
+    snapshot: &serde_json::Value,
+    scroll: u16,
+) -> Vec<crate::buttons::Hit> {
+    use crossterm::event::KeyCode;
+    let area = crate::theme::centered(frame.area(), 72, 18);
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(
+        t.block(" Close terminals ", true)
+            .style(t.base().bg(t.overlay)),
+        area,
+    );
+    let (body, hits) = crate::buttons::draw_compact(
+        t,
+        frame,
+        inner(area),
+        &[
+            crate::buttons::Button::new("Cancel Esc", KeyCode::Esc, true),
+            crate::buttons::Button::new("End shells y", KeyCode::Char('y'), true).danger(),
+        ],
+    );
+    let mut text = vec![
+        Line::styled(
+            "End these running terminals and their foreground tasks?",
+            Style::default().fg(t.danger).add_modifier(Modifier::BOLD),
+        ),
+        Line::styled("Scroll: ↑/↓ or mouse wheel", Style::default().fg(t.muted)),
+        Line::default(),
+    ];
+    for pane in snapshot
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["running_shell"] == true)
+    {
+        text.push(Line::from(format!(
+            "Pane {} · {}",
+            pane["pane"],
+            pane["shell"].as_str().unwrap_or("shell")
+        )));
+        text.push(Line::styled(
+            format!("  {}", pane["cwd"].as_str().unwrap_or("")),
+            Style::default().fg(t.muted),
+        ));
+    }
+    text.push(Line::default());
+    text.push(Line::from(
+        "Agent displays will only detach. Corral agents keep running.",
+    ));
+    frame.render_widget(
+        Paragraph::new(text)
+            .wrap(Default::default())
+            .scroll((scroll, 0)),
+        body,
     );
     hits
+}
+/// A host notice over the whole status bar, such as a layout save failure. Like the bar, it
+/// clears the row first so the end of the longer text beneath does not show through.
+pub fn status_notice(t: &Theme, frame: &mut Frame, area: Rect, text: &str) {
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.render_widget(Paragraph::new(text).style(t.base()), area);
+}
+/// The same bar from an overlay's one-line status (` Input ▸ Target · help`).
+pub fn status_text(t: &Theme, frame: &mut Frame, area: Rect, text: &str) {
+    let text = text.trim_start();
+    let text = text.strip_prefix("Input ▸ ").unwrap_or(text);
+    let (target, help) = text.split_once(" · ").unwrap_or((text, ""));
+    status_bar(t, frame, area, target, help);
 }
 
 pub fn inner(area: Rect) -> Rect {
@@ -774,8 +888,21 @@ fn draw_agents(frame: &mut Frame, panel: &mut Panel, view: &View<'_>, header_row
         }
     }
     if rows.is_empty() {
+        // Point to the existing New control; Search would have nothing to find.
         frame.render_widget(
-            Paragraph::new("No agents").style(Style::default().fg(t.agents_dim)),
+            Paragraph::new(vec![
+                Line::from("No agents"),
+                Line::from(vec![
+                    Span::styled(
+                        "n",
+                        Style::default()
+                            .fg(t.agents_accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" New starts one"),
+                ]),
+            ])
+            .style(Style::default().fg(t.agents_dim)),
             list,
         );
     }
@@ -1303,7 +1430,7 @@ fn git_parts(
 
 /// The full directory; when its last level repeats the group, only the parent's last level.
 /// Anything too wide loses leading levels, then leading characters, keeping the end.
-fn agent_path(path: &str, prefix: &str, width: usize) -> String {
+pub(crate) fn agent_path(path: &str, prefix: &str, width: usize) -> String {
     let mut parts: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
     let trailing = if !prefix.is_empty() && parts.last() == Some(&prefix.trim_end_matches('/')) {
         parts.pop();
