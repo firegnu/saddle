@@ -9,7 +9,8 @@ use crossterm::event::{KeyCode as K, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
+    text::Line,
     widgets::{Paragraph, Wrap},
 };
 use serde_json::{Value, json};
@@ -393,7 +394,7 @@ impl Setup {
                         if i == self.selected { ">" } else { " " }
                     ))
                     .style(if i == self.selected {
-                        Style::default().bg(t.selected)
+                        Style::default().bg(t.selected).add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
                     }),
@@ -512,11 +513,34 @@ impl Setup {
                     .as_ref()
                     .and_then(|v| v["error"].as_str())
                     .unwrap_or("");
-                f.render_widget(Paragraph::new(safe(&format!("{state}\n{error}\nNo task is dispatched. AGENTS.md remains manually maintained.\nTab: next field. Empty receiver means manual handoff."))).wrap(Wrap{trim:false}),remaining);
+                // The check result, any error from it, then standing notes.
+                let mut lines = vec![Line::raw(safe(state))];
+                if !error.is_empty() {
+                    lines.push(Line::styled(
+                        safe(error),
+                        Style::default().fg(t.agent_error),
+                    ));
+                }
+                lines.extend(
+                    [
+                        "No task is dispatched. AGENTS.md remains manually maintained.",
+                        "Tab: next field. Empty receiver means manual handoff.",
+                    ]
+                    .map(|note| Line::styled(note, Style::default().fg(t.muted))),
+                );
+                f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), remaining);
             }
         }
+        // With a request pending the message is progress; otherwise it is a failure, since a
+        // successful result clears it.
         f.render_widget(
-            Paragraph::new(safe(&self.message)).wrap(Wrap { trim: false }),
+            Paragraph::new(safe(&self.message))
+                .style(Style::default().fg(if self.pending.is_some() {
+                    t.agent_working
+                } else {
+                    t.agent_error
+                }))
+                .wrap(Wrap { trim: false }),
             Rect::new(body.x, body.bottom().saturating_sub(2), body.width, 2),
         );
         hits

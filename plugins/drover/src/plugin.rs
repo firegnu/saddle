@@ -916,7 +916,7 @@ impl Plugin for Drover {
                 self.rows = self.panel.draw(&t, frame, content);
                 if area.height > 0 {
                     let status = Rect::new(area.x, area.bottom()-1, area.width, 1);
-                    frame.render_widget(ratatui::widgets::Paragraph::new(self.panel.message.as_str()).style(ratatui::style::Style::default().fg(if self.panel.message_failed { t.agent_error } else { t.text })), status);
+                    frame.render_widget(ratatui::widgets::Paragraph::new(self.panel.message.as_str()).style(ratatui::style::Style::default().fg(if self.panel.message_failed { t.agent_error } else if self.panel.busy { t.agent_working } else { t.text })), status);
                 }
             }
             let hits: Vec<_> = self.panel.buttons.iter().cloned().map(|h| (crate::buttons::Focus::View, h)).collect();
