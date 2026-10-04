@@ -1,17 +1,20 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。当前先做入口设计，不自动实施；下方 T66 记录为此前完成快照。
+更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。用户已批准设计并要求在同一 T74 继续实施；下方 T66 记录为此前完成快照。
 
-## 当前：T74 设计已复核，待用户确认
+## 当前：T74 实施已派发，仍为同一任务
 
-- 用户要求缩短各 repo 的 Tasks 访问路径，入口形式尚待设计。任务正文末尾“仅加入待办”是登记阶段旧说明，本次正式派发已触发设计。
+- 用户要求缩短各 repo 的 Tasks 访问路径，入口形式已由本轮设计和后续用户继续指令确定。任务正文末尾“仅加入待办”是登记阶段旧说明，本次正式派发已触发设计。
 - Claude Code `saddle/dev-t74-design-1`（instance `0f81bd0e76e9`），`opus[1m] / high`，role=implementer；路由档位拿不准，主控选常规，交叉审查不要，影响面看得见。
-- worktree `../saddle-worktrees/t74-tasks-entry-design`，分支同名，基线 `a570fda`；任务书 `docs/任务/T74-Tasks入口设计.md`，候选产出 `docs/Tasks入口设计.md`（均在该 worktree）。只写设计和文字线框，不改产品/测试，不编译部署。主控审查后给用户确认入口形式，未合并、未收尾。
+- worktree `../saddle-worktrees/t74-tasks-entry-design`，分支同名，基线 `a570fda`；任务书 `docs/任务/T74-Tasks入口设计.md`，候选产出 `docs/Tasks入口设计.md`（均在该 worktree）。设计阶段已完成，现按下方实施任务书改产品与测试，仍未合并或收尾。
 - 特别核对：当前项目如何确定；现有“插件不贡献常驻按钮”的规则若需改变须明确列为提案；保持宿主通用插件边界。考虑 T76 的 GPUI 评估，避免默认完整 TUI 导航重构，不吸收 T63 通用搜索。
 - 实时公开查询 T74 为 Running，run `5e378db26877a85fefe4684199d17910`；宿主控制实例现为 `7b8c8e5e67b7a313`（先前实例已过时），主控 Corral instance 仍 `9f8a73396d8a`。
 - trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c`；controller handoff `13bf71fb-fbd3-4e2d-8a3f-913039c9fdbb`；设计 dispatch `7f407043-4f55-4abb-abcd-99cc8afc6056`。公开 reply 用 `/tmp/saddle-t74-20261004/reply-context.json`，完整记录与 start 回执在同目录。不要复用 T66 身份，不提前关闭 task trace。
-- 两轮公开回复均为 DONE，agent 现 idle。初稿 `844b88d` 经主控要求补充后，修订 `ee9b570` 已复核通过；结论追加在该 worktree 的 `docs/任务/T74-Tasks入口设计复核.md`。两轮提醒已处理，重复到达不重复工作。设计仍待用户选择，未实施、未合并、未收尾。
-- 返工 dispatch `f42d29b9-df9b-4a91-b038-4a2a5414895d`，最终复核 passed event `ecd7fd1d-db59-47b0-9da3-7f645645fe87`；修订公开回复 context `/tmp/saddle-t74-20261004/rework-reply-context.json`。建议方案是用户固定单个 Tasks 头部入口、Agents 焦点 p、普通终端按启动目录；具体取舍等用户确认。保留分支/worktree/agent。
+- 设计阶段两轮公开回复均为 DONE，修订 `ee9b570` 主控复核通过，结论提交 `ec33dec`。用户讨论未安装、停用、卸载边界后明确“继续吧，实现依然在这个任务中实现”，已授权实施，不再等待设计确认。
+- 原 Claude、原 worktree/分支继续实施；任务书 `docs/任务/T74-Tasks入口实施.md`。采用一个固定入口、Agents p、普通终端启动目录；停用保留固定，移除清除固定。先同步 DESIGN，再改代码；不部署或自动推进队列。
+- 实施 dispatch `b4447de7-1097-4b0a-9a04-4155cabe24ff`；reply context `/tmp/saddle-t74-20261004/implementation-reply-context.json`；已确认交付，send request `22fe2692-9de0-4ff3-8e7d-c10dd0f6b25a`。路由 tier拿不准，沿用 opus[1m]/high；影响面碰要害、独立交叉审查要（重点异步定位/草稿保留）。
+- 验证按 T66：实现者目标RED/GREEN、相关回归与定向Clippy，主控跨模块阶段集成全量标准检查一次；不在每次小修、每个审查者处重复全量。代码完成后另派 Codex 重档独立审查，不提前开审查空转。
+- 实施完成提醒 `d2a8c49a-462a-40ac-9c51-ece0285e9c27` 已登记 pending=true，不表示已送达；设计阶段旧提醒已处理，重复到达不重复工作。所有记录继续同 trace/run。
 
 
 ## 会话摘要
@@ -62,4 +65,4 @@
 
 ## 下一步
 
-等待用户确认 T74 入口方案，再按选定方案进入实施；若提出设计调整，继续当前 agent/worktree 修订。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
+等待原 Claude 的 T74 实施结果，核对公开回复、目标验证和diff，再安排独立Codex审查与主控阶段集成；通过后按项目流程合并清理。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
