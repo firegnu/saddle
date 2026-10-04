@@ -458,18 +458,13 @@ impl Palette {
             let status = Rect::new(status_x, rect.y, status_width, 1);
             frame.render_widget(
                 Paragraph::new(crate::ui::clip(item.status(), status_width as usize)).style(
-                    style.fg(
-                        if matches!(
-                            item.state.as_str(),
-                            "Failed" | "Unavailable" | "Unresponsive"
-                        ) {
-                            theme.danger
-                        } else if disabled {
-                            theme.dim
-                        } else {
-                            theme.muted
-                        },
-                    ),
+                    style.fg(if failing(&item.state) {
+                        theme.danger
+                    } else if disabled {
+                        theme.dim
+                    } else {
+                        theme.muted
+                    }),
                 ),
                 status,
             );
@@ -483,13 +478,14 @@ impl Palette {
                             .map(|action| format!("‹{action}›"))
                             .unwrap_or_else(|| "—".into()),
                     )
-                    .style(style.fg(
-                        if item.action().is_some() || item.builtin {
-                            theme.focus
-                        } else {
-                            theme.dim
-                        },
-                    )),
+                    // Opening a view is the row's action; Manage only leads to the management page.
+                    .style(style.fg(if item.builtin {
+                        theme.text
+                    } else if item.action().is_some() {
+                        theme.focus
+                    } else {
+                        theme.dim
+                    })),
                     action_area,
                 );
                 self.hits.push((
@@ -505,36 +501,43 @@ impl Palette {
             }
         }
         if detail_rows > 0 {
+            // A failure's reason is an error, not guidance.
+            let failed = self.selected().is_some_and(|item| failing(&item.state));
             frame.render_widget(
-                Paragraph::new(crate::ui::clip(&explanation, inside.width as usize))
-                    .style(theme.base().fg(theme.muted)),
+                Paragraph::new(crate::ui::clip(&explanation, inside.width as usize)).style(
+                    theme
+                        .base()
+                        .fg(if failed { theme.danger } else { theme.muted }),
+                ),
                 Rect::new(inside.x, self.list.bottom(), inside.width, detail_rows)
                     .intersection(inside),
             );
         }
         if footer_rows > 0 {
             let footer = Rect::new(inside.x, inside.bottom() - footer_rows, inside.width, 1);
+            // Keyboard focus: the focus colour plus an underlined label, not colour alone.
+            let control = |text: &'static str, focused: bool| {
+                let edge = theme
+                    .base()
+                    .fg(if focused { theme.focus } else { theme.muted });
+                let label = if focused {
+                    edge.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                } else {
+                    edge
+                };
+                Paragraph::new(Line::from(vec![
+                    Span::styled("‹", edge),
+                    Span::styled(text, label),
+                    Span::styled("›", edge),
+                ]))
+            };
             let manage_width = 16.min(footer.width);
             let manage = Rect::new(footer.x, footer.y, manage_width, 1);
-            frame.render_widget(
-                Paragraph::new("‹Manage plugins›").style(theme.base().fg(if self.focus == 1 {
-                    theme.focus
-                } else {
-                    theme.muted
-                })),
-                manage,
-            );
+            frame.render_widget(control("Manage plugins", self.focus == 1), manage);
             self.hits.push((manage, Target::Manage));
             if footer.width >= 24 {
                 let close = Rect::new(footer.right() - 7, footer.y, 7, 1);
-                frame.render_widget(
-                    Paragraph::new("‹Close›").style(theme.base().fg(if self.focus == 2 {
-                        theme.focus
-                    } else {
-                        theme.muted
-                    })),
-                    close,
-                );
+                frame.render_widget(control("Close", self.focus == 2), close);
                 self.hits.push((close, Target::Close));
             }
         }
@@ -565,4 +568,8 @@ impl Palette {
             );
         }
     }
+}
+/// Runtime states that mean the plugin failed rather than waiting or being switched off.
+fn failing(state: &str) -> bool {
+    matches!(state, "Failed" | "Unavailable" | "Unresponsive")
 }
