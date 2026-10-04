@@ -1,17 +1,18 @@
 # Saddle 交接
 
-更新：2026-10-04。T67 已在原 Claude worktree 由主控独自接手完成、合并并清理，未部署，等待用户验收。T68 下方待放行描述是历史快照，不再占用队列；其余任务不自动推进。
+更新：2026-10-04。T67 已在原 Claude worktree 由主控独自接手完成、合并并清理；用户随后授权编译部署，已安装，待正常重开 Saddle 加载。T68 下方待放行描述是历史快照，不再占用队列；其余任务不自动推进。
 
-## 当前：T67 已完成集成，待用户验收（未部署）
+## 当前：T67 已部署，待重开 Saddle 加载
 
 - 用户断网恢复后明确要求独自完成、不再委派。主控直接接手 Claude 原 worktree，保留原候选，补来源路径校验并自审。实现 `85b84d0`，main 合并 `073ddf5`，清理后收尾空提交 `9fed67a`；功能/取舍/验证和自审记录在 `docs/任务/T67-版本状态展示.md`，设计已同步 `docs/DESIGN.md`。
-- Updates 区分 Source、Installed、Running、Agents；构建记录须匹配程序 SHA-256，源码只认记录的绝对工作树根和分支。Diagnostics 显示完整构建/路径及缓存检查时间，未知如实展示；原小点、Upgrade all、回执核验及不重发语义保留。没有安装部署或用户 agent 操作，当前窗口仍是旧安装版本。
+- Updates 区分 Source、Installed、Running、Agents；构建记录须匹配程序 SHA-256，源码只认记录的绝对工作树根和分支。Diagnostics 显示完整构建/路径及缓存检查时间，未知如实展示；原小点、Upgrade all、回执核验及不重发语义保留。用户随后授权「编译+部署吧」，已部署下述宿主包；当前窗口仍加载旧程序，正常重开后生效。
 - 有效 RED：相对 `.` 错读启动仓库；最小修复后目标 51 项通过。标准验证补齐全部 74 目标，首轮 **673 passed / 14 failed / 9 ignored**；14 个失败项各一次限定复核全通过（protocol 1，upgrade 4，agent_capture 6，plugins 2，workflow 1；后四组串行）。不宣称默认并行全套一次全绿，时序失败根因未定位。标准 Clippy `--all-targets -- -D warnings` 一次 exit 0；格式、差异、合成打包元数据核验通过。
 - 日志与原候选备份 `/tmp/saddle-t67-takeover-20261004/`；首次接手检查 `/tmp/saddle-t67-target-inherited.log`。只用临时仓库、合成包、假公开命令及合成 Buffer，未做真实跨版本终端验收。
 - 开发 worktree/分支 `t67-version-status` 已在干净且确认合并后安全移除；原 Claude `saddle/dev-t67-version-1` 已因中断退出，现场无此 agent，无需再 stop。四个历史 worktree 原样保留，公开 Corral 列表只余新主控 `saddle/main`（instance `9f8a73396d8a`）。
 - T67 仍用原 run `eb8bde08924afc0223def93851fc0232`，未重派、Submit/Accept/Return 或启动下一项。主控只完成代码交付与审查报告，队列交由用户提交/验收。新宿主 instance `73227dc3db2cbe6d`，公开查询回执在接手日志目录。
 - 同一 trace `27a60724-2bc1-40d0-8001-118f68b6bad2`：接手授权 `3149f30e-bd60-4384-9089-af3824f52e74`；主控自审记录分组 `f0903d97-12ef-450d-9f28-2e440a46df42` / passed event `7d44e3b3-4e13-47f9-83ac-7be06755ad86`。这是自审记录身份，没有新 agent 或独立审查。第一次 trace 级 review 因 scope 不符拒绝后改为 review 分组成功保存，仅纠正记录，未重做业务。原 Claude 未取得最终回复，不伪造回复或早期 RED。绑定 Tasks 的 trace 留待用户验收/退回关闭。
-- 下一步：用户验收本次交付；需要部署时另行授权。其余任务维持原状态，不自动放行或派下一项。推送与实际收尾回执见本轮公开遥测 closure 及 `/tmp/saddle-t67-takeover-20261004/`。
+- 部署：干净 main `d7da5b4` 的宿主 release 构建通过，新包 `~/.local/share/saddle/versions/d7da5b4`，入口已原子切换；BUILD.txt 的 source/main/revision 与 Saddle SHA-256 核验通过，入口 `--help` 成功。Corral、Diff、Drover 产物沿用旧包，命令链接、插件注册和主配置不变。旧包保留，备份与安装回执在 `~/.local/share/saddle/backups/t67-deploy-20261004-164920/`。
+- 运行回读：宿主 PID 86118 仍加载 `efea116/bin/saddle`，主控仍为原 instance `9f8a73396d8a`；未重启宿主或 agent。下一步正常关闭并重开 Saddle 后查看 Updates。此后的部署记录提交只改文档，版本页按提交数可能显示 Source 领先 Installed，不表示功能代码未部署。其余任务不自动放行或派发；本轮 trace 继续等用户验收结束。
 
 ## 当前：T68 修复完成，等待用户放行
 
