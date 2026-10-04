@@ -1020,9 +1020,14 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
     // The effort column exists only when some agent carries a known delegated effort label.
     let effort_column = ordered.iter().any(|a| a.effort().is_some());
     // Dot, then name, agent, effort (2), state (9) and time (5), one column apart; the name
-    // gives way.
-    let name_width = content
-        .saturating_sub(2 + brand_width + 1 + if effort_column { 3 } else { 0 } + 9 + 1 + 5 + 1);
+    // gives way down to six columns. Narrower, the time and then the state label give way
+    // to it; the status dot and the connection mark stay.
+    let lead = 2 + 1 + brand_width + 1 + if effort_column { 3 } else { 0 };
+    let (state_width, tail) = [(9, 6), (9, 1), (0, 1)]
+        .into_iter()
+        .find(|(state, tail)| content >= lead + state + tail + 6)
+        .unwrap_or((0, 1));
+    let name_width = content.saturating_sub(lead + state_width + tail);
     let folded = panel.folded();
     let mut rows = Vec::new();
     let mut previous = None;
@@ -1078,12 +1083,16 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
             brand_label.split(' ').next().unwrap_or("").to_owned()
         };
         let mut state = Vec::new();
-        state.push(Span::styled(
-            look.label,
-            Style::default().fg(look.color).add_modifier(Modifier::BOLD),
-        ));
-        let state_width = width_of(&state);
-        state.push(Span::raw(" ".repeat(9usize.saturating_sub(state_width))));
+        if state_width > 0 {
+            state.push(Span::styled(
+                look.label,
+                Style::default().fg(look.color).add_modifier(Modifier::BOLD),
+            ));
+            let label_width = width_of(&state);
+            state.push(Span::raw(
+                " ".repeat(state_width.saturating_sub(label_width)),
+            ));
+        }
         let here = local.iter().any(|name| name == &a.name);
         let (mark, mark_color) = if here {
             ("⦿", t.agents_green)
@@ -1109,12 +1118,13 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
         } else {
             t.agents_text
         };
-        let gap = if mark.is_empty() || mark.width() + 1 + time.width() > 5 {
+        let row_time = if tail > 1 { time.as_str() } else { "" };
+        let gap = if mark.is_empty() || row_time.is_empty() || mark.width() + 1 + time.width() > 5 {
             ""
         } else {
             " "
         };
-        let used = mark.width() + gap.width() + time.width();
+        let used = mark.width() + gap.width() + row_time.width();
         let mut first = vec![
             Span::styled(look.dot, Style::default().fg(look.color)),
             Span::raw(" "),
@@ -1142,10 +1152,10 @@ fn agent_rows(t: &Theme, panel: &Panel, local: &[String], panel_width: u16, now:
             first.push(Span::raw(" "));
         }
         first.extend(state);
-        first.push(Span::raw(" ".repeat(1 + 5usize.saturating_sub(used))));
+        first.push(Span::raw(" ".repeat(tail.saturating_sub(used))));
         first.push(Span::styled(mark, Style::default().fg(mark_color)));
         first.push(Span::styled(
-            format!("{gap}{time}"),
+            format!("{gap}{row_time}"),
             Style::default().fg(time_color),
         ));
         lines.push(first);
