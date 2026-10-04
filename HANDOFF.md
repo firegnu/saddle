@@ -1,14 +1,15 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`。当前 Agents 头部工具菜单已实现、合并并清理，尚未部署；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
+更新：2026-10-04。当前分支 `main`。当前 Agents 头部工具菜单已部署，待正常重开加载；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
 
-## 当前：Agents 头部工具菜单已完成，尚未部署
+## 当前：Agents 头部工具菜单已部署，待正常重开加载
 
 - 用户接受“顶部保留 Tasks、Plugins/Telemetry/Settings 收进 ⋯”推荐，明确主控直接实现，不委派。本次没有新增 agent、Tasks 队列操作或遥测链路，不复用 T63 trace。
 - 实现 `0447361`，合并 `c37e262`，清理后空提交 `f34dd1b`；本交接提交随后推送 origin/main，以实际回执为准。worktree/分支 `agents-header-menu` 已安全清理，四个历史 worktree 保留。
 - 菜单复用原导航，支持键鼠和外侧关闭、保护终端输入；原 Settings/Telemetry 快捷键和 Tasks 固定/可用性逻辑保持，更新提醒在 ⋯ 与 Settings 项显示。见 `docs/任务/Agents头部工具菜单.md` 及 DESIGN 最末节。
 - 菜单 2 项和宿主 UI 51 项最终通过。workflow 集中一次 104 passed / 2 failed / 4 ignored：菜单测试补等待关闭后再发送按键，另一个旧启动时序失败未改；两项失败及最终菜单流程定向复核共 3 passed。不声称首轮全绿或旧时序根因修复。Saddle all-targets Clippy、fmt/diff通过，未跑全仓测试；日志 `/tmp/saddle-header-menu-*.log`。
-- 本轮未 release 构建或部署；安装入口仍是 T63 `6cf9494`，当前进程加载版本须现场核对。等待用户部署指令或反馈，不自动推进 Tasks 或派发下一项。
+- 用户随后明确“编译+部署”：干净 main `b9ff8e0` 宿主 release 构建成功，安装入口已切至版本目录 `b9ff8e0`，help及SHA-256验证通过。仅更新宿主，其余产物沿用旧包，配置/插件登记/Corral链接不变；备份日志 `~/.local/share/saddle/backups/header-menu-deploy-20261004-213528/`。
+- 部署后实例 `fbca72e07bc48336`、宿主PID56208当前映像仍为 `6cf9494`，需用户正常重开加载菜单版；主控instance未变。未操作Tasks状态、trace或下一项。
 
 ## 上一项：T63 已部署
 
@@ -83,4 +84,4 @@
 
 ## 下一步
 
-等待用户对头部菜单的部署指令或反馈。源码已完成合并，不重复已通过检查；不自动推进 Tasks 状态、关闭 trace 或派发下一项。
+等待用户正常重开加载头部菜单或反馈。源码与安装均已完成，不重复已通过检查；不自动推进 Tasks 状态、关闭 trace 或派发下一项。

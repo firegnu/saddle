@@ -29,3 +29,9 @@
 ## 收尾
 
 实现 `0447361` 已合并为 `c37e262`，合并后树与受检候选相同；工作区干净、祖先关系确认后，安全删除 worktree 与分支，未新建 agent。空收尾提交 `f34dd1b`，HANDOFF 同步。本轮未部署。
+
+## 用户追加授权后的部署（2026-10-04）
+
+用户明确“编译+部署”。干净 main `b9ff8e0` 执行 `cargo build -p saddle --bin saddle --release --locked --target aarch64-apple-darwin`（共享 target），退出 0，6.95 秒；未重复全量。安装至 `~/.local/share/saddle/versions/b9ff8e0`，入口原子切换，help 与 release 二进制 SHA-256 回读通过。仅更新宿主，其余产物沿用 `6cf9494` 包并在 BUILD 声明；配置、插件登记与 Corral 链接校验保持，旧包保留。备份与日志 `~/.local/share/saddle/backups/header-menu-deploy-20261004-213528/`。
+
+公开实例 `fbca72e07bc48336`，宿主 PID 56208 当前映像仍为 `6cf9494`；需正常重开加载菜单版。主控 Corral instance `9f8a73396d8a` 未变；未操作 Tasks 状态、任务 trace 或派发。
