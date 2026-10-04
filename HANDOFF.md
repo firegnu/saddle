@@ -1,87 +1,56 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`。当前 Agents 头部工具菜单已部署，待正常重开加载；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
-
-## 当前：Agents 头部工具菜单已部署，待正常重开加载
-
-- 用户接受“顶部保留 Tasks、Plugins/Telemetry/Settings 收进 ⋯”推荐，明确主控直接实现，不委派。本次没有新增 agent、Tasks 队列操作或遥测链路，不复用 T63 trace。
-- 实现 `0447361`，合并 `c37e262`，清理后空提交 `f34dd1b`；本交接提交随后推送 origin/main，以实际回执为准。worktree/分支 `agents-header-menu` 已安全清理，四个历史 worktree 保留。
-- 菜单复用原导航，支持键鼠和外侧关闭、保护终端输入；原 Settings/Telemetry 快捷键和 Tasks 固定/可用性逻辑保持，更新提醒在 ⋯ 与 Settings 项显示。见 `docs/任务/Agents头部工具菜单.md` 及 DESIGN 最末节。
-- 菜单 2 项和宿主 UI 51 项最终通过。workflow 集中一次 104 passed / 2 failed / 4 ignored：菜单测试补等待关闭后再发送按键，另一个旧启动时序失败未改；两项失败及最终菜单流程定向复核共 3 passed。不声称首轮全绿或旧时序根因修复。Saddle all-targets Clippy、fmt/diff通过，未跑全仓测试；日志 `/tmp/saddle-header-menu-*.log`。
-- 用户随后明确“编译+部署”：干净 main `b9ff8e0` 宿主 release 构建成功，安装入口已切至版本目录 `b9ff8e0`，help及SHA-256验证通过。仅更新宿主，其余产物沿用旧包，配置/插件登记/Corral链接不变；备份日志 `~/.local/share/saddle/backups/header-menu-deploy-20261004-213528/`。
-- 部署后实例 `fbca72e07bc48336`、宿主PID56208当前映像仍为 `6cf9494`，需用户正常重开加载菜单版；主控instance未变。未操作Tasks状态、trace或下一项。
-
-## 上一项：T63 已部署
-
-- 用户批准轻量统一搜索，并指定 Codex；实现 `2a36dbd`，主控审查记录 `aac20cb`，合并 `40bdf5c`，清理后空提交 `e5940dc`。本交接提交随后推送 origin/main，以实际推送回执为准。
-- 入口仍为 Agents 焦点 `/` 或现有 Search 点击；查 Agent 名、已有 Agent 的 cwd 末级项目名、插件标题/ID及 General/Colors/Advanced/Diagnostics/Plugins/Updates 六页。项目搜索返回 Agent，没有 Drover 登记项目或单条任务查询。
-- Tasks 复用普通插件入口，不要求 Pin；未安装无条目，停用/失败/无响应显示状态并转管理，正常时打开/切换原视图。刷新与激活均检查可用性，不自动启停。T74 Pin、Plugins/Settings及终端透传保持。
-- 主控按任务书审查，无阻塞项；路由不要独立交叉审查，未另派。集中全量一次 **702 passed / 1 failed / 9 ignored**；唯一失败 `native_mouse_buttons_cover_forms_and_stop_confirmation:851` 限定复核一次通过。未修改断言/超时/并行参数，不能称首次全量全绿或根因已修复。全量 Clippy、fmt、diff通过，日志 `/tmp/saddle-t63-integration/`。
-- 合并后核对产品代码与受检候选一致，差异仅主控文档。原 worktree/分支 `t63-unified-search` 已安全删除；原 Codex `saddle/dev-t63-design-1` / `bd7efad2d99a` 在 idle、attached=0、clean和已合并核对后随工作目录删除一并关闭。公开列表只剩主控；四个历史 worktree 保留。
-- 用户随后明确“编译+部署”：干净 main `6cf9494` 的宿主 release 已编译并安装，入口切到 `~/.local/share/saddle/versions/6cf9494/bin/saddle`。仅更新宿主，其余产物沿用旧包；配置/插件登记/Corral链接保持，旧包与备份保留。help和SHA-256验证通过，没有重复全量。备份日志 `~/.local/share/saddle/backups/t63-deploy-20261004-212002/`。
-- 部署后公开实例仍 `dc9cd32ad965b34b`，宿主PID77524的进程映像仍为 `29c94d4`；需用户正常重开才加载T63。主控instance未变。未Submit/Accept、关闭task trace或派发下一项。
-- T63 trace `16b9ad30-24fa-46c1-b07b-f3ea48e8656f`，run `1aceb478636a305c942d7b155e57bc79`，controller_handoff `86502084-b6b3-4153-aa91-75756da5eaaa`；绑定Tasks，不由主控关闭。任务状态未操作，当前业务状态需按公开接口查询。
-- 实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`，主控审查dispatch `f7bb95d9-f4fb-41a8-91eb-c9400f163f93`；公开reply operation `2bb6ecaa-f52f-452b-9f11-b0f2c057693a`，静态审查 `b788668c-12c5-482e-bbc2-2f4166d150b8`，集成审查记录预备ID `40fd53c0-560d-40bf-9b1e-f31103d1f5e9`（以append回执为准）。记录目录 `/tmp/saddle-t63-20261004/`；实施提醒 `80909340-c726-40a5-bf36-e433293901e2` 已处理，迟到提醒不重复执行。
-
-## 上一项：T74 已合并、安装并重启验证
-
-- 用户已批准同一 T74 实施。实现 `e6edaca`，两项返工 `439c5e3`；原独立 Codex 定向复核 R1/R2 通过、阻塞0，主控阶段集成完成。合并提交 `a62eecf` 已推送；本节随收尾更新。
-- 入口：Settings → Plugins 给 Tasks 设置 Pin 后，Agents 头部出现 Tasks，Agents 焦点按 p 可打开；Viewer 按键透传。普通终端使用启动 cwd。停用保留入口并解释不可用，移除清除固定。没有默认自动固定。
-- R1 已修：保留草稿时优先显示实际项目和未切换状态，接入/通知偏好表单不覆盖提示。R2 已修：已登记项目队列读取失败仍切到该项目列表显示 Read failed，不误入接入表单。详见设计和实施记录。
-- 标准全量命令只跑一次，在 workflow 失败后停止：555 passed / 2 failed / 9 ignored。只补跑未执行的插件目标142 passed、宿主examples退出0；首次覆盖合计 **697 passed / 2 failed / 9 ignored**。两项失败各限定复核一次均通过，未改代码/断言/超时。全量Clippy、fmt、diff检查通过。
-- 两项失败为 `mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends:1257` 与 `native_mouse_buttons_cover_forms_and_stop_confirmation:851`。不能称默认并行全套稳定全绿；后一项与实现者旧基线报告相同，但主控未重跑旧基线确认归因。没有搭车修复时序测试。完整日志 `/tmp/saddle-t74-integration/`。
-- 主控确认合并后代码与受检候选一致，差异只有主控文档。两个 T74 worktree 和分支已安全清理；原 Claude `saddle/dev-t74-design-1` / `0f81bd0e76e9`、Codex `saddle/dev-t74-review-1` / `80d99546d75c` 在 idle、未attach、clean及祖先检查后随工作目录删除一并关闭。公开 corral ls 只剩本主控，四个历史worktree保留。
-- 用户随后明确“编译+部署”。已从干净 main `29c94d4` release 构建并安装 Saddle + Drover 到 `~/.local/share/saddle/versions/29c94d4`，入口及 Drover 登记目录已切换。config、其他插件、启用状态及 Corral 命令链接保持；旧包与备份保留。没有改 Tasks 状态、Submit/Accept 或关闭 trace。
-- trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c` 继续开放，绑定 T74 同run；不由主控关闭。记录目录 `/tmp/saddle-t74-20261004/`；原审查/返工/复核提醒均已处理，后续迟到提醒不重复执行。
-- 最后复核 dispatch `91cb9789-6afd-4c81-b95f-109baece7230`，主控passed事件 `aceb863e-63a3-4d94-b7aa-61eedea39304`。审查报告 `docs/任务/T74-Tasks入口独立审查.md` 保存各阶段真实证据和集成判断；源阶段任务书已随合并保留。
-- 用户指出入口任务耗时过长，后续坚持缩小范围、避免重复检查；本次未追加新需求。T76等下一项未获本轮实施授权。
+更新：2026-10-04。主控 `saddle/main`，分支 `main`。交接前提交 `ac4eb43` 已推送，工作区干净；本次只更新交接文档。
 
 ## 会话摘要
 
-用户断网后要求独自接手、不再委派；T67 已完成并部署。随后讨论并正式派发 T66，现已完成 UI 回归样例索引、运行入口与分层测试约定，合并、推送和清理均完成。
+今天完成 T66 分层 UI 回归约定、T74 Tasks 直接入口、T63 统一搜索，以及最后的 Agents 头部工具菜单。源码均已合并推送，对应工作区已清理；产品已部署，交接现场确认当前 Saddle 已加载最新菜单版 `b9ff8e0`。用户接受 Tasks 缺席时右侧只保留 `⋯` 的布局，本轮结束，等待新指令。
 
-用户已确认本轮交付内容：T66 主要是文档及测试样例，未修改产品运行代码；验证时已编译相关测试和预览，**不需要发布编译、安装部署或重启 Saddle**。
+## 已完成与验证
 
-## 完成的工作
+| 工作 | 交付与提交 | 验证记录 |
+| --- | --- | --- |
+| Agents 头部菜单 | 用户批准并要求主控直接实现、不委派；顶部保留 Tasks + ⋯，Plugins/Telemetry/Settings 收进菜单。实现 `0447361`，合并 `c37e262`，空收尾 `f34dd1b`，部署记录 `ac4eb43` | 菜单 2 项、宿主 UI 51 项最终通过。workflow 首次 104 passed / 2 failed / 4 ignored；两项失败及最终菜单流程定向复核 3 passed。Saddle all-targets Clippy、fmt/diff通过，未跑全仓测试 |
+| T63 统一搜索 | 用户指定 Codex；搜索已有 Agent 名/cwd 末级项目名、插件标题/ID和六个设置页，不增加 Drover 登记项目/单条任务搜索。实现 `2a36dbd`，合并 `40bdf5c`，空收尾 `e5940dc` | 主控审查通过，无独立交叉审查。集中全量首次 702 passed / 1 failed / 9 ignored；唯一失败单项复核通过。全量 Clippy、fmt/diff通过 |
+| T74 Tasks 入口 | Settings → Plugins 固定一个插件入口，Agents 焦点 `p` 打开；项目识别、读取错误及草稿边界经返工/独立复核。实现 `e6edaca`，返工 `439c5e3`，合并 `a62eecf` | 首次覆盖合计 697 passed / 2 failed / 9 ignored；两项失败限定复核通过，Clippy/fmt/diff通过 |
+| T66 UI 回归约定 | 现有样例索引、运行入口与分层验证约定，补一个 Diff 合成样例；无产品运行代码变化。实现 `77f5a4b`，合并 `de5e6b6`，空收尾 `1215793` | 相关四组 135 passed；Diff 定向 Clippy及预览检查通过，未跑全量 |
 
-- T66：实现 `77f5a4b`，合并 `de5e6b6`，清理后的收尾空提交 `1215793`，交接 `a3d5cfd`，均已推送。开发分支及 worktree `t66-ui-regression` 已安全删除，没有新建 agent。
-- 新增 `docs/UI回归.md`：宿主、Settings、Agents、Drover、Diff 的已有场景/固定尺寸索引，四组 Cargo 命令、单例入口、预览和覆盖边界。AGENTS、README、DESIGN 的测试约定已同步。
-- 只补一个 Diff 长路径/中文长代码绘制样例，复用同一 fixture 输出文本预览；既有测试、断言、并发参数和超时保留。
-- 四组检查全部通过：宿主49、Settings51、Drover26、Diff9，共 **135 passed / 0 failed / 0 ignored**。自审加强路径可见断言后，仅复跑该单例，1 passed。
-- Diff 定向 Clippy、格式/差异、文档链接及32个测试名检查通过。现有预览入口生成五份 SVG 与五份文本并核验，路径 `/tmp/saddle-ui-preview-t66/`。本轮未跑全量，无真实终端人工验收声明。
-- 主控自审通过，无独立审查 agent。完整记录见 `docs/任务/T66-UI回归样例.md`；测试日志 `/tmp/saddle-t66-*.log`。
+上述失败首轮结果均保留，不能把单项复核通过写成首次全量全绿。头部菜单的插件弹层测试补了 Esc 后等待关闭，断言/超时不变；另一项启动时序失败未改。T63 的 `native_mouse_buttons_cover_forms_and_stop_confirmation:851` 限定复核通过但根因未定位，不搭车修复。详情及原始命令见对应任务文档；日志 `/tmp/saddle-header-menu-*.log`、`/tmp/saddle-t63-integration/`、`/tmp/saddle-t74-integration/`。
 
-## 待完成与当前队列
+## 当前安装与运行现场
 
-- T66 实施暂无已知待完成工作。本次通过公开 Drover show 回读仍为 **Running**，run `b3db4bf30d9249bbfe7bb0e023a0322d`；回执 `/tmp/saddle-t66-handoff-status.json`。没有自动 Submit、Accept 或 Return，等待用户提交/验收或反馈。
-- 任务正文末尾“仅更新待办，保持 Pending”是早先编辑阶段的旧说明；用户已明确“继续啊，这个任务我已经派发了”，不可再据此停止实施或退回 Pending。
-- T76 GPUI 评估是此前讨论的下一项，尚未在本会话派发或实施；开始前以用户新指令和实时队列为准，不从旧排序推断授权。
-- 既有时序测试问题没有搭车处理：T67 标准套件首轮673 passed / 14 failed / 9 ignored，14个失败项各一次限定复核通过；根因未定位，不能宣称默认并行全套稳定全绿。详见 T67 记录。T66 的135项通过不替代全量基线。
+- 安装入口 `~/.local/bin/saddle` → `~/.local/share/saddle/versions/b9ff8e0/bin/saddle`。从干净 `b9ff8e0` release 构建宿主，help与SHA-256校验通过；后续源码提交仅为文档，无须为文档重新部署。
+- **交接现场已确认重启生效**：公开宿主实例 `890a0adae29f8d05`，PID **28742**；`lsof` 显示加载 `versions/b9ff8e0/bin/saddle`。不再沿用此前“待重开”的状态。
+- 本次只更新宿主；Drover仍沿用T74产物，其他插件、配置、登记及Corral链接保持。旧安装包保留，最近备份日志 `~/.local/share/saddle/backups/header-menu-deploy-20261004-213528/`。
+- 公开 `corral ls` 仅有主控 `saddle/main` / instance `9f8a73396d8a`。T74两个agent、T63原Codex均已按流程关闭；头部菜单未创建agent。
+- 本轮新增worktree/分支均清理。四个历史worktree保留：`corral-live-upgrade-research`、`review-telemetry-design`（detached）、`t38-dispatch-study`、`t55-notification-flow`；不擅自删除。
 
-## 接手约束与现场
+## 待完成与授权边界
 
-- 用户最新已恢复委派；主控负责拆分、派发、审查、合并和收尾。设计和理由以 `docs/DESIGN.md` 为准；本文件只记录交接状态。
-- 测试选择遵循 `AGENTS.md` 与 `docs/UI回归.md`：小改跑直接相关检查，公共 UI 改动跑相关组，跨模块行为变更/阶段集成/发布前跑全量；已通过且相关代码未改不重复全量。
-- 共用 target：`CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。使用合成数据、临时目录和假 CLI，不接入或干扰用户 agent。
-- T66 结束时公开控制实例 `35766352fff8d4aa`（已被上方 T74 新实例取代），主控 `saddle/main` / Corral instance `9f8a73396d8a`。后续控制操作先重新确认实例；任务操作只走公开 `saddle ctl plugin` 和同实例 `saddle ctl request`，不能把 plugin_pending 当业务完成。
-- 四个历史 worktree 保留：`corral-live-upgrade-research`、`review-telemetry-design`（detached）、`t38-dispatch-study`、`t55-notification-flow`。不擅自清理或关闭用户 agent。
-- T67 安装入口本次核对仍指向 `~/.local/share/saddle/versions/d7da5b4/bin/saddle`；详细构建/部署记录见 T67 文档与 Git 历史 `678d399`。本次未重查运行宿主的加载路径，不沿用旧交接中的“待重开”判断。此后 T66 只有文档和测试变更，Source 领先 Installed 不表示有产品代码需要部署。
+- 本轮实现和部署**暂无已知待完成工作**。没有遗留功能改动待提交；本次文档提交推送后停止，等待用户反馈或下一项。
+- 用户最后已确认：未安装/卸载/未固定时不显示 Tasks，右侧仅 ⋯；已固定但停用时保留弱化入口。完整设计以 `docs/DESIGN.md` 最末节和 Tasks 设计为准，不重新打开已认可的布局决策。
+- 未自动 Submit/Accept/Return、关闭任务 trace 或派发下一项；真实队列状态本次未查询，不能沿用旧 Running/Pending 快照。T76等历史待办不是实施授权。
+- 用户一般允许主控委派；T63明确只用Codex，最后头部菜单明确主控直接做、不委派。后续按当次用户指令和AGENTS执行，不把本次例外扩为永久规则。
+- 验证依 `docs/UI回归.md` 按范围选取；已通过且代码未变不重复全量，不删测试、放宽断言或超时。所有Cargo共享 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。
 
-## T66 遥测续接
+## 任务记录续接
 
-- trace `026876b7-e42a-47f0-a35f-5c0dac7a60ed`，controller handoff `edaf52b8-e5fe-42e2-b5ba-92fef070cdc0`，记录目录 `/tmp/saddle-t66-20261004/`。
-- 自审记录分组 `5977a5e8-b822-4efc-9e96-5d2aaa0e0bdf`，passed event `7dc58f6d-6d48-45c4-92ee-6b9b526d06e3`；实际收尾声明 `bf87f9b3-0eb0-421c-ab84-0072a2061d9a` 已保存，记录实际合并、推送、清理及验证结果。
-- 此 trace 绑定 T66 当前 run，主控不提前 close；由 Drover 在用户 Accept/Return 时关闭，Submit 不关闭。若有同任务反馈，先 show 核对绑定和关闭状态；不把这些 ID 用于 T76，也不因历史缺口补发业务。
+以下均是历史任务绑定，不是新授权；主控未关闭这些 task trace。若用户续接同任务，先公开查询当前状态与 `closed_at`，不猜最新run、不重复迟到提醒、不重放业务。
 
-## 优先阅读
+| 任务 | trace_id | run | 记录目录 |
+| --- | --- | --- | --- |
+| T63 | `16b9ad30-24fa-46c1-b07b-f3ea48e8656f` | `1aceb478636a305c942d7b155e57bc79` | `/tmp/saddle-t63-20261004/` |
+| T74 | `0a8a12d6-8ea4-477a-b00c-1e1fe470919c` | `5e378db26877a85fefe4684199d17910` | `/tmp/saddle-t74-20261004/` |
+| T66 | `026876b7-e42a-47f0-a35f-5c0dac7a60ed` | `b3db4bf30d9249bbfe7bb0e023a0322d` | `/tmp/saddle-t66-20261004/` |
 
-- `AGENTS.md`、`docs/UI回归.md`：当前开发与验证入口。
-- `docs/任务/T66-UI回归样例.md`：需求、范围、完成记录和自审。
-- `docs/DESIGN.md`、`docs/UI设计语言.md`：设计依据。
-- `docs/任务/T67-版本状态展示.md`、`docs/任务/T68-测试夹具修复.md`：前两项的实现与验证记录。
-- `docs/任务/GPUI前后-待办重估与排序-2026-10-04.md`：后续任务评估；不是实施授权。
-- `plugins/drover/README.md`：公开队列命令及状态边界。较早 UI 批次和部署细节可查 `docs/任务/` 与旧交接提交 `a3d5cfd`，不把旧状态当当前事实。
+T63实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`、审查dispatch `f7bb95d9-f4fb-41a8-91eb-c9400f163f93`；实施提醒 `80909340-c726-40a5-bf36-e433293901e2` 已处理，实际收尾与部署记录已保存。头部菜单是后来独立口头任务，没有复用T63遥测或操作Tasks。
 
-## 下一步
+## 优先阅读与下一步
 
-等待用户正常重开加载头部菜单或反馈。源码与安装均已完成，不重复已通过检查；不自动推进 Tasks 状态、关闭 trace 或派发下一项。
+- `AGENTS.md`、`docs/UI回归.md`：开发、验证和公开任务操作约定。
+- `docs/任务/Agents头部工具菜单.md`：最新实现、检查、部署记录。
+- `docs/任务/T63-统一搜索入口实施.md`、`docs/任务/T74-Tasks入口实施.md`、`docs/任务/T74-Tasks入口独立审查.md`：已交付功能及验证限制。
+- `docs/任务/T66-UI回归样例.md`：分层测试与样例整理结果。
+- `docs/DESIGN.md`、`docs/UI设计语言.md`：设计与理由；`plugins/drover/README.md`：公开队列接口。
+
+等待用户新指令或反馈，不自行启动下一项。
