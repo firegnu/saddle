@@ -97,3 +97,51 @@
 ## 主控核验（第一轮）
 
 2026-10-04：已核对 `saddle/dev-t74-review-1` / `80d99546d75c` 为 idle，公开回复 DONE、结论改完再合并。主控对照批准设计 §2.4/§2.5、实施任务书、固定候选源码和审查者保存的协议渲染帧，确认 R1/R2 均未达到既定约定，交回原 Claude 定向修订；未另跑探针或重复测试。认可五项“可以不改”的结论和两项实施取舍。全量保留到修订复核通过后的阶段集成一次；既有 workflow 失败归因尚未独立确认。
+
+## 第一轮修订定向复核任务（2026-10-04）
+
+原独立审查者 `saddle/dev-t74-review-1` 继续，不再委派。主控已核对原 Claude 为 idle/DONE、原实现工作区干净，新提交 `439c5e3`；已读修订差异及 `/tmp/saddle-t74-rework/red.log`、`green.log`、`regression.log`，3 个目标 RED/GREEN 有日志，相关回归通过。本轮仅复核 R1/R2 及修复直接影响，不重新审全入口，不增加范围。
+
+- detached 审查 worktree 已由主控更新到 `439c5e3`，只读检查 `e6edaca..439c5e3`；你只允许向本主仓库报告追加复核结论，不改 checkout、不提交或切分支。
+- R1：实际项目/未切换状态按宽度优先，setup/preferences 保留提示行且命中随布局走；核对正常尺寸草稿/表单和原问题消除。R2：已登记且有配置的项目即使队列读取失败也进入自身列表错误；未登记/缺配置仍保留接入路径，不写入修复数据，只有实际切换才标 Shown。
+- 主控接受宽度不足时省略来源、截短原因以保实际项目/状态；接受手选同类已登记错误项目使用相同列表错误通路。这些是修复的合理直接结果，不重开设计。
+- 主要读 diff、目标测试与日志；如需运行，最多直接重跑新增三个进程检查或针对原复现的最小探针，勿全量、workflow 整组、所有 UI 组或再次两包 Clippy。Cargo 仍用共享 target，临时合成材料沿用 `/tmp/saddle-t74-rework/`，不接入真实 agent/队列。
+- 在本文件追加「第一轮修订复核结论」，按 R1/R2 给通过或未解决、实际证据和必要未决项。无阻塞就明确可进入主控阶段集成；不要把定向结果称全量通过。若发现范围外边角，只列非阻塞建议，不扩展工作。
+
+命令都在前台跑完，全部做完后，回复最后一行写 DONE。回复仅结论、必要证据及阻塞数；不操作 Submit/Accept、部署或 task trace。
+
+## 第一轮修订复核结论
+
+**定向复核通过：R1、R2 均已解决，阻塞 0 条，可以进入主控阶段集成。** 本结论不表示全量检查通过。
+
+2026-10-04，原独立审查者复核干净 detached `439c5e3281e5b8f80f8480d29ab4de915c908620`，仅检查 `e6edaca..439c5e3` 的 R1/R2 及直接影响；没有重新审查入口、固定持久化等上一轮通过项，也未重新讨论已接受的宽度退让、Pin 短文案或悬停规则。
+
+### R1：通过
+
+- 修复位置：`plugins/drover/src/queue.rs:181-205,237-240,1383-1391,1423-1449,1615-1629`，`plugins/drover/src/plugin.rs:923-980`。
+- `Source::line` 现在接收各页面的实际可用宽度，先输出 `Showing <实际项目>` 和状态，再利用剩余空间显示来源；忙碌前缀和列表分隔符也先扣除宽度。按本轮已接受的规则，来源可省略、原因可截短。
+- 独立重跑 `a_kept_draft_names_the_shown_project_in_an_80_by_24_window` 通过：插件内区 62×17，跨来源关闭重开后同时保留实际项目名、`kept your current page` 和草稿正文。原来的“全帧看不到实际项目”已消除。
+- 独立重跑 `reopened_setup_and_preferences_keep_a_source_row_the_form_does_not_cover` 通过：94×26 接入表单及 62×17 通知偏好重开后，第 0 行同时含实际项目与保留状态，表单仍显示。渲染先保留来源行，再把 `y + 1 / height - 1` 的区域交给表单，不再让边框盖住提示。
+- 直接影响的静态核查：setup 的按钮、字段、候选行由传入的新区域生成，点击读取这些绘制后的矩形；preferences 的按钮和选项命中也由新 body 生成，未发现保留旧坐标造成错位的路径。相关代码在 `project_setup.rs:282-309,338` 及 `plugin.rs:708-747,947-994`。本轮没有额外点击探针，不将静态核查说成鼠标实测。
+- 同时读了实现者保存的 `draft-host80x24.txt`、`setup-host120x36.txt`：可见 `Showing project-alpha · kept your current page`，接入表单从其下一行开始。它们是实现者的留存帧，本轮独立运行证据以上述两项测试为准。
+
+### R2：通过
+
+- 修复位置：`plugins/drover/src/plugin.rs:205-238,505-514,593-600`。
+- 项目检查返回已登记且存在 `.drover.conf` 时，即使 Snapshot 读取失败也建立目标项目的 panel/worker，错误进入既有 `read_error`；不再把队列读取错误当作尚待接入。`showing` 在无 setup 且规范化后的实际项目与目标一致时才返回真，否则来源结果为 `NotApplied`。
+- 独立重跑 `a_matched_project_whose_queue_cannot_be_read_opens_on_its_read_error` 通过：同原复现将目标 `queue.md` 设为目录，随后断言目标项目选择器、`Read failed` 和 `Showing other` 可见，`Add project` 不出现；损坏的目录保持原状，也没有生成 `tasks.state`。原来取消接入表单后仍停在旧项目的问题已经消除。
+- 直接影响的静态核查：未登记项目的 `registered` 为 false，缺配置项目既不处于 registered 状态，也没有配置文件元数据，仍进入原 setup 分支；没有删除接入检查或新增修复写入。手选同类已登记错误项目复用该列表错误通路，属于主控本轮已接受的结果。上述未登记/缺配置分支本轮仅静态核查，没有另外扩大运行场景。
+
+### 证据、检查范围及未决项
+
+已读 `/tmp/saddle-t74-rework/red.log`、`green.log`、`regression.log`。RED 日志中 R1 两项打印了原来的截断/遮盖画面，R2 在等待目标项目选择器处超时；R2 的这份日志没有打印错误表单帧，其根因另有上一轮独立复现支持。GREEN 日志记录 3 项通过；regression 日志记录实现者相关进程、UI、接入及宿主单例通过。本轮没有回退源码重做 RED，也没有将实现者回归记录冒充独立重跑。
+
+本轮仅独立运行以下三个新增进程检查，使用共享 target，命令已前台完成，退出 0，**3 passed / 0 failed / 16 filtered out**：
+
+```sh
+CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo test -p saddle-drover-plugin --test process -- --exact a_kept_draft_names_the_shown_project_in_an_80_by_24_window reopened_setup_and_preferences_keep_a_source_row_the_form_does_not_cover a_matched_project_whose_queue_cannot_be_read_opens_on_its_read_error
+```
+
+完整独立运行输出留在 `/tmp/saddle-t74-rework/independent-review-439c5e3.log`。另外 `git diff --check e6edaca..439c5e3` 通过。既有测试改动只是跟随来源行的新格式，worktree 用例还保留实际项目及 `/wt` 来源断言，未发现删除或放宽业务断言。
+
+本轮阻塞及新增非阻塞建议均为 0。全量测试/Clippy和既有 workflow 时序失败的阶段集成核验仍由主控处理；本轮没有运行全量、整个 workflow、UI 组或两包 Clippy，没有新建探针或接入真实 agent/队列。审查 checkout 的 HEAD 和文件保持不变，仓库内仅向本报告追加本节；未提交、切分支、委派或操作任务状态。
