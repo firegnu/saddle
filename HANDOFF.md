@@ -2,7 +2,7 @@
 
 更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。用户已批准设计并要求在同一 T74 继续实施；下方 T66 记录为此前完成快照。
 
-## 当前：T74 独立审查发现两项阻塞，原 Claude 定向返工中
+## 当前：T74 两项返工已完成，原 Codex 定向复核中
 
 - 用户要求缩短各 repo 的 Tasks 访问路径，入口形式已由本轮设计和后续用户继续指令确定。任务正文末尾“仅加入待办”是登记阶段旧说明，本次正式派发已触发设计。
 - Claude Code `saddle/dev-t74-design-1`（instance `0f81bd0e76e9`），`opus[1m] / high`，role=implementer；路由档位拿不准，主控选常规，交叉审查不要，影响面看得见。
@@ -23,6 +23,12 @@
 - 第一轮返工任务书（主仓库）`docs/任务/T74-Tasks入口实施返工.md`，已交付原 Claude/原实现 worktree，只修 R1/R2、先目标 RED/GREEN，直接回归及改动包 Clippy；全量仍留主控阶段集成一次。独立报告证据 `/tmp/saddle-t74-review/`；返工日志约定 `/tmp/saddle-t74-rework/`。
 - 主控 changes_requested 事件 `75e451be-fd55-49ba-8480-ef991334d6ae`；返工 dispatch `ecf89173-31d3-432c-92be-0b48e02c658c`；decision `f6d53828-a13e-492c-80b2-1da9f0343a75`；send request `ef1fcbd0-2c83-45ff-811e-860eb73e29a9` confirmed=true。reply context `/tmp/saddle-t74-20261004/implementation-rework-reply-context.json`。
 - 返工完成提醒 `c6873658-838b-4d78-b079-bcec14315962` pending=true，不表示送达；到达先核对原 Claude 实例/公开回复，再让原 Codex 定向复核修订（先更新干净 detached review worktree 到新提交）。所有记录继续同 trace/run；不自动 Submit/Accept、部署或关闭 task trace。
+
+
+- 第一轮返工完成于 `439c5e3`，原 Claude idle/DONE、工作区干净；公开 reply operation `cb2bc1bd-ad27-4250-812e-915a7c0efe62`。主控已读修订 diff 与目标 RED/GREEN 日志，三个目标检查先失败后通过，相关 process/ui/project_setup 和三个 workflow 单例通过；尚未全量。
+- R1 改为优先 Showing 实际项目/状态，setup/preferences 为提示保留一行；R2 已登记且有配置的错误项目进入自身 Read failed 列表。主控接受窄时省略来源、截短原因，以及手动选择同类错误项目走同一列表通路，不扩大设计。
+- 原 Codex `saddle/dev-t74-review-1` / `80d99546d75c` 已确认 idle 后接收复核；干净 detached review worktree 已更新到 `439c5e3`。复核任务追加于 `docs/任务/T74-Tasks入口独立审查.md`，只看 R1/R2 和直接影响。
+- 复核 dispatch `91cb9789-6afd-4c81-b95f-109baece7230`；decision `a339353c-dba2-48aa-bb56-b2e071188f8d`；send request `f0a5cd7b-1dc2-4318-8243-d4743441635d` confirmed=true；reply context `/tmp/saddle-t74-20261004/implementation-rereview-reply-context.json`。返工完成提醒已处理，复核提醒回执在同目录 `implementation-rereview-reminder.out`，pending 不代表送达。
 
 
 ## 会话摘要
@@ -73,4 +79,4 @@
 
 ## 下一步
 
-等待原 Claude 的 T74 第一轮返工结果，核对 R1/R2 的源码和目标验证，再安排原独立 Codex 定向复核；通过后主控集中运行一次阶段集成全量检查，再按项目流程合并清理。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
+等待原独立 Codex 对 439c5e3 的 R1/R2 定向复核；通过后主控集中运行一次阶段集成全量测试及 Clippy，再按项目流程合并推送清理。用户已指出耗时偏长，本轮严格收住两项修复，不扩审查范围。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
