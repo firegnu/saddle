@@ -25,3 +25,7 @@
 - 全部验证使用临时配置、假 CLI 与合成数据，共享 target；日志 `/tmp/saddle-header-menu-*.log`。画面依据 TestBackend 固定帧与伪终端流程，未声称日常终端人工视觉验收。
 
 - `cargo clippy -p saddle --all-targets -- -D warnings` 最终通过；首轮发现新 UI 测试遗留的未用 import，删除后重验。`cargo fmt --check`、`git diff --check` 通过。源码审查与上述范围检查通过，按项目流程合并推送；本轮未 release 构建或部署。
+
+## 收尾
+
+实现 `0447361` 已合并为 `c37e262`，合并后树与受检候选相同；工作区干净、祖先关系确认后，安全删除 worktree 与分支，未新建 agent。空收尾提交 `f34dd1b`，HANDOFF 同步。本轮未部署。
