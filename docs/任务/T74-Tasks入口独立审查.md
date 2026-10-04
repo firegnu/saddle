@@ -145,3 +145,17 @@ CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target cargo t
 完整独立运行输出留在 `/tmp/saddle-t74-rework/independent-review-439c5e3.log`。另外 `git diff --check e6edaca..439c5e3` 通过。既有测试改动只是跟随来源行的新格式，worktree 用例还保留实际项目及 `/wt` 来源断言，未发现删除或放宽业务断言。
 
 本轮阻塞及新增非阻塞建议均为 0。全量测试/Clippy和既有 workflow 时序失败的阶段集成核验仍由主控处理；本轮没有运行全量、整个 workflow、UI 组或两包 Clippy，没有新建探针或接入真实 agent/队列。审查 checkout 的 HEAD 和文件保持不变，仓库内仅向本报告追加本节；未提交、切分支、委派或操作任务状态。
+
+## 主控阶段集成与合并判断
+
+2026-10-04，固定产品候选 `439c5e3`。主控采集原独立 Codex idle/DONE 公开回复，核对修订与报告，R1/R2 通过、阻塞 0；不再扩大审查。
+
+按跨模块阶段集成约定集中执行标准检查一次，所有 Cargo 使用共享 target，原始日志在 `/tmp/saddle-t74-integration/`：
+
+- `cargo test --all-targets`：退出 101，555 passed / 2 failed / 9 ignored；在 workflow 的 101 passed / 2 failed / 4 ignored 后停止。两项失败为 `mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends:1257`、`native_mouse_buttons_cover_forms_and_stop_confirmation:851`。前者未在本轮证实旧基线也失败；后者与实现者报告位置一致，但旧基线归因仍未由主控重复验证。
+- 只将上述两项一起限定复核一次：2 passed，退出 0，未改代码/断言/超时。未重复全量或 workflow 整组。
+- 为补齐 Cargo 提前停止后的未运行目标，单独执行尚未运行的 core-plugin、plugin-protocol、plugin-sdk、Drover、Diff、dispatch 包的 all-targets（加 no-fail-fast），142 passed；宿主 examples 0 tests、退出 0。不是重新跑已完成目标。
+- 首次覆盖合计 **697 passed / 2 failed / 9 ignored**；失败项限定复核 **2 passed**。标准全量命令本身失败的事实保留，不能称默认并行全套稳定全绿。
+- `cargo clippy --all-targets -- -D warnings`、`cargo fmt --check` 退出 0；差异空白检查通过。无发布构建、部署、重启或真实任务数据操作。
+
+主控判断：批准目标及两项修订已有独立验证，全部实际测试项在本次检查/限定复核中取得通过结果，未发现稳定复现的本次回归。接受当前测试时序不稳定的已知限制，按项目流程合并；不将偶发失败归因为 T74 无关的已证事实，也不搭车修复测试。用户已要求收住范围，本次不增加审查轮次。Tasks 的 Submit/Accept 与 task trace 关闭仍由用户触发。
