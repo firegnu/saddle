@@ -1,6 +1,17 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`；本次交接前 HEAD 为 `a3d5cfd`，已推送，工作区干净。本次只更新本文件，提交后继续等待用户操作，不自动推进队列。
+更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。当前先做入口设计，不自动实施；下方 T66 记录为此前完成快照。
+
+## 当前：T74 设计已委派
+
+- 用户要求缩短各 repo 的 Tasks 访问路径，入口形式尚待设计。任务正文末尾“仅加入待办”是登记阶段旧说明，本次正式派发已触发设计。
+- Claude Code `saddle/dev-t74-design-1`（instance `0f81bd0e76e9`），`opus[1m] / high`，role=implementer；路由档位拿不准，主控选常规，交叉审查不要，影响面看得见。
+- worktree `../saddle-worktrees/t74-tasks-entry-design`，分支同名，基线 `a570fda`；任务书 `docs/任务/T74-Tasks入口设计.md`，候选产出 `docs/Tasks入口设计.md`（均在该 worktree）。只写设计和文字线框，不改产品/测试，不编译部署。主控审查后给用户确认入口形式，未合并、未收尾。
+- 特别核对：当前项目如何确定；现有“插件不贡献常驻按钮”的规则若需改变须明确列为提案；保持宿主通用插件边界。考虑 T76 的 GPUI 评估，避免默认完整 TUI 导航重构，不吸收 T63 通用搜索。
+- 实时公开查询 T74 为 Running，run `5e378db26877a85fefe4684199d17910`；宿主控制实例现为 `7b8c8e5e67b7a313`（先前实例已过时），主控 Corral instance 仍 `9f8a73396d8a`。
+- trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c`；controller handoff `13bf71fb-fbd3-4e2d-8a3f-913039c9fdbb`；设计 dispatch `7f407043-4f55-4abb-abcd-99cc8afc6056`。公开 reply 用 `/tmp/saddle-t74-20261004/reply-context.json`，完整记录与 start 回执在同目录。不要复用 T66 身份，不提前关闭 task trace。
+- 完成提醒已登记：request `c6361f5c-cbc9-4622-b476-45a02e2e55e6`，pending=true，不代表已送达。提醒到达先核对该 agent 状态和公开回复，不重复派发或自行重发。设计阶段结束不自动 Submit/Accept。
+
 
 ## 会话摘要
 
@@ -26,10 +37,10 @@
 
 ## 接手约束与现场
 
-- 沿用用户“不再委派、独自完成”的安排，除非用户重新指定。设计和理由以 `docs/DESIGN.md` 为准；本文件只记录交接状态。
+- 用户最新已恢复委派；主控负责拆分、派发、审查、合并和收尾。设计和理由以 `docs/DESIGN.md` 为准；本文件只记录交接状态。
 - 测试选择遵循 `AGENTS.md` 与 `docs/UI回归.md`：小改跑直接相关检查，公共 UI 改动跑相关组，跨模块行为变更/阶段集成/发布前跑全量；已通过且相关代码未改不重复全量。
 - 共用 target：`CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。使用合成数据、临时目录和假 CLI，不接入或干扰用户 agent。
-- 当前公开控制实例 `35766352fff8d4aa`，主控 `saddle/main` / Corral instance `9f8a73396d8a`。后续控制操作先重新确认实例；任务操作只走公开 `saddle ctl plugin` 和同实例 `saddle ctl request`，不能把 plugin_pending 当业务完成。
+- T66 结束时公开控制实例 `35766352fff8d4aa`（已被上方 T74 新实例取代），主控 `saddle/main` / Corral instance `9f8a73396d8a`。后续控制操作先重新确认实例；任务操作只走公开 `saddle ctl plugin` 和同实例 `saddle ctl request`，不能把 plugin_pending 当业务完成。
 - 四个历史 worktree 保留：`corral-live-upgrade-research`、`review-telemetry-design`（detached）、`t38-dispatch-study`、`t55-notification-flow`。不擅自清理或关闭用户 agent。
 - T67 安装入口本次核对仍指向 `~/.local/share/saddle/versions/d7da5b4/bin/saddle`；详细构建/部署记录见 T67 文档与 Git 历史 `678d399`。本次未重查运行宿主的加载路径，不沿用旧交接中的“待重开”判断。此后 T66 只有文档和测试变更，Source 领先 Installed 不表示有产品代码需要部署。
 
@@ -50,4 +61,4 @@
 
 ## 下一步
 
-等待用户验收 T66 或提出反馈。若用户正式派发 T76，再读取任务正文并开展评估；无需为 T66 再编译部署或机械重跑全量。
+等待 T74 设计 agent 完成，读取公开回复并审查具体提案，给用户确认后再实施。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
