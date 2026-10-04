@@ -402,21 +402,40 @@ impl Plugin for DiffPlugin {
         };
         let count = self.snapshot.as_ref().map_or(0, |s| s.files.len());
         // Modes on the left with the current one as a solid bold block; the file count and
-        // status sit at the right edge so a narrow pane cuts mode names before the status.
-        // Without room for every name, the other modes show only their keys.
+        // status sit at the right edge. A narrow pane gives up, in order, the other modes'
+        // names, the file count, then the other modes' keys; the current mode and the status
+        // are kept.
         let summary = format!("{count} files  ·  ");
-        let right = (summary.width() + status.width()) as u16;
-        let right_x = area.width.saturating_sub(right);
         let modes = [Mode::All, Mode::Unstaged, Mode::Staged];
-        let full = modes.iter().map(|m| m.label().width() + 5).sum::<usize>();
-        let compact = full > usize::from(right_x);
+        let labels = |level: u8| -> Vec<(Mode, String)> {
+            modes
+                .into_iter()
+                .enumerate()
+                .filter(|&(_, m)| level < 2 || m == self.mode)
+                .map(|(i, m)| {
+                    let label = if level == 0 || m == self.mode {
+                        format!(" {} {} ", i + 1, m.label())
+                    } else {
+                        format!(" {} ", i + 1)
+                    };
+                    (m, label)
+                })
+                .collect()
+        };
+        let fits = |level: u8, count: bool| {
+            let modes = labels(level)
+                .iter()
+                .map(|(_, l)| l.width() + 1)
+                .sum::<usize>();
+            let right = status.width() + if count { summary.width() } else { 0 };
+            modes + right <= usize::from(area.width)
+        };
+        let (level, show_count) = [(0, true), (1, true), (1, false), (2, false)]
+            .into_iter()
+            .find(|&(level, count)| fits(level, count))
+            .unwrap_or((2, false));
         let mut x = 0;
-        for (i, mode) in modes.into_iter().enumerate() {
-            let label = if compact && mode != self.mode {
-                format!(" {} ", i + 1)
-            } else {
-                format!(" {} {} ", i + 1, mode.label())
-            };
+        for (mode, label) in labels(level) {
             let style = if mode == self.mode {
                 Style::default()
                     .fg(fg)
@@ -428,18 +447,30 @@ impl Plugin for DiffPlugin {
                 &mut buffer,
                 x,
                 0,
-                right_x.saturating_sub(x + 1),
+                area.width.saturating_sub(x),
                 &label,
                 style,
             );
             x = x.saturating_add(label.width() as u16 + 1);
         }
-        view::put(&mut buffer, right_x, 0, right, &summary, muted_style);
+        // When even the current mode and status do not fit, the status starts after the mode.
+        let status_x = area.width.saturating_sub(status.width() as u16).max(x);
+        if show_count {
+            let summary_x = status_x - summary.width() as u16;
+            view::put(
+                &mut buffer,
+                summary_x,
+                0,
+                summary.width() as u16,
+                &summary,
+                muted_style,
+            );
+        }
         view::put(
             &mut buffer,
-            right_x + summary.width() as u16,
+            status_x,
             0,
-            area.width.saturating_sub(right_x + summary.width() as u16),
+            area.width.saturating_sub(status_x),
             status,
             status_style,
         );
@@ -700,6 +731,15 @@ mod tests {
         assert!(!cell(&b, "1 All").modifier.contains(Modifier::REVERSED));
         assert_eq!(cell(&b, "STALE / error").fg, ERROR);
         assert_eq!(cell(&b, "fatal").fg, ERROR);
+        // Narrow error pane: the current mode and the error status both stay; the file count
+        // and the other mode names give way first.
+        let b = render(&mut p, 34, 10);
+        println!("|{}|", lines(&b)[0]);
+        let current = find(&b, "3 Staged").expect("current mode stays visible");
+        assert!(b[current].modifier.contains(Modifier::REVERSED));
+        assert_eq!(cell(&b, "STALE / error").fg, ERROR);
+        assert!(find(&b, "1").unwrap().0 < find(&b, "2").unwrap().0);
+        assert!(find(&b, "2").unwrap().0 < current.0);
 
         // Narrow: the list preference is still on and `f` still toggles it, so it is shown
         // as narrow rather than disabled; Esc and the position stay visible.
