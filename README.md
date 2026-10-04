@@ -265,7 +265,10 @@ Select a pending task to use **Edit**, **Move up**, or **Move down** at the bott
 
 ## Development
 
+Choose checks by impact: small edits run directly related checks; shared styles or UI components run the affected UI regression groups; cross-module changes, integration milestones and releases run the full checks below. See [UI regression fixtures and commands](docs/UI回归.md) for the groups, fixed scenes and preview entry points. Documentation and fixture maintenance validate their affected entry points and samples; explain any need for a full run. Keep useful tests and assertions; reduce the scope of each run instead of deleting tests or relaxing timeouts. Do not repeat a passing full run after every small correction.
+
 ```sh
+export CARGO_TARGET_DIR="$HOME/Developer/personal_projs/saddle-worktrees/.target"
 cargo test --all-targets
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
