@@ -46,3 +46,34 @@
 
 ## 做完
 在本文件末尾追加完成记录：改了什么、直接检查结果、具体视觉取舍、未做或保留项。记录实际证据，不用源码检查冒充真实终端观感。回复提交号及有无主控待定项。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录（saddle/dev-ui2-settings，2026-10-04）
+
+### 改了什么
+- `src/settings.rs`：Diagnostics 与 Updates 改用同一套报告排法（`report_lines`）：两格缩进 + 16 列弱化标签列 + 值列，值按词换行回到值列下；标签超出标签列时独占一行、值从下一行值列开始，不截断标签或值。节标题用 bright + 粗体（Updates 原用 focus 色），节前空一行；Updates 第一条 Heading 视为页面状态行（正文色粗体，后空一行）。值的状态色不变（Good 正文、Action unread、Bad danger、Unknown muted）。Diagnostics 主操作仍是 Refresh，Updates 仍是 Upgrade all；按钮、按键、滚动、复制摘要、数据来源未改。
+- `src/plugins/ui.rs`（管理页 / Add local）：
+  - 焦点与主操作分开：原来 Tab 焦点直接画成 primary；现在焦点 = 焦点色 + 粗体下划线标签（禁用按钮保持 dim 但仍带下划线，焦点落在禁用项上也能看见）。管理页按所选插件操作，不设单一主操作；Add local 未读到 manifest 时 Read manifest 为主操作，读到后 Add disabled 为主操作。
+  - 内部 `F(i)` 只用于命中编号：这些按钮没有键，原公共按钮把标签最后一个词按“键位”弱化（`Open panel` 的 `panel`、`Add local…` 的 `local…`、`Read manifest` 的 `manifest` 看起来像快捷键）；现对本页标签统一着色，不显示任何 F 编号。
+  - 错误角色（X6）：管理页消息原用 focus 色；现在注册表错误与操作失败用 danger，Disabled/Added 等结果提示用 muted（与 Settings 消息一致）。Add local 的读取/添加失败用 danger。新增仅用于展示的 `error` 标记，随 message 一起设置。
+  - 列表选中改为 底色 + 粗体 + `›` 标记，正文色；`›` 在列表有焦点时为焦点色，焦点移到按钮后变 muted，选中底色保留。On 列 `!`（冲突）与 Runtime 的 Failed/Unresponsive/Unavailable 用 danger。详情标题由 focus 色改为 bright 粗体；宿主自己写入详情的问题行（Resources unavailable、not installable、ID 冲突）用 danger。
+  - Add local：字段标题保留 “Plugin directory”，占位改为示例 `/path/to/plugin`（原占位重复字段名）；manifest 名称行加粗、`Program:` 标签弱化、权限警告保持正文色、“Adding does not start the plugin.”/入门提示弱化。
+- `src/plugins/palette.rs`（启动面板）：布局、提示行、默认选择、动作判断不变。打开类动作（Open/Switch/Move）保持焦点色，内置插件的 Manage 改为正文色，以区别“打开视图”与“进入管理”；Disabled 仍显示 `—` 与启用指引。选中失败类插件时其原因行用 danger（原为 muted 帮助色）。底部 Manage plugins/Close 的焦点加粗下划线，不只靠颜色。
+- `tests/ui_second_settings.rs`：4 个合成场景展示检查（Updates/Diagnostics 同列与长标签、管理页焦点/主操作/错误与提示、Add local、启动面板）。
+
+### 直接检查结果
+- `git diff --check`：无输出。
+- `python3 /tmp/saddle-ui2-cargo.py test --test ui_second_settings`：
+  - 修正前（只加检查、未改源码）：4 个全部失败，且都落在目标缺陷上——`local… looks like a key`（Reset vs Gray）、启动面板 `managing is not opening`（Yellow == Yellow）、Add local 字段名出现 2 次、Updates 仍为 `Saddle: Current` 无标签列。
+  - 修正后：`test result: ok. 4 passed; 0 failed`，编译无警告。另修过两处检查自身的查找错误（提示行也含 “Read manifest”；列表名被截为 `Synthetic built-…`），不涉及源码。
+- 画面来自 TestBackend 缓冲区和合成数据（120×50 / 110×40 / 100×30 / 80×24），只在默认主题下核对颜色；不代表真实终端、其他主题或手机 SSH 观感。
+
+### 具体视觉取舍
+- 标签列固定为 Diagnostics 原有的 16 列，两页完全同列；较长的 agent 名（如 `saddle/dev-…`）在 Updates 中会占两行（名一行、值一行），换取同列和不截断。
+- Diagnostics 值的换行由逐字符改为按词（与 Updates 原有方式一致），超长单词仍按字符拆分。
+- 焦点用下划线 + 粗体作为非颜色线索；未改公共 `buttons.rs`，焦点位置用本文件内按标签查找已绘制按钮的方式定位（标签被极窄宽度截断时不画焦点线索，按钮本身照常）。
+- Updates 状态行是否需要按“需处理/全部生效”上色未做：状态行文字本身已说明，且不在本组改 `updates.rs` 的数据结构。
+
+### 未做 / 保留项 / 待主控
+- 未跑全套与 Clippy（按验证预算）。静态核对：`tests/updates.rs`、`tests/diagnostics.rs`、`tests/plugin_resources.rs`、`tests/plugins.rs`、`tests/workflow.rs` 中涉及这些页面的文字断言（“Changes apply immediately.”、“Search plugins”、“Open panel”、“Read manifest”、“corral recover p/held”、“checking…” 等）文本均未改动；未发现需要改共享测试的断言，但未实际运行，请主控在集成时跑相关测试确认。
+- 管理页焦点落在“列表”时，列表本身只有 `›` 颜色变化作为焦点线索，未加边框（保留获批布局）。
+- 公共按钮把“标签最后一个词”当键位着色的规则在其他无键按钮处可能有同类表现（本组只处理自己三文件）；是否在公共层修正由主控决定。

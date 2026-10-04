@@ -1012,29 +1012,31 @@ impl Settings {
         hits.extend(tabs);
         if updates {
             use crate::updates::{Row, Tone};
-            let mut lines = Vec::new();
-            for row in &self.updates.rows {
-                let (text, style) = match row {
-                    Row::Heading(text) => (
-                        text.clone(),
-                        Style::default().fg(t.focus).add_modifier(Modifier::BOLD),
-                    ),
-                    Row::Item(label, value, tone) => (
-                        format!("{label}: {value}"),
-                        Style::default().fg(match tone {
+            let mut rows = Vec::new();
+            for (n, row) in self.updates.rows.iter().enumerate() {
+                match row {
+                    // The first heading states the page's status; a blank row sets it apart.
+                    Row::Heading(text) if n == 0 => {
+                        rows.push(ReportRow::Heading(
+                            text,
+                            Style::default().fg(t.text).add_modifier(Modifier::BOLD),
+                        ));
+                        rows.push(ReportRow::Blank);
+                    }
+                    Row::Heading(text) => rows.push(ReportRow::Heading(text, heading(t))),
+                    Row::Item(label, value, tone) => rows.push(ReportRow::Item(
+                        label,
+                        value,
+                        match tone {
                             Tone::Good => t.text,
                             Tone::Action => t.unread,
                             Tone::Bad => t.danger,
                             Tone::Unknown => t.muted,
-                        }),
-                    ),
-                };
-                lines.extend(
-                    word_wrap(&text, usize::from(body.width).max(1))
-                        .into_iter()
-                        .map(|line| Line::styled(line, style)),
-                );
+                        },
+                    )),
+                }
             }
+            let lines = report_lines(t, &rows, body.width);
             self.updates_top = self
                 .updates_top
                 .min(lines.len().saturating_sub(usize::from(body.height)) as u16);
@@ -1331,39 +1333,23 @@ impl Settings {
             );
             return;
         };
-        let room = area.width.saturating_sub(LABEL as u16 + 1).max(1);
-        let mut lines = Vec::new();
-        for row in report.rows() {
-            match row {
-                Row::Heading(heading) => {
-                    if !lines.is_empty() {
-                        lines.push(Line::default());
-                    }
-                    lines.push(Line::styled(
-                        heading,
-                        Style::default().fg(t.bright).add_modifier(Modifier::BOLD),
-                    ));
-                }
-                Row::Item(label, value, tone) => {
-                    let style = Style::default().fg(match tone {
+        let rows = report.rows();
+        let rows: Vec<_> = rows
+            .iter()
+            .map(|row| match row {
+                Row::Heading(text) => ReportRow::Heading(text, heading(t)),
+                Row::Item(label, value, tone) => ReportRow::Item(
+                    label,
+                    value,
+                    match tone {
                         Tone::Good => t.text,
                         Tone::Bad => t.danger,
                         Tone::Unknown => t.muted,
-                    });
-                    let label = format!("  {} ", crate::ui::pad(label, LABEL - 2));
-                    for (n, part) in crate::ui::wrap_text(&value, room).into_iter().enumerate() {
-                        let lead = if n == 0 {
-                            label.clone()
-                        } else {
-                            " ".repeat(label.width())
-                        };
-                        let mut spans = vec![Span::styled(lead, Style::default().fg(t.muted))];
-                        spans.extend(part.spans.into_iter().map(|span| span.style(style)));
-                        lines.push(Line::from(spans));
-                    }
-                }
-            }
-        }
+                    },
+                ),
+            })
+            .collect();
+        let lines = report_lines(t, &rows, area.width);
         let last = (lines.len() as u16).saturating_sub(area.height);
         self.report_top = self.report_top.min(last);
         frame.render_widget(Paragraph::new(lines).scroll((self.report_top, 0)), area);
@@ -1506,6 +1492,70 @@ fn choice(kind: Kind) -> bool {
 }
 /// Marks a color set by its own `[colors]` key rather than the theme.
 const CUSTOM: &str = " custom";
+
+/// One row of a read-only report as drawn: Diagnostics and Updates share this layout.
+enum ReportRow<'a> {
+    Heading(&'a str, Style),
+    /// Label, value and the value's state colour.
+    Item(&'a str, &'a str, Color),
+    Blank,
+}
+/// Report section headings rely on weight rather than the focus colour.
+fn heading(t: &Theme) -> Style {
+    Style::default().fg(t.bright).add_modifier(Modifier::BOLD)
+}
+/// Headings set apart by a blank row; labels in one quiet column with values wrapped under their
+/// own column. A label wider than the column takes its own row so neither it nor its value is cut.
+fn report_lines(t: &Theme, rows: &[ReportRow<'_>], width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(width).max(1);
+    let column = (LABEL - 2).min(width / 3);
+    let lead = 2 + column + 1;
+    let room = width.saturating_sub(lead).max(1);
+    let label_style = Style::default().fg(t.muted);
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut after_heading = false;
+    for row in rows {
+        match row {
+            ReportRow::Heading(text, style) => {
+                if !after_heading && lines.last().is_some_and(|line| line.width() > 0) {
+                    lines.push(Line::default());
+                }
+                lines.extend(
+                    word_wrap(text, width)
+                        .into_iter()
+                        .map(|line| Line::styled(line, *style)),
+                );
+            }
+            ReportRow::Item(label, value, color) => {
+                let mut parts = word_wrap(value, room);
+                if parts.is_empty() {
+                    parts.push(String::new());
+                }
+                let mut first = format!("  {} ", crate::ui::pad(label, column));
+                if label.width() > column {
+                    for part in word_wrap(label, width.saturating_sub(2).max(1)) {
+                        lines.push(Line::styled(format!("  {part}"), label_style));
+                    }
+                    first = " ".repeat(lead);
+                }
+                for (n, part) in parts.into_iter().enumerate() {
+                    let lead = if n == 0 {
+                        first.clone()
+                    } else {
+                        " ".repeat(lead)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(lead, label_style),
+                        Span::styled(part, Style::default().fg(*color)),
+                    ]));
+                }
+            }
+            ReportRow::Blank => lines.push(Line::default()),
+        }
+        after_heading = matches!(row, ReportRow::Heading(..));
+    }
+    lines
+}
 
 /// Rows of whole words; only a word wider than the row is split.
 fn word_wrap(text: &str, width: usize) -> Vec<String> {
