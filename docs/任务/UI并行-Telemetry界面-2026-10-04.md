@@ -46,3 +46,26 @@
 
 ## 做完
 在本文件末尾追加「## 完成记录」（在你的分支里提交）：做了什么、验证了什么、拿主意的地方、没做的事，各几句话。回复只写这些，加上有没有要主控决定的事和提交号。命令都在前台跑完，全部做完后，回复最后一行写 DONE。
+
+## 完成记录
+
+**做了什么**（只改 `src/telemetry_view.rs` 绘制/文案，另加 `tests/ui_reading_polish.rs`）
+- 列表：时间与类型列定宽对齐（Task/Ad hoc 同列，类型文字 inert 转义）；时间、类型、绑定尾部弱化，标签为正文；选中行改为“▸ 标记 + 选中底色 + 字重”，不再用焦点色。底部选中摘要改成对齐的 `Label / Scope / Coverage` 标签列（标签弱化），`coverage_start` 字段名改为 `Coverage  from …`，“trace recording on/paused/ended”原文保留。
+- 详情：时间线表头按行的实际列宽生成，修正 Source 与 Bodies / gaps 错位；seq/时间/来源弱化，事件名为正文；选中事件同上用底色+字重，选正文时保留该事件 ▸ 标记（身份不丢）、不加底色。“Now (queried …)”查询时间弱化，Dispatch 行去掉与底栏重复的 “◂ Tab ▸”，当前 dispatch 用底色+字重。详情面板按行分层：事件标题加粗，时间/哈希/链接/字节数等技术元数据弱化，读取失败（预览、目标 trace）用 danger，正文与状态文字照旧。
+- 按钮：只有面板主操作（Read full body / Choose body / Read selected body）保留强调；Technical details 和列表顶部 Project/Type/Search 改为普通按钮。区域、键位、可用条件未变。
+- 提示：同页回车统一写 `Enter`；去掉与面板按钮重复的底栏“↵ Read full body”、计数后的“· r Refresh”、各处行内“r Retry/r Refresh”，改为底栏在失败时把 r 标成 Retry（同一动作）；`n Next page` 仅在确有下一页可读时出现；o/i 在已打开对应面板时标为 “Event detail”（按键本就切回）；去掉 ‹Operations› 等多余括号，“Bodies 1 ↵”去掉逐行 ↵。
+- 正文阅读层：sha/字节数弱化，“hash verified · 编码”保持正文；行号计数改弱化色。Recording intervals 行把 on/off 放前面对齐。
+
+**验证了什么**
+- `git diff --check` 通过。
+- 现有绘制测试 `cargo test --test telemetry_view`：18 项全过（空、加载、失败、未初始化、陈旧上界、截断/缺正文、转义、窄/宽布局、鼠标点击主按钮均在内）。
+- 新增合成绘制检查 `tests/ui_reading_polish.rs`（1 项，通过）：表头与行列对齐、选中行底色+字重、未选中无底色、主/次按钮字重区分、元数据弱化。
+- 未跑全套与 clippy（按预算）；只对改动的两个文件跑了 rustfmt。
+
+**拿主意的地方**
+- “late · Late submission …”的重复字样保留：现有测试以小写 late 为断言，改它需动别人的测试文件。
+- 选中统一用 `agent_selected` 底色 + 粗体（列表、时间线、选择器、body 选择、当前 dispatch），焦点色只留给主操作与底栏键名；四套主题下观感未实际渲染确认。
+- 宿主状态栏文案 `status()` 未动。
+
+**没做的事**
+- 筛选表单（kind/scope/key/run）布局未调；真实终端截图与主题对比度未验证；未改主设计/设计语言文档。
