@@ -1,15 +1,16 @@
 # Saddle 交接
 
-更新：2026-10-04。当前分支 `main`。当前 T63 已审查、合并并清理；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
+更新：2026-10-04。当前分支 `main`。当前 T63 已审查、合并、清理并部署，待正常重开加载；主控仍为 saddle/main。T74 已完成部署和重启验证，下方 T66/T74 为此前完成记录。
 
-## 当前：T63 已合并并清理，待用户验收/部署指令
+## 当前：T63 已部署，待正常重开加载
 
 - 用户批准轻量统一搜索，并指定 Codex；实现 `2a36dbd`，主控审查记录 `aac20cb`，合并 `40bdf5c`，清理后空提交 `e5940dc`。本交接提交随后推送 origin/main，以实际推送回执为准。
 - 入口仍为 Agents 焦点 `/` 或现有 Search 点击；查 Agent 名、已有 Agent 的 cwd 末级项目名、插件标题/ID及 General/Colors/Advanced/Diagnostics/Plugins/Updates 六页。项目搜索返回 Agent，没有 Drover 登记项目或单条任务查询。
 - Tasks 复用普通插件入口，不要求 Pin；未安装无条目，停用/失败/无响应显示状态并转管理，正常时打开/切换原视图。刷新与激活均检查可用性，不自动启停。T74 Pin、Plugins/Settings及终端透传保持。
 - 主控按任务书审查，无阻塞项；路由不要独立交叉审查，未另派。集中全量一次 **702 passed / 1 failed / 9 ignored**；唯一失败 `native_mouse_buttons_cover_forms_and_stop_confirmation:851` 限定复核一次通过。未修改断言/超时/并行参数，不能称首次全量全绿或根因已修复。全量 Clippy、fmt、diff通过，日志 `/tmp/saddle-t63-integration/`。
 - 合并后核对产品代码与受检候选一致，差异仅主控文档。原 worktree/分支 `t63-unified-search` 已安全删除；原 Codex `saddle/dev-t63-design-1` / `bd7efad2d99a` 在 idle、attached=0、clean和已合并核对后随工作目录删除一并关闭。公开列表只剩主控；四个历史 worktree 保留。
-- 本轮没有 release 编译、安装部署、Submit/Accept、关闭 task trace或派发下一项；已安装产品仍为 T74 `29c94d4`。需要本功能在用户当前 Saddle 生效，仍须用户触发部署。
+- 用户随后明确“编译+部署”：干净 main `6cf9494` 的宿主 release 已编译并安装，入口切到 `~/.local/share/saddle/versions/6cf9494/bin/saddle`。仅更新宿主，其余产物沿用旧包；配置/插件登记/Corral链接保持，旧包与备份保留。help和SHA-256验证通过，没有重复全量。备份日志 `~/.local/share/saddle/backups/t63-deploy-20261004-212002/`。
+- 部署后公开实例仍 `dc9cd32ad965b34b`，宿主PID77524的进程映像仍为 `29c94d4`；需用户正常重开才加载T63。主控instance未变。未Submit/Accept、关闭task trace或派发下一项。
 - T63 trace `16b9ad30-24fa-46c1-b07b-f3ea48e8656f`，run `1aceb478636a305c942d7b155e57bc79`，controller_handoff `86502084-b6b3-4153-aa91-75756da5eaaa`；绑定Tasks，不由主控关闭。任务状态未操作，当前业务状态需按公开接口查询。
 - 实施dispatch `c337173f-6d84-40f8-b8ca-4656c120b640`，主控审查dispatch `f7bb95d9-f4fb-41a8-91eb-c9400f163f93`；公开reply operation `2bb6ecaa-f52f-452b-9f11-b0f2c057693a`，静态审查 `b788668c-12c5-482e-bbc2-2f4166d150b8`，集成审查记录预备ID `40fd53c0-560d-40bf-9b1e-f31103d1f5e9`（以append回执为准）。记录目录 `/tmp/saddle-t63-20261004/`；实施提醒 `80909340-c726-40a5-bf36-e433293901e2` 已处理，迟到提醒不重复执行。
 
@@ -74,4 +75,4 @@
 
 ## 下一步
 
-等待用户验收、部署指令或同任务反馈。T63已完成主控审查和一次集中集成，不重复全量；不自动推进Tasks状态、关闭trace或派发下一项。
+等待用户正常重开 Saddle 后使用统一 Search，或同任务反馈。T63已部署，不重复全量；不自动推进Tasks状态、关闭trace或派发下一项。
