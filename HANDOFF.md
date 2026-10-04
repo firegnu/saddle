@@ -2,7 +2,7 @@
 
 更新：2026-10-04。当前分支 `main`。用户已恢复委派并正式派发 T74；主控仍为 saddle/main。当前先做入口设计，不自动实施；下方 T66 记录为此前完成快照。
 
-## 当前：T74 设计已委派
+## 当前：T74 设计已复核，待用户确认
 
 - 用户要求缩短各 repo 的 Tasks 访问路径，入口形式尚待设计。任务正文末尾“仅加入待办”是登记阶段旧说明，本次正式派发已触发设计。
 - Claude Code `saddle/dev-t74-design-1`（instance `0f81bd0e76e9`），`opus[1m] / high`，role=implementer；路由档位拿不准，主控选常规，交叉审查不要，影响面看得见。
@@ -10,7 +10,8 @@
 - 特别核对：当前项目如何确定；现有“插件不贡献常驻按钮”的规则若需改变须明确列为提案；保持宿主通用插件边界。考虑 T76 的 GPUI 评估，避免默认完整 TUI 导航重构，不吸收 T63 通用搜索。
 - 实时公开查询 T74 为 Running，run `5e378db26877a85fefe4684199d17910`；宿主控制实例现为 `7b8c8e5e67b7a313`（先前实例已过时），主控 Corral instance 仍 `9f8a73396d8a`。
 - trace `0a8a12d6-8ea4-477a-b00c-1e1fe470919c`；controller handoff `13bf71fb-fbd3-4e2d-8a3f-913039c9fdbb`；设计 dispatch `7f407043-4f55-4abb-abcd-99cc8afc6056`。公开 reply 用 `/tmp/saddle-t74-20261004/reply-context.json`，完整记录与 start 回执在同目录。不要复用 T66 身份，不提前关闭 task trace。
-- 完成提醒已登记：request `c6361f5c-cbc9-4622-b476-45a02e2e55e6`，pending=true，不代表已送达。提醒到达先核对该 agent 状态和公开回复，不重复派发或自行重发。设计阶段结束不自动 Submit/Accept。
+- 两轮公开回复均为 DONE，agent 现 idle。初稿 `844b88d` 经主控要求补充后，修订 `ee9b570` 已复核通过；结论追加在该 worktree 的 `docs/任务/T74-Tasks入口设计复核.md`。两轮提醒已处理，重复到达不重复工作。设计仍待用户选择，未实施、未合并、未收尾。
+- 返工 dispatch `f42d29b9-df9b-4a91-b038-4a2a5414895d`，最终复核 passed event `ecd7fd1d-db59-47b0-9da3-7f645645fe87`；修订公开回复 context `/tmp/saddle-t74-20261004/rework-reply-context.json`。建议方案是用户固定单个 Tasks 头部入口、Agents 焦点 p、普通终端按启动目录；具体取舍等用户确认。保留分支/worktree/agent。
 
 
 ## 会话摘要
@@ -61,4 +62,4 @@
 
 ## 下一步
 
-等待 T74 设计 agent 完成，读取公开回复并审查具体提案，给用户确认后再实施。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
+等待用户确认 T74 入口方案，再按选定方案进入实施；若提出设计调整，继续当前 agent/worktree 修订。T76 未启动；无需为 T66 再编译部署或机械重跑全量。
