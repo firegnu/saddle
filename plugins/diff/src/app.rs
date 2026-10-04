@@ -703,6 +703,40 @@ mod tests {
         p.render(Rect::new(0, 0, w, h), &theme()).unwrap()
     }
 
+    fn long_text_plugin() -> DiffPlugin {
+        let mut p = plugin();
+        let snapshot = Arc::make_mut(p.snapshot.as_mut().unwrap());
+        snapshot.root = format!("/tmp/{}repo", "synthetic-directory/".repeat(10)).into();
+        snapshot.files[0].path = format!("src/{}file.txt", "nested/".repeat(20)).into();
+        snapshot.files[0].patch = format!("@@ -0,0 +1 @@\n+{}END_OF_LINE\n", "界".repeat(100));
+        p.document = Document::build(snapshot);
+        p.layout = Layout::Unified;
+        p
+    }
+
+    #[test]
+    fn long_paths_and_code_keep_chrome_visible_while_scrolling() {
+        for width in [70, 120] {
+            let mut p = long_text_plugin();
+            let before = render(&mut p, width, 12);
+            assert!(lines(&before)[1].starts_with("/tmp/synthetic-directory/"));
+            assert!(find(&before, "src/nested/").is_some());
+            assert!(find(&before, "界").is_some());
+            assert!(find(&before, "END_OF_LINE").is_none());
+            p.horizontal = 200; // Display columns, not UTF-8 bytes or character count.
+            let after = render(&mut p, width, 12);
+            assert!(find(&after, "END_OF_LINE").is_some());
+            let before_rows = lines(&before);
+            let after_rows = lines(&after);
+            assert_eq!(&before_rows[..3], &after_rows[..3]);
+            assert_eq!(before_rows[11], after_rows[11]);
+            assert!(after_rows[0].contains("1 All") && after_rows[0].contains("Live"));
+            assert!(after_rows[11].contains("Esc close"));
+            saddle_plugin_sdk::frame(&before, 1, 1).unwrap();
+            saddle_plugin_sdk::frame(&after, 1, 1).unwrap();
+        }
+    }
+
     #[test]
     fn header_body_and_footer_use_theme_roles_and_keep_states_distinct() {
         let mut p = plugin();
@@ -933,6 +967,17 @@ mod tests {
             ),
             ("loading", DiffPlugin::new(Some("/tmp/x".into())), 60, 6),
             ("tiny", plugin(), 34, 8),
+            ("long paths and code", long_text_plugin(), 70, 12),
+            (
+                "long code scrolled",
+                {
+                    let mut p = long_text_plugin();
+                    p.horizontal = 200;
+                    p
+                },
+                70,
+                12,
+            ),
         ];
         for (name, mut p, w, h) in scenes {
             let b = render(&mut p, w, h);
