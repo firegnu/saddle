@@ -367,11 +367,11 @@ impl Page {
         settings: &crate::settings::Settings,
     ) {
         let rows = rows(m);
-        let area = crate::theme::centered(
-            frame.area(),
-            if self.adding.is_some() { 80 } else { 108 },
-            if self.adding.is_some() { 24 } else { 34 },
-        );
+        let area = if self.adding.is_some() {
+            crate::theme::centered(frame.area(), 80, 24)
+        } else {
+            crate::settings::page_area(frame.area())
+        };
         frame.render_widget(Clear, area);
         frame.render_widget(
             t.block(

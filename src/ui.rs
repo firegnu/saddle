@@ -418,13 +418,7 @@ pub fn draw_workspace(
     }
     if let Some(settings) = &settings {
         target = "Settings".into();
-        help = if settings.conflict() {
-            " k Keep my edits  d Discard my edits  Esc Back"
-        } else if let Some(help) = settings.updates_help() {
-            help
-        } else {
-            " Tab/↑↓ Field  F1-F3 Page  Ctrl-D Default  Ctrl-U Clear  Ctrl-S Save  Esc Cancel"
-        };
+        help = settings.help();
     }
     if panel.confirm.is_some() {
         target = "Confirm stop".into();

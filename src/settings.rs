@@ -27,6 +27,10 @@ use std::{
 use unicode_width::UnicodeWidthStr;
 
 pub const TITLE: &str = " Settings ";
+/// Normal Settings pages share the existing Plugins frame; forms and confirmations stay compact.
+pub(crate) fn page_area(screen: Rect) -> Rect {
+    crate::theme::centered(screen, 108, 34)
+}
 /// The `value` key of the telemetry recording switch; it lives in the telemetry store, not the file.
 pub const RECORDING: &str = "telemetry:recording";
 const LABEL: usize = 18;
@@ -342,10 +346,27 @@ impl Settings {
     }
     pub fn updates_help(&self) -> Option<&'static str> {
         (self.page == Page::Updates).then_some(if self.updates.upgrade {
-            " ↑↓ Scroll  F1-F6 Page  r Refresh  u Upgrade all  Esc Close"
+            " Esc Close  r Refresh  u Upgrade all  ↑↓ Scroll  F1-F6 Page"
         } else {
-            " ↑↓ Scroll  F1-F6 Page  r Refresh  Esc Close"
+            " Esc Close  r Refresh  ↑↓ Scroll  F1-F6 Page"
         })
+    }
+    pub fn help(&self) -> &'static str {
+        if self.conflict {
+            " Esc Back  k Keep my edits  d Discard my edits"
+        } else if let Some(help) = self.updates_help() {
+            help
+        } else if self.page == Page::Diagnostics {
+            if self.report.is_some() {
+                " Esc Close  r Refresh  c Copy summary  ↑↓ Scroll  F1-F6 Page"
+            } else {
+                " Esc Close  r Refresh  ↑↓ Scroll  F1-F6 Page"
+            }
+        } else if self.broken.is_some() {
+            " Esc Cancel  Ctrl-R Reload  F4 Diagnostics  F5 Plugins  F6 Updates"
+        } else {
+            " Esc Cancel  Ctrl-S Save  F1-F6 Page  Tab/↑↓ Field  Ctrl-D Default  Ctrl-U Clear"
+        }
     }
     pub fn copied(&mut self, result: Result<(), String>) {
         (self.message, self.error) = match result {
@@ -926,25 +947,13 @@ impl Settings {
 
     /// Draws the popup centred on the screen; returns its tabs and buttons.
     pub fn draw(&mut self, t: &Theme, frame: &mut Frame) -> Vec<buttons::Hit> {
-        // Colors needs a tall list; the other pages and notices stay compact.
         let diagnostics = self.page == Page::Diagnostics;
         let updates = self.page == Page::Updates;
-        let height = if diagnostics || updates {
-            40
-        } else if self.conflict || self.broken.is_some() {
-            18
-        } else if self.page == Page::Colors {
-            34
-        } else if self.page == Page::General {
-            // Grows by the rows a long message wraps onto, inside the 76-column box.
-            16 + word_wrap(&self.message, 76 - 4).len().clamp(1, 3) as u16 - 1
+        let area = if !diagnostics && !updates && (self.conflict || self.broken.is_some()) {
+            crate::theme::centered(frame.area(), 76, 18)
         } else {
-            16
+            page_area(frame.area())
         };
-        // The sixth tab wraps at the normal width; preserve the existing fields and notes.
-        let height =
-            height + u16::from(!diagnostics && !updates && !self.conflict && self.broken.is_none());
-        let area = crate::theme::centered(frame.area(), 76, height);
         frame.render_widget(Clear, area);
         frame.render_widget(t.block(TITLE, true).style(t.base().bg(t.overlay)), area);
         let inside = crate::ui::inner(area);
@@ -1104,6 +1113,19 @@ impl Settings {
             );
             body.height -= height + 1;
         }
+        // Only the active field needs an operation hint; units stay beside their values.
+        let hint = match self.fields[self.selected].kind {
+            Kind::Bool => "Space/Enter toggle",
+            Kind::Theme | Kind::Pet | Kind::Display => "←/→ choose",
+            _ => "",
+        };
+        if !hint.is_empty() && body.height > 2 {
+            frame.render_widget(
+                Paragraph::new(hint).style(Style::default().fg(t.muted)),
+                Rect::new(body.x, body.bottom() - 1, body.width, 1),
+            );
+            body.height -= 1;
+        }
         // General explains the recording switch under its fields when there is room.
         if self.page == Page::General {
             let mut notes = vec![
@@ -1199,7 +1221,10 @@ impl Settings {
             frame.buffer_mut().set_style(
                 hit.area,
                 if current {
-                    Style::default().add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(t.text)
+                        .bg(t.selected)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(t.muted)
                 },
@@ -1467,8 +1492,6 @@ impl Settings {
 fn unit(kind: Kind) -> &'static str {
     match kind {
         Kind::Millis => " ms",
-        Kind::Bool => " Space/Enter toggle",
-        Kind::Theme | Kind::Pet | Kind::Display => " ←/→ choose",
         _ => "",
     }
 }
