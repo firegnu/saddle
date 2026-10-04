@@ -1,16 +1,18 @@
 # Saddle 交接
 
-更新：2026-10-04。主控 `saddle/main`，分支 `main`。T77 正式启动，前一轮完成记录保留于下文。
+更新：2026-10-04。主控 `saddle/main`，分支 `main`。T77 已完成源码合并与清理；本次交接随后随 main 推送。
 
-## 当前优先续接：T77
+## 当前优先续接：T77 已落地，未部署
 
-- 用户明确：“就是正式派发。你和委派出去的agent针对需求设计并达成一致后，持续推进落地”。旧任务正文的 Pending 限制已被此次授权取代；主控与 agent 对齐设计后继续实现、审查、合并推送，无须再次等待用户确认设计。
-- 主要整理 Drover 的任务遥测展示层次和进一步查看入口，完整保留历史数据及查看路径；不改采集、存储、查询协议和任务状态。保持英文产品 UI，不默认扩展宿主 Telemetry，不自动部署、Submit/Accept/Return 或关闭 task trace。
-- 设计 agent：`saddle/dev-t77-design-1`，instance `0994bb2200d8`，Claude Code `opus[1m]` / `high`，role=implementer。worktree `../saddle-worktrees/t77-telemetry-ui`，同名分支；基线 `25263c9`，任务书提交 `413453b`。
-- 设计候选 `b0d5078` 已核对原实例 idle / 公开 DONE 回复并主控复核通过；`2bb89e1` 补主控细化与 `docs/任务/T77-遥测展示整理实施.md`。原 agent 已确认收到实施指令（request `3e4e5f92-7cf6-4976-a8a0-e371558c4cb6`），先同步方案共识再实施。查看入口前置、未知不显示成0、退回计数标明本轮、正文热区随折行滚动；全部轮次筛选保留。路由不要求独立交叉审查；实现者只做 Drover 定向检查，主控阶段集成集中全量与Clippy一次。
-- 实施 dispatch `97ef21ba-0239-463b-be45-4b73d5b31ac5`，reply context `/tmp/saddle-t77-20261004/implementation-reply-context.json`；完成提醒输出保存在同目录 `implementation-reminder.out`。收到后先核对原实例与公开回复，再审查、集成、合并推送；不重复发送实施指令。
-- 记录目录 `/tmp/saddle-t77-20261004/`；trace `e588f2f5-cb18-4071-aa63-c093fc449032`，run `97aa8e9954855bb2cbd15ee61e47d012`，handoff dispatch `4b13392a-9b36-4827-8a65-6ae06ea61eb7`，设计 dispatch `41531fc1-1cee-4a04-8417-1c7ed57d0cd8`；reply context 为该目录 `reply-context.json`。实际启动回执与记录已保存，未重发业务。
-- 本节优先于下方上一轮“等待新指令”的历史表述。当前日常安装仍为 `b9ff8e0`，T77 尚无产品实现或部署。
+- 用户授权主控与 agent 达成设计一致后持续落地。T77 实现 `8988d58`，主控审查记录 `6643d32`，合并 `dc0f8f9`，空收尾 `2d25baf`。
+- 仅整理 Drover 任务详情：突出 `Open in Telemetry ↗`，状态之后新增紧凑 `Look further`，支持正文同源链接，调整关键信息顺序并弱化技术 ID。原始内容、历史信息、全部轮次筛选保留；采集、查询、存储、宿主和任务状态未改。
+- 主控 T77 范围审查通过，**全仓并非全绿**：全目标首次覆盖 694 passed / 14 failed / 9 ignored；11 项失败定向复核为 10 passed / 1 failed。仍有 3 项宿主 app 旧头部入口断言失败，及 `without_a_record_context_the_delivery_goes_the_plain_way_once` 的 budget_exhausted/disabled 不符。后者根因未定位，不宣称修复；相关源码均无 T77 修改。本任务不搭车修复这些问题。全仓 Clippy、fmt/diff 通过。
+- 细节见 `docs/任务/T77-遥测展示整理主控审查.md`，日志 `/tmp/saddle-t77-integration/`。首次因 app 失败停止后，只续跑未执行目标；没有重跑整套，未删测试、放宽断言/超时或改串行。
+- `t77-telemetry-ui` worktree 与分支已安全删除；原 agent `saddle/dev-t77-design-1` / instance `0994bb2200d8` idle、attached=0 后，随工作目录一并关闭。不要处理迟到提醒或重发实施。
+- **未部署**：日常安装仍是 `b9ff8e0`，不能把源码合并当成界面已更新。后续部署只按用户新指令执行。本轮未 Submit/Accept/Return、未关闭 task trace、未派发下一项；T77 仍待用户验收操作。
+- 本任务记录目录 `/tmp/saddle-t77-20261004/`；trace `e588f2f5-cb18-4071-aa63-c093fc449032`，run `97aa8e9954855bb2cbd15ee61e47d012`，实施 dispatch `97ef21ba-0239-463b-be45-4b73d5b31ac5`，主控实施审查 dispatch `378a4b14-54a7-430b-94c8-5cfcf6ae2bb1`。属于 task trace，由用户任务验收/退回流程结束，主控不 close。
+
+下方为前一轮历史交接，涉及“本轮”和待办状态时以上方 T77 最新说明为准。
 
 ## 会话摘要
 
