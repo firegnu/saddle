@@ -204,7 +204,8 @@ impl App {
             };
         }
         if !matches!(message.operation, Operation::Plugin { .. })
-            && (self.plugin_palette.is_some()
+            && (self.header_menu.is_some()
+                || self.plugin_palette.is_some()
                 || self.plugin_overlay.is_some()
                 || self.plugin_page.is_some()
                 || self.telemetry.is_some()

@@ -176,6 +176,7 @@ struct App {
     telemetry: Option<(crate::telemetry_view::Page, Focus)>,
     plugin_palette: Option<crate::plugins::palette::Palette>,
     plugin_entry_press: Option<Rect>,
+    header_menu: Option<crate::header_menu::Menu>,
     plugin_overlay: Option<plugins_impl::Overlay>,
     parked_settings: Option<crate::settings::Settings>,
     plugin_toast: Option<(Rect, Rect)>,
@@ -300,6 +301,7 @@ impl App {
             telemetry: None,
             plugin_palette: None,
             plugin_entry_press: None,
+            header_menu: None,
             plugin_overlay: None,
             parked_settings: None,
             plugin_toast: None,
@@ -414,7 +416,8 @@ impl App {
                         program: &self.actions.client.program,
                         modal: self.closing.is_some()
                             || self.plugin_page.is_some()
-                            || self.telemetry.is_some(),
+                            || self.telemetry.is_some()
+                            || self.header_menu.is_some(),
                         attention: ui::Attention {
                             items: &items,
                             loading,
@@ -436,6 +439,22 @@ impl App {
                 if let Some((page, _)) = &mut self.telemetry {
                     page.draw(&self.config.colors, frame, panes.agents.union(panes.viewer));
                     ui::status_text(&self.config.colors, frame, panes.status, page.status());
+                }
+                if let Some(menu) = &mut self.header_menu {
+                    menu.draw(
+                        &self.config.colors,
+                        frame,
+                        panes.agents,
+                        self.hits.more,
+                        self.updates.attention(),
+                    );
+                    ui::status_bar(
+                        &self.config.colors,
+                        frame,
+                        panes.status,
+                        "More",
+                        " ↑↓ Select  Enter Open  Esc Close",
+                    );
                 }
                 self.draw_closing(frame);
                 if let (Some(page), Some(settings)) = (&mut self.plugin_page, &self.settings) {
@@ -493,6 +512,7 @@ impl App {
         }
         self.viewer_area = panes.viewer;
         let focused = self.focus == Focus::Viewer
+            && self.header_menu.is_none()
             && self.settings.is_none()
             && self.plugin_palette.is_none()
             && self.plugin_page.is_none()
@@ -1029,6 +1049,19 @@ impl App {
         {
             self.input_revision += 1;
         }
+        if self.closing.is_none()
+            && let Some(menu) = &mut self.header_menu
+        {
+            let outcome = menu.event(&event);
+            self.header_menu_outcome(outcome);
+            // Closing on an outside press consumes the remainder of that gesture.
+            if self.header_menu.is_none()
+                && matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseEventKind::Down(_)))
+            {
+                self.native_mouse = true;
+            }
+            return Ok(false);
+        }
         // The page takes every key, paste and click until it closes; a quit confirmation
         // raised meanwhile still gets its answer first.
         if self.closing.is_none()
@@ -1318,23 +1351,6 @@ impl App {
                         && self.search.is_none()
                     {
                         self.open_search(self.focus);
-                        return Ok(false);
-                    }
-                    if focus == Focus::Agents
-                        && key.code == KeyCode::Char(',')
-                        && self.settings.is_none()
-                        && self.closing.is_none()
-                    {
-                        // The Settings entry: open, remembering where input was.
-                        self.open_settings(self.focus);
-                        return Ok(false);
-                    }
-                    if focus == Focus::Agents
-                        && key.code == KeyCode::Char('t')
-                        && self.settings.is_none()
-                        && self.closing.is_none()
-                    {
-                        self.open_telemetry(self.focus, None, None);
                         return Ok(false);
                     }
                     if focus == Focus::Viewer {

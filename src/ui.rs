@@ -24,7 +24,7 @@ pub struct Hits {
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
-    pub plugins: Rect,
+    pub more: Rect,
     pub pinned: Rect,
 }
 
@@ -58,7 +58,7 @@ pub struct Workspace<'a> {
     pub modal: bool,
     pub attention: Attention<'a>,
     pub settings: Option<&'a mut crate::settings::Settings>,
-    /// Installed updates need the user, or could not be confirmed: a dot beside Settings.
+    /// Installed updates need the user, or could not be confirmed: a dot beside More and the Settings menu item.
     pub updates: bool,
     /// The plugin the user pinned to the Agents header, if any.
     pub pinned: Option<Pinned<'a>>,
@@ -134,110 +134,66 @@ pub fn draw_workspace(
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
     let header = agents_header(view.panes.agents);
-    let show_plugins = terminals.is_some() && inner(view.panes.agents).height >= 6;
-    let pair_width = SETTINGS.width() + "Plugins".width() + 2;
-    let attention_width = format!("Attention · {}", attention.items.len()).width()
-        + if attention.loading && !attention.items.is_empty() {
-            " loading…".width()
-        } else {
-            0
-        };
-    // A pinned title (at most 12 columns) sits left of Telemetry and wraps with it; when even
-    // the wrapped row cannot hold both it is hidden first, so the fixed entries never move.
     let pin_label = pinned
         .as_ref()
-        .filter(|_| show_plugins)
+        .filter(|_| terminals.is_some() && inner(view.panes.agents).height >= 6)
         .map(|p| clip(p.title, 12))
-        .filter(|label| usize::from(header.width) >= label.width() + 2 + TELEMETRY.width());
-    let telemetry_group =
-        TELEMETRY.width() + pin_label.as_ref().map_or(0, |label| label.width() + 2);
-    let shared_rows = show_plugins
-        && usize::from(header.width)
-            >= (format!("Agents · {}", panel.agents.len()).width() + 2 + telemetry_group)
-                .max(attention_width + 2 + pair_width);
-    let action_row = if show_plugins {
-        if shared_rows { 1 } else { 3 }
-    } else if usize::from(header.width)
-        >= format!("Agents · {}", panel.agents.len()).width() + 2 + SETTINGS.width()
+        .filter(|label| usize::from(header.width) >= label.width() + 5);
+    let group_width = 3 + pin_label.as_ref().map_or(0, |label| label.width() + 2);
+    let action_row = if usize::from(header.width)
+        >= format!("Agents · {}", panel.agents.len()).width() + 2 + group_width
     {
         0
     } else {
         2
     };
-    let separate_actions = show_plugins && usize::from(header.width) < pair_width;
-    let settings_row = action_row + u16::from(separate_actions);
-    // Align with the title/status when both groups fit; otherwise wrap below them.
-    let telemetry_row = if shared_rows { 0 } else { 2 };
-    let header_rows = (settings_row + 1).max(2);
-    let right_aligned = |row: u16, width: u16| {
+    let right_aligned = |width: u16| {
         let width = width.min(header.width);
-        Rect::new(
-            header.right() - width,
-            header.y.saturating_add(row),
-            width,
+        Rect::new(header.right() - width, header.y + action_row, width, 1)
+            .intersection(inner(view.panes.agents))
+    };
+    let mut hits = draw_agents(frame, panel, &view, (action_row + 1).max(2));
+    let more = right_aligned(3);
+    let hovered = view.pointer.hover.is_some_and(|point| more.contains(point));
+    frame.render_widget(
+        Paragraph::new(" ⋯ ").style(
+            Style::default()
+                .fg(if hovered { t.bright } else { t.agents_text })
+                .remove_modifier(Modifier::BOLD),
+        ),
+        more,
+    );
+    hits.more = more;
+    if updates && !more.is_empty() {
+        frame.render_widget(
+            Paragraph::new("●").style(Style::default().fg(t.unread)),
+            Rect::new(more.right(), more.y, 1, 1).intersection(frame.area()),
+        );
+    }
+    if let (Some(label), Some(pinned)) = (&pin_label, &pinned) {
+        let rect = Rect::new(
+            more.x.saturating_sub(2 + label.width() as u16),
+            more.y,
+            label.width() as u16,
             1,
         )
-        .intersection(inner(view.panes.agents))
-    };
-    let mut hits = draw_agents(frame, panel, &view, header_rows);
-    if show_plugins {
-        let mut rect = right_aligned(action_row, 7);
-        if !separate_actions {
-            rect.x -= SETTINGS.width() as u16 + 2;
-        }
+        .intersection(inner(view.panes.agents));
         let hovered = view.pointer.hover.is_some_and(|point| rect.contains(point));
         frame.render_widget(
-            Paragraph::new("Plugins").style(
+            Paragraph::new(label.as_str()).style(
                 Style::default()
-                    .fg(if hovered { t.bright } else { t.agents_text })
+                    .fg(if !pinned.available {
+                        t.muted
+                    } else if hovered {
+                        t.bright
+                    } else {
+                        t.agents_text
+                    })
                     .remove_modifier(Modifier::BOLD),
             ),
             rect,
         );
-        hits.plugins = rect;
-        let rect = right_aligned(telemetry_row, TELEMETRY.width() as u16);
-        frame.render_widget(
-            Paragraph::new(TELEMETRY).style(
-                Style::default()
-                    .fg(t.agents_text)
-                    .remove_modifier(Modifier::BOLD),
-            ),
-            rect,
-        );
-        hits.buttons.push(crate::buttons::Hit {
-            area: rect,
-            danger: false,
-            key: crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char('t'),
-                crossterm::event::KeyModifiers::NONE,
-            ),
-        });
-        if let (Some(label), Some(pinned)) = (&pin_label, &pinned) {
-            let width = label.width() as u16;
-            let rect = Rect::new(
-                header.right() - TELEMETRY.width() as u16 - 2 - width,
-                header.y.saturating_add(telemetry_row),
-                width,
-                1,
-            )
-            .intersection(inner(view.panes.agents));
-            let hovered = view.pointer.hover.is_some_and(|point| rect.contains(point));
-            frame.render_widget(
-                Paragraph::new(label.as_str()).style(
-                    Style::default()
-                        .fg(if !pinned.available {
-                            t.muted
-                        } else if hovered {
-                            t.bright
-                        } else {
-                            t.agents_text
-                        })
-                        .remove_modifier(Modifier::BOLD),
-                ),
-                rect,
-            );
-            hits.pinned = rect;
-        }
+        hits.pinned = rect;
     }
     let attention_row = Rect {
         y: header.y.saturating_add(1),
@@ -245,34 +201,6 @@ pub fn draw_workspace(
     }
     .intersection(inner(view.panes.agents));
     let area = crate::attention::entry(t, frame, attention_row, attention.items, attention.loading);
-    let settings_area = right_aligned(settings_row, SETTINGS.width() as u16);
-    if !settings_area.is_empty() && settings_area.width == SETTINGS.width() as u16 {
-        if updates {
-            frame.render_widget(
-                Paragraph::new("●")
-                    .style(Style::default().fg(t.unread).add_modifier(Modifier::BOLD)),
-                Rect::new(settings_area.right(), settings_area.y, 1, 1).intersection(frame.area()),
-            );
-        }
-        frame.render_widget(
-            Paragraph::new(SETTINGS).style(if settings.is_some() {
-                Style::default().fg(t.focus).add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(t.agents_text)
-                    .remove_modifier(Modifier::BOLD)
-            }),
-            settings_area,
-        );
-        hits.buttons.push(crate::buttons::Hit {
-            area: settings_area,
-            danger: false,
-            key: crossterm::event::KeyEvent::new(
-                crossterm::event::KeyCode::Char(','),
-                crossterm::event::KeyModifiers::NONE,
-            ),
-        });
-    }
     if !area.is_empty() {
         hits.buttons.push(crate::buttons::Hit {
             area,
@@ -689,8 +617,6 @@ fn agents_header(area: Rect) -> Rect {
         inside.height.min(1),
     )
 }
-const SETTINGS: &str = "Settings";
-const TELEMETRY: &str = "Telemetry";
 /// One bottom-bar control: key and label, whether it acts, and whether it is destructive.
 /// `lit` shows a state in normal text without making the control clickable.
 struct Control {

@@ -107,7 +107,8 @@ fn overlay_area(panes: Panes) -> Rect {
 }
 impl App {
     pub(super) fn plugin_ui_busy(&self) -> bool {
-        self.settings.is_some()
+        self.header_menu.is_some()
+            || self.settings.is_some()
             || self.plugin_page.is_some()
             || self.telemetry.is_some()
             || self.closing.is_some()
@@ -445,9 +446,9 @@ impl App {
             self.plugin_entry_press = None;
             return false;
         };
-        // The fixed Plugins entry and the user's pinned entry; each acts on its own release.
+        // More and the user's pinned entry each act on their own release.
         let point = (m.column, m.row).into();
-        let over = [self.hits.plugins, self.hits.pinned]
+        let over = [self.hits.more, self.hits.pinned]
             .into_iter()
             .find(|r| r.contains(point));
         match m.kind {
@@ -458,9 +459,9 @@ impl App {
             }
             MouseEventKind::Up(MouseButton::Left) => {
                 if let Some(pressed) = self.plugin_entry_press.take() {
-                    if over == Some(pressed) && pressed == self.hits.plugins {
-                        self.plugin_palette = Some(Default::default());
-                        self.update_plugin_palette();
+                    if over == Some(pressed) && pressed == self.hits.more {
+                        self.header_menu =
+                            Some(crate::header_menu::Menu::new(self.plugin_overlay.is_some()));
                         self.native_mouse = false;
                     } else if over == Some(pressed) && pressed == self.hits.pinned {
                         self.open_pinned();
@@ -474,6 +475,27 @@ impl App {
             }
         }
         false
+    }
+    pub(super) fn header_menu_outcome(&mut self, outcome: crate::header_menu::Outcome) {
+        use crate::header_menu::Outcome;
+        if outcome == Outcome::Stay {
+            return;
+        }
+        self.header_menu = None;
+        self.pointer.cancel();
+        match outcome {
+            Outcome::Plugins => {
+                self.plugin_palette = Some(Default::default());
+                self.update_plugin_palette();
+            }
+            Outcome::Telemetry => {
+                self.open_telemetry(self.focus, None, None);
+            }
+            Outcome::Settings => {
+                self.open_settings(self.focus);
+            }
+            Outcome::Stay | Outcome::Close => {}
+        }
     }
     pub(super) fn manage_plugin(&mut self, selected: Option<&str>) {
         self.close_plugin_overlay(false);
