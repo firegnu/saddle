@@ -1854,7 +1854,7 @@ fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
 fn a_dot_beside_settings_shows_that_installed_updates_need_the_user() {
     use crossterm::event::KeyCode;
     for width in [52, 30, 20] {
-        for (updates, dot) in [(false, " "), (true, "•")] {
+        for (updates, dot) in [(false, " "), (true, "●")] {
             let (buffer, hits) = render_header(width, &Pointer::default(), &[], updates);
             let settings = hits
                 .buttons

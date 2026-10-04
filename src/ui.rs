@@ -202,7 +202,8 @@ pub fn draw_workspace(
     if !settings_area.is_empty() && settings_area.width == SETTINGS.width() as u16 {
         if updates {
             frame.render_widget(
-                Paragraph::new("•").style(Style::default().fg(t.unread)),
+                Paragraph::new("●")
+                    .style(Style::default().fg(t.unread).add_modifier(Modifier::BOLD)),
                 Rect::new(settings_area.right(), settings_area.y, 1, 1).intersection(frame.area()),
             );
         }

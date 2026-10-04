@@ -1569,7 +1569,7 @@ telemetry-task-boundary按上述定稿实现宿主、Drover、查询英文ended�
 
 用户确认在 Settings 旁显示待处理更新的小点，进入后告知需要的操作：Corral 待升级提供「升级全部」，Saddle 待重开提示重开界面且 agent 继续运行，升级异常显示具体原因和处理入口，实际核验全部生效后小点消失。本轮实现此使用流程，不做联网版本检查或新的安装部署命令。
 
-沿用 Settings 现有风格，增加 Updates 页面，包含当前更新摘要、Refresh、Upgrade all 及逐项结果。界面文案沿用产品英文；顶部 Settings 小点和页面状态同步。只读检查在后台进行，不阻塞输入，不在绘制循环反复散列二进制。检测对象是已安装命令入口所指程序与实际运行的 Saddle/Corral；内容相同而路径不同不判为需要升级。不可确认、读取失败不能显示为全部最新。既有 Diagnostics 仍保持手动只读的独立边界。
+沿用 Settings 现有风格，增加 Updates 页面，包含当前更新摘要、Refresh、Upgrade all 及逐项结果。界面文案沿用产品英文；顶部 Settings 小点和页面状态同步。2026-10-04 用户反馈小点偏小，授权直接调整为单列加粗实心圆 `●`，沿用原 unread 颜色、显示条件、位置与点击区域；仅增大视觉分量。只读检查在后台进行，不阻塞输入，不在绘制循环反复散列二进制。检测对象是已安装命令入口所指程序与实际运行的 Saddle/Corral；内容相同而路径不同不判为需要升级。不可确认、读取失败不能显示为全部最新。既有 Diagnostics 仍保持手动只读的独立边界。
 
 宿主通过公开 Corral ls/status/upgrade/recover 契约取得实例和升级结果，不读取 Corral 私有文件、不引入反向依赖。升级目标必须是已安装的新程序，不能误用运行中旧 Saddle 的同目录 Corral；显式 Corral 配置继续被尊重。只在用户主动点击时执行升级，不因部署检测、页面打开或状态刷新自动升级。请求在后台运行，重复点击不重复执行；缺回执或超时显示 unknown，不自动重发。按每项 pen/after 结果和 status 核验完成，accepted/pending/hold/failed/unknown/needs_restart 不当成功；异常保留原因及适用的公开处理方式，不自动重启、停止、重建或 resume agent。
 
