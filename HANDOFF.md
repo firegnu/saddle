@@ -1,28 +1,44 @@
 # Saddle 交接
 
-更新：2026-10-05，main。Settings 直接入口实现 `ba2144e` 已合入，`settings-direct` worktree/分支已清理，空收尾提交 `76cc030`。由主控直接修改，未委派。相关 100 项测试与 Clippy、格式检查通过；用户指出小改不值得全量后已停止全量，不继续扩测。
+更新：2026-10-05。当前分支 `main`；本次交接前 HEAD 与 origin/main 均为 `dedf26a`，工作区干净。用户要求本次工作由主控直接完成，不委派。
 
-## 当前状态
+## 1. 会话摘要
 
-- Settings 对话框最大宽度从 108 列缩为 88 列（`f1173e7`），与顶部直接入口一起发布。设置/Diagnostics/Updates 相关检查完成，长升级回执滚动后仍完整。验证按影响面选择，局部 UI 改动发布不自动触发全量；已同步 AGENTS 与 UI 回归指引。
-- 最新小改：Agents 顶部直接显示 Settings，保留更新圆点与窄栏换行；删除单项 More 菜单。部署回执在 `~/.local/share/saddle/backups/settings-direct-*/`，用户正常重开加载。
-- 被删功能（Dispatch 插件、遥测、Drover 及插件系统）的代码可从带说明标签 `before-cut`（`c21674a`，已推送 origin）取回，数据留在磁盘上。
-- 用户最终决定：Saddle 只保留 Agents 面板、终端、设置、布局恢复、Diagnostics、Updates 和非插件 ctl。遥测、Drover、Dispatch 插件及整个插件宿主/SDK/协议已删除，包内只剩 `bin/saddle` 与 `BUILD.txt`。依据是 DESIGN 末尾“只保留终端前端”，覆盖同日早先“不动遥测/Drover/SDK”的安排。
-- Corral 与 Dispatch 由 ranch（`../ranch`，paddock 主控兼管）维护。Saddle 默认从 PATH 使用 Corral；显式配置路径仍有效。派发走 `ranch dispatch route`，不记遥测。Saddle 不安装 Corral 或 corral-dispatch 技能。
-- 上次删除插件系统的验证：全量首轮 289 passed / 1 failed；缩窗测试增加完整新帧同步后，工作区 66 项复测全部通过；Attention/宿主单元回归 29 项、Clippy 和格式检查通过。保留功能的回归涵盖 Agents、终端输入、设置、布局恢复和 ctl open/inspect/close；只用临时目录与假 Corral。详细记录见 `docs/任务/Saddle终端前端精简-2026-10-05.md`。
-- 发布从干净 main 构建；当前安装路径以 `~/.local/bin/saddle` 链接及包内 `BUILD.txt` 为准。部署回执与归属记录备份在 `~/.local/share/saddle/backups/ranch-frontend-*/`。部署只切换 Saddle 入口并解除两处 corral-dispatch 归属；保留技能文件与其他条目，不更改 Corral 链接，不操作现有 agent。
-- 旧 `~/.local/state/saddle/telemetry/`、`~/.drover`、插件注册与资源记录留在磁盘上，新程序不再读取。除已授权的 corral-dispatch 归属释放外，不读或删除这些数据。Saddle 的旧版本目录全部保留，现有会话仍可能使用其中的 Corral。
-- Settings 现在为 F1–F5，Updates 是 F5；旧插件窗格恢复为空位，其余布局及原 agent 身份保留。旧 `[queue]` 配置忽略，保存设置保留其原文。Updates 的 agent 提示比较 Corral 运行时，不能通过反复重启 Saddle 来升级旧 agent。
+Saddle 已精简为 ranch 的终端前端，删除遥测、Drover 和整个插件系统，保留 Agents、终端、设置、布局、Diagnostics、Updates 与非插件 ctl。随后将顶部单项 More 菜单改为直接显示 Settings，并把设置框最大宽度从 108 列收至 88 列；已编译部署。
 
-## 下一步
+## 2. 完成的工作
 
-用户正常退出并重开 Saddle，加载新版；本次不强制重启。之后 paddock 主控在用户在场时用 ranch 安装技能并核对 Saddle 与 ranch 配合。不自动升级现有 agent，也不自动发送消息给 paddock。
+- 插件系统精简：`ff3c441`；Settings 直接入口：`ba2144e`；对话框收窄：`f1173e7`。均已合入并推送 main，自己的实现分支/worktree 已清理，收尾提交已完成。
+- 带说明标签 `before-cut` 指向 `c21674a`，已推送 origin。被删功能代码可从该标签取回，数据留在磁盘上。
+- 已安装 `~/.local/share/saddle/versions/dedf26a/bin/saddle`，入口为 `~/.local/bin/saddle`。本次现场核对 PID `19435` 的程序映像也是该版本，用户已加载新版；PID 只是核对时快照。
+- PATH Corral 入口仍指向 `~/.local/share/ranch/versions/df46247/bin/corral`。两处 corral-dispatch 归属已释放，技能文件保留；后续 Settings 部署只切换 Saddle 入口。20 个版本目录均保留。
+- Settings 入口相关 100 项测试、Clippy 和格式检查通过。宽度调整覆盖设置/Diagnostics/Updates 48 项：首轮一项未滚动读取长回执，测试保留全部内容断言并增加 PageDown 后，Updates 13 项复测通过。正式 release 的隔离冒烟通过，涵盖直接点击 Settings、终端、布局保存和 ctl open/inspect/close，不使用真实 agent。
+- 精简插件时的首次全量为 289 passed / 1 failed，修正缩窗测试同步后工作区 66 项复测通过；不要改写为首次全量全绿。Settings 小改期间误启动的全量已按用户意见停止，不计通过，不重跑。
+- 最新部署与检查回执：`~/.local/share/saddle/backups/settings-direct-dedf26a-kdla7upu/`。归属释放备份：`~/.local/share/saddle/backups/ranch-frontend-a4b45c2-53kdb8bk/`。
 
-Saddle 定位为保底前端，不增加新功能，只保证与 ranch 运行时对得上。旧 Tasks 队列已退出操作链，不继续处理历史 Pending。
+## 3. 待完成的工作
 
-## 独立项目与保留现场
+暂无已知待完成实现工作。本次仅更新 HANDOFF 并提交、推送，不再编译部署；之后 Updates 的 Source 若领先 Installed 一个交接文档提交，无须为此重装。
 
-- cairn、paddock、ranch 由各自主控负责，不在 Saddle 恢复其实现，不干扰其 agent；当前状态以各自仓库文档为准。
-- T49/T76 的旧研究与 GPUI 原型不在本次清理范围，保留 `t49-handoff-study`、`t76-gpui-research`、`t76-gpui-prototype`，不合并进 Saddle。cairn 引用的原始提交不改写。
-- 其他历史 worktree（包括 `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t55-notification-flow`）不擅自清理。本次只清理自己的分支/worktree。
-- Cargo 继续共用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`；旧遥测/插件/任务设计文档只是历史，不作为当前操作入口。
+paddock 主控在用户在场时安装 ranch 技能及核对配合的后续事项，尚未在本会话确认完成；不自动代做、发消息或升级现有 agent。
+
+## 4. 关键决策与约束
+
+- Saddle 是保底前端，不加新功能，只保持 ranch 运行时兼容。Corral 与 Dispatch 由 ranch（`../ranch`，paddock 主控兼管）维护；默认使用 PATH Corral，显式配置路径保留；派发走 `ranch dispatch route`，不记遥测。
+- 不读取或删除旧遥测目录、`~/.drover`、插件登记及资源记录；用户自行处理。旧版本仍可能被会话使用，不清理。旧插件布局恢复为空位，其余布局和 agent 身份保留。
+- 小 UI 改动按影响面检查，发布本身不触发全量；已通过且相关代码未变不重复检查。此规则已写入 AGENTS、README 和 UI 回归指引。
+- 不操作用户现有 agent，不强制重启 Saddle。Settings 为 F1–F5，Updates 为 F5；agent 升级提示比较的是 Corral 运行时。
+- 主目录留有旧插件的本地 dist/target 构建产物；已用 `.git/info/exclude` 延续原有忽略规则，保留原路径，别当作待删源码。
+- cairn、paddock、ranch 独立管理；历史研究/GPUI worktree 不在清理范围。现场仍保留 `corral-live-upgrade-research`、`review-telemetry-design`、`t38-dispatch-study`、`t49-handoff-study`、`t55-notification-flow`、`t76-gpui-research`、`t76-gpui-prototype`。不恢复旧 Tasks Pending，不改写 cairn 引用的历史提交。
+- Cargo 共用 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。
+
+## 5. 重要文件
+
+- `AGENTS.md`、`docs/UI回归.md`：当前操作边界和分层验证规则。
+- `docs/DESIGN.md` 末尾：精简范围及 Settings 的最终决定；早期插件/遥测/任务章节只是历史。
+- `docs/任务/Saddle终端前端精简-2026-10-05.md`、`docs/任务/Settings直接入口-2026-10-05.md`：实现、失败记录和复测证据。
+- `README.md`、`README.zh-CN.md`：现有功能及入口；`scripts/package.sh` 只打包 Saddle 和 BUILD 记录。
+
+## 6. 下一步建议
+
+等待用户新指令或由用户安排 paddock/ranch 配合核对。若继续开发，先核对分支、工作区、入口链接及运行版本；不要重复部署、测试或清理历史现场。
