@@ -12,7 +12,7 @@ Saddle 定位为保底版：不再加新功能，只保证和 ranch 运行时对
 - **不要干扰用户正在用的 agent**：`corral ls` 里现有的 agent 都是用户的。可以用 `corral ls/status/reply` 读；不要对它们 `corral stop`、`corral send`、`corral keys`，也不要 attach 上去打字（主控按分派流程开出来的 `saddle/dev-*`、`saddle/test-*` 是它自己的，照流程送话、关闭）。需要真实 agent 做测试时，自己开一个 `saddle/test-<名字>`（例如 `corral start saddle/test-a --cwd /tmp -- codex --yolo -m gpt-5.6-luna`），用完 `corral stop` 掉。
 - 不要按项目名或路径批量杀进程（`pkill -f corral` 这类），会误杀用户的 agent。停自己起的进程用记下的 PID。
 - 测试不依赖真实 agent：需要时用一个假的 `corral` 脚本输出固定 JSON。
-- 按改动影响面选验证：小改运行直接相关检查；公共样式或公共 UI 组件改动运行相关 UI 回归组；跨模块改动、阶段集成或发布前运行全量标准检查 `cargo test --all-targets` 和 `cargo clippy --all-targets -- -D warnings`。具体选择、命令和固定样例见 [UI 回归与分层验证](docs/UI回归.md)。文档、入口和样例整理验证对应入口及受影响样例；需要全量时说明触发原因，已通过且相关代码未再改就不重复全量。保留有价值的测试，不以删测试、放宽断言或超时缩短耗时。
+- 按改动影响面选验证：小改运行直接相关检查；公共样式或公共 UI 组件改动运行相关 UI 回归组；跨模块行为改动或阶段集成运行全量标准检查 `cargo test --all-targets` 和 `cargo clippy --all-targets -- -D warnings`。局部 UI 调整即使编译发布也按受影响页面验证，不因发布机械触发全量（用户 10-05 定）。具体选择、命令和固定样例见 [UI 回归与分层验证](docs/UI回归.md)。文档、入口和样例整理验证对应入口及受影响样例；需要全量时说明触发原因，已通过且相关代码未再改就不重复全量。保留有价值的测试，不以删测试、放宽断言或超时缩短耗时。
 - 所有 worktree 共用一个编译目录，避免每个 worktree 从头编译：命令前加 `CARGO_TARGET_DIR=$HOME/Developer/personal_projs/saddle-worktrees/.target`。
 
 ## 开发方式（主控分派）

@@ -353,7 +353,10 @@ fn upgrade_all_runs_once_per_click_and_keeps_every_item_of_its_receipt() {
     wait(&mut updates, |u| !u.checking());
     assert!(updates.attention());
     settings.set_updates(updates.page());
-    let shown = screen(&mut settings);
+    let mut shown = screen(&mut settings);
+    // The narrower dialog wraps long statuses; receipt details remain reachable by scrolling.
+    press(&mut settings, KeyCode::PageDown);
+    shown.push_str(&screen(&mut settings));
     for text in [
         "Updates",
         "Reopen",

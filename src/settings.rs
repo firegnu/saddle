@@ -27,7 +27,7 @@ use unicode_width::UnicodeWidthStr;
 pub const TITLE: &str = " Settings ";
 /// Normal Settings pages share one frame; forms and confirmations stay compact.
 pub(crate) fn page_area(screen: Rect) -> Rect {
-    crate::theme::centered(screen, 108, 34)
+    crate::theme::centered(screen, 88, 34)
 }
 const LABEL: usize = 18;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

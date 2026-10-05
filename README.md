@@ -104,7 +104,7 @@ Old `~/.local/state/saddle/telemetry/`, `~/.drover`, plugin registrations and `p
 
 ## Development
 
-Current decisions are in [DESIGN](docs/DESIGN.md); older telemetry/plugin/task documents are historical. Choose checks by impact using [UI regression guidance](docs/UI回归.md). For cross-module changes and releases:
+Current decisions are in [DESIGN](docs/DESIGN.md); older telemetry/plugin/task documents are historical. Choose checks by impact using [UI regression guidance](docs/UI回归.md). For changes spanning runtime modules:
 
 ```sh
 export CARGO_TARGET_DIR="$HOME/Developer/personal_projs/saddle-worktrees/.target"

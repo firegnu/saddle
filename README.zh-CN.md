@@ -104,7 +104,7 @@ mascot_display = "auto"
 
 ## 开发与验证
 
-当前决定见 [DESIGN](docs/DESIGN.md)，旧遥测、插件和任务文档只作历史记录。按 [UI 回归指引](docs/UI回归.md) 选择检查；跨模块修改和发布前运行：
+当前决定见 [DESIGN](docs/DESIGN.md)，旧遥测、插件和任务文档只作历史记录。按 [UI 回归指引](docs/UI回归.md) 选择检查；跨模块行为修改时运行：
 
 ```sh
 export CARGO_TARGET_DIR="$HOME/Developer/personal_projs/saddle-worktrees/.target"
