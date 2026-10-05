@@ -65,7 +65,7 @@ fn open_content_rules_off_fixed_actions_from_existing_agents() {
     let placement = Placement {
         pane: terminals.active_pane().id,
         place: Some(Place::Tab),
-        selected: 3,
+        selected: 2,
         pressed: None,
     };
     let agents = [agent("p/alpha", "/tmp/p"), agent("p/beta", "/tmp/p")];
@@ -87,18 +87,15 @@ fn open_content_rules_off_fixed_actions_from_existing_agents() {
             _ => None,
         })
         .collect();
-    // Terminal, New agent…, Plugin…, a rule, then the agents; the rule is not pickable.
-    assert_eq!(
-        picks.iter().map(|p| p.1).collect::<Vec<_>>(),
-        [0, 1, 2, 3, 4]
-    );
-    assert_eq!(picks[3].0, picks[2].0 + 2);
-    assert!(text[usize::from(picks[2].0 + 1)].contains("───"));
-    let selected = &text[usize::from(picks[3].0)];
+    // Terminal, New agent…, a rule, then the agents; the rule is not pickable.
+    assert_eq!(picks.iter().map(|p| p.1).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    assert_eq!(picks[2].0, picks[1].0 + 2);
+    assert!(text[usize::from(picks[1].0 + 1)].contains("───"));
+    let selected = &text[usize::from(picks[2].0)];
     assert!(selected.contains("› p/alpha"), "{selected}");
     let x = selected.find("p/alpha").unwrap() as u16;
     let x = selected[..x as usize].chars().count() as u16;
-    assert!(buffer[(x, picks[3].0)].modifier.contains(Modifier::BOLD));
+    assert!(buffer[(x, picks[2].0)].modifier.contains(Modifier::BOLD));
 }
 
 #[test]
@@ -130,12 +127,9 @@ fn search_input_drops_the_second_thick_frame() {
     println!("{}", text.join("\n"));
     let input = text
         .iter()
-        .find(|r| r.contains("Project, agent, plugin or settings"))
+        .find(|r| r.contains("Project, agent or settings"))
         .unwrap();
-    assert!(
-        input.contains("┌ Project, agent, plugin or settings"),
-        "{input}"
-    );
+    assert!(input.contains("┌ Project, agent or settings"), "{input}");
     assert!(text.iter().any(|r| r.contains("›Agent · p/alpha  demo")));
 }
 

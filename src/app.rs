@@ -35,17 +35,11 @@ use std::{
 
 #[path = "app_control.rs"]
 mod control_impl;
-#[path = "app_links.rs"]
-mod links_impl;
-#[path = "app_plugins.rs"]
-mod plugins_impl;
 use control_impl::{Closing, Record, Replacement};
 
 #[derive(Clone)]
 enum Action {
     Attach(String, Ticket, Option<u64>),
-    PluginAgent(crate::plugins::runtime::Navigation),
-    PluginAgentReady(crate::plugins::runtime::Navigation, Ticket),
     Reply(String),
     Stop(String),
     Start(Vec<String>, Ticket, Option<u64>),
@@ -87,9 +81,6 @@ impl Actions {
                 _ => {
                     let (verb, name, timeout) = match &action {
                         Action::Attach(name, _, _) => ("status", name, 15),
-                        Action::PluginAgent(request) | Action::PluginAgentReady(request, _) => {
-                            ("status", &request.name, 15)
-                        }
                         Action::Reply(name) => ("reply", name, 15),
                         Action::Stop(name) => ("stop", name, 120),
                         Action::Start(..) => unreachable!(),
@@ -140,13 +131,9 @@ impl Drop for TerminalGuard {
 }
 
 /// Runs saddle with `config`, loaded from `path`, which Settings edits.
-pub fn run(
-    mut config: Config,
-    path: std::path::PathBuf,
-    core_catalog: crate::plugins::core::Catalog,
-) -> Result<()> {
+pub fn run(mut config: Config, path: std::path::PathBuf) -> Result<()> {
     config.colors = config.colors.for_terminal(truecolor());
-    let mut app = App::new(config, path, core_catalog)?;
+    let mut app = App::new(config, path)?;
     let _guard = TerminalGuard::enter()?;
     // Asked before anything reads input; terminals that do not answer keep the glyph pet.
     if let Some(cell) = crate::kitty::probe(Duration::from_millis(500)) {
@@ -170,18 +157,8 @@ fn truecolor() -> bool {
     crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref())
 }
 struct App {
-    plugins: crate::plugins::Manager,
-    plugin_page: Option<crate::plugins::ui::Page>,
-    /// The Telemetry page and the input target to return to when it closes.
-    telemetry: Option<(crate::telemetry_view::Page, Focus)>,
-    plugin_palette: Option<crate::plugins::palette::Palette>,
-    plugin_entry_press: Option<Rect>,
+    more_press: Option<Rect>,
     header_menu: Option<crate::header_menu::Menu>,
-    plugin_overlay: Option<plugins_impl::Overlay>,
-    parked_settings: Option<crate::settings::Settings>,
-    plugin_toast: Option<(Rect, Rect)>,
-    plugin_toast_shown: Option<crate::plugins::runtime::Toast>,
-
     control: crate::control::Server,
     records: Vec<Record>,
     closing: Option<Closing>,
@@ -217,14 +194,11 @@ struct App {
     viewer_area: Rect,
     hits: Hits,
     pointer: crate::buttons::Pointer,
-    link_attach: Option<links_impl::LinkAttach>,
-    navigation: Option<crate::plugins::runtime::Navigation>,
-    navigation_revision: u64,
     config_path: std::path::PathBuf,
     settings: Option<crate::settings::Settings>,
     /// The input target to return to when Settings closes.
     settings_return: Focus,
-    /// For Diagnostics: the latest agent and task reads, where the config came from, and the
+    /// For Diagnostics: the latest agent reads, where the config came from, and the
     /// check running for the open page.
     agents_read: crate::diagnostics::Last,
     config_from_file: bool,
@@ -232,11 +206,7 @@ struct App {
     updates: crate::updates::Updates,
 }
 impl App {
-    fn new(
-        config: Config,
-        config_path: std::path::PathBuf,
-        core_catalog: crate::plugins::core::Catalog,
-    ) -> Result<Self> {
+    fn new(config: Config, config_path: std::path::PathBuf) -> Result<Self> {
         // The config loaded without error, so an existing file is where it came from.
         let config_from_file = config_path.exists();
         let client = Client {
@@ -277,14 +247,6 @@ impl App {
             };
             actions.start(Action::Attach(name, ticket, None));
         }
-        let plugins = crate::plugins::Manager::with_agent_program(
-            config_path
-                .parent()
-                .unwrap_or(std::path::Path::new("."))
-                .join("plugins.toml"),
-            core_catalog,
-            std::path::PathBuf::from(&client.program),
-        );
         Ok(Self {
             updates: crate::updates::Updates::start(
                 crate::updates::Sources {
@@ -296,16 +258,8 @@ impl App {
                 },
                 Duration::from_secs(30),
             ),
-            plugins,
-            plugin_page: None,
-            telemetry: None,
-            plugin_palette: None,
-            plugin_entry_press: None,
             header_menu: None,
-            plugin_overlay: None,
-            parked_settings: None,
-            plugin_toast: None,
-            plugin_toast_shown: None,
+            more_press: None,
             layout_store,
             control: crate::control::Server::start()?,
             records: Vec::new(),
@@ -341,9 +295,6 @@ impl App {
             viewer_area: Rect::default(),
             hits: Hits::default(),
             pointer: Default::default(),
-            link_attach: None,
-            navigation: None,
-            navigation_revision: 0,
             config_path,
             settings: None,
             settings_return: Focus::Agents,
@@ -387,7 +338,6 @@ impl App {
                 .collect();
             let items = self.attention_items();
             let loading = self.board.loading();
-            let pinned = self.plugins.pinned_item();
             let mut sprite = None;
             terminal.draw(|frame| {
                 self.hits = ui::draw_workspace(
@@ -414,32 +364,16 @@ impl App {
                         search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
-                        modal: self.closing.is_some()
-                            || self.plugin_page.is_some()
-                            || self.telemetry.is_some()
-                            || self.header_menu.is_some(),
+                        modal: self.closing.is_some() || self.header_menu.is_some(),
                         attention: ui::Attention {
                             items: &items,
                             loading,
                             popup: self.attention.as_mut(),
                         },
-                        // Keep the draft, but do not draw its input cursor through plugin management.
-                        settings: self
-                            .settings
-                            .as_mut()
-                            .filter(|_| self.plugin_page.is_none()),
+                        settings: self.settings.as_mut(),
                         updates: self.updates.attention(),
-                        pinned: pinned.as_ref().map(|item| ui::Pinned {
-                            title: &item.title,
-                            available: item.action().is_some(),
-                        }),
                     }),
                 );
-                self.draw_plugin_overlay(frame, panes);
-                if let Some((page, _)) = &mut self.telemetry {
-                    page.draw(&self.config.colors, frame, panes.agents.union(panes.viewer));
-                    ui::status_text(&self.config.colors, frame, panes.status, page.status());
-                }
                 if let Some(menu) = &mut self.header_menu {
                     menu.draw(
                         &self.config.colors,
@@ -457,37 +391,12 @@ impl App {
                     );
                 }
                 self.draw_closing(frame);
-                if let (Some(page), Some(settings)) = (&mut self.plugin_page, &self.settings) {
-                    page.draw(&self.config.colors, frame, &self.plugins, settings);
-                    ui::status_bar(
-                        &self.config.colors,
-                        frame,
-                        panes.status,
-                        "Plugin settings",
-                        "Esc Back",
-                    );
-                }
-                self.plugin_toast = if self.plugin_page.is_none() && self.telemetry.is_none() {
-                    self.draw_plugin_toast(frame, panes.viewer)
-                } else {
-                    None
-                };
                 if !self.layout_store.notice.is_empty() {
                     ui::status_notice(
                         &self.config.colors,
                         frame,
                         panes.status,
                         &self.layout_store.notice,
-                    );
-                }
-                if let Some(palette) = &mut self.plugin_palette {
-                    palette.draw(frame, &self.config.colors);
-                    ui::status_bar(
-                        &self.config.colors,
-                        frame,
-                        panes.status,
-                        "Plugins",
-                        "Esc Close",
                     );
                 }
                 // Last, so a popup drawn over the pet hides its picture.
@@ -511,24 +420,6 @@ impl App {
             settings.set_updates(self.updates.page());
         }
         self.viewer_area = panes.viewer;
-        let focused = self.focus == Focus::Viewer
-            && self.header_menu.is_none()
-            && self.settings.is_none()
-            && self.plugin_palette.is_none()
-            && self.plugin_page.is_none()
-            && self.telemetry.is_none()
-            && self.closing.is_none()
-            && self.search.is_none()
-            && self.placement.is_none()
-            && self.attention.is_none()
-            && self.new_agent.as_ref().is_none_or(|f| !f.visible);
-        self.plugins.theme(&self.config.colors);
-        if let Some((page, _)) = &mut self.telemetry {
-            page.poll();
-        }
-        self.sync_plugins(panes, focused);
-        self.update_plugin_palette();
-        self.update_search();
         for update in self.poller.updates.try_iter() {
             match update {
                 Ok(agents) => {
@@ -578,10 +469,6 @@ impl App {
         let results: Vec<_> = self.actions.receiver.try_iter().collect();
         for result in results {
             match result.action {
-                Action::PluginAgent(request) => self.navigation_result(request, result.result),
-                Action::PluginAgentReady(request, ticket) => {
-                    self.navigation_ready(request, ticket, result.result)
-                }
                 Action::Attach(name, ticket, focus_intent) if self.viewer.valid(ticket) => {
                     let expected = self
                         .viewer
@@ -620,7 +507,6 @@ impl App {
                                 && self.placement.is_none()
                                 && self.closing.is_none()
                                 && self.settings.is_none()
-                                && self.telemetry.is_none()
                                 && !self.new_agent.as_ref().is_some_and(|f| f.visible)
                                 && self.viewer.active_pane().id == ticket.pane
                             {
@@ -748,8 +634,6 @@ impl App {
         }
         self.viewer.tick(panes.viewer)?;
         self.control_tick();
-        self.navigation_tick()?;
-        self.telemetry_open_tick();
         if self.panel.show_reply
             && !self.reply_busy
             && let Some(name) = &self.panel.selected
@@ -826,14 +710,6 @@ impl App {
         self.placement = None;
         let content = match name {
             placement::Choice::Terminal => crate::control::Content::Shell { cwd: None },
-            placement::Choice::Plugin => {
-                self.plugin_palette = Some(crate::plugins::palette::Palette::for_placement(
-                    anchor, place,
-                ));
-                self.update_plugin_palette();
-                self.native_mouse = false;
-                return;
-            }
             placement::Choice::NewAgent => {
                 let project = self
                     .viewer
@@ -904,21 +780,6 @@ impl App {
     }
     fn terminal_control(&mut self, control: Control) -> Result<()> {
         match control {
-            Control::Plugins => {
-                self.open_settings(self.focus);
-                self.plugin_page = Some(Default::default());
-            }
-            Control::RestartPlugin(pane) => {
-                if let Some(id) = self
-                    .viewer
-                    .get(pane)
-                    .and_then(|p| p.plugin_id())
-                    .map(str::to_owned)
-                    && let Err(e) = self.plugins.restart(&id)
-                {
-                    self.panel.message = e.to_string();
-                }
-            }
             // Choosing a place first; the layout changes only when an agent is picked.
             Control::NewTab => {
                 self.placement = Some(Placement {
@@ -1062,68 +923,13 @@ impl App {
             }
             return Ok(false);
         }
-        // The page takes every key, paste and click until it closes; a quit confirmation
-        // raised meanwhile still gets its answer first.
-        if self.closing.is_none()
-            && let Some((page, back)) = &mut self.telemetry
-        {
-            if let crate::telemetry_view::Outcome::Close = page.event(&event) {
-                self.focus = *back;
-                self.telemetry = None;
-            }
-            return Ok(false);
-        }
-        if let Some(page) = &mut self.plugin_page {
-            let outcome = page.event(event, &mut self.plugins);
-            match outcome {
-                crate::plugins::ui::Outcome::Stay => {}
-                crate::plugins::ui::Outcome::Back => self.plugin_page = None,
-                crate::plugins::ui::Outcome::Page(key) => {
-                    if key.code != KeyCode::F(5) {
-                        self.plugin_page = None;
-                        if let Some(settings) = &mut self.settings {
-                            let outcome = settings.key(key);
-                            self.settings_outcome(outcome);
-                        }
-                    }
-                }
-                crate::plugins::ui::Outcome::Open(id) => {
-                    self.plugin_page = None;
-                    self.parked_settings = self.settings.take();
-                    self.focus = self.settings_return;
-                    self.open_plugin_view(&id);
-                }
-            }
-            return Ok(false);
-        }
-        self.update_plugin_palette();
-        self.update_search();
-        if let Some(palette) = &mut self.plugin_palette {
-            let outcome = palette.event(&event);
-            self.plugin_palette_outcome(outcome);
-            return Ok(false);
-        }
-        if self.plugin_launcher_event(&event) {
-            return Ok(false);
-        }
-        if self.plugin_overlay.is_some() {
-            self.plugin_overlay_event(&event);
+        if self.more_event(&event) {
             return Ok(false);
         }
         match event {
             Event::Key(key) => {
                 self.pointer.cancel();
                 if key.kind == KeyEventKind::Release {
-                    if self.focus == Focus::Viewer
-                        && self.settings.is_none()
-                        && self.closing.is_none()
-                        && self.search.is_none()
-                        && self.placement.is_none()
-                        && self.attention.is_none()
-                        && self.new_agent.as_ref().is_none_or(|f| !f.visible)
-                    {
-                        self.plugin_input(crate::plugins::key(key));
-                    }
                     return Ok(false);
                 }
                 if self.closing.is_some() {
@@ -1216,8 +1022,7 @@ impl App {
                     return Ok(false);
                 }
                 if let Some(popup) = &mut self.attention {
-                    let mut items = self.board.items(&self.panel, now());
-                    items.extend(self.plugins.attention_items());
+                    let items = self.board.items(&self.panel, now());
                     let outcome = popup.key(key, &items);
                     self.attention_outcome(outcome);
                     return Ok(false);
@@ -1242,9 +1047,6 @@ impl App {
                     }
                     Route::Panel => self.panel_key(key),
                     Route::Terminal => {
-                        if self.plugin_input(crate::plugins::key(key)) {
-                            return Ok(false);
-                        }
                         if let Some(screen) = self.history_screen() {
                             screen.lock().unwrap().history_key(key);
                         } else if let Some(session) = self.focused_session() {
@@ -1282,13 +1084,7 @@ impl App {
                 if self.attention.is_some() {
                     return Ok(false);
                 }
-                if self.viewer.active_pane().plugin_id().is_some() && self.focus == Focus::Viewer {
-                    if text.len() > saddle_plugin_protocol::MAX_PASTE {
-                        self.panel.message = "Paste too large for plugin".into();
-                    } else {
-                        self.plugin_input(serde_json::json!({"type":"paste","text":text}));
-                    }
-                } else if let Some(screen) = self.history_screen() {
+                if let Some(screen) = self.history_screen() {
                     screen.lock().unwrap().history_paste(&text);
                 } else if let Some(session) = self.focused_session() {
                     let bracketed = session
@@ -1305,12 +1101,6 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 let point = (mouse.column, mouse.row).into();
-                if self.plugin_toast_event(&mouse) {
-                    if matches!(mouse.kind, MouseEventKind::Down(_)) {
-                        self.native_mouse = true;
-                    }
-                    return Ok(false);
-                }
                 if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
                     && let Some(placement) = &mut self.placement
                 {
@@ -1406,15 +1196,13 @@ impl App {
                         MouseEventKind::Down(MouseButton::Left) => {
                             if let Some(target) = popup.click(point) {
                                 // Only an agent focuses a terminal the gesture could reach;
-                                // A plugin overlay consumes the remaining gesture.
                                 self.native_mouse =
                                     matches!(target, crate::attention::Target::Agent(_));
                                 self.attention_outcome(crate::attention::Outcome::Open(target));
                             }
                         }
                         MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
-                            let mut items = self.board.items(&self.panel, now());
-                            items.extend(self.plugins.attention_items());
+                            let items = self.board.items(&self.panel, now());
                             popup.scroll(mouse.kind == MouseEventKind::ScrollDown, &items);
                         }
                         _ => {}
@@ -1534,13 +1322,6 @@ impl App {
                         self.panel.top = self.panel.top.saturating_add_signed(delta);
                         self.panel.follow = false;
                     }
-                } else if self.viewer.active_pane().plugin_id().is_some()
-                    && self.focus == Focus::Viewer
-                {
-                    let area = self.active_inner(panes.viewer);
-                    if area.contains(point) {
-                        self.plugin_input(crate::plugins::mouse(mouse, area));
-                    }
                 } else if let Some(screen) = self.history_screen() {
                     // History takes the pane's mouse: the wheel scrolls, a drag selects.
                     let area = self.active_inner(panes.viewer);
@@ -1582,18 +1363,8 @@ impl App {
     fn open_search(&mut self, back: Focus) {
         self.search_return = back;
         self.search = Some(Default::default());
-        self.update_search();
     }
-    fn update_search(&mut self) {
-        if self.search.is_none() {
-            return;
-        }
-        let items = self.plugin_palette_items();
-        if let Some(search) = &mut self.search {
-            search.update_plugins(items);
-        }
-    }
-    /// Navigate using the existing entry paths, checking a plugin again at activation.
+    /// Navigate using the existing agent and settings entry paths.
     fn search_outcome(&mut self, outcome: crate::search::Outcome) {
         match outcome {
             crate::search::Outcome::Stay => {}
@@ -1609,18 +1380,6 @@ impl App {
                     self.settings_outcome(outcome);
                 }
             }
-            crate::search::Outcome::Plugin(item) => {
-                if !self.plugin_palette_items().contains(&item) {
-                    return;
-                }
-                self.search = None;
-                self.focus = self.search_return;
-                if item.builtin || item.action().is_none() {
-                    self.manage_plugin(Some(&item.id));
-                } else {
-                    self.plugin_palette_outcome(crate::plugins::palette::Outcome::Open(item));
-                }
-            }
             crate::search::Outcome::Open(name) => {
                 self.search = None;
                 self.focus = Focus::Agents;
@@ -1629,35 +1388,11 @@ impl App {
             }
         }
     }
-    /// Opens the read-only Telemetry page, optionally narrowed to an opaque binding that
-    /// `source` asked for. Closing returns input to `back`.
-    fn open_telemetry(
-        &mut self,
-        back: Focus,
-        filter: Option<crate::telemetry::BindingFilter>,
-        source: Option<String>,
-    ) {
-        self.telemetry = Some((
-            crate::telemetry_view::Page::open(
-                crate::telemetry::Store::from_environment(),
-                filter,
-                source,
-            ),
-            back,
-        ));
-    }
     fn open_settings(&mut self, back: Focus) {
-        if let Some(mut parked) = self.parked_settings.take() {
-            parked.refresh_recording();
-            parked.set_updates(self.updates.page());
-            self.settings = Some(parked);
-            self.settings_return = back;
-            return;
-        }
-        self.settings = Some(
-            crate::settings::Settings::open(self.config_path.clone(), truecolor())
-                .with_telemetry(crate::telemetry::Store::from_environment()),
-        );
+        self.settings = Some(crate::settings::Settings::open(
+            self.config_path.clone(),
+            truecolor(),
+        ));
         self.settings_return = back;
         self.focus = Focus::Agents;
         if let Some(settings) = &mut self.settings {
@@ -1669,10 +1404,6 @@ impl App {
     fn settings_outcome(&mut self, outcome: crate::settings::Outcome) {
         use crate::settings::Outcome;
         match outcome {
-            Outcome::Plugins => {
-                self.plugin_page = Some(Default::default());
-                return;
-            }
             Outcome::Stay => return,
             Outcome::CheckUpdates | Outcome::Upgrade => {
                 if matches!(outcome, Outcome::Upgrade) {
@@ -1686,15 +1417,6 @@ impl App {
                 return;
             }
             Outcome::Cancel => {}
-            // The config part was written; Settings stays open on what was not saved.
-            Outcome::Applied(saved, _) => {
-                self.apply_settings(&saved);
-                return;
-            }
-            Outcome::Recorded => {
-                let note = self.settings.as_ref().map_or("", |s| s.message());
-                self.panel.message = format!("Settings saved. {note}");
-            }
             Outcome::Diagnose => {
                 let report = self.diagnostics();
                 // Replacing the checker cancels the previous check and drops its answer.
@@ -1716,7 +1438,6 @@ impl App {
             }
             Outcome::Saved(saved, restart) => {
                 self.apply_settings(&saved);
-                // Telemetry recording, when it was saved too.
                 let note = self.settings.as_ref().map_or("", |s| s.message());
                 self.panel.message = if restart.is_empty() {
                     format!("Settings saved. {note}")
@@ -1771,9 +1492,7 @@ impl App {
         }
     }
     fn attention_items(&self) -> Vec<crate::attention::Item> {
-        let mut items = self.board.items(&self.panel, now());
-        items.extend(self.plugins.attention_items());
-        items
+        self.board.items(&self.panel, now())
     }
     /// Only navigate to a target; never answer, accept or advance its business state.
     fn attention_outcome(&mut self, outcome: crate::attention::Outcome) {
@@ -1788,7 +1507,6 @@ impl App {
                 self.attention = None;
                 self.focus = Focus::Agents;
                 match target {
-                    target @ Target::Plugin { .. } => self.open_plugin_attention(&target),
                     Target::Agent(name) => {
                         self.panel.select(Some(name));
                         self.attach();
@@ -1798,32 +1516,61 @@ impl App {
             }
         }
     }
-    /// The source directory of an ordinary plugin opening: the public cwd of the agent selected
-    /// in Agents, or of the active pane in Viewer (never the sidebar's selection there). A
-    /// terminal gives the directory it started in, not a live one: a later `cd` is not followed.
-    fn focused_agent_cwd(&self, focus: Focus) -> Option<String> {
-        let (name, cwd) = match focus {
-            Focus::Agents => (self.panel.selected.clone()?, None),
-            Focus::Viewer => {
-                let pane = self.viewer.active_pane();
-                let viewer = &pane.viewer;
-                if viewer.shell.is_some() {
-                    return pane.source_cwd().map(str::to_owned);
-                }
-                (
-                    viewer.target()?.to_owned(),
-                    viewer.target_metadata().cwd.clone(),
-                )
-            }
+    pub(super) fn more_event(&mut self, event: &Event) -> bool {
+        if self.header_menu.is_some()
+            || self.settings.is_some()
+            || self.closing.is_some()
+            || self.placement.is_some()
+            || self.search.is_some()
+            || self.attention.is_some()
+            || self.panel.confirm.is_some()
+            || self.new_agent.as_ref().is_some_and(|f| f.visible)
+        {
+            self.more_press = None;
+            return false;
+        }
+        let Event::Mouse(m) = event else {
+            self.more_press = None;
+            return false;
         };
-        cwd.or_else(|| {
-            self.panel
-                .agents
-                .iter()
-                .find(|a| a.name == name)?
-                .cwd
-                .clone()
-        })
+        // More acts only on a release over the same control.
+        let point = (m.column, m.row).into();
+        let over = [self.hits.more].into_iter().find(|r| r.contains(point));
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) if over.is_some() => {
+                self.more_press = over;
+                self.pointer.cancel();
+                return true;
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                if let Some(pressed) = self.more_press.take() {
+                    if over == Some(pressed) && pressed == self.hits.more {
+                        self.header_menu = Some(crate::header_menu::Menu::default());
+                        self.native_mouse = false;
+                    }
+                    return true;
+                }
+            }
+            MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => {}
+            _ => {
+                self.more_press = None;
+            }
+        }
+        false
+    }
+    pub(super) fn header_menu_outcome(&mut self, outcome: crate::header_menu::Outcome) {
+        use crate::header_menu::Outcome;
+        if outcome == Outcome::Stay {
+            return;
+        }
+        self.header_menu = None;
+        self.pointer.cancel();
+        match outcome {
+            Outcome::Settings => {
+                self.open_settings(self.focus);
+            }
+            Outcome::Stay | Outcome::Close => {}
+        }
     }
     fn panel_key(&mut self, key: KeyEvent) {
         self.panel.message.clear();
@@ -1833,8 +1580,6 @@ impl App {
             KeyCode::Enter => self.attach(),
             KeyCode::Char('/') => self.open_search(Focus::Agents),
             KeyCode::Char(',') => self.open_settings(Focus::Agents),
-            KeyCode::Char('t') => self.open_telemetry(Focus::Agents, None, None),
-            KeyCode::Char('p') => self.open_pinned(),
             KeyCode::Char('a') => {
                 self.attention = Some(Default::default());
             }

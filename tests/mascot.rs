@@ -49,7 +49,6 @@ fn render(
                 },
                 settings: None,
                 updates: false,
-                pinned: None,
             }),
         );
     })
@@ -68,8 +67,8 @@ fn decoration_is_available_without_an_agent_and_small_views_hide_it() {
             .any(|y| (viewer.x..viewer.right()).any(|x| b[(x, y)].fg == Color::Rgb(217, 119, 87)))
     );
     let id = panes.active_pane().id;
-    panes.get_mut(id).unwrap().viewer.remembered = saddle::layout_state::Content::Plugin {
-        id: "test.plugin".into(),
+    panes.get_mut(id).unwrap().viewer.remembered = saddle::layout_state::Content::Shell {
+        cwd: "/synthetic/terminal".into(),
     };
     assert!(panes.mascot_area(viewer, &[]).is_some());
     for width in 0..28 {

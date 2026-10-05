@@ -16,16 +16,12 @@ build_dir=${CARGO_TARGET_DIR:-"$project_dir/target"}
 case "$build_dir" in /*) ;; *) build_dir="$PWD/$build_dir" ;; esac
 host=$(rustc -vV | sed -n 's/^host: //p')
 cd "$project_dir"
-cargo build --workspace --bins --release --locked --target "$host" --target-dir "$build_dir"
+cargo build --bin saddle --release --locked --target "$host" --target-dir "$build_dir"
 mkdir -p "$(dirname -- "$output")"
 staging=$(mktemp -d "$(dirname -- "$output")/.saddle-package.XXXXXX")
 trap 'rm -rf -- "$staging"' EXIT HUP INT TERM
-mkdir -p "$staging/bin" "$staging/plugins/drover/bin" "$staging/plugins/diff/bin"
+mkdir -p "$staging/bin"
 cp "$build_dir/$host/release/saddle" "$staging/bin/saddle"
-for plugin in drover diff; do
-    cp "$build_dir/$host/release/saddle-$plugin" "$staging/plugins/$plugin/bin/saddle-$plugin"
-    cp "plugins/$plugin/plugin.toml" "$staging/plugins/$plugin/plugin.toml"
-done
 {
     printf 'revision: '; git rev-parse HEAD
     printf 'target: %s\n' "$host"
@@ -33,9 +29,7 @@ done
     # The Saddle source and branch this was built from, so Updates can compare it later.
     printf 'source: %s\n' "$project_dir"
     printf 'branch: '; git symbolic-ref --quiet --short HEAD || printf '\n'
-    for file in bin/saddle plugins/drover/bin/saddle-drover plugins/diff/bin/saddle-diff; do
-        (cd "$staging" && shasum -a 256 "$file")
-    done
+    (cd "$staging" && shasum -a 256 bin/saddle)
 } > "$staging/BUILD.txt"
 if [ -e "$output" ] || [ -L "$output" ]; then
     echo "Output appeared during build; nothing installed" >&2

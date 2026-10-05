@@ -10,7 +10,7 @@ mascot = "clawd"             # Which pet: "clawd", "cat" or "capybara".
 mascot_display = "auto"      # "auto": pictures where the terminal shows them; "blocks": always glyphs.
 theme = "dune"               # dune | tide | lagoon | terminal; omitted = dune. Sets every color below.
 
-# Optional tasks: install plugins/drover; legacy [queue] settings are ignored.
+# Legacy [queue] settings are ignored.
 
 [colors]
 # Optional per-color overrides on top of `theme`; an omitted color follows the theme.
@@ -36,15 +36,15 @@ theme = "dune"               # dune | tide | lagoon | terminal; omitted = dune. 
 # danger = "red"               # Destructive actions and agent error details.
 # unread = "magenta"
 
-# Shared Agents / Queue status and Queue action-feedback colors.
-# agent_working = "#7fb4ee"    # Tasks: Current heading, Running.
-# agent_idle = "#9cbd80"       # Tasks: Done.
-# agent_blocked = "#e6b566"    # Tasks: Awaiting heading and status.
-# agent_stalled = "#e79b65"    # Tasks: Dropped.
-# agent_error = "#ef8174"      # Tasks: Failed.
+# Status colors used by Attention and retained agent details.
+# agent_working = "#7fb4ee"
+# agent_idle = "#9cbd80"
+# agent_blocked = "#e6b566"
+# agent_stalled = "#e79b65"
+# agent_error = "#ef8174"
 # agent_starting = "#b0a1d8"   # Tasks: Pending heading and status.
 
-# Agents panel palette (the Agents column only; Tasks keeps the shared colors above).
+# Agents panel palette.
 # Without COLORTERM=truecolor/24bit, RGB values here use the nearest 256-color entry.
 # agents_bg = "#1d1a16"
 # agents_border = "#5a5247"    # Unfocused border; focus still uses `focus`.

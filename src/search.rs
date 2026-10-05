@@ -1,9 +1,8 @@
-//! Search the host's existing agent, plugin and settings destinations.
+//! Search the host's existing agent and settings destinations.
 use crate::{
     buttons::{self, Button},
     corral::Agent,
     launch::edit::Input,
-    plugins::palette::Item,
     settings::{PAGES, Page},
     theme::Theme,
 };
@@ -23,9 +22,7 @@ pub const TITLE: &str = " Search ";
 pub struct Search {
     input: Input,
     selected: Option<Outcome>,
-    plugins: Vec<Item>,
-    activation_changed: bool,
-    /// Candidate targets as last drawn; the app rechecks a plugin before navigating.
+    /// Candidate targets as last drawn.
     rows: Vec<(Rect, Outcome)>,
 }
 impl Default for Search {
@@ -33,8 +30,6 @@ impl Default for Search {
         Self {
             input: Input::new(String::new()),
             selected: None,
-            plugins: Vec::new(),
-            activation_changed: false,
             rows: Vec::new(),
         }
     }
@@ -45,7 +40,6 @@ pub enum Outcome {
     Cancel,
     Open(String),
     Settings(Page),
-    Plugin(Item),
 }
 
 /// The last component of the agent's working directory.
@@ -55,19 +49,10 @@ fn project(agent: &Agent) -> &str {
 }
 
 impl Search {
-    pub fn update_plugins(&mut self, plugins: Vec<Item>) {
-        if let Some(Outcome::Plugin(selected)) = &self.selected
-            && !plugins.contains(selected)
-        {
-            self.activation_changed = true;
-        }
-        self.plugins = plugins;
-    }
     fn index(&self, entries: &[(Outcome, String)]) -> usize {
         entries
             .iter()
             .position(|(target, _)| match (&self.selected, target) {
-                (Some(Outcome::Plugin(old)), Outcome::Plugin(new)) => old.id == new.id,
                 (Some(old), new) => old == new,
                 _ => false,
             })
@@ -98,20 +83,6 @@ impl Search {
             })
             .collect();
         let query = self.input.text.trim().to_lowercase();
-        entries.extend(
-            self.plugins
-                .iter()
-                .filter(|item| {
-                    item.title.to_lowercase().contains(&query)
-                        || item.id.to_lowercase().contains(&query)
-                })
-                .map(|item| {
-                    (
-                        Outcome::Plugin(item.clone()),
-                        format!("Plugin · {}", item.title),
-                    )
-                }),
-        );
         entries.extend(PAGES.iter().filter_map(|&(page, label, _)| {
             let label = format!("Settings › {label}");
             label
@@ -139,9 +110,6 @@ impl Search {
                 self.selected = entries.get(next).map(|(target, _)| target.clone());
             }
             KeyCode::Enter => {
-                if self.activation_changed {
-                    return Outcome::Stay;
-                }
                 return entries
                     .get(index)
                     .map_or(Outcome::Stay, |(target, _)| target.clone());
@@ -169,9 +137,6 @@ impl Search {
         self.key(KeyEvent::new(code, KeyModifiers::NONE), agents);
     }
     pub fn click(&self, point: Position) -> Option<Outcome> {
-        if self.activation_changed {
-            return None;
-        }
         self.rows
             .iter()
             .find(|(row, _)| row.contains(point))
@@ -210,7 +175,7 @@ impl Search {
             ..body
         };
         let inside = if boxed {
-            let block = t.block(" Project, agent, plugin or settings ", false);
+            let block = t.block(" Project, agent or settings ", false);
             let inside = block.inner(input);
             frame.render_widget(block, input);
             inside
@@ -221,27 +186,10 @@ impl Search {
             .draw(frame, inside, true, "Type to find an entry", t);
         body.y += input.height;
         body.height -= input.height;
-        // Keep one row for the selected plugin's explanation above Cancel.
-        let list = Rect {
-            height: body.height.saturating_sub(1),
-            ..body
-        };
+        let list = body;
         self.rows.clear();
         let selected = self.index(&matches);
         self.selected = matches.get(selected).map(|(target, _)| target.clone());
-        self.activation_changed = false;
-        if body.height > 0
-            && let Some(Outcome::Plugin(item)) = &self.selected
-        {
-            frame.render_widget(
-                Paragraph::new(crate::ui::clip(
-                    &item.explanation().replace('\n', " · "),
-                    body.width as usize,
-                ))
-                .style(Style::default().fg(t.muted)),
-                Rect::new(body.x, body.bottom() - 1, body.width, 1),
-            );
-        }
         if matches.is_empty() {
             let query = self.input.text.trim();
             let room = usize::from(list.width).saturating_sub("No entries match “”.".width());
@@ -264,9 +212,6 @@ impl Search {
             let tag = match target {
                 Outcome::Open(name) if open(name) => "Open".to_owned(),
                 Outcome::Open(_) => "Attach".to_owned(),
-                Outcome::Plugin(item) => {
-                    format!("{} · {}", item.status(), item.action().unwrap_or("Manage"))
-                }
                 _ => "Open".to_owned(),
             };
             let room = usize::from(row.width).saturating_sub(tag.width() + 1);

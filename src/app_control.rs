@@ -78,39 +78,20 @@ impl App {
         let tabs: Vec<_> = self.viewer.tabs.iter().map(|tab| {
             let panes: Vec<_> = tab.panes.iter().map(|p| {
                 let shell = p.viewer.shell.as_ref();
-                let kind = if p.plugin_id().is_some() {"plugin"} else if shell.is_some() || matches!(p.viewer.remembered, crate::layout_state::Content::Shell { .. }) { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() || p.viewer.remembered.name().is_some() { "agent" } else { "empty" };
-                json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,"plugin_id":p.plugin_id(),
+                let kind = if shell.is_some() || matches!(p.viewer.remembered, crate::layout_state::Content::Shell { .. }) { "shell" } else if p.viewer.target().is_some() || p.requested().is_some() || p.viewer.remembered.name().is_some() { "agent" } else { "empty" };
+                json!({"id":p.id,"revision":p.ticket().revision,"kind":kind,
                     "agent":p.requested().or(p.viewer.target()).or(p.viewer.remembered.name()),"corral_instance":p.viewer.metadata.instance,
-                    "cwd":if p.plugin_id().is_some(){None}else{Some(p.source_cwd().unwrap_or(&self.cwd))},"cwd_source":if p.plugin_id().is_some(){"none"}else if p.source_cwd().is_some() {"pane"} else {"startup_directory"},
-                    "state":if let Some(plugin)=p.plugin.as_ref().filter(|_|p.plugin_id().is_some()){plugin.state.to_lowercase()} else if p.starting {"starting".into()} else if p.requested().is_some() {"accepted".into()} else {p.viewer.state().into()},
+                    "cwd":Some(p.source_cwd().unwrap_or(&self.cwd)),"cwd_source":if p.source_cwd().is_some() {"pane"} else {"startup_directory"},
+                    "state":if p.starting {"starting"} else if p.requested().is_some() {"accepted"} else {p.viewer.state()},
                     "shell":shell.map(|s| json!({"program":s.program,"exit_code":s.exit_code})),"exit_code":p.viewer.exit_code,"note":p.viewer.note})
             }).collect();
             json!({"id":tab.id,"active_pane":tab.active,"layout":tab.layout(),"panes":panes})
         }).collect();
         json!({"ok":true,"instance":self.control.id,"active_tab":self.viewer.active,
-            "active_pane":self.viewer.active_pane().id,"focus":if self.plugin_palette.is_some(){"plugin_palette".into()}else if self.plugin_overlay.is_some(){"plugin_overlay".into()}else{format!("{:?}",self.focus).to_lowercase()},"overlay":if self.plugin_palette.is_some(){Some(json!({"kind":"plugin_palette"}))}else{self.plugin_overlay.as_ref().map(|p|json!({"kind":"plugin","plugin_id":p.id}))},"caller":caller,"tabs":tabs})
+            "active_pane":self.viewer.active_pane().id,"focus":format!("{:?}",self.focus).to_lowercase(),"caller":caller,"tabs":tabs})
     }
     pub(super) fn control_tick(&mut self) {
         for record in &mut self.records {
-            if record.value["state"] == "plugin_pending" {
-                if let Operation::Plugin { plugin, .. } = &record.message.operation
-                    && let Some(result) = self.plugins.command_result(
-                        plugin,
-                        record.value["plugin_session"].as_u64().unwrap_or(0),
-                        record.message.request_id.as_deref().unwrap_or_default(),
-                    )
-                {
-                    record.value["ok"] = json!(result["ok"] != false);
-                    record.value["state"] = json!(if result["error"]["code"] == "result_unknown" {
-                        "uncertain"
-                    } else {
-                        "complete"
-                    });
-                    record.value["result"] = result;
-                }
-                continue;
-            }
-
             if !matches!(
                 record.value["state"].as_str(),
                 Some("accepted" | "starting" | "attaching" | "complete")
@@ -203,18 +184,13 @@ impl App {
                 )
             };
         }
-        if !matches!(message.operation, Operation::Plugin { .. })
-            && (self.header_menu.is_some()
-                || self.plugin_palette.is_some()
-                || self.plugin_overlay.is_some()
-                || self.plugin_page.is_some()
-                || self.telemetry.is_some()
-                || self.placement.is_some()
-                || self.search.is_some()
-                || self.settings.is_some()
-                || self.new_agent.as_ref().is_some_and(|f| f.visible)
-                || self.closing.is_some()
-                || self.panel.confirm.is_some())
+        if self.header_menu.is_some()
+            || self.placement.is_some()
+            || self.search.is_some()
+            || self.settings.is_some()
+            || self.new_agent.as_ref().is_some_and(|f| f.visible)
+            || self.closing.is_some()
+            || self.panel.confirm.is_some()
         {
             return control::error("busy", "finish the current layout/form/confirmation first");
         }
@@ -226,20 +202,6 @@ impl App {
         }
         let mut value = json!({"ok":true,"instance":self.control.id,"request_id":id,"accepted":true,"state":"accepted","agent_created":null,"pty":"not_started"});
         let result: Result<Option<Ticket>> = (|| match &message.operation {
-            Operation::Plugin {
-                plugin,
-                method,
-                params,
-            } => {
-                let session = self
-                    .plugins
-                    .invoke_command(plugin, id, method, params.clone())?;
-                value["plugin"] = json!(plugin);
-                value["plugin_session"] = json!(session);
-                value["state"] = json!("plugin_pending");
-                Ok(None)
-            }
-
             Operation::Open {
                 relative_to,
                 place,

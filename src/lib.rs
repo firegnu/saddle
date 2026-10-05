@@ -1,4 +1,3 @@
-pub mod agent;
 pub mod agent_program;
 pub mod agents;
 pub mod app;
@@ -22,8 +21,6 @@ pub mod placement;
 pub mod pty;
 pub mod search;
 pub mod settings;
-pub mod telemetry;
-pub mod telemetry_view;
 pub mod terminal;
 pub mod terminals;
 pub mod ui;
@@ -31,5 +28,3 @@ pub mod updates;
 pub mod viewer;
 
 pub mod theme;
-
-pub mod plugins;

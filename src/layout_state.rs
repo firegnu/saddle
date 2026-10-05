@@ -8,14 +8,12 @@ use std::{fs, io::Write, path::PathBuf, time::SystemTime};
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Content {
     #[default]
+    #[serde(alias = "plugin")] // Retired plugin panes restore as empty slots.
     Empty,
     Agent {
         name: String,
         cwd: Option<String>,
         instance: Option<String>,
-    },
-    Plugin {
-        id: String,
     },
     Shell {
         cwd: String,
@@ -32,7 +30,7 @@ impl Content {
         match self {
             Self::Agent { cwd, .. } => cwd.as_deref(),
             Self::Shell { cwd } => Some(cwd),
-            Self::Empty | Self::Plugin { .. } => None,
+            Self::Empty => None,
         }
     }
 }
@@ -66,7 +64,6 @@ impl Layout {
         ensure!(!self.tabs.is_empty(), "layout has no tabs");
         let mut tabs = HashSet::new();
         let mut panes = HashSet::new();
-        let mut plugins = HashSet::new();
         for tab in &self.tabs {
             ensure!(tabs.insert(tab.id) && tab.id < u64::MAX, "invalid tab ID");
             ensure!(!tab.panes.is_empty(), "tab has no panes");
@@ -83,14 +80,6 @@ impl Layout {
                     panes.insert(pane.id) && pane.id < u64::MAX,
                     "invalid pane ID"
                 );
-                if let Content::Plugin { id } = &pane.content {
-                    ensure!(
-                        self.version >= 2
-                            && crate::plugins::registry::valid_id(id)
-                            && plugins.insert(id.clone()),
-                        "invalid plugin layout identity"
-                    );
-                }
                 if let Content::Agent { name, .. } = &pane.content {
                     ensure!(
                         !name.is_empty()
@@ -185,30 +174,6 @@ impl Store {
             let path = self.path.as_ref().context("state path unavailable")?;
             let parent = path.parent().context("state directory unavailable")?;
             fs::create_dir_all(parent)?;
-            if terminals.snapshot().version == 2
-                && let Ok(old) = fs::read(path)
-                && serde_json::from_slice::<serde_json::Value>(&old)
-                    .is_ok_and(|v| v["version"] == 1)
-            {
-                let first = path.with_extension("v1.json");
-                let backup = if first.exists() {
-                    path.with_extension(format!(
-                        "v1-{}.json",
-                        SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)?
-                            .as_nanos()
-                    ))
-                } else {
-                    first
-                };
-                let mut backup_file = fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&backup)
-                    .context("cannot preserve v1 layout backup")?;
-                backup_file.write_all(&old)?;
-                backup_file.sync_all()?;
-            }
             let mut file = tempfile::NamedTempFile::new_in(parent)?;
             file.write_all(&bytes)?;
             file.as_file().sync_all()?;

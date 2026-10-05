@@ -392,7 +392,7 @@ fn the_updates_page_offers_upgrade_all_only_when_the_check_does() {
     let dir = tempfile::tempdir().unwrap();
     let mut settings = Settings::open(dir.path().join("config.toml"), true);
     assert!(matches!(
-        press(&mut settings, KeyCode::F(6)),
+        press(&mut settings, KeyCode::F(5)),
         Outcome::CheckUpdates
     ));
     settings.set_updates(updates::Page::default());
@@ -502,18 +502,6 @@ fn lost_receipt_stays_unknown_across_refresh_and_page_reopening_without_replay()
             .count(),
         1
     );
-}
-
-#[test]
-fn updates_tab_is_reachable_from_plugins_by_keyboard() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut manager = saddle::plugins::Manager::open(dir.path().join("plugins.toml"));
-    let mut page = saddle::plugins::ui::Page::default();
-    let outcome = page.event(
-        crossterm::event::Event::Key(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE)),
-        &mut manager,
-    );
-    assert!(matches!(outcome, saddle::plugins::ui::Outcome::Page(_)));
 }
 
 #[test]

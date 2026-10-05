@@ -1,6 +1,8 @@
 # saddle：设计
 
-后续范围更新：§62 记录已确认的进程式插件架构及首期设计草案。前文“不做插件”是当时阶段边界；现有运行行为仍以已实现章节为准，插件尚未实现。
+> 当前范围（用户 2026-10-05 最终决定）：只保留 Agents、终端、设置、布局、Diagnostics、Updates 和非插件 ctl；Corral/Dispatch 使用 ranch 命令。遥测、Drover、插件宿主及 SDK/协议已删除。下文早期相关章节是历史，末尾“只保留终端前端”条目优先。
+
+历史范围更新（已被 2026-10-05 最终决定取代）：§62 记录已确认的进程式插件架构及首期设计草案。前文“不做插件”是当时阶段边界；现有运行行为仍以已实现章节为准，插件尚未实现。
 
 一个 Rust 写的终端界面程序。一条命令打开，就是现在手动在终端里分三格拼出来的那套工作台：左上看所有 agent，左下看任务队列，右边是选中 agent 的实时终端。一个焦点、一套按键，左边选中谁，右边立刻切过去。
 
@@ -1662,3 +1664,22 @@ Tasks 的转出记录与产品验收分开处理：不因原型作者结束、�
 - Updates 默认从 PATH 找到 corral，按它比较现有会话并在用户明确执行升级时调用公开升级命令；不再根据已安装或正在运行的 Saddle 目录寻找 Corral。不改既有升级确认、回执或未知结果语义。
 - Saddle 打包不再包含 `bin/corral` 和 `share/corral/`；部署只负责 Saddle 及本轮仍由它持有的插件，不切换 `~/.local/bin/corral`、不运行 `corral install-skills`。二者由 ranch 安装管理。
 - `~/.local/share/saddle/versions/` 下旧目录全部保留，现有会话可能仍使用其中的 Corral。此次不升级、停止、重启或重新派发任何用户会话；完成后由 paddock 主控用测试 agent 核对配合。
+
+## 2026-10-05 Dispatch 转出 ranch，保留遥测与 Drover
+
+用户确认 Dispatch 转入 ranch（提交 d771c10），独立命令为 `ranch dispatch route` 与 `ranch dispatch install-skills`，路由规则/请求/输出不变，不带遥测。遥测和 Drover 不再继续迁移，留在 Saddle 原样不动、不删除；插件 SDK 与进程插件协议同样不动。本条取代此前计划迁出遥测、Drover 或插件协议的表述。
+
+- 删除唯一内置业务插件 `plugins/dispatch`。专为内置插件提供的 `crates/core-plugin`、宿主内置目录/执行/采集适配与技能资源安装管理一并删除；生产环境没有其他内置插件。保留外部进程插件、其生命周期/管理界面和只读 `saddle plugin status [ID]`。旧 `saddle plugin run dispatch route` 不再提供，不代理或转发到 ranch。
+- `src/plugins/capture.rs` 是内置插件路由采集适配，删除不影响独立的 `src/agent.rs`、`src/agent/`、`src/telemetry/`。遥测存储、查看页、Settings 开关、`saddle telemetry`、`saddle agent`、Drover 及插件 SDK/协议保留原样。
+- Saddle 不再安装、同步或删除 corral-dispatch 技能。部署持资源记录锁，备份后仅解除 `plugin=dispatch, resource=corral-dispatch` 的归属记录；磁盘技能文件和链接原样保留。旧注册表的 core 字段只作兼容保留，不再赋予内置插件运行能力；部署清除已退役的 core.dispatch 配置，其他配置不改。
+- 主控仍按 corral-dispatch 技能执行项目已授权流程，路由改用 `ranch dispatch route`，派任务不记遥测、不再要求读取遥测操作.md。本轮按用户此前明确要求由主控直接实施，不委派、不运行路由。
+- 完成源码验证后部署新版，仅更新 Saddle 入口并解除 Dispatch 登记，Drover/Diff 注册路径不变，保留所有旧版本和 Corral 入口，不重启现有 Saddle/agent。用户重开 Saddle 后，由 paddock 主控在用户在场时运行 ranch 的技能安装并核对；本轮不代执行 ranch 安装。
+
+## 2026-10-05 后续决定：只保留终端前端
+
+用户扩大范围，明确作废上一条中“遥测、Drover、SDK/协议不动”的要求：删除遥测、Drover 和整个插件系统，Saddle 与 paddock 都保留 Agents、终端、设置和 ctl，底层通过 ranch 安装的 corral 与 dispatch 使用运行时。用户原话：“遥测和drover也只是我臆想出来的功能……绑定很深的遥测，sdk还有插件以及drover什么的，只是我觉得有用罢了。发不成产品反倒不合适。”
+
+- 删除全部插件宿主、协议/SDK、内置与外部业务插件、示例插件、管理与展示入口、插件 Attention、插件 ctl；删除遥测存储/查看/开关与 headless agent 采集入口及专用依赖。保留 PATH Corral 解析模块 agent_program，因为普通 Agents、终端与 Updates 仍依赖它。
+- 保留 Agents、终端与布局、普通 Settings、Diagnostics、Updates 和非插件 ctl 的既有语义。旧布局中的 plugin 内容只在反序列化时兼容为空窗格，保留同一布局的其余内容；未知种类和损坏布局继续保护原文件。
+- 已有遥测目录、~/.drover、插件登记和资源记录不再由运行程序读取或清理；部署唯一例外是持锁解除 corral-dispatch 技能所有权，保留记录文件及其他条目、技能文件和链接。旧程序版本目录不删，Corral 链接不改。
+- 被删功能的测试删除；保留功能混合测试改用 agent/终端样例，保留有效断言和原预算。通过全量测试、Clippy 和保留功能验证后部署单一 Saddle 程序，不打包 plugins。用户自行重启，随后由 paddock 在用户在场时安装 ranch 技能并核对。

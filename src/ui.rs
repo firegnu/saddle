@@ -25,7 +25,6 @@ pub struct Hits {
     pub list: Rect,
     pub reply: Rect,
     pub more: Rect,
-    pub pinned: Rect,
 }
 
 pub struct View<'a> {
@@ -60,14 +59,6 @@ pub struct Workspace<'a> {
     pub settings: Option<&'a mut crate::settings::Settings>,
     /// Installed updates need the user, or could not be confirmed: a dot beside More and the Settings menu item.
     pub updates: bool,
-    /// The plugin the user pinned to the Agents header, if any.
-    pub pinned: Option<Pinned<'a>>,
-}
-/// The plugin action the user pinned to the Agents header; the host knows only its title.
-pub struct Pinned<'a> {
-    pub title: &'a str,
-    /// Opening would show its view now; otherwise the entry is dimmed and explains why.
-    pub available: bool,
 }
 /// The Attention entry's items and, while open, its popup.
 pub struct Attention<'a> {
@@ -92,7 +83,6 @@ pub fn draw_workspace(
         attention,
         mut settings,
         updates,
-        pinned,
     ) = match workspace {
         Some(w) => (
             Some(w.terminals),
@@ -110,7 +100,6 @@ pub fn draw_workspace(
             w.attention,
             w.settings,
             w.updates,
-            w.pinned,
         ),
         None => (
             None,
@@ -127,21 +116,14 @@ pub fn draw_workspace(
             },
             None,
             false,
-            None,
         ),
     };
     let t = view.colors;
     let screen_area = frame.area();
     frame.buffer_mut().set_style(screen_area, t.base());
     let header = agents_header(view.panes.agents);
-    let pin_label = pinned
-        .as_ref()
-        .filter(|_| terminals.is_some() && inner(view.panes.agents).height >= 6)
-        .map(|p| clip(p.title, 12))
-        .filter(|label| usize::from(header.width) >= label.width() + 5);
-    let group_width = 3 + pin_label.as_ref().map_or(0, |label| label.width() + 2);
     let action_row = if usize::from(header.width)
-        >= format!("Agents · {}", panel.agents.len()).width() + 2 + group_width
+        >= format!("Agents · {}", panel.agents.len()).width() + 2 + 3
     {
         0
     } else {
@@ -169,31 +151,6 @@ pub fn draw_workspace(
             Paragraph::new("●").style(Style::default().fg(t.unread)),
             Rect::new(more.right(), more.y, 1, 1).intersection(frame.area()),
         );
-    }
-    if let (Some(label), Some(pinned)) = (&pin_label, &pinned) {
-        let rect = Rect::new(
-            more.x.saturating_sub(2 + label.width() as u16),
-            more.y,
-            label.width() as u16,
-            1,
-        )
-        .intersection(inner(view.panes.agents));
-        let hovered = view.pointer.hover.is_some_and(|point| rect.contains(point));
-        frame.render_widget(
-            Paragraph::new(label.as_str()).style(
-                Style::default()
-                    .fg(if !pinned.available {
-                        t.muted
-                    } else if hovered {
-                        t.bright
-                    } else {
-                        t.agents_text
-                    })
-                    .remove_modifier(Modifier::BOLD),
-            ),
-            rect,
-        );
-        hits.pinned = rect;
     }
     let attention_row = Rect {
         y: header.y.saturating_add(1),
@@ -376,19 +333,10 @@ pub fn draw_workspace(
             }
         }
     }
-    // The pinned entry opens for the selected agent, not the pane last viewed.
-    let agents_help = pinned.as_ref().map(|p| {
-        format!(
-            " ↑↓ Select  ↵ Attach  / Search  a Attention  p {} (selected)  n New  z Fold  , Settings  t Telemetry  Tab Viewer  q Quit",
-            clip(p.title, 12)
-        )
-    });
     let (mut target, mut help) = match view.focus {
         Focus::Agents => (
             "Agents".to_string(),
-            agents_help.as_deref().unwrap_or(
-                " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  t Telemetry  Tab Viewer  q Quit",
-            ),
+            " ↑↓ Select  ↵ Attach  / Search  a Attention  n New  z Fold  , Settings  Tab Viewer  q Quit",
         ),
         Focus::Viewer => (
             view.showing
@@ -542,14 +490,6 @@ pub fn status_notice(t: &Theme, frame: &mut Frame, area: Rect, text: &str) {
     frame.render_widget(ratatui::widgets::Clear, area);
     frame.render_widget(Paragraph::new(text).style(t.base()), area);
 }
-/// The same bar from an overlay's one-line status (` Input ▸ Target · help`).
-pub fn status_text(t: &Theme, frame: &mut Frame, area: Rect, text: &str) {
-    let text = text.trim_start();
-    let text = text.strip_prefix("Input ▸ ").unwrap_or(text);
-    let (target, help) = text.split_once(" · ").unwrap_or((text, ""));
-    status_bar(t, frame, area, target, help);
-}
-
 pub fn inner(area: Rect) -> Rect {
     Block::default().borders(Borders::ALL).inner(area)
 }

@@ -79,5 +79,5 @@ fn main() {
     println!(
         "Alacritty: cursor query -> ESC[5;7R via Event::PtyWrite; vt100 exposes screen state, no reply callback."
     );
-    println!("Synthetic only: real Claude Code/drover appearance and feel remain unverified.");
+    println!("Synthetic only: real Claude Code appearance and feel remain unverified.");
 }

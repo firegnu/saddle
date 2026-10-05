@@ -31,7 +31,6 @@ pub struct Placement {
 pub enum Choice {
     Terminal,
     NewAgent,
-    Plugin,
     Agent(String),
 }
 impl Choice {
@@ -39,7 +38,6 @@ impl Choice {
         match self {
             Self::Terminal => "Terminal",
             Self::NewAgent => "New agent…",
-            Self::Plugin => "Plugin…",
             Self::Agent(name) => name,
         }
     }
@@ -75,18 +73,14 @@ pub fn candidates(
         })
         .collect();
     list.sort();
-    [
-        (Choice::Terminal, false),
-        (Choice::NewAgent, false),
-        (Choice::Plugin, false),
-    ]
-    .into_iter()
-    .filter(|_| placement.place != Some(Place::Current))
-    .chain(
-        list.into_iter()
-            .map(|(name, open)| (Choice::Agent(name), open)),
-    )
-    .collect()
+    [(Choice::Terminal, false), (Choice::NewAgent, false)]
+        .into_iter()
+        .filter(|_| placement.place != Some(Place::Current))
+        .chain(
+            list.into_iter()
+                .map(|(name, open)| (Choice::Agent(name), open)),
+        )
+        .collect()
 }
 
 /// Where the fixed actions end and existing agents begin, when the list has both.

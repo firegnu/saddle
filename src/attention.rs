@@ -1,4 +1,4 @@
-//! Agent Attention and generic plugin sources. Opening an item never changes its business state.
+//! Agent Attention. Opening an item never changes its business state.
 use crate::{
     agents::{Panel, Status},
     buttons::{self, Button},
@@ -21,12 +21,6 @@ const ROWS: usize = 14;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Target {
     Agent(String),
-    Plugin {
-        plugin: String,
-        session: u64,
-        revision: u64,
-        item: String,
-    },
     /// A failed source with nothing to open.
     Source(String),
 }
@@ -36,15 +30,13 @@ pub enum Kind {
     Error,
     ReadFailed,
     Reply,
-    Plugin,
-    Unavailable,
 }
 #[derive(Clone, Debug)]
 pub struct Item {
     pub target: Target,
     pub kind: Kind,
     pub label: String,
-    /// Public detail shown after the reason: an error text or a task title.
+    /// Public detail shown after the reason: an error text or reply notice.
     pub note: String,
 }
 impl Item {
@@ -57,22 +49,18 @@ impl Item {
             Kind::Error => "Error",
             Kind::ReadFailed => "Read failed",
             Kind::Reply => "New reply",
-            Kind::Plugin => "Needs attention",
-            Kind::Unavailable => "Source unavailable",
         }
     }
     fn look(&self, t: &Theme) -> (&'static str, Color) {
         match self.kind {
             Kind::Waiting => ("?", t.agent_blocked),
             Kind::Error | Kind::ReadFailed => ("!", t.agent_error),
-            Kind::Plugin => ("→", t.agent_blocked),
-            Kind::Unavailable => ("!", t.agent_error),
             Kind::Reply => ("•", t.unread),
         }
     }
 }
 
-/// Source state for agent Attention. Plugin items are supplied separately by the host.
+/// Source state for agent Attention.
 #[derive(Default)]
 pub struct Board {
     pub agents_loaded: bool,
@@ -207,10 +195,7 @@ impl Popup {
         let index = self
             .selected
             .as_ref()
-            .and_then(|s| items.iter().position(|i| &i.target == s || matches!(
-                (&i.target, s),
-                (Target::Plugin { plugin: a, item: x, .. }, Target::Plugin { plugin: b, item: y, .. }) if a == b && x == y
-            )))
+            .and_then(|s| items.iter().position(|i| &i.target == s))
             .unwrap_or(self.index.min(items.len() - 1));
         self.index = index;
         self.selected = Some(items[index].target.clone());
@@ -235,13 +220,6 @@ impl Popup {
             KeyCode::Up | KeyCode::Char('k') => self.step(items, false),
             KeyCode::Down | KeyCode::Char('j') => self.step(items, true),
             KeyCode::Enter => {
-                // Never let a removed/replaced plugin row redirect an Enter to its neighbour.
-                if self.selected.as_ref().is_some_and(|target| {
-                    matches!(target, Target::Plugin { .. })
-                        && !items.iter().any(|i| &i.target == target)
-                }) {
-                    return Outcome::Stay;
-                }
                 if let Some(index) = self.current(items)
                     && !matches!(items[index].target, Target::Source(_))
                 {

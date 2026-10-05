@@ -81,11 +81,6 @@ pub enum CloseTarget {
 #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Operation {
     Inspect,
-    Plugin {
-        plugin: String,
-        method: String,
-        params: Value,
-    },
     Request {
         request: String,
     },

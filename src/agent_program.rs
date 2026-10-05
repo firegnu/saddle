@@ -19,8 +19,3 @@ pub fn resolve(configured: &str) -> std::io::Result<PathBuf> {
     }
     std::path::absolute(path)
 }
-
-pub fn configured() -> anyhow::Result<PathBuf> {
-    let config = crate::config::Config::load(&crate::config::default_path())?;
-    Ok(resolve(&config.corral)?)
-}

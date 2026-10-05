@@ -196,3 +196,47 @@ fn restored_ratio_controls_geometry_and_new_ids_do_not_reuse_sparse_saved_ids() 
     );
     assert!(restored.new_tab() > 100);
 }
+
+#[test]
+fn retired_plugin_slots_restore_empty_without_losing_agents_or_split_positions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("layout.json");
+    let mut terminals = Terminals::new("unused-corral".into());
+    let agent = terminals.active_pane().id;
+    terminals.get_mut(agent).unwrap().viewer.remembered = Content::Agent {
+        name: "p/main".into(),
+        cwd: Some("/tmp".into()),
+        instance: Some("original".into()),
+    };
+    let slot = terminals.reserve(Place::Right, None);
+    terminals.complete(slot, None).unwrap();
+    let mut old = serde_json::to_value(terminals.snapshot()).unwrap();
+    old["version"] = serde_json::json!(2);
+    old["tabs"][0]["panes"][1]["content"] = serde_json::json!({"kind":"plugin","id":"drover"});
+    let bytes = serde_json::to_vec(&old).unwrap();
+    fs::write(&path, &bytes).unwrap();
+    let (mut store, loaded) = Store::open(Ok(path.clone()));
+    assert!(store.notice.is_empty(), "{}", store.notice);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        bytes,
+        "loading does not rewrite state"
+    );
+    let restored = Terminals::restore("unused-corral".into(), loaded.unwrap()).unwrap();
+    assert_eq!(restored.active_pane().id, slot.pane);
+    assert_eq!(
+        restored.get(slot.pane).unwrap().viewer.remembered,
+        Content::Empty
+    );
+    assert_eq!(
+        restored.get(agent).unwrap().viewer.remembered,
+        terminals.get(agent).unwrap().viewer.remembered
+    );
+    let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+    assert_eq!(restored.rects(area), terminals.rects(area));
+    store.save(&restored, true);
+    assert!(store.notice.is_empty(), "{}", store.notice);
+    let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["version"], 2);
+    assert_eq!(saved["tabs"][0]["panes"][1]["content"]["kind"], "empty");
+}

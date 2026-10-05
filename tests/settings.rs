@@ -116,7 +116,7 @@ fn default_restores_one_value_but_only_save_writes_it() {
     let Outcome::Saved(config, restart) = ctrl(&mut settings, 's') else {
         panic!("not saved: {}", settings.message());
     };
-    assert_eq!(config.queue.as_ref().unwrap()["cwd"].as_str(), Some("~/p"));
+    assert_eq!(config.left_width, 52);
     assert!(restart.is_empty());
     assert_eq!(
         read(&path),
@@ -339,13 +339,13 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
                 tabs = settings
                     .draw(&saddle::theme::Theme::default(), frame)
                     .into_iter()
-                    .filter(|h| matches!(h.key.code, KeyCode::F(1..=6)))
+                    .filter(|h| matches!(h.key.code, KeyCode::F(1..=5)))
                     .collect();
             })
             .unwrap();
         assert_eq!(
             tabs.len(),
-            6,
+            5,
             "width {width}: all pages must remain clickable"
         );
         for (i, hit) in tabs.iter().enumerate() {
@@ -360,7 +360,7 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
         if width >= 100 {
             assert!(
                 tabs.iter().all(|h| h.area.y == tabs[0].area.y),
-                "All six pages must share the same row as General"
+                "All five pages must share the same row as General"
             );
         }
         let buffer = terminal.backend().buffer();
@@ -369,8 +369,7 @@ fn page_tabs_fit_one_row_at_normal_width_and_wrap_compactly_when_narrow() {
             "Colors F2",
             "Advanced F3",
             "Diagnostics F4",
-            "Plugins F5",
-            "Updates F6",
+            "Updates F5",
         ]) {
             let text: String = (hit.area.x..hit.area.right())
                 .map(|x| buffer[(x, hit.area.y)].symbol())
@@ -791,32 +790,17 @@ fn settings_offers_lagoon_between_tide_and_terminal() {
 #[test]
 fn settings_pages_keep_the_same_frame_and_tab_positions() {
     use ratatui::{Terminal, backend::TestBackend};
-    use saddle::plugins::{Manager, resources::Resources, ui::Page};
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
-    let manager = Manager::with_resources(
-        dir.path().join("plugins.toml"),
-        &[],
-        Resources::new(dir.path().join("home"), dir.path().join("state")),
-    );
     for (width, height) in [(120, 40), (80, 24), (40, 24), (60, 14)] {
         let mut reference = None;
-        for page in 1..=6 {
+        for page in 1..=5 {
             let mut settings = Settings::open(path.clone(), true);
             press(&mut settings, KeyCode::F(page));
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             terminal
                 .draw(|frame| {
-                    if page == 5 {
-                        Page::default().draw(
-                            &saddle::theme::Preset::Tide.theme(),
-                            frame,
-                            &manager,
-                            &settings,
-                        );
-                    } else {
-                        settings.draw(&saddle::theme::Preset::Tide.theme(), frame);
-                    }
+                    settings.draw(&saddle::theme::Preset::Tide.theme(), frame);
                 })
                 .unwrap();
             let buffer = terminal.backend().buffer();
@@ -832,8 +816,7 @@ fn settings_pages_keep_the_same_frame_and_tab_positions() {
                 "Colors F2",
                 "Advanced F3",
                 "Diagnostics F4",
-                "Plugins F5",
-                "Updates F6",
+                "Updates F5",
             ]
             .into_iter()
             .map(|label| {
@@ -897,7 +880,7 @@ fn settings_help_describes_the_current_page_without_offering_edits_on_reports() 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     let mut settings = Settings::open(path.clone(), true);
-    assert!(settings.help().contains("F1-F6") && settings.help().contains("Ctrl-S Save"));
+    assert!(settings.help().contains("F1-F5") && settings.help().contains("Ctrl-S Save"));
     for page in [4, 6] {
         press(&mut settings, KeyCode::F(page));
         let help = settings.help();

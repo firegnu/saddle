@@ -1,14 +1,12 @@
 //! Settings: view, edit and save the existing config file from inside saddle. Edits stay a
 //! draft until Save; Save writes only the edited keys, keeping the rest of the file as it is.
 //! Colors follow the chosen theme unless overridden; choosing another theme drops the overrides.
-//! Its Diagnostics page only reads. The telemetry recording switch on General is read from and
-//! saved to the telemetry store, never to the file.
+//! Its Diagnostics page only reads.
 use crate::{
     buttons::{self, Button},
     config::Config,
     launch::edit::Input,
     mascot::{Display, Pet},
-    telemetry::{SettingInput, Store},
     theme::{Preset, Theme, color_name, parse_color},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -27,12 +25,10 @@ use std::{
 use unicode_width::UnicodeWidthStr;
 
 pub const TITLE: &str = " Settings ";
-/// Normal Settings pages share the existing Plugins frame; forms and confirmations stay compact.
+/// Normal Settings pages share one frame; forms and confirmations stay compact.
 pub(crate) fn page_area(screen: Rect) -> Rect {
     crate::theme::centered(screen, 108, 34)
 }
-/// The `value` key of the telemetry recording switch; it lives in the telemetry store, not the file.
-pub const RECORDING: &str = "telemetry:recording";
 const LABEL: usize = 18;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
@@ -40,16 +36,14 @@ pub enum Page {
     Colors,
     Advanced,
     Diagnostics,
-    Plugins,
     Updates,
 }
-pub(crate) const PAGES: [(Page, &str, u8); 6] = [
+pub(crate) const PAGES: [(Page, &str, u8); 5] = [
     (Page::General, "General", 1),
     (Page::Colors, "Colors", 2),
     (Page::Advanced, "Advanced", 3),
     (Page::Diagnostics, "Diagnostics", 4),
-    (Page::Plugins, "Plugins", 5),
-    (Page::Updates, "Updates", 6),
+    (Page::Updates, "Updates", 5),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -119,13 +113,6 @@ fn fields() -> Vec<Field> {
             Kind::Display,
             false,
         ),
-        field(
-            RECORDING,
-            "Telemetry recording",
-            Page::General,
-            Kind::Bool,
-            false,
-        ),
     ];
     let mut colors: Vec<_> = Theme::default()
         .named_mut()
@@ -162,8 +149,6 @@ fn value(config: &Config, field: &Field) -> String {
         "mascot_display" => config.mascot_display.name().into(),
         "corral" => config.corral.clone(),
         "theme" => config.theme.name().into(),
-        // Off until the store says otherwise, as on a first install.
-        RECORDING => "false".into(),
         key => color(&config.colors, &key["colors.".len()..]).map_or_else(String::new, color_name),
     }
 }
@@ -181,7 +166,6 @@ fn color(theme: &Theme, name: &str) -> Option<Color> {
 }
 
 pub enum Outcome {
-    Plugins,
     Stay,
     Cancel,
     /// Written: the saved configuration and the labels of saved settings that need a restart.
@@ -190,10 +174,6 @@ pub enum Outcome {
     Diagnose,
     /// Copy this diagnostics summary; answer with `copied`.
     Copy(String),
-    /// Only the telemetry recording switch was saved; `message` tells its state.
-    Recorded,
-    /// The config was written but the switch was not: apply it and keep Settings open.
-    Applied(Box<Config>, Vec<&'static str>),
     /// Updates opened or Refresh pressed: check again now.
     CheckUpdates,
     /// Upgrade all pressed while offered.
@@ -232,12 +212,6 @@ pub struct Settings {
     report_top: u16,
     updates: crate::updates::Page,
     updates_top: u16,
-    /// Where the recording switch is stored; Err says why there is none.
-    telemetry: Result<Store, String>,
-    /// The switch's generation as last read; Err while its state is unknown, saying why.
-    recording: Result<i64, String>,
-    /// The conflict is about the recording switch rather than the file.
-    recording_conflict: bool,
 }
 
 impl Settings {
@@ -273,48 +247,9 @@ impl Settings {
             report_top: 0,
             updates: Default::default(),
             updates_top: 0,
-            telemetry: Err("no telemetry store".into()),
-            recording: Err("no telemetry store".into()),
-            recording_conflict: false,
         };
         settings.reload(false);
         settings
-    }
-    /// Shows and saves the recording switch of this store; reading never initializes it.
-    pub fn with_telemetry(mut self, store: crate::telemetry::Result<Store>) -> Self {
-        self.telemetry = store.map_err(|e| e.to_string());
-        self.refresh_recording();
-        self
-    }
-    /// Rereads the recording switch unless it has an unsaved edit, which keeps the state it was
-    /// made against so Save can tell whether the store changed meanwhile.
-    pub fn refresh_recording(&mut self) {
-        let i = self.recording_index();
-        if self.inputs[i].text == self.saved[i] {
-            self.load_recording();
-            self.inputs[i] = Input::new(self.saved[i].clone());
-        }
-    }
-    fn recording_index(&self) -> usize {
-        self.fields.iter().position(|f| f.key == RECORDING).unwrap()
-    }
-    /// The stored switch and its generation.
-    fn read_recording(&self) -> Result<(bool, i64), String> {
-        let store = self.telemetry.as_ref().map_err(Clone::clone)?;
-        let read = store.settings().map_err(|e| e.to_string())?;
-        read["enabled"]
-            .as_bool()
-            .zip(read["generation"].as_i64())
-            .ok_or_else(|| "unreadable telemetry settings".into())
-    }
-    /// Takes the stored switch as its saved value; an unknown state is empty.
-    fn load_recording(&mut self) {
-        let i = self.recording_index();
-        let read = self.read_recording();
-        self.saved[i] = read
-            .as_ref()
-            .map_or_else(|_| String::new(), |(on, _)| on.to_string());
-        self.recording = read.map(|(_, generation)| generation);
     }
     pub fn path(&self) -> &Path {
         &self.path
@@ -346,9 +281,9 @@ impl Settings {
     }
     pub fn updates_help(&self) -> Option<&'static str> {
         (self.page == Page::Updates).then_some(if self.updates.upgrade {
-            " Esc Close  r Refresh  u Upgrade all  ↑↓ Scroll  F1-F6 Page"
+            " Esc Close  r Refresh  u Upgrade all  ↑↓ Scroll  F1-F5 Page"
         } else {
-            " Esc Close  r Refresh  ↑↓ Scroll  F1-F6 Page"
+            " Esc Close  r Refresh  ↑↓ Scroll  F1-F5 Page"
         })
     }
     pub fn help(&self) -> &'static str {
@@ -358,14 +293,14 @@ impl Settings {
             help
         } else if self.page == Page::Diagnostics {
             if self.report.is_some() {
-                " Esc Close  r Refresh  c Copy summary  ↑↓ Scroll  F1-F6 Page"
+                " Esc Close  r Refresh  c Copy summary  ↑↓ Scroll  F1-F5 Page"
             } else {
-                " Esc Close  r Refresh  ↑↓ Scroll  F1-F6 Page"
+                " Esc Close  r Refresh  ↑↓ Scroll  F1-F5 Page"
             }
         } else if self.broken.is_some() {
-            " Esc Cancel  Ctrl-R Reload  F4 Diagnostics  F5 Plugins  F6 Updates"
+            " Esc Cancel  Ctrl-R Reload  F4 Diagnostics  F5 Updates"
         } else {
-            " Esc Cancel  Ctrl-S Save  F1-F6 Page  Tab/↑↓ Field  Ctrl-D Default  Ctrl-U Clear"
+            " Esc Cancel  Ctrl-S Save  F1-F5 Page  Tab/↑↓ Field  Ctrl-D Default  Ctrl-U Clear"
         }
     }
     pub fn copied(&mut self, result: Result<(), String>) {
@@ -504,7 +439,6 @@ impl Settings {
         let edited = if keep { self.edited() } else { Vec::new() };
         self.saved = self.fields.iter().map(|f| value(&config, f)).collect();
         self.saved_follow = self.fields.iter().map(|f| follows(&config, f)).collect();
-        self.load_recording();
         for (i, input) in self.inputs.iter_mut().enumerate() {
             if !edited.contains(&i) {
                 *input = Input::new(self.saved[i].clone());
@@ -515,7 +449,6 @@ impl Settings {
         self.base = text;
         self.broken = None;
         self.conflict = false;
-        self.recording_conflict = false;
         self.error = false;
         self.message = if keep && !edited.is_empty() {
             "Reloaded; your edits are kept as an unsaved draft.".into()
@@ -556,9 +489,6 @@ impl Settings {
     }
 
     pub fn key(&mut self, key: KeyEvent) -> Outcome {
-        if key.code == KeyCode::F(5) {
-            return Outcome::Plugins;
-        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl && matches!(key.code, KeyCode::Char(']' | '5')) {
             return Outcome::Cancel;
@@ -569,12 +499,7 @@ impl Settings {
                 KeyCode::Char('d') => self.reload(false),
                 KeyCode::Esc => {
                     self.conflict = false;
-                    self.message = if self.recording_conflict {
-                        "Not saved: telemetry recording changed outside Settings.".into()
-                    } else {
-                        "Not saved: the file changed on disk.".into()
-                    };
-                    self.recording_conflict = false;
+                    self.message = "Not saved: the file changed on disk.".into();
                 }
                 _ => {}
             }
@@ -583,7 +508,7 @@ impl Settings {
         if key.code == KeyCode::Esc {
             return Outcome::Cancel;
         }
-        if key.code == KeyCode::F(6) {
+        if key.code == KeyCode::F(5) {
             self.open_updates();
             return Outcome::CheckUpdates;
         }
@@ -747,137 +672,30 @@ impl Settings {
         }
     }
 
-    /// Save only edited settings, preserving the draft on validation or disk conflicts. The file
-    /// and the recording switch are two separate commits: each part reports what it actually did,
-    /// and whatever was not saved stays a draft.
+    /// Save only edited settings, preserving the draft on validation or disk conflicts.
     fn save(&mut self) -> Outcome {
         let edited = self.edited();
         if edited.is_empty() {
             return Outcome::Cancel;
         }
-        let r = self.recording_index();
-        let config: Vec<usize> = edited.iter().copied().filter(|&i| i != r).collect();
-        // Everything that can refuse the whole save is checked before either part is written.
-        let prepared = if config.is_empty() {
-            None
-        } else {
-            match self.prepare_config(&config) {
-                Ok(prepared) => Some(prepared),
-                Err(outcome) => return outcome,
-            }
-        };
-        let recording = if edited.contains(&r) {
-            match self.save_recording() {
-                Some(result) => Some(result),
-                None => return Outcome::Stay,
-            }
-        } else {
-            None
-        };
-        let Some((text, parsed)) = prepared else {
-            return match recording {
-                Some(Ok(note)) => {
-                    (self.message, self.error) = (note, false);
-                    Outcome::Recorded
-                }
-                Some(Err(problem)) => self.fail(problem),
-                None => Outcome::Cancel,
-            };
+        let (text, parsed) = match self.prepare_config(&edited) {
+            Ok(prepared) => prepared,
+            Err(outcome) => return outcome,
         };
         if let Err(error) = write(&self.path, &text) {
-            let done = match &recording {
-                Some(Ok(note) | Err(note)) => format!("{note} Config not saved"),
-                None => "Not saved".into(),
-            };
-            return self.fail(format!("{done}: writing {}: {error}", self.path.display()));
+            return self.fail(format!(
+                "Not saved: writing {}: {error}",
+                self.path.display()
+            ));
         }
         self.base = Some(text);
-        let restart: Vec<_> = config
+        let restart = edited
             .iter()
             .filter(|&&i| self.fields[i].restart)
             .map(|&i| self.fields[i].label)
             .collect();
-        match recording {
-            Some(Err(problem)) => {
-                // Settings stays open on the switch's draft; the written values are saved now.
-                for &i in &config {
-                    self.saved[i] = value(&parsed, &self.fields[i]);
-                    self.saved_follow[i] = follows(&parsed, &self.fields[i]);
-                    self.inputs[i] = Input::new(self.saved[i].clone());
-                    self.follow[i] = self.saved_follow[i];
-                }
-                // Colors following a newly saved theme now match it too.
-                for (i, field) in self.fields.iter().enumerate() {
-                    if self.follow[i] && self.saved_follow[i] {
-                        self.saved[i] = value(&parsed, field);
-                    }
-                }
-                // Both parts' results lead; the restart note follows.
-                let restart_note = if restart.is_empty() {
-                    String::new()
-                } else {
-                    format!(" Restart saddle to apply: {}.", restart.join(", "))
-                };
-                self.fail(format!("Config saved. {problem}{restart_note}"));
-                Outcome::Applied(Box::new(parsed), restart)
-            }
-            Some(Ok(note)) => {
-                (self.message, self.error) = (note, false);
-                Outcome::Saved(Box::new(parsed), restart)
-            }
-            None => {
-                self.message.clear();
-                Outcome::Saved(Box::new(parsed), restart)
-            }
-        }
-    }
-    /// Saves the switch against the state it was edited from. None: the store changed or could
-    /// not be read when the switch was shown, and the conflict notice is up; nothing was written.
-    fn save_recording(&mut self) -> Option<Result<String, String>> {
-        let i = self.recording_index();
-        let enabled = self.inputs[i].text == "true";
-        let not_saved = |e: &dyn std::fmt::Display| format!("Telemetry recording not saved: {e}.");
-        let store = match &self.telemetry {
-            Ok(store) => store,
-            Err(e) => return Some(Err(not_saved(e))),
-        };
-        let result = match &self.recording {
-            Ok(generation) => store
-                .set_recording_if(
-                    *generation,
-                    SettingInput {
-                        schema_version: 1,
-                        enabled,
-                        actor: "saddle settings".into(),
-                    },
-                )
-                .map_err(|e| (e.status == "conflict", e.to_string())),
-            // The draft was made without seeing the state: show the state before writing over it.
-            Err(_) => match self.read_recording() {
-                Ok(_) => Err((true, String::new())),
-                Err(e) => Err((false, e)),
-            },
-        };
-        match result {
-            Ok(_) => {
-                // The compare-and-set committed exactly this change.
-                self.saved[i] = enabled.to_string();
-                self.recording = self.recording.as_ref().map(|g| g + 1).map_err(Clone::clone);
-                Some(Ok(format!(
-                    "Telemetry recording saved: {}.",
-                    if enabled { "Enabled" } else { "Disabled" }
-                )))
-            }
-            Err((true, _)) => {
-                self.conflict = true;
-                self.recording_conflict = true;
-                self.error = true;
-                self.message =
-                    "Telemetry recording changed outside Settings; nothing was saved.".into();
-                None
-            }
-            Err((false, e)) => Some(Err(not_saved(&e))),
-        }
+        self.message.clear();
+        Outcome::Saved(Box::new(parsed), restart)
     }
     /// Validates the edited config fields against the file as read and builds the new text.
     fn prepare_config(&mut self, edited: &[usize]) -> Result<(String, Config), Outcome> {
@@ -990,8 +808,7 @@ impl Settings {
         } else if self.broken.is_some() {
             vec![
                 Button::new("Diagnostics F4", KeyCode::F(4), true),
-                Button::new("Plugins F5", KeyCode::F(5), true),
-                Button::new("Updates F6", KeyCode::F(6), true),
+                Button::new("Updates F5", KeyCode::F(5), true),
                 Button::new("Cancel Esc", KeyCode::Esc, true),
                 Button::control("Reload Ctrl-R", KeyCode::Char('r'), true),
             ]
@@ -1083,17 +900,8 @@ impl Settings {
                 .into_iter()
                 .map(|i| self.fields[i].label)
                 .collect();
-            let (changed, what) = if self.recording_conflict {
-                (
-                    "Telemetry recording changed outside Settings, or could not be read when Settings showed it. Saving now could overwrite a newer setting",
-                    "the file and the recording state",
-                )
-            } else {
-                (
-                    "The config file changed on disk after Settings read it. Saving now would overwrite that change",
-                    "the file",
-                )
-            };
+            let changed = "The config file changed on disk after Settings read it. Saving now would overwrite that change";
+            let what = "the file";
             frame.render_widget(
                 Paragraph::new(format!(
                     "\n{changed}, so nothing was saved.\n\nYour unsaved edits: {}\n\nKeep my edits: reload {what} and keep these edits as a draft; Save again to write them.\nDiscard my edits: reload {what} and drop the draft.\nBack: return to the draft without reloading.",
@@ -1133,36 +941,6 @@ impl Settings {
                 Rect::new(body.x, body.bottom() - 1, body.width, 1),
             );
             body.height -= 1;
-        }
-        // General explains the recording switch under its fields when there is room.
-        if self.page == Page::General {
-            let mut notes = vec![
-                Line::styled(
-                    "On: only work explicitly chosen for recording may be recorded.",
-                    Style::default().fg(t.muted),
-                ),
-                Line::styled(
-                    "Off: no new recording; tasks and agents still run; history is kept.",
-                    Style::default().fg(t.muted),
-                ),
-            ];
-            if let Err(reason) = &self.recording {
-                notes.push(Line::styled(
-                    format!("Recording state unknown: {reason}"),
-                    Style::default().fg(t.danger),
-                ));
-            }
-            let (height, fields) = (notes.len() as u16, self.page_fields().len() as u16);
-            if body.height >= fields + 1 + height {
-                let lines = notes
-                    .into_iter()
-                    .map(|line| crate::ui::clip_spans(line.spans, usize::from(body.width)));
-                frame.render_widget(
-                    Paragraph::new(lines.map(Line::from).collect::<Vec<_>>()),
-                    Rect::new(body.x, body.y + fields + 1, body.width, height),
-                );
-                body.height = fields;
-            }
         }
         self.draw_fields(t, &preview, frame, body);
         hits
@@ -1454,7 +1232,6 @@ impl Settings {
             let label = match self.inputs[i].text.as_str() {
                 "true" => "Enabled",
                 "false" => "Disabled",
-                // The recording switch whose stored state could not be read.
                 _ => "Unknown",
             };
             frame.render_widget(

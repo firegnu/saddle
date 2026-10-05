@@ -12,38 +12,21 @@ use ratatui::{
 pub(crate) enum Outcome {
     Stay,
     Close,
-    Plugins,
-    Telemetry,
     Settings,
 }
 
-const ITEMS: [(&str, Outcome); 3] = [
-    ("Plugins", Outcome::Plugins),
-    ("Telemetry", Outcome::Telemetry),
-    ("Settings", Outcome::Settings),
-];
+const ITEMS: [(&str, Outcome); 1] = [("Settings", Outcome::Settings)];
 
 #[derive(Default)]
 pub(crate) struct Menu {
-    plugin_overlay: bool,
     selected: usize,
     pressed: Option<usize>,
     area: Rect,
     rows: Vec<(Rect, usize)>,
 }
 impl Menu {
-    pub fn new(plugin_overlay: bool) -> Self {
-        Self {
-            plugin_overlay,
-            ..Self::default()
-        }
-    }
     fn activate(&self, index: usize) -> Outcome {
-        if self.plugin_overlay && index != 0 {
-            Outcome::Stay
-        } else {
-            ITEMS[index].1
-        }
+        ITEMS[index].1
     }
     pub fn event(&mut self, event: &Event) -> Outcome {
         match event {
@@ -137,23 +120,17 @@ impl Menu {
         {
             let rect = Rect::new(inner.x, inner.y + row as u16, inner.width, 1);
             let mut text = vec![Span::raw(format!(" {label}"))];
-            if i == 2 && updates {
+            if updates {
                 text.push(Span::styled(" ●", Style::default().fg(t.unread)));
             }
             frame.render_widget(
-                Paragraph::new(Line::from(text)).style(
-                    Style::default()
-                        .fg(if self.plugin_overlay && i != 0 {
-                            t.muted
-                        } else {
-                            t.agents_text
-                        })
-                        .bg(if i == self.selected {
-                            t.agent_selected
-                        } else {
-                            t.agents_bg
-                        }),
-                ),
+                Paragraph::new(Line::from(text)).style(Style::default().fg(t.agents_text).bg(
+                    if i == self.selected {
+                        t.agent_selected
+                    } else {
+                        t.agents_bg
+                    },
+                )),
                 rect,
             );
             self.rows.push((rect, i));
@@ -192,13 +169,16 @@ mod tests {
             })
             .unwrap();
         let first = menu.rows[0].0;
-        let last = menu.rows[2].0;
+        let last = menu.rows[0].0;
         assert_eq!(
             menu.event(&mouse(MouseEventKind::Down(MouseButton::Left), first)),
             Outcome::Stay
         );
         assert_eq!(
-            menu.event(&mouse(MouseEventKind::Up(MouseButton::Left), last)),
+            menu.event(&mouse(
+                MouseEventKind::Up(MouseButton::Left),
+                Rect::new(0, 20, 1, 1)
+            )),
             Outcome::Stay
         );
         assert_eq!(
@@ -217,26 +197,6 @@ mod tests {
             Outcome::Close
         );
         assert_eq!(menu.event(&Event::Resize(20, 10)), Outcome::Close);
-        let mut menu = Menu::new(true);
-        menu.event(&Event::Key(KeyEvent::new(
-            KeyCode::Down,
-            KeyModifiers::NONE,
-        )));
-        assert_eq!(
-            menu.event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE
-            ))),
-            Outcome::Stay
-        );
-        menu.event(&Event::Key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)));
-        assert_eq!(
-            menu.event(&Event::Key(KeyEvent::new(
-                KeyCode::Enter,
-                KeyModifiers::NONE
-            ))),
-            Outcome::Plugins
-        );
     }
 
     #[test]

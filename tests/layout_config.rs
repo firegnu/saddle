@@ -16,7 +16,6 @@ fn agents_own_the_left_column_beside_the_viewer() {
 #[test]
 fn defaults_and_invalid_configuration_are_explicit() {
     let default = Config::parse("").unwrap();
-    assert!(default.queue.is_none());
     assert_eq!(default.left_width, 52);
     for invalid in [
         "left_split = 0.0",
@@ -105,13 +104,6 @@ fn default_example_missing_files_and_partial_colors_keep_current_defaults() {
     assert_eq!(example.left_width, defaults.left_width);
     assert_eq!(example.left_split, defaults.left_split);
     assert_eq!(example.refresh_ms, defaults.refresh_ms);
-    assert!(example.queue.is_none());
-    assert!(
-        Config::parse("[queue]\ndrover='unused'\ncwd='/unused'")
-            .unwrap()
-            .queue
-            .is_some()
-    );
     assert_eq!(example.colors, defaults.colors);
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(

@@ -1,21 +1,14 @@
 //! Second UI batch, Settings inner pages: Diagnostics and Updates share one report layout, the
-//! Plugins management page, Add local and the launcher keep focus, main actions and errors apart.
-//! Only synthetic reports, plugins and temporary directories are used.
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+//! report pages keep their labels and values aligned.
+//! Only synthetic reports and temporary directories are used.
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Frame, Terminal, backend::TestBackend, buffer::Buffer, style::Modifier};
 use saddle::{
     diagnostics::Report,
-    plugins::{
-        Manager,
-        palette::{Item, Palette},
-        resources::Resources,
-        ui::Page,
-    },
     settings::Settings,
     theme::Theme,
     updates::{self, Row, Tone},
 };
-use saddle_core_plugin::{Call, Completion, CorePlugin, Manifest};
 use std::{path::Path, time::SystemTime};
 
 fn render(w: u16, h: u16, draw: impl FnOnce(&mut Frame)) -> (String, Buffer) {
@@ -36,9 +29,6 @@ fn find(text: &str, needle: &str) -> (u16, u16) {
                 .map(|i| (line[..i].chars().count() as u16, y as u16))
         })
         .unwrap_or_else(|| panic!("{needle} not shown:\n{text}"))
-}
-fn key(code: KeyCode) -> Event {
-    Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
 }
 
 #[test]
@@ -140,206 +130,4 @@ fn diagnostics_and_updates_share_one_label_column_and_keep_every_word() {
     assert_eq!(b[(diag_label_x, version_y)].fg, t.muted);
     let (refresh, button_y) = find(&text, "Refresh r");
     assert_eq!(b[(refresh, button_y)].fg, t.focus);
-}
-
-struct Fake;
-static FAKE: Manifest = Manifest {
-    id: "test.builtin",
-    name: "Synthetic built-in",
-    version: "1",
-    commands: &[],
-    resources: &[],
-    setup_note: "",
-    setup_files: &[],
-};
-impl CorePlugin for Fake {
-    fn manifest(&self) -> &'static Manifest {
-        &FAKE
-    }
-    fn run(&self, _: Call<'_>) -> Completion {
-        Completion {
-            exit_code: 0,
-            stdout: vec![],
-            end: None,
-        }
-    }
-}
-static PLUGIN: Fake = Fake;
-static CATALOG: saddle::plugins::core::Catalog = &[&PLUGIN];
-fn manager(dir: &Path, catalog: saddle::plugins::core::Catalog) -> Manager {
-    Manager::with_resources(
-        dir.join("config/saddle/plugins.toml"),
-        catalog,
-        Resources::new(dir.join("home"), dir.join("state/saddle")),
-    )
-}
-
-#[test]
-fn plugin_management_keeps_focus_main_action_and_errors_apart() {
-    let t = Theme::default();
-    let dir = tempfile::tempdir().unwrap();
-    let settings = Settings::open(dir.path().join("config.toml"), true);
-    let mut m = manager(dir.path(), CATALOG);
-    let mut page = Page::default();
-    let (text, b) = render(110, 40, |f| page.draw(&t, f, &m, &settings));
-    println!("Plugins management:\n{text}");
-    // Action labels without a key show no part of themselves as one, and no hit number shows.
-    let (add, y) = find(&text, "Add local…");
-    assert_eq!(
-        b[(add, y)].fg,
-        b[(add + 4, y)].fg,
-        "local… looks like a key"
-    );
-    let (sync, _) = find(&text, "Sync resources");
-    assert_eq!(b[(sync, y)].fg, b[(sync + 5, y)].fg);
-    let actions = text.lines().nth(usize::from(y)).unwrap();
-    for n in 1..=7 {
-        assert!(!actions.contains(&format!("F{n}")), "{actions}");
-    }
-    // The selected row is marked by its background, weight and marker; the marker shows focus.
-    let (marker, row) = find(&text, "› Synthetic built-");
-    let name = marker + 2;
-    assert_eq!(b[(name, row)].bg, t.agent_selected);
-    assert_eq!(b[(name, row)].fg, t.text);
-    assert!(b[(name, row)].modifier.contains(Modifier::BOLD));
-    assert_eq!(b[(marker, row)].fg, t.focus);
-    // The details title, above the first row, is a heading rather than a focus cue.
-    let (title, title_y) = find(&text, " Synthetic built-in ");
-    assert!(title_y < row);
-    assert_ne!(b[(title + 1, title_y)].fg, t.focus);
-
-    // Tab focus: underlined, distinct from a primary action; the list keeps its selection.
-    page.event(key(KeyCode::Tab), &mut m);
-    let (text, b) = render(110, 40, |f| page.draw(&t, f, &m, &settings));
-    let (enable, y) = find(&text, "Enable");
-    assert!(
-        b[(enable, y)].modifier.contains(Modifier::UNDERLINED),
-        "{text}"
-    );
-    assert_eq!(b[(enable, y)].fg, t.focus);
-    assert!(!b[(add, y)].modifier.contains(Modifier::UNDERLINED));
-    assert_eq!(b[(name, row)].bg, t.agent_selected);
-    assert_ne!(
-        b[(marker, row)].fg,
-        t.focus,
-        "list marker still shows focus"
-    );
-
-    // An immediate result is a quiet notice; Enter keeps acting on the focused control.
-    page.event(key(KeyCode::Enter), &mut m);
-    page.event(key(KeyCode::Enter), &mut m);
-    let (text, b) = render(110, 40, |f| page.draw(&t, f, &m, &settings));
-    let (x, y) = find(&text, "Disabled. Installed resources are kept");
-    assert_eq!(b[(x, y)].fg, t.muted, "{text}");
-
-    // A registry that cannot be read is an error.
-    let broken = tempfile::tempdir().unwrap();
-    let registry = broken.path().join("config/saddle/plugins.toml");
-    std::fs::create_dir_all(registry.parent().unwrap()).unwrap();
-    std::fs::write(&registry, "not [ toml").unwrap();
-    let m = manager(broken.path(), &[]);
-    let error = m.registry.error.clone().expect("synthetic registry error");
-    let mut page = Page::default();
-    let (text, b) = render(110, 40, |f| page.draw(&t, f, &m, &settings));
-    let shown: String = error.chars().take(20).collect();
-    let (x, y) = find(&text, &shown);
-    assert_eq!(b[(x, y)].fg, t.danger, "{text}");
-}
-
-#[test]
-fn add_local_shows_its_main_step_and_errors() {
-    let t = Theme::default();
-    let dir = tempfile::tempdir().unwrap();
-    let settings = Settings::open(dir.path().join("config.toml"), true);
-    let mut m = manager(dir.path(), &[]);
-    let mut page = Page::default();
-    // No plugin rows: Tab past the list and the disabled Open/Enable/Restart/Pin to Add local….
-    for _ in 0..5 {
-        page.event(key(KeyCode::Tab), &mut m);
-    }
-    page.event(key(KeyCode::Enter), &mut m);
-    let (text, b) = render(100, 30, |f| page.draw(&t, f, &m, &settings));
-    println!("Add local:\n{text}");
-    assert!(text.contains("Add local plugin"), "{text}");
-    // The field is named once; its placeholder is an example rather than the same name.
-    assert_eq!(text.matches("Plugin directory").count(), 1, "{text}");
-    // Reading the manifest is the step to take; adding stays unavailable until it succeeds.
-    let (read, y) = find(&text, "‹Read manifest");
-    let read = read + 1;
-    assert_eq!(b[(read, y)].fg, t.focus);
-    assert_eq!(b[(read + 5, y)].fg, t.focus, "manifest looks like a key");
-    let (add, _) = find(&text, "Add disabled");
-    assert_eq!(b[(add, y)].fg, t.dim);
-    let (cancel, _) = find(&text, "Cancel");
-    assert_eq!(b[(cancel, y)].fg, t.text);
-    let (hint_x, hint_y) = find(&text, "Enter a directory");
-    assert_eq!(b[(hint_x, hint_y)].fg, t.muted);
-    // Keyboard focus on the main step is underlined as well as primary.
-    page.event(key(KeyCode::Tab), &mut m);
-    let (text, b) = render(100, 30, |f| page.draw(&t, f, &m, &settings));
-    let (read, y) = find(&text, "‹Read manifest");
-    let read = read + 1;
-    assert!(b[(read, y)].modifier.contains(Modifier::UNDERLINED));
-    page.event(key(KeyCode::Enter), &mut m);
-    let (text, b) = render(100, 30, |f| page.draw(&t, f, &m, &settings));
-    println!("Add local failure:\n{text}");
-    let message = page.message.clone();
-    assert!(!message.is_empty());
-    let shown: String = message.chars().take(16).collect();
-    let (x, y) = find(&text, &shown);
-    assert_eq!(b[(x, y)].fg, t.danger, "{text}");
-}
-
-fn item(id: &str, state: &str, note: &str, builtin: bool) -> Item {
-    Item {
-        id: id.into(),
-        title: id.into(),
-        state: state.into(),
-        note: note.into(),
-        has_view: !builtin,
-        opened: false,
-        pid: None,
-        builtin,
-    }
-}
-
-#[test]
-fn the_launcher_keeps_opening_managing_and_failures_apart() {
-    let t = Theme::default();
-    let mut p = Palette::default();
-    p.update(vec![
-        item("Viewer", "Running", "", false),
-        item("Settings helper", "Enabled", "", true),
-        item("Broken", "Failed", "synthetic crash at start", false),
-        item("Resting", "Disabled", "", false),
-    ]);
-    let draw = |p: &mut Palette| render(80, 24, |f| p.draw(f, &t));
-    let (text, b) = draw(&mut p);
-    println!("Launcher:\n{text}");
-    let (open, y) = find(&text, "‹Open›");
-    assert_eq!(b[(open, y)].fg, t.focus);
-    let (manage, y) = find(&text, "‹Manage›");
-    assert_ne!(b[(manage, y)].fg, t.focus, "managing is not opening");
-    assert_ne!(b[(manage, y)].fg, t.dim);
-    assert!(text.contains("Esc Close"), "{text}");
-    for _ in 0..2 {
-        p.event(&key(KeyCode::Down));
-    }
-    let (text, b) = draw(&mut p);
-    let (x, y) = find(&text, "synthetic crash at start");
-    assert_eq!(b[(x, y)].fg, t.danger, "{text}");
-    p.event(&key(KeyCode::Down));
-    let (text, b) = draw(&mut p);
-    let (x, y) = find(&text, "Enable this plugin");
-    assert_eq!(b[(x, y)].fg, t.muted, "{text}");
-    // Footer focus is underlined, not only recoloured.
-    p.event(&key(KeyCode::Tab));
-    let (text, b) = draw(&mut p);
-    let (x, y) = find(&text, "‹Manage plugins›");
-    assert!(
-        b[(x + 1, y)].modifier.contains(Modifier::UNDERLINED),
-        "{text}"
-    );
-    let (x, y) = find(&text, "‹Close›");
-    assert!(!b[(x + 1, y)].modifier.contains(Modifier::UNDERLINED));
 }

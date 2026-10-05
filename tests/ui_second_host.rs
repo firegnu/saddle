@@ -1,4 +1,4 @@
-//! Synthetic draws of the host status bar, notices, toasts, Agents empty states, stop/close
+//! Synthetic draws of the host status bar, notices, Agents empty states, stop/close
 //! confirmations and terminal pane surroundings. Each check prints the screens it looked at.
 use ratatui::{
     Terminal,
@@ -16,7 +16,7 @@ use saddle::{
     input::Focus,
     layout::Panes,
     search::Search,
-    terminals::{self, Control, Place, Terminals},
+    terminals::{self, Control, Terminals},
     theme::Theme,
     ui::{self, View},
 };
@@ -114,7 +114,6 @@ fn workspace(
                     },
                     settings: None,
                     updates: false,
-                    pinned: None,
                 }),
             );
         })
@@ -134,24 +133,24 @@ fn workspace_and_overlay_status_bars_share_one_target_and_help_shape() {
     let mut p = panel(vec![agent("p/a", "/tmp/p")]);
     let (buffer, _) = workspace((100, 12), Focus::Agents, &terminals, None, &mut p);
     let normal = show("workspace", &buffer);
-    // Overlays: Telemetry's own status line, Plugins, Plugin settings and a plugin view.
+    // Retained host forms and popups share the status bar.
     type DrawBar<'a> = Box<dyn Fn(&mut ratatui::Frame, Rect) + 'a>;
     let bars: [(&str, DrawBar<'_>); 4] = [
         (
-            "Telemetry",
-            Box::new(|f, a| ui::status_text(&t, f, a, " Input ▸ Telemetry · Esc Close")),
+            "Search",
+            Box::new(|f, a| ui::status_bar(&t, f, a, "Search", "Esc Close")),
         ),
         (
-            "Plugins",
-            Box::new(|f, a| ui::status_bar(&t, f, a, "Plugins", "Esc Close")),
+            "More",
+            Box::new(|f, a| ui::status_bar(&t, f, a, "More", "Esc Close")),
         ),
         (
-            "Plugin settings",
-            Box::new(|f, a| ui::status_bar(&t, f, a, "Plugin settings", "Esc Back")),
+            "Settings",
+            Box::new(|f, a| ui::status_bar(&t, f, a, "Settings", "Esc Back")),
         ),
         (
-            "Drover",
-            Box::new(|f, a| ui::status_bar(&t, f, a, "Drover", "Esc Close  Ctrl-] Agents")),
+            "New agent",
+            Box::new(|f, a| ui::status_bar(&t, f, a, "New agent", "Esc Close  Ctrl-] Agents")),
         ),
     ];
     let mut lines = vec![normal[11].clone()];
@@ -163,11 +162,11 @@ fn workspace_and_overlay_status_bars_share_one_target_and_help_shape() {
     }
     println!("── status bars ──\n{}", lines.join("\n"));
     assert!(
-        lines[1].starts_with(" Input ▸ Telemetry  Esc Close"),
+        lines[1].starts_with(" Input ▸ Search  Esc Close"),
         "{}",
         lines[1]
     );
-    assert!(lines[4].starts_with(" Input ▸ Drover  Esc Close  Ctrl-] Agents"));
+    assert!(lines[4].starts_with(" Input ▸ New agent  Esc Close  Ctrl-] Agents"));
     for (buffer, target, y) in shapes {
         let badge = format!(" Input ▸ {target} ").width() as u16;
         for x in 0..badge {
@@ -191,19 +190,19 @@ fn a_short_notice_no_longer_leaves_the_end_of_the_bar_behind() {
     let notice = "Layout save failed: disk full";
     // Before: the notice was painted straight over the bar without clearing it.
     let before = draw((100, 1), |f| {
-        ui::status_bar(&t, f, f.area(), "Drover", long);
+        ui::status_bar(&t, f, f.area(), "New agent", long);
         f.render_widget(Paragraph::new(notice).style(t.base()), f.area());
     });
     let before = rows(&before)[0].clone();
     // After: the notice helper clears the row, and so does every status bar.
     let after = draw((100, 1), |f| {
-        ui::status_bar(&t, f, f.area(), "Drover", long);
+        ui::status_bar(&t, f, f.area(), "New agent", long);
         ui::status_notice(&t, f, f.area(), notice);
     });
     let after = rows(&after)[0].clone();
     let shorter = draw((100, 1), |f| {
-        ui::status_bar(&t, f, f.area(), "Drover", long);
-        ui::status_bar(&t, f, f.area(), "Plugins", "Esc Close");
+        ui::status_bar(&t, f, f.area(), "New agent", long);
+        ui::status_bar(&t, f, f.area(), "More", "Esc Close");
     });
     let shorter = rows(&shorter)[0].clone();
     println!("── before ──\n{before}\n── after ──\n{after}\n── shorter bar ──\n{shorter}");
@@ -212,62 +211,7 @@ fn a_short_notice_no_longer_leaves_the_end_of_the_bar_behind() {
         "the old residue: {before}"
     );
     assert_eq!(after.trim_end(), notice);
-    assert_eq!(shorter.trim_end(), " Input ▸ Plugins  Esc Close");
-}
-
-#[test]
-fn the_toast_stays_clear_of_the_active_pane_bottom_controls() {
-    let t = Theme::default();
-    let mut terminals = Terminals::new("unused-fake-corral".into());
-    let first = terminals.active_pane().id;
-    terminals.focus(first);
-    terminals.reserve(Place::Right, Some("p/b".into()));
-    let area = Rect::new(0, 0, 90, 16);
-    let toast = |f: &mut ratatui::Frame, area: Rect| {
-        f.render_widget(ratatui::widgets::Clear, area);
-        f.render_widget(
-            Paragraph::new("Task T7 needs review")
-                .block(t.block(" Drover ", false))
-                .style(t.base()),
-            area,
-        );
-    };
-    // Before: four rows ending on the terminal area's bottom row.
-    let old = Rect::new(area.right() - 48, area.bottom() - 4, 48, 4);
-    let mut hits = Vec::new();
-    let before = draw((90, 16), |f| {
-        hits = terminals::draw(&t, f, area, &terminals, true, &[]);
-        toast(f, old);
-    });
-    show("before", &before);
-    let controls: Vec<_> = hits
-        .iter()
-        .filter(|(_, c)| {
-            matches!(
-                c,
-                Control::Split(_) | Control::ClosePane(_) | Control::Zoom(_)
-            )
-        })
-        .map(|(h, _)| h.area)
-        .collect();
-    assert!(!controls.is_empty());
-    assert!(
-        controls.iter().any(|c| c.intersects(old)),
-        "the old overlap"
-    );
-    let new = terminals::toast_area(area).unwrap();
-    let after = draw((90, 16), |f| {
-        terminals::draw(&t, f, area, &terminals, true, &[]);
-        toast(f, new);
-    });
-    let lines = show("after", &after);
-    assert_eq!((new.width, new.height, new.right()), (48, 4, area.right()));
-    assert_eq!(new.bottom(), area.bottom() - 1);
-    assert!(hits.iter().all(|(h, _)| !h.area.intersects(new)));
-    assert!(lines[15].contains("Split ▾") && lines[15].contains("Close pane"));
-    // Too small an area still shows no toast, as before.
-    assert_eq!(terminals::toast_area(Rect::new(0, 0, 11, 20)), None);
-    assert_eq!(terminals::toast_area(Rect::new(0, 0, 40, 3)), None);
+    assert_eq!(shorter.trim_end(), " Input ▸ More  Esc Close");
 }
 
 #[test]
@@ -377,7 +321,7 @@ fn long_shell_directories_keep_their_last_levels_in_the_pane_title() {
     let t = Theme::default();
     let mut terminals = Terminals::new("unused-fake-corral".into());
     let pane = terminals.active_pane().id;
-    let cwd = "/Users/example/Developer/personal_projs/saddle-worktrees/ui2-host/plugins/drover";
+    let cwd = "/Users/example/Developer/personal_projs/saddle-worktrees/ui2-host/nested/terminal";
     terminals.get_mut(pane).unwrap().viewer.shell = Some(saddle::viewer::Shell {
         program: "zsh".into(),
         cwd: cwd.into(),
@@ -397,7 +341,10 @@ fn long_shell_directories_keep_their_last_levels_in_the_pane_title() {
         if width == 120 {
             assert!(title.contains(cwd), "{title}");
         } else {
-            assert!(title.contains("…/") && title.contains("drover "), "{title}");
+            assert!(
+                title.contains("…/") && title.contains("terminal "),
+                "{title}"
+            );
         }
         // The title is still the pane's focus target, as wide as what is drawn.
         let target = hits

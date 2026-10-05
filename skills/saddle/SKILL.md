@@ -1,9 +1,9 @@
 ---
 name: saddle
-description: 在运行中的 saddle 内新建普通终端、显示或创建 corral agent、安排 tab 与四向分屏，以及关闭显示。用于用户要求操作 saddle 工作区；不用于开发任务分派或推进 drover 队列。
+description: 在运行中的 saddle 内新建普通终端、显示或创建 corral agent、安排 tab 与四向分屏，以及关闭显示。用于用户要求操作 saddle 工作区；不用于开发任务分派。
 ---
 
-使用公开 `saddle ctl`，不要启动第二个 TUI，也不要读 corral/drover 内部文件。
+使用公开 `saddle ctl`，不要启动第二个 TUI，也不要读 corral 内部文件或已退役的遥测、Drover、插件数据。
 
 先运行 `saddle ctl inspect`。结果包含 `instance`、`active_tab`、`active_pane`、`tabs[].panes[]`、布局及 `caller.pane`。调用者定位优先匹配 `CORRAL_NAME` 和 `CORRAL_INSTANCE`；普通 shell 使用 saddle 注入的实例、Pane 和修订号。不要按名称猜身份，也不要把用户当前焦点当作自己。定位缺失、正在替换或不明确时停止依赖该定位的动作，说明错误。
 
@@ -18,7 +18,7 @@ saddle ctl open --place left --agent project/review
 saddle ctl open --place down --name project/helper --cwd /absolute/project --role regular -- codex --yolo
 ```
 
-`--place` 仅有 `tab|left|right|up|down`，默认 relative-to 为 self。三种内容互斥：shell、已有 agent、精确完整名称加 `-- PROGRAM ARG…`。已有 agent 已在别处显示时移动现有 Pane，不再次 attach。新 agent 的 role 默认 regular，可用 controller、implementer、reviewer；argv 直接传给公开 corral start，不经过 shell，不自动追加权限或模型参数。可显式传 `--prompt TEXT`，但用户只要求开一个 agent 不等于授权发送任务；不自行补 prompt，不委派开发任务，也不调用 drover next/done/go。
+`--place` 仅有 `tab|left|right|up|down`，默认 relative-to 为 self。三种内容互斥：shell、已有 agent、精确完整名称加 `-- PROGRAM ARG…`。已有 agent 已在别处显示时移动现有 Pane，不再次 attach。新 agent 的 role 默认 regular，可用 controller、implementer、reviewer；argv 直接传给公开 corral start，不经过 shell，不自动追加权限或模型参数。可显式传 `--prompt TEXT`，但用户只要求开一个 agent 不等于授权发送任务；不自行补 prompt，不委派开发任务，也不调用 ranch dispatch route。
 
 shell 默认取来源 Pane 的已知启动目录；没有时取当前 Tasks 项目，结果的 `cwd` 和 `cwd_source` 明示来源。不会追踪 shell 后来的 cd。命令默认保留输入焦点；仅当用户明确要求切换时加 `--focus`。
 

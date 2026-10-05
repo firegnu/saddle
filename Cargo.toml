@@ -1,22 +1,12 @@
-[workspace]
-members = ["crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
-default-members = [".", "crates/core-plugin", "crates/plugin-protocol", "crates/plugin-sdk", "plugins/drover", "plugins/diff", "plugins/dispatch"]
-exclude = ["examples/counter-plugin", "examples/attention-plugin"]
-resolver = "3"
-
 [package]
 name = "saddle"
 default-run = "saddle"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
-description = "A three-pane terminal workspace for corral agents and drover"
+description = "A terminal workspace for corral agents"
 
 [dependencies]
-saddle-core-plugin = { path = "crates/core-plugin" }
-saddle-dispatch-plugin = { path = "plugins/dispatch" }
-saddle-plugin-protocol = { path = "crates/plugin-protocol" }
-saddle-plugin-sdk = { path = "crates/plugin-sdk" }
 anyhow = "1"
 base64 = "0.22"
 alacritty_terminal = "0.26"
@@ -32,15 +22,11 @@ toml = "1"
 unicode-width = "0.2"
 arboard = { version = "3.6.1", default-features = false }
 
+sha2 = "0.10"
 tempfile = "3"
 toml_edit = "0.25"
-rusqlite = { version = "=0.40.2", features = ["bundled"] }
-sha2 = "0.10"
-uuid = { version = "1", features = ["v4"] }
-time = { version = "0.3", features = ["formatting", "parsing"] }
 
 [dev-dependencies]
-saddle-drover-plugin = { path = "plugins/drover" }
 vt100 = "0.16"
 
 # Native launcher for the timing-sensitive integration-test scripts.

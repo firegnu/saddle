@@ -7,67 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The periodic read-only check of Drover's notification preference, as fake drovers log it.
-const NOTIFICATION_STATUS: &str = r#"["notifications", "status", "--json"]"#;
-
-/// Convert synthetic task snapshots to native event fixtures. Never reads a real queue.
-fn seed_native(project: &std::path::Path, state: &serde_json::Value) {
-    use serde_json::json;
-    let data = project.join("native-data");
-    std::fs::create_dir_all(&data).unwrap();
-    std::fs::write(
-        project.join(".drover.conf"),
-        format!("HANDOFF_DIR={}\n", data.display()),
-    )
-    .unwrap();
-    let mut queue = String::new();
-    let mut events = Vec::new();
-    for t in state["pending"].as_array().into_iter().flatten() {
-        queue.push_str(&format!(
-            "## {} {}\n{}\n\n",
-            t["id"].as_str().unwrap_or(""),
-            t["title"].as_str().unwrap_or(""),
-            t["body"].as_str().unwrap_or("")
-        ));
-    }
-    let history: Vec<_> = state["history"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .rev()
-        .cloned()
-        .collect();
-    for (group, t) in history.iter().map(|t| ("history", t)).chain([
-        ("current", &state["current"]),
-        ("awaiting", &state["awaiting"]),
-    ]) {
-        if !t.is_object() {
-            continue;
-        }
-        let run = t["run_id"].as_str().unwrap_or("fixture-run");
-        let start = json!({"ev":"start","id":t["id"],"run_id":run,"title":t["title"],"body":t["body"].as_str().unwrap_or(""),"key":t["title"],"t":t.get("t0").unwrap_or(&json!(1)),"sha":t["start"].as_str().unwrap_or(""),"main":t["main"].as_str().unwrap_or("")});
-        events.push(start);
-        if group == "awaiting" {
-            events.push(json!({"ev":"submitted","id":t["id"],"run_id":run,"t":2}));
-        } else if group == "history" {
-            if t["status"] == "failed" {
-                events.push(json!({"ev":"done","id":t["id"],"gate":true,"ok":false,"t":2,"why":t["reason"]}));
-            } else if t["status"] == "dropped" {
-                events.push(json!({"ev":"drop","id":t["id"],"title":t["title"],"t":2}));
-            } else {
-                events.push(json!({"ev":"submitted","id":t["id"],"run_id":run,"t":2}));
-                events.push(json!({"ev":"accepted","id":t["id"],"run_id":run,"t":3}));
-            }
-        }
-    }
-    std::fs::write(data.join("queue.md"), queue).unwrap();
-    std::fs::write(
-        data.join("tasks.state"),
-        events.iter().map(|v| format!("{v}\n")).collect::<String>(),
-    )
-    .unwrap();
-}
-
 struct Harness {
     dir: tempfile::TempDir,
     child: Box<dyn Child + Send + Sync>,
@@ -81,171 +20,54 @@ struct Harness {
 }
 impl Harness {
     fn start() -> Self {
-        let mut h =
-            Self::start_prepared(include_str!("fixtures/drover.py"), false, "", 16384, |_| {});
+        let mut h = Self::start_prepared("", 16384, |_| {});
         h.see("Synthetic title");
         h.send(b"skk");
         h.see("┃ ○ a ");
         h.see("s Name");
         h
     }
-    fn start_tasks() -> Self {
-        Self::start_with_queue(include_str!("fixtures/drover.py"))
-    }
-    fn install_drover(dir: &std::path::Path) {
-        let plugin = dir.join("drover-plugin");
-        std::fs::create_dir_all(plugin.join("bin")).unwrap();
-        let binary = std::path::Path::new(env!("CARGO_BIN_EXE_saddle"))
-            .parent()
-            .unwrap()
-            .join("saddle-drover");
-        std::fs::copy(&binary, plugin.join("bin/saddle-drover"))
-            .expect("build the workspace Drover plugin binary before host workflow tests");
-        let config: toml::Value =
-            toml::from_str(&std::fs::read_to_string(dir.join("config.toml")).unwrap()).unwrap();
-        let program = config["corral"].as_str().unwrap();
-        let cwd = config["queue"]
-            .get("cwd")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned)
-            .unwrap_or_else(|| {
-                let registry =
-                    std::fs::read_to_string(dir.join("home/.drover/projects")).unwrap_or_default();
-                registry
-                    .lines()
-                    .next()
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| dir.display().to_string())
-            });
-        // Legacy fixture scripts only construct test input before launch; the plugin never
-        // calls them. Keep existing scenarios while exercising the native storage engine.
-        let registry =
-            std::fs::read_to_string(dir.join("home/.drover/projects")).unwrap_or_default();
-        let mut projects: Vec<_> = registry
-            .lines()
-            .filter(|p| !p.is_empty())
-            .map(std::path::PathBuf::from)
-            .collect();
-        projects.push(std::path::PathBuf::from(&cwd));
-        projects.sort();
-        projects.dedup();
-        for project in projects {
-            let result = std::process::Command::new(config["queue"]["drover"].as_str().unwrap())
-                .args(["list", "--json"])
-                .current_dir(&project)
-                .output()
-                .unwrap();
-            if result.status.success() {
-                seed_native(&project, &serde_json::from_slice(&result.stdout).unwrap());
+    fn start_with_projects() -> Self {
+        let mut h = Self::start_prepared("", 16384, |dir| {
+            for name in ["project-one", "project-two"] {
+                std::fs::create_dir(dir.join(name)).unwrap();
             }
-        }
-        let _ = std::fs::remove_file(dir.join("queue-events"));
-        if !dir.join("home/.drover/notifications.json").exists() {
             std::fs::write(
-                dir.join("home/.drover/notifications.json"),
-                r#"{"schema_version":1,"system_enabled":false,"revision":1}"#,
+                dir.join("metadata.json"),
+                serde_json::json!({
+                    "p/a": {"cwd": dir.join("project-one").canonicalize().unwrap()},
+                    "p/b": {"cwd": dir.join("project-two").canonicalize().unwrap()}
+                })
+                .to_string(),
             )
             .unwrap();
-        }
-        let args = format!(
-            "args = [\"--corral\", {program:?}, \"--cwd\", {cwd:?}, \"--refresh-ms\", \"100\"]\n"
-        );
-        let manifest =
-            include_str!("../plugins/drover/plugin.toml").replace("[view]", &(args + "[view]"));
-        std::fs::write(plugin.join("plugin.toml"), manifest).unwrap();
-        std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"drover\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
+        });
+        h.see("Synthetic title");
+        h.send(b"skk");
+        h.see("┃ ○ a ");
+        h.see("s Name");
+        h
     }
-    fn task_state(&self, project: &str) -> serde_json::Value {
-        saddle_drover_plugin::core::list(&self.dir.path().join(project)).unwrap()
+    fn start_with_config(extra: &str) -> Self {
+        Self::start_with_read_chunk(extra, 16384)
     }
-    fn native_queue(&self) -> String {
-        self.log("native-data/queue.md")
-    }
-    fn open_tasks(&mut self) {
-        self.header_tool("Plugins");
-        self.see("Background");
-        self.send(b"Drover\r");
-        self.see("Input ▸ Drover");
-        // The opening frame must be interactive before sending another input.
-        let until = Instant::now() + Duration::from_millis(150);
-        while Instant::now() < until {
-            self.pump();
-        }
-    }
-    fn start_with_queue(queue_script: &str) -> Self {
-        Self::start_with_projects(queue_script, false)
-    }
-    fn start_with_projects(queue_script: &str, registered: bool) -> Self {
-        Self::start_with_config(queue_script, registered, "")
-    }
-    fn start_with_config(queue_script: &str, registered: bool, extra: &str) -> Self {
-        Self::start_with_read_chunk(queue_script, registered, extra, 16384)
-    }
-    fn start_with_read_chunk(
-        queue_script: &str,
-        registered: bool,
-        extra: &str,
-        read_chunk: usize,
-    ) -> Self {
-        let mut harness = Self::start_prepared(
-            queue_script,
-            registered,
-            extra,
-            read_chunk,
-            Self::install_drover,
-        );
-        // Wait for a unique selected row as well as the updated sort mode.
-        harness.see("Synthetic title");
-        harness.send(b"skk");
-        harness.see("┃ ○ a ");
-        harness.see("s Name");
-        harness
-    }
-    fn start_task_prepared(
-        queue_script: &str,
-        registered: bool,
-        extra: &str,
-        read_chunk: usize,
-        prepare: impl FnOnce(&std::path::Path),
-    ) -> Self {
-        Self::start_prepared(queue_script, registered, extra, read_chunk, |root| {
-            prepare(root);
-            Self::install_drover(root);
-        })
+    fn start_with_read_chunk(extra: &str, read_chunk: usize) -> Self {
+        let mut h = Self::start_prepared(extra, read_chunk, |_| {});
+        h.see("Synthetic title");
+        h.send(b"skk");
+        h.see("┃ ○ a ");
+        h.see("s Name");
+        h
     }
     fn start_prepared(
-        queue_script: &str,
-        registered: bool,
         extra: &str,
         read_chunk: usize,
         prepare: impl FnOnce(&std::path::Path),
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
-        std::fs::create_dir_all(home.join(".drover")).unwrap();
-        if registered {
-            let first = dir.path().join("project-one");
-            let second = dir.path().join("project-two");
-            std::fs::create_dir(&first).unwrap();
-            std::fs::create_dir(&second).unwrap();
-            std::fs::write(
-                home.join(".drover/projects"),
-                format!(
-                    "{}\n\n{}\n{}\n",
-                    first.display(),
-                    second.display(),
-                    first.display()
-                ),
-            )
-            .unwrap();
-        }
-        common::script(
-            dir.path(),
-            "osascript",
-            "#!/bin/sh\necho notified >> system-notifications\n",
-        );
+        std::fs::create_dir_all(&home).unwrap();
         let corral = common::script(dir.path(), "corral", include_str!("fixtures/corral.py"));
-        let queue = common::script(dir.path(), "queue", queue_script);
         std::fs::write(
             dir.path().join("agents.json"),
             r#"{"p/a":"idle","p/b":"working","p/taken":"idle"}"#,
@@ -256,20 +78,9 @@ impl Harness {
             &config,
             // Text-based workflow assertions need unoccluded output. Overlay tests
             // explicitly enable the decoration and check its permitted occlusion.
-            format!("corral = {corral:?}\nrefresh_ms = 100\nmascot_enabled = false\n[queue]\ndrover = {queue:?}\n{extra}"),
+            format!("corral = {corral:?}\nrefresh_ms = 100\nmascot_enabled = false\n{extra}"),
         )
         .unwrap();
-        if registered {
-            std::fs::write(
-                dir.path().join("metadata.json"),
-                serde_json::json!({
-                    "p/a":{"cwd":dir.path().join("project-one").canonicalize().unwrap()},
-                    "p/b":{"cwd":dir.path().join("project-two").canonicalize().unwrap()}
-                })
-                .to_string(),
-            )
-            .unwrap();
-        }
         prepare(dir.path());
         let pair = native_pty_system()
             .openpty(PtySize {
@@ -409,14 +220,8 @@ while True:
     fn see(&mut self, text: &str) {
         self.until(|h| h.screen.screen().contents().contains(text));
     }
-    fn see_task_tab(&mut self, label: &str) {
-        self.until(|h| {
-            h.locate(label, 0)
-                .is_some_and(|(x, y)| h.screen.screen().cell(y, x).unwrap().underline())
-        });
-    }
     fn settle(&mut self) {
-        // A visible label may arrive before the rest of a process-plugin/PTY frame.
+        // A visible label may arrive before the rest of a PTY frame.
         let end = Instant::now() + Duration::from_millis(120);
         while Instant::now() < end {
             self.pump();
@@ -434,15 +239,8 @@ while True:
     }
     fn press_button(&mut self, label: &str) -> (u16, u16) {
         self.see(label);
-        let first_col = if self.contents().contains("Input ▸ Drover")
-            && !matches!(label, "⋯" | "Plugins" | "Telemetry" | "Settings")
-        {
-            self.locate(" Drover ·", 0).map_or(0, |(col, _)| col)
-        } else {
-            0
-        };
         let (col, row) = self
-            .locate_from(label, 0, first_col)
+            .locate_from(label, 0, 0)
             .unwrap_or_else(|| panic!("click target not found: {label}"));
         self.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
         (col, row)
@@ -701,7 +499,7 @@ fn full_workflow_routes_input_switches_safely_and_survives_disappearance() {
     )
     .unwrap();
     h.event("detached p/b");
-    h.send(b"\x1d"); // Reveal the Viewer after the Tasks popup has observed disappearance.
+    h.send(b"\x1d"); // Return focus to Agents after disappearance.
     h.see("attach exited");
     h.send(b"\x1dr");
     h.send(b"xq"); // cancel stop with q; cancellation must not quit.
@@ -750,112 +548,18 @@ fn mouse_selection_attaches_and_quit_remains_responsive_during_output_flood() {
 }
 
 #[test]
-fn failed_queue_data_request_keeps_actionable_error_visible() {
-    let mut h = Harness::start_with_queue(
-        "#!/bin/sh\necho 'QUEUE FAILED: /tmp/a-long-project-directory/another-long-directory/.drover.conf missing project'\nexit 2\n",
-    );
-    h.open_tasks();
-    h.see("Read failed");
-    h.see(".drover.conf");
-    h.see("Check plugin arguments");
-    assert!(!h.screen.screen().contents().contains("Loading tasks"));
-    h.quit();
-}
-
-#[test]
-fn queue_project_can_be_corrected_by_reusing_existing_configuration_without_restarting() {
-    let script = format!(
-        "#!/usr/bin/env python3\nfrom pathlib import Path\nimport sys\nif Path.cwd().name != 'chosen-project':\n    print('missing project', file=sys.stderr)\n    sys.exit(2)\n{}",
-        include_str!("fixtures/drover.py")
-    );
-    let mut h = Harness::start_with_queue(&script);
-    let project = h.dir.path().join("chosen-project");
-    std::fs::create_dir(&project).unwrap();
-    seed_native(
-        &project,
-        &serde_json::json!({"pending":[{"id":"T1","title":"Native queue task","body":""}]}),
-    );
-    let config_before = std::fs::read(project.join(".drover.conf")).unwrap();
-    let queue_before = std::fs::read(project.join("native-data/queue.md")).unwrap();
-    h.open_tasks();
-    h.see("Read failed");
-    h.send(b"ce");
-    h.see("Project path");
-    h.send(b"\x15"); // Ctrl-U replaces the initial directory.
-    h.send(format!("\x1b[200~{}\x1b[201~", project.display()).as_bytes());
-    h.send(b"\r");
-    h.see("Existing Drover configuration found");
-    assert_eq!(
-        std::fs::read(project.join(".drover.conf")).unwrap(),
-        config_before
-    );
-    h.click("Reuse & add ^s");
-    h.see("Native queue task");
-    assert_eq!(
-        std::fs::read(project.join(".drover.conf")).unwrap(),
-        config_before
-    );
-    assert_eq!(
-        std::fs::read(project.join("native-data/queue.md")).unwrap(),
-        queue_before
-    );
-    assert!(!h.screen.screen().contents().contains("missing project"));
-    h.send(b"p");
-    h.see("Paused");
-    h.quit();
-    assert!(project.join(".drover.conf").exists());
-    assert!(!h.log("queue-events").contains("init"));
-}
-
-#[test]
-fn registered_projects_load_by_default_and_mouse_buttons_route_to_the_selected_project() {
-    let script = include_str!("fixtures/drover.py")
-        .replace("state_file = root /", "state_file = Path.cwd() /")
-        .replace(
-            "title='Native queue task'",
-            "title='Queue ' + Path.cwd().name",
-        );
-    let mut h = Harness::start_with_projects(&script, true);
-    h.open_tasks();
-    h.see("Queue project-one");
-    h.click("project-one ▾ c");
-    h.see("Projects");
-    h.click("project-two");
-    h.see("Queue project-two");
-    h.click("Pause p");
-    h.see("Paused");
-    assert!(!h.dir.path().join("project-one/native-data/paused").exists());
-    assert!(h.dir.path().join("project-two/native-data/paused").exists());
-    h.click("project-two ▾ c");
-    h.click("project-one");
-    h.see("Queue project-one");
-    h.see("Queue: Ready");
-    h.quit();
-    assert!(!h.log("events").contains("attach "));
-}
-
-#[test]
 fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
-    let mut h = Harness::start_tasks();
+    let mut h = Harness::start();
     h.see("Synthetic title");
     h.click("x Stop");
     h.click("Cancel Esc");
     h.see("cancelled");
     assert!(!h.log("events").contains("stop "));
-    h.open_tasks();
-    h.see("detail line 0");
-    h.click("Run details");
-    h.see("Key events · this run");
-    h.click("Task text t");
-    h.until(|h| !h.contents().contains("Key events · this run"));
-    h.click("Add task a");
-    h.see("Ctrl-S");
-    h.send("鼠标新增".as_bytes());
-    h.click("Body");
-    h.send("正文内容".as_bytes());
-    h.click("Save ^s");
-    h.see("鼠标新增");
-    h.until(|h| h.native_queue().contains("鼠标新增\n正文内容"));
+    h.send(b",");
+    h.see("Sidebar width");
+    h.click("52");
+    h.send(b"\x1552\x13");
+    h.see("Input ▸ Agents");
     h.master
         .resize(PtySize {
             rows: 48,
@@ -865,8 +569,8 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(48, 80);
-    // Wait for the redraw at the new size: the Agents column ends at column 34.
-    h.until(|h| matches!(h.screen.screen().cell(0, 33).unwrap().contents(), "┐" | "┓"));
+    // Wait for the resized Agents column to end at column 34.
+    h.until(|h| h.screen.screen().cell(0, 33).unwrap().contents() == "┓");
     h.send(b"\x1d");
     h.see("Input ▸ Agents");
     // Narrow windows keep Agents on the left; hit targets must follow the new rows.
@@ -874,136 +578,6 @@ fn native_mouse_buttons_cover_forms_and_stop_confirmation() {
     h.click("‹Stop y›");
     h.event("stop p/a");
     h.quit();
-}
-
-#[test]
-fn native_queue_help_details_form_and_actions_use_plugin_storage() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.send(b"?");
-    h.see("Tasks help");
-    h.see("Back Esc");
-    h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains("Back Esc"));
-    h.see("Native queue task");
-    h.send(b"\r");
-    h.see_task_tab("Run details");
-    h.see("Key events · this run");
-    h.send(b"t");
-    h.see("detail line 0");
-    h.send(b"\x1b[6~\x1b[6~\x1b[6~\x1b[6~\x1b[6~\x1b[6~");
-    // Three pages reach line 50 with the outlined toolbars above the details.
-    h.see("detail line 50");
-    assert!(!h.screen.screen().contents().contains("detail line 0"));
-    h.send(b"\x1b[5~\x1b[5~\x1b[5~\x1b[5~\x1b[5~\x1b[5~");
-    h.see("detail line 0");
-    h.see("Native queue task");
-    h.send(b"a");
-    h.see("Ctrl-S");
-    h.send("\x1b[200~新增任务\x1b[201~".as_bytes());
-    h.send(b"\t");
-    h.send("\x1b[200~正文一\n正文二\x1b[201~".as_bytes());
-    h.send(b"\x13");
-    h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
-    h.see("新增任务");
-    h.until(|h| h.native_queue().contains("新增任务\n正文一\n正文二"));
-    h.send(b"p");
-    h.see("Paused");
-    h.send(b"p");
-    h.see("Ready");
-    h.send(b"lng"); // Retired shortcuts cannot issue writes.
-    h.send(b"r");
-    h.see("Native queue task");
-    h.quit();
-    assert!(!h.log("queue-events").contains("board"));
-    assert!(!h.log("events").contains("attach "));
-}
-
-#[test]
-fn pending_edit_and_move_buttons_preserve_draft_focus_and_selection() {
-    // PTY reads may split a redraw while the old form's text is still on screen.
-    let mut h = Harness::start_with_read_chunk(include_str!("fixtures/drover.py"), false, "", 64);
-    h.open_tasks();
-    h.see("Native queue task"); // Add waits for queue data.
-    h.send(b"a");
-    h.see("┏ Add task ━");
-    h.send(b"Second\tBody\x13");
-    h.until(|h| !h.screen.screen().contents().contains("┏ Add task ━"));
-    h.see("Second");
-    // The form title can disappear before its fields. Wait for the actual list row.
-    h.see("T2 Second");
-    h.send(b"j");
-    h.see("▎T2 Second");
-    h.click("Edit e");
-    h.see("Edit task");
-    h.see("Second");
-    h.send(b" q\t\rExtra");
-    h.see("Extra");
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    h.until(|h| !h.contents().contains("Edit task"));
-    h.open_tasks();
-    h.see("Edit task");
-    h.see("Extra");
-    std::fs::remove_file(h.dir.path().join("native-data/.tasks.lock")).unwrap();
-    std::fs::create_dir(h.dir.path().join("native-data/.tasks.lock")).unwrap();
-    h.click("Save ^s");
-    h.see("lock");
-    h.see("Second q");
-    std::fs::remove_dir(h.dir.path().join("native-data/.tasks.lock")).unwrap();
-    h.click("Save ^s");
-    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
-    h.see("Second q");
-    h.see("▎T2 Second q");
-    h.click("Move up u");
-    h.until(|h| h.task_state("")["pending"][0]["id"] == "T2");
-    // Wait for the refreshed task order before issuing the opposite movement.
-    h.until(|h| {
-        let text = h.screen.screen().contents();
-        text.find("Second q")
-            .zip(text.find("T1 Native"))
-            .is_some_and(|(a, b)| a < b)
-    });
-    h.click("Move down d");
-    h.until(|h| h.task_state("")["pending"][1]["id"] == "T2");
-    h.until(|h| {
-        let text = h.screen.screen().contents();
-        text.find("Second q")
-            .zip(text.find("T1 Native"))
-            .is_some_and(|(a, b)| a > b)
-    });
-    h.click("Edit e");
-    h.see("Second q");
-    h.see("Extra");
-    h.click("Cancel Esc");
-    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
-    h.quit();
-    assert!(h.native_queue().contains("Second q\nBody\nExtra"));
-    assert!(!h.log("events").contains("attach "));
-}
-
-#[test]
-fn pending_delete_button_confirms_names_the_task_and_can_be_cancelled() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.see("T1 Native queue task");
-    h.click("Delete x");
-    h.see("Delete task");
-    h.see("detail line 0");
-    h.see("History as Dropped");
-    h.click("Cancel Esc");
-    h.until(|h| !h.screen.screen().contents().contains("Delete task"));
-    h.see("T1 Native queue task");
-    h.send(b"x");
-    h.see("Delete task");
-    h.click("Delete y");
-    h.until(|h| h.task_state("")["history"][0]["status"] == "dropped");
-    h.until(|h| !h.screen.screen().contents().contains("Delete task"));
-    h.see("Dropped");
-    h.see("No active tasks");
-    h.quit();
-    assert_eq!(h.task_state("")["history"].as_array().unwrap().len(), 1);
-    assert!(!h.log("events").contains("attach "));
 }
 
 #[test]
@@ -1036,7 +610,7 @@ fn buttons_require_release_on_the_same_target() {
 
 #[test]
 fn overlays_capture_input_and_narrow_windows_keep_the_viewer_attached() {
-    let mut h = Harness::start_tasks();
+    let mut h = Harness::start();
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
@@ -1060,12 +634,9 @@ fn overlays_capture_input_and_narrow_windows_keep_the_viewer_attached() {
         input_before
     );
     assert!(!h.log("events").contains("stop "));
-    h.open_tasks();
-    h.send(b"c");
-    h.see("Path e");
+    h.send(b",");
+    h.see("Sidebar width");
     h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m");
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
     h.master
         .resize(PtySize {
             rows: 24,
@@ -1075,18 +646,15 @@ fn overlays_capture_input_and_narrow_windows_keep_the_viewer_attached() {
         })
         .unwrap();
     h.screen.screen_mut().set_size(24, 80);
-    // Wait for the redraw at the new size: the Agents column ends at column 34.
-    h.until(|h| matches!(h.screen.screen().cell(0, 33).unwrap().contents(), "┐" | "┓"));
-    h.open_tasks();
-    h.see("Path e"); // The suspended project picker resumes.
+    // Settings occupies the resized screen while keeping background input captured.
+    h.until(|h| h.screen.screen().cell(0, 79).unwrap().contents() == "┓");
+    // The first border can arrive before the resized frame and input loop finish.
+    h.until(|h| h.locate("Input ▸ Settings", 23).is_some());
+    h.see("Sidebar width");
     h.send(b"\x1b");
-    h.see("Input ▸ Drover");
-    h.see("Native queue task");
-    h.click("Pause p");
-    h.see("Paused");
-    h.click("Close Esc");
     h.see("Input ▸ Agents");
     h.see("Synthetic title");
+    h.until(|h| h.screen.screen().cell(0, 33).unwrap().contents() == "┓");
     assert_eq!(
         h.log("events")
             .lines()
@@ -1100,19 +668,16 @@ fn overlays_capture_input_and_narrow_windows_keep_the_viewer_attached() {
 
 #[test]
 fn delayed_attach_does_not_steal_input_from_an_open_form() {
-    let mut h = Harness::start_tasks();
+    let mut h = Harness::start();
     h.see("Synthetic title");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.send(b"\r");
-    h.open_tasks();
-    h.see("Native queue task"); // Add waits for queue data.
-    h.send(b"a");
-    h.see("Ctrl-S");
+    h.send(b",");
+    h.see("Sidebar width");
     std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
-    h.event("attach p/a"); // The Viewer is behind the Tasks popup.
-    h.send("弹层保持焦点".as_bytes());
-    h.send(b"\x13");
-    h.until(|h| h.native_queue().contains("弹层保持焦点"));
+    h.event("attach p/a");
+    h.send(b"\x1570\x13");
+    h.until(|h| h.log("config.toml").contains("left_width = 70"));
     assert!(!h.log("events").contains("input p/a "));
     h.quit();
 }
@@ -1135,25 +700,6 @@ fn stop_in_progress_cannot_be_submitted_twice() {
         count, 1,
         "An in-flight stop must disable keyboard and mouse resubmission"
     );
-    h.quit();
-}
-
-#[test]
-fn returning_to_agents_preserves_the_unsubmitted_queue_draft() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.see("Native queue task"); // Add waits for queue data.
-    h.send(b"a");
-    h.see("Ctrl-S");
-    h.send("未提交的草稿".as_bytes());
-    h.see("未提交的草稿");
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    h.open_tasks();
-    h.see("Ctrl-S");
-    h.see("未提交的草稿");
-    h.send(b"\x13");
-    h.until(|h| h.native_queue().contains("未提交的草稿"));
     h.quit();
 }
 
@@ -1236,62 +782,9 @@ fn wheel_over_agents_scrollbar_reaches_last_agent_without_attaching() {
 }
 
 #[test]
-fn mouse_wheel_scrolls_queue_history_immediately_and_reaches_both_ends() {
-    let mut h = Harness::start_tasks();
-    let history: Vec<_> = (0..40).rev().map(|i| serde_json::json!({"id":format!("T{}",i+100),"title":format!("History-{i:02}"),"status":"done"})).collect();
-    seed_native(h.dir.path(), &serde_json::json!({"history":history}));
-    h.open_tasks();
-    // The list is the popup's left third; the selected task's text is beside it.
-    h.see("History 40");
-    let (list_x, list_y) = h.locate("History 40", 0).unwrap();
-    let right = ((list_x + 1)..h.screen.screen().size().1)
-        .find(|&x| h.screen.screen().cell(list_y, x).unwrap().contents() == "│")
-        .expect("list divider");
-    let list = |h: &Harness| {
-        h.screen
-            .screen()
-            .rows(list_x, right - list_x)
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    h.until(|h| list(h).contains("History-39"));
-    for _ in 0..4 {
-        h.send(format!("\x1b[<65;{};{}M", list_x + 3, list_y + 3).as_bytes());
-        h.settle();
-    }
-    h.send(b"\r");
-    h.see_task_tab("Run details"); // Barrier: all four wheel events have been processed.
-    assert!(!list(&h).contains("History-39"), "{}", list(&h));
-    // Keep scrolling over the actual list after the overlay has moved.
-    for _ in 0..45 {
-        h.send(format!("\x1b[<65;{};{}M", list_x + 3, list_y + 3).as_bytes());
-        h.settle();
-    }
-    h.until(|h| list(h).contains("History-00"));
-    let end = Instant::now() + Duration::from_millis(500);
-    while Instant::now() < end {
-        h.pump();
-    }
-    assert!(list(&h).contains("History-00"));
-    for _ in 0..45 {
-        h.send(format!("\x1b[<64;{};{}M", list_x + 3, list_y + 3).as_bytes());
-        h.settle();
-    }
-    h.until(|h| list(h).contains("History-39"));
-    h.quit();
-    assert!(
-        h.log("queue-events")
-            .lines()
-            .all(|line| line == "[\"list\", \"--json\"]" || line == NOTIFICATION_STATUS)
-    );
-}
-
-#[test]
-fn startup_colors_reach_agents_queue_controls_and_viewer_defaults() {
+fn startup_colors_reach_agents_and_viewer_defaults() {
     use vt100::Color;
     let mut h = Harness::start_with_config(
-        include_str!("fixtures/drover.py"),
-        false,
         r##"
 [colors]
 bg = "#102030"
@@ -1321,7 +814,7 @@ text = "#abcdef"
         h.screen.screen().cell(0, 0).unwrap().fgcolor(),
         Color::Rgb(0x11, 0x22, 0x33)
     );
-    // Agents has its own palette; the shared status accents keep coloring Tasks.
+    // Agents has its own palette.
     assert_eq!(
         label_cell(&h, "idle").fgcolor(),
         Color::Rgb(0x55, 0x66, 0x77)
@@ -1330,17 +823,7 @@ text = "#abcdef"
         label_cell(&h, "claude").fgcolor(),
         Color::Rgb(0x77, 0x88, 0x99)
     );
-    h.open_tasks();
-    h.see("Native queue task");
-    h.see("Delete x"); // The whole popup has been drawn.
-    assert_eq!(
-        label_cell(&h, "Pause p").fgcolor(),
-        Color::Rgb(0xab, 0xcd, 0xef)
-    );
-    assert_eq!(label_cell(&h, "Pause p").bgcolor(), Color::Default);
-    h.send(b"c");
-    h.see("Path e");
-    h.send(b"\x1b\x1d\r");
+    h.send(b"\r");
     h.see("p/a READY");
     let viewer = label_cell(&h, "p/a READY");
     assert_eq!(viewer.fgcolor(), Color::Rgb(0xab, 0xcd, 0xef));
@@ -1354,167 +837,8 @@ text = "#abcdef"
 }
 
 #[test]
-fn all_pending_button_lists_every_registered_project_and_reports_read_failures() {
-    let script = include_str!("fixtures/drover.py")
-        .replace("state_file = root /", "state_file = Path.cwd() /")
-        .replace(
-            "title='Native queue task'",
-            "title='Queue ' + Path.cwd().name",
-        )
-        .replace(
-            "if args == ['list', '--json']:",
-            "if Path('fail-list').exists():\n    print('synthetic project read failure', file=sys.stderr)\n    sys.exit(4)\nif args == ['list', '--json']:",
-        );
-    let mut h = Harness::start_with_projects(&script, true);
-    h.open_tasks();
-    h.see("Queue project-one");
-    // The loaded footer gains task actions; wait for it before locating a button there.
-    h.see("Delete x");
-    std::fs::write(
-        h.dir.path().join("project-two/native-data/tasks.state"),
-        "broken JSON",
-    )
-    .unwrap();
-    h.click("All pending A");
-    h.see("┏ All pending ━");
-    h.see("Invalid task event JSON");
-    h.see("Read failed");
-    h.see("1 T1 Queue project-one");
-    h.see("project-two");
-    std::fs::remove_file(h.dir.path().join("project-two/native-data/tasks.state")).unwrap();
-    // The header's Refresh is disabled while a sub-page is open; use the page's own key.
-    h.send(b"r");
-    h.see("1 T1 Queue project-two");
-    h.until(|h| !h.screen.screen().contents().contains("Read failed"));
-    h.send(b"\x1b");
-    h.until(|h| !h.screen.screen().contents().contains("┏ All pending ━"));
-    h.see("Queue project-one");
-    h.quit();
-    let events = h.log("queue-events");
-    assert!(
-        events
-            .lines()
-            .all(|line| line == "[\"list\", \"--json\"]" || line == NOTIFICATION_STATUS),
-        "{events}"
-    );
-    assert!(!h.log("events").contains("attach "));
-}
-
-#[test]
-fn task_edit_from_run_details_saves_and_returns_to_the_same_view() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.see("T1 Native queue task");
-    h.click("Run details");
-    h.see_task_tab("Run details");
-    h.see("Key events · this run");
-    h.click("Edit e");
-    h.see("Edit task");
-    h.send(b" revised\x13");
-    h.until(|h| !h.screen.screen().contents().contains("Edit task"));
-    h.see_task_tab("Run details");
-    h.see("Native queue task revised");
-    h.click("Task text t");
-    h.see_task_tab("Task text t");
-    h.click("Edit e");
-    h.see("Edit task");
-    h.click("Cancel Esc");
-    h.until(|h| !h.contents().contains("Edit task"));
-    h.see("Task text t");
-    h.see("T1 Native queue task revised");
-    h.quit();
-    let events = h.log("queue-events");
-    assert!(events.is_empty(), "old CLI must not run: {events}");
-    assert_eq!(
-        h.task_state("")["pending"][0]["title"],
-        "Native queue task revised"
-    );
-    assert!(!h.log("events").contains("input p/a"));
-}
-
-#[test]
-fn run_details_refresh_beside_the_list_until_tasks_closes() {
-    let show = include_str!("fixtures/show.json").replace('\n', " ");
-    let script = format!(
-        r#"#!/usr/bin/env python3
-import json, sys
-from pathlib import Path
-root = Path(__file__).parent
-args = sys.argv[1:]
-with (root / 'queue-events').open('a') as f:
-    f.write(json.dumps(args) + '\n')
-if args == ['list', '--json']:
-    print(json.dumps(dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=dict(loop=False, gate=True), paused=False, awaiting=None,
-        current=dict(id='T4', title='Detail target 任务', body='list body', run_id='run-4', status='running'),
-        pending=[dict(id='T5', title='Queued next', body='')],
-        history=[dict(id='T3', title='Older done', status='done')])))
-elif args == ['show', 'T4', '--json', '--with-agent-status']:
-    print({show:?})
-else:
-    print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
-    sys.exit(99)
-"#
-    );
-    let mut h = Harness::start_with_queue(&script);
-    h.see("Synthetic title");
-    h.send(b"\r");
-    h.see("p/a READY");
-    std::fs::write(
-        h.dir.path().join(".drover.conf"),
-        "HANDOFF_DIR=native-data\nMAIN_AGENT=p/detail-test\n",
-    )
-    .unwrap();
-    let shows = |h: &Harness| h.log("events").matches("status p/detail-test").count();
-    h.open_tasks();
-    h.see("Detail target 任务");
-    h.click("Detail target");
-    h.see("list body");
-    assert_eq!(shows(&h), 0, "Task text needs no show");
-    h.click("Run details");
-    h.see("Key events · this run");
-    h.see_task_tab("Run details");
-    for _ in 0..10 {
-        if h.contents().contains("Repository reference") {
-            break;
-        }
-        h.send(b"\x1b[6~");
-        h.settle();
-    }
-    h.see("Repository reference");
-    h.until(|h| shows(h) >= 1);
-    // Scroll keys stay in Tasks while an agent is attached in Viewer.
-    h.send(b"\x1b[6~\x1b[5~");
-    h.until(|h| shows(h) >= 2); // About five seconds later, one at a time.
-    h.send(b"e"); // A running task stays read-only.
-    assert!(!h.log("events").contains("input p/a"));
-    let queue = h.log("queue-events");
-    assert!(
-        queue.lines().all(|l| l == r#"["list", "--json"]"#
-            || l == r#"["show", "T4", "--json", "--with-agent-status"]"#
-            || l == NOTIFICATION_STATUS),
-        "{queue}"
-    );
-    h.send(b"\x1b");
-    h.see("Input ▸ p/a"); // Closing returns to the Viewer it was opened from.
-    h.see("Agent · p/a");
-    h.until(|h| {
-        !h.screen
-            .screen()
-            .contents()
-            .contains("Repository reference")
-    });
-    let after_close = shows(&h);
-    let deadline = Instant::now() + Duration::from_secs(6);
-    while Instant::now() < deadline {
-        h.pump();
-    }
-    assert_eq!(shows(&h), after_close, "closing Tasks stops details");
-    h.quit();
-}
-
-#[test]
 fn placement_cancel_and_escape_never_attach_and_new_cancel_keeps_the_draft() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     h.send(b"n");
     h.click("Regular");
@@ -1627,7 +951,7 @@ fn terminal_tabs_and_splits_route_input_and_close_only_owned_attaches() {
 
 #[test]
 fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.send(b"n");
     h.see("New agent");
     h.see("● Codex");
@@ -1688,12 +1012,8 @@ fn new_form_shows_bordered_inputs_and_click_positions_a_visible_cursor() {
 }
 
 #[test]
-fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() {
-    let script = include_str!("fixtures/drover.py").replace(
-        "title='Native queue task'",
-        "title='Queue ' + Path.cwd().name",
-    );
-    let mut h = Harness::start_with_projects(&script, true);
+fn new_agent_choices_create_with_defaults_in_the_selected_project() {
+    let mut h = Harness::start_with_projects();
     h.send(b"n");
     h.see("main");
     h.click("▾ Ctrl-P");
@@ -1709,8 +1029,6 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
     h.click("Create agent");
     h.until(|h| h.log("start-args").lines().count() == 2);
     h.until(|h| !h.contents().contains("Create agent"));
-    h.open_tasks();
-    h.see("Queue project-one");
     let calls: Vec<Vec<String>> = h
         .log("start-args")
         .lines()
@@ -1748,7 +1066,7 @@ fn new_agent_choices_create_with_defaults_without_switching_the_queue_project() 
 
 #[test]
 fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.send(b"n");
     h.see("New agent");
     h.click("▾ Ctrl-P");
@@ -1809,7 +1127,7 @@ fn new_agent_previews_exact_arguments_and_keeps_failed_draft() {
 
 #[test]
 fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
-    let mut h = Harness::start_tasks();
+    let mut h = Harness::start();
     h.see("Synthetic title");
     std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
     h.send(b"\r"); // A belongs to Tab 1.
@@ -1825,18 +1143,12 @@ fn delayed_attach_stays_with_its_pane_and_closed_targets_are_discarded() {
     // elsewhere, so its tab stays empty.
     h.click("│ + │");
     h.click_in("Open content in a new tab", "p/taken");
-    h.open_tasks();
-    h.see("Native queue task"); // Add waits for queue data.
-    h.send(b"a");
-    h.see("Ctrl-S");
+    h.send(b"\x1d,");
+    h.see("Sidebar width");
     std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
     h.event("attach p/b");
-    h.send(b"draft");
-    h.send(b"\x13");
-    h.until(|h| h.native_queue().contains("draft"));
-    h.until(|h| !h.screen.screen().contents().contains("Ctrl-S"));
-    h.see("draft");
-    h.send(b"\x1d"); // Close the plugin and return to Agents before using terminal tabs.
+    h.send(b"\x1570\x13");
+    h.until(|h| h.log("config.toml").contains("left_width = 70"));
     h.see("Input ▸ Agents");
     assert!(!h.log("events").contains("attach p/a"));
     assert!(!h.screen.screen().contents().contains("p/b READY"));
@@ -2220,127 +1532,6 @@ fn a_candidate_click_opens_only_the_agent_it_was_pressed_on() {
     assert!(!events.contains("stop "));
 }
 
-#[test]
-fn tasks_entry_opens_the_popup_and_closing_returns_to_the_previous_target() {
-    let mut h = Harness::start_tasks();
-    h.see("Synthetic title");
-    // Agents own the whole left column; the task list only lives in the popup.
-    assert!(!h.contents().contains("Native queue task"));
-    h.send(b"\r");
-    h.see("p/a READY");
-    h.see("Input ▸ p/a");
-    h.open_tasks();
-    h.see("Input ▸ Drover");
-    // List and the selected task's text sit side by side.
-    h.see("T1 Native queue task");
-    h.see("detail line 0");
-    h.see("Close Esc");
-    h.send(b"\x1b");
-    h.see("Input ▸ p/a");
-    h.until(|h| !h.contents().contains("Native queue task"));
-    h.send(b"z");
-    h.event("input p/a 7a");
-    // The palette preserves its source focus.
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    h.open_tasks();
-    h.see("Input ▸ Drover");
-    h.see("detail line 0");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.quit();
-}
-
-#[test]
-fn tasks_open_on_the_focused_agents_repository_even_without_tasks() {
-    let script = include_str!("fixtures/drover.py")
-        .replace("state_file = root /", "state_file = Path.cwd() /")
-        .replace(
-            "title='Native queue task'",
-            "title='Queue ' + Path.cwd().name",
-        );
-    let mut h = Harness::start_task_prepared(&script, true, "", 16384, |dir| {
-        let git = |cwd: &std::path::Path, args: &[&str]| {
-            let output = std::process::Command::new("git")
-                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
-                .args(["-c", "commit.gpgsign=false"])
-                .args(args)
-                .current_dir(cwd)
-                .env("GIT_CONFIG_GLOBAL", "/dev/null")
-                .env("GIT_CONFIG_NOSYSTEM", "1")
-                .output()
-                .unwrap();
-            assert!(output.status.success(), "git {args:?}: {output:?}");
-        };
-        // p/a works in a subdirectory of another worktree of project-two; p/b in project-three,
-        // whose queue is empty.
-        let (two, three) = (dir.join("project-two"), dir.join("project-three"));
-        std::fs::create_dir(&three).unwrap();
-        for repo in [&two, &three] {
-            git(repo, &["init", "-q", "-b", "main"]);
-            git(repo, &["commit", "-q", "--allow-empty", "-m", "init"]);
-        }
-        git(&two, &["worktree", "add", "-q", "../wt-two", "-b", "wt"]);
-        std::fs::create_dir(dir.join("wt-two/sub")).unwrap();
-        std::fs::write(
-            three.join("queue-state.json"),
-            r#"{"schema_version":2,"ok":true,"project":"/synthetic","mode":{"loop":false,"gate":true},"paused":false,"current":null,"awaiting":null,"pending":[],"history":[]}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("home/.drover/projects"),
-            format!(
-                "{}\n{}\n{}\n",
-                dir.join("project-one").display(),
-                two.display(),
-                three.display()
-            ),
-        )
-        .unwrap();
-        std::fs::write(
-            dir.join("metadata.json"),
-            serde_json::json!({
-                "p/a": {"cwd": dir.join("wt-two/sub")},
-                "p/b": {"cwd": three},
-            })
-            .to_string(),
-        )
-        .unwrap();
-    });
-    h.see("Synthetic title");
-    h.send(b"skk");
-    h.see("┃ ○ a ");
-    // Agents focus: the selected agent's repository wins over the default project-one.
-    h.open_tasks();
-    h.see("Input ▸ Drover");
-    h.see("Queue project-two");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    // p/b's added repository has no tasks; it is still the project shown, as an empty queue.
-    h.send(b"j");
-    h.open_tasks();
-    h.see("Input ▸ Drover");
-    h.see("project-three ▾ c");
-    h.see("Showing project-three · from ");
-    assert!(!h.contents().contains("Queue project-two"));
-    // Pick project-one by hand, so the next opening has something to switch from.
-    h.click("project-three ▾ c");
-    h.see("Projects");
-    h.click("project-one");
-    h.see("Queue project-one");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    // Viewer focus: the active pane's agent, opened from the Tasks entry.
-    h.send(b"k\r");
-    h.see("p/a READY");
-    h.see("Input ▸ p/a");
-    h.open_tasks();
-    h.see("Input ▸ Drover");
-    h.see("Queue project-two");
-    h.quit();
-    assert!(!h.log("events").contains("stop "));
-}
-
 impl Harness {
     fn ctl(&self, args: &[&str]) -> serde_json::Value {
         self.ctl_as(args, &[])
@@ -2371,7 +1562,7 @@ impl Harness {
             let value = self.ctl(&["request", id, "--instance", instance]);
             if !matches!(
                 value["state"].as_str(),
-                Some("accepted" | "starting" | "attaching" | "plugin_pending")
+                Some("accepted" | "starting" | "attaching")
             ) {
                 return value;
             }
@@ -2470,7 +1661,7 @@ fn ctl_shell_creation_is_idempotent_preserves_focus_and_confirms_close() {
 
 #[test]
 fn ctl_self_uses_corral_identity_and_late_start_preserves_user_draft() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
@@ -2596,7 +1787,7 @@ fn ctl_self_uses_corral_identity_and_late_start_preserves_user_draft() {
 
 #[test]
 fn terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     let initial = h.ctl(&["inspect"]);
     h.click("Split ▾");
@@ -2650,7 +1841,7 @@ fn terminal_picker_binds_new_form_and_shell_exit_and_close_are_modal() {
 
 #[test]
 fn ctl_mixed_tab_confirmation_is_atomic_and_expires_after_layout_change() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
@@ -2724,7 +1915,7 @@ fn ctl_mixed_tab_confirmation_is_atomic_and_expires_after_layout_change() {
 
 #[test]
 fn ctl_closed_start_target_records_creation_without_attaching_or_stopping() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     let initial = h.ctl(&["inspect"]);
     let instance = initial["instance"].as_str().unwrap();
@@ -2758,7 +1949,7 @@ fn ctl_closed_start_target_records_creation_without_attaching_or_stopping() {
 
 #[test]
 fn replacing_a_running_shell_confirms_then_keeps_the_same_pane() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     h.click("│ + │");
     h.click_in("Open content in a new tab", "Terminal");
@@ -2782,7 +1973,7 @@ fn replacing_a_running_shell_confirms_then_keeps_the_same_pane() {
 
 #[test]
 fn t51_location_new_can_choose_the_originating_pane_with_existing_confirmation() {
-    let mut h = Harness::start_with_projects(include_str!("fixtures/drover.py"), true);
+    let mut h = Harness::start_with_projects();
     h.see("Synthetic title");
     h.click("│ + │");
     h.click_in("Open content in a new tab", "Terminal");
@@ -3287,7 +2478,7 @@ fn t20_r1_pending_new_pane_keeps_known_source_cwd_for_shell() {
     );
     assert_eq!(
         initial["tabs"][1]["panes"][0]["cwd"], start["cwd"],
-        "pending pane inspection reports an unrelated Tasks cwd"
+        "pending pane inspection reports an unrelated cwd"
     );
 }
 
@@ -3311,7 +2502,7 @@ fn t20_r1_replacing_pane_keeps_displayed_cwd_in_both_pending_phases() {
     let old_pane = before["active_pane"].as_u64().unwrap().to_string();
     std::fs::write(h.dir.path().join("hold-start"), "").unwrap();
     std::fs::write(h.dir.path().join("hold-detach"), "").unwrap();
-    h.send(b"\x1dn\x13"); // Current-pane New uses the different Tasks project.
+    h.send(b"\x1dn\x13"); // Current-pane New uses the selected project.
     h.event("start agents/main");
     h.see("Starting…");
     h.send(b"\x1b");
@@ -3598,41 +2789,35 @@ fn t23_search_click_on_an_open_agent_consumes_the_whole_mouse_gesture() {
 }
 
 #[test]
-fn t22_attention_gathers_agents_and_every_project_and_opens_targets() {
-    let mut h = Harness::start_task_prepared(
-        &include_str!("fixtures/drover.py")
-            .replace("state_file = root /", "state_file = Path.cwd() /"),
-        true,
-        "",
-        16384,
-        |dir| {
-            for name in ["project-one", "project-two"] {
-                std::fs::write(dir.join(name).join("queue-state.json"),serde_json::json!({"pending":[],"awaiting":{"id":"T3","title":"Ready to ship","body":format!("{name} awaiting body")}}).to_string()).unwrap();
-            }
-        },
-    );
+fn t22_attention_gathers_agents_and_opens_the_selected_target() {
+    let mut h = Harness::start_prepared("", 16384, |dir| {
+        std::fs::write(
+            dir.join("agents.json"),
+            r#"{"p/a":"blocked","p/b":"blocked"}"#,
+        )
+        .unwrap();
+    });
     h.see("Synthetic title");
     h.see("Attention · 2");
     h.send(b"a");
     h.see("Attention ━");
-    h.see("project-one · T3");
-    h.see("project-two · T3");
-    h.click_in("Attention ━", "project-two · T3");
-    h.see("project-two awaiting body");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    seed_native(&h.dir.path().join("project-one"), &serde_json::json!({}));
-    h.see("Attention · 1");
+    h.click_in("Attention ━", "p/b");
+    h.see("p/b READY");
     std::fs::write(
-        h.dir.path().join("project-two/native-data/tasks.state"),
-        "bad JSON",
+        h.dir.path().join("agents.json"),
+        r#"{"p/a":"idle","p/b":"blocked"}"#,
     )
     .unwrap();
-    h.send(b"a");
-    h.see("Task action failed");
-    h.send(b"\x1b");
+    h.see("Attention · 1");
     h.quit();
-    assert!(h.log("queue-events").is_empty());
+    assert_eq!(
+        h.log("events")
+            .lines()
+            .filter(|l| l.starts_with("attach "))
+            .collect::<Vec<_>>(),
+        ["attach p/b"]
+    );
+    assert!(!h.log("events").contains("stop "));
 }
 
 #[test]
@@ -3731,13 +2916,7 @@ fn t25_seed(root: &std::path::Path) {
 
 #[test]
 fn t25_startup_restores_tabs_splits_focus_and_only_reconnects_original_live_agents() {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        t25_seed,
-    );
+    let mut h = Harness::start_prepared("", 16384, t25_seed);
     let state = h.ctl(&["inspect"]);
     assert_eq!(state["tabs"].as_array().unwrap().len(), 2, "{state}");
     assert_eq!(state["active_tab"], 4);
@@ -3758,13 +2937,7 @@ fn t25_startup_restores_tabs_splits_focus_and_only_reconnects_original_live_agen
 
 #[test]
 fn t25_placeholders_create_on_confirmation_choose_existing_and_open_fresh_shell() {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        t25_seed,
-    );
+    let mut h = Harness::start_prepared("", 16384, t25_seed);
     h.see("Open terminal");
     h.click("Open terminal");
     h.see("SHELL READY");
@@ -3838,35 +3011,23 @@ fn t25_placeholders_create_on_confirmation_choose_existing_and_open_fresh_shell(
 
 #[test]
 fn t25_changed_or_busy_identity_stays_placeholder_and_corrupt_file_survives_exit() {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            t25_seed(root);
-            std::fs::write(
-                root.join("metadata.json"),
-                r#"{"p/a":{"instance":"replacement"}}"#,
-            )
-            .unwrap();
-        },
-    );
+    let mut h = Harness::start_prepared("", 16384, |root| {
+        t25_seed(root);
+        std::fs::write(
+            root.join("metadata.json"),
+            r#"{"p/a":{"instance":"replacement"}}"#,
+        )
+        .unwrap();
+    });
     h.click("p/gone");
     h.see("identity changed");
     assert!(!h.log("events").contains("attach p/a"));
     h.quit();
 
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            t25_seed(root);
-            std::fs::write(root.join("p-a"), "other attachment").unwrap();
-        },
-    );
+    let mut h = Harness::start_prepared("", 16384, |root| {
+        t25_seed(root);
+        std::fs::write(root.join("p-a"), "other attachment").unwrap();
+    });
     h.click("p/gone");
     h.until(|h| {
         h.ctl(&["inspect"])["tabs"][0]["panes"][0]["note"]
@@ -3878,16 +3039,10 @@ fn t25_changed_or_busy_identity_stays_placeholder_and_corrupt_file_survives_exit
     h.quit();
 
     for original in ["{broken", r#"{"version":999,"active":1,"tabs":[]}"#] {
-        let mut h = Harness::start_prepared(
-            include_str!("fixtures/drover.py"),
-            false,
-            "",
-            16384,
-            |root| {
-                t25_seed(root);
-                std::fs::write(root.join("state/saddle/layout.json"), original).unwrap();
-            },
-        );
+        let mut h = Harness::start_prepared("", 16384, |root| {
+            t25_seed(root);
+            std::fs::write(root.join("state/saddle/layout.json"), original).unwrap();
+        });
         h.see("Cannot restore layout");
         let state = h.ctl(&["inspect"]);
         assert_eq!(state["tabs"][0]["panes"][0]["kind"], "empty");
@@ -3903,16 +3058,10 @@ fn t25_changed_or_busy_identity_stays_placeholder_and_corrupt_file_survives_exit
 #[test]
 fn t25_delayed_restore_discards_closed_or_replaced_targets_and_keeps_new_focus() {
     for close in [true, false] {
-        let mut h = Harness::start_prepared(
-            include_str!("fixtures/drover.py"),
-            false,
-            "",
-            16384,
-            |root| {
-                t25_seed(root);
-                std::fs::write(root.join("hold-status"), "").unwrap();
-            },
-        );
+        let mut h = Harness::start_prepared("", 16384, |root| {
+            t25_seed(root);
+            std::fs::write(root.join("hold-status"), "").unwrap();
+        });
         h.see("Open terminal");
         h.event("status p/a");
         let state = h.ctl(&["inspect"]);
@@ -3966,16 +3115,10 @@ fn t25_delayed_restore_discards_closed_or_replaced_targets_and_keeps_new_focus()
 
 #[test]
 fn t25_exited_original_status_is_not_reattached() {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            t25_seed(root);
-            std::fs::write(root.join("agents.json"), r#"{"p/a":"exited"}"#).unwrap();
-        },
-    );
+    let mut h = Harness::start_prepared("", 16384, |root| {
+        t25_seed(root);
+        std::fs::write(root.join("agents.json"), r#"{"p/a":"exited"}"#).unwrap();
+    });
     h.until(|h| {
         !matches!(
             h.ctl(&["inspect"])["tabs"][0]["panes"][0]["state"].as_str(),
@@ -3994,17 +3137,11 @@ fn t25_exited_original_status_is_not_reattached() {
 #[test]
 fn t25_save_failure_is_visible_and_app_remains_usable() {
     use std::os::unix::fs::PermissionsExt;
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            let parent = root.join("state/saddle");
-            std::fs::create_dir_all(&parent).unwrap();
-            std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500)).unwrap();
-        },
-    );
+    let mut h = Harness::start_prepared("", 16384, |root| {
+        let parent = root.join("state/saddle");
+        std::fs::create_dir_all(&parent).unwrap();
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+    });
     h.see("Layout save failed");
     h.see("Synthetic title");
     let state = h.ctl(&["inspect"]);
@@ -4036,652 +3173,6 @@ fn t25_save_failure_is_visible_and_app_remains_usable() {
 }
 
 #[test]
-fn task_links_open_explicit_file_and_return_without_terminal_input() {
-    let mut h = Harness::start_task_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            std::fs::write(root.join("delivery.md"), "SYNTHETIC DELIVERY\nsecond line").unwrap();
-            std::fs::write(root.join("queue-state.json"), serde_json::json!({
-                "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
-                "pending": [{"id":"T1", "title":"Link task", "body":"Artifact: delivery.md"}]
-            }).to_string()).unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    h.open_tasks();
-    h.see("Link task");
-    h.click("Links");
-    h.see("Files");
-    h.see("Task text");
-    h.send(b"\r");
-    h.see("SYNTHETIC DELIVERY");
-    h.send(b"\x1b");
-    h.see("Files");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Close Esc"));
-    assert!(!h.log("events").contains("input "));
-    assert!(!h.log("queue-events").contains("go"));
-    h.quit();
-}
-
-#[test]
-fn task_links_validate_original_instance_before_attach_and_before_existing_navigation() {
-    let mut h = Harness::start_task_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            std::fs::write(
-                root.join("metadata.json"),
-                r#"{"p/a":{"instance":"012345abcdef"}}"#,
-            )
-            .unwrap();
-            std::fs::write(root.join("queue-state.json"), serde_json::json!({
-            "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
-            "pending": [{"id":"T1", "title":"Agent link task", "body":"Agent: p/a | instance=012345abcdef"}]
-        }).to_string()).unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    h.open_tasks();
-    h.click("Links");
-    h.see("› p/a");
-    h.send(b"\r");
-    h.see("p/a READY");
-    h.see("Input ▸ p/a");
-    h.open_tasks();
-    h.see("› p/a");
-    h.send(b"\r");
-    h.see("Input ▸ p/a");
-    assert_eq!(
-        h.log("events")
-            .lines()
-            .filter(|line| *line == "attach p/a")
-            .count(),
-        1
-    );
-    std::fs::write(
-        h.dir.path().join("metadata.json"),
-        r#"{"p/a":{"instance":"fedcba543210"}}"#,
-    )
-    .unwrap();
-    h.open_tasks();
-    h.see("› p/a");
-    h.send(b"\r");
-    h.see("identity changed");
-    assert!(h.contents().contains("Close Esc"));
-    assert_eq!(
-        h.log("events")
-            .lines()
-            .filter(|line| *line == "attach p/a")
-            .count(),
-        1
-    );
-    assert!(!h.log("events").contains("input p/a"));
-    h.quit();
-}
-
-#[test]
-fn task_links_switching_task_during_status_never_opens_the_old_agent() {
-    let mut h = Harness::start_task_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            std::fs::write(
-                root.join("metadata.json"),
-                r#"{"p/a":{"instance":"012345abcdef"}}"#,
-            )
-            .unwrap();
-            std::fs::write(root.join("queue-state.json"), serde_json::json!({
-            "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
-            "pending": [{"id":"T1", "title":"Link source", "body":"Agent: p/a | instance=012345abcdef"},
-                        {"id":"T2", "title":"Other task", "body":"Agent: p/taken | instance=012345abcdef"}]
-        }).to_string()).unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    h.open_tasks();
-    h.click("Links");
-    h.see("› p/a");
-    std::fs::write(h.dir.path().join("hold-status"), "").unwrap();
-    h.send(b"\r");
-    h.see("Checking agent");
-    h.click("Other task");
-    h.see("› p/taken");
-    std::fs::remove_file(h.dir.path().join("hold-status")).unwrap();
-    h.send(b"\r");
-    h.see("identity changed");
-    assert!(h.contents().contains("Close Esc"));
-    assert!(!h.log("events").contains("attach "));
-    assert!(!h.log("events").contains("start "));
-    h.quit();
-}
-
-#[test]
-fn task_links_attach_failure_stays_in_tasks_and_unknown_identity_is_disabled() {
-    let mut h = Harness::start_task_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            std::fs::write(
-                root.join("metadata.json"),
-                r#"{"p/a":{"instance":"012345abcdef"}}"#,
-            )
-            .unwrap();
-            std::fs::write(root.join("fail-attach"), "").unwrap();
-            std::fs::write(root.join("queue-state.json"), serde_json::json!({
-            "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
-            "pending": [{"id":"T1", "title":"Broken connection", "body":"Agent: p/a | instance=012345abcdef\nAgent: p/b"}]
-        }).to_string()).unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    h.open_tasks();
-    h.click("Links");
-    h.see("› p/a");
-    h.send(b"\r");
-    h.see("Agent unavailable");
-    h.send(b"\x1b[B\r");
-    h.see("› p/b");
-    h.see("Identity unknown");
-    assert!(h.contents().contains("Close Esc"));
-    assert!(!h.log("events").contains("attach p/b"));
-    h.quit();
-}
-
-#[test]
-fn task_links_open_in_a_new_tab_and_preserve_the_running_shell() {
-    let mut h = Harness::start_task_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            std::fs::write(
-                root.join("metadata.json"),
-                r#"{"p/a":{"instance":"012345abcdef"}}"#,
-            )
-            .unwrap();
-            std::fs::write(root.join("recovery.txt"), "RECOVERY FILE CONTENT").unwrap();
-            std::fs::write(root.join("queue-state.json"), serde_json::json!({
-                "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
-                "pending": [{"id":"T1", "title":"Shell link recovery", "body":"Artifact: recovery.txt\nAgent: p/a | instance=012345abcdef"}]
-            }).to_string()).unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    common::script(
-        h.dir.path(),
-        "shell",
-        r#"#!/usr/bin/env python3
-from pathlib import Path
-import os, time, sys
-root = Path(__file__).parent
-os.write(1, b'SHELL READY\r\n')
-while not (root / 'exit-shell').exists():
-    time.sleep(0.01)
-sys.exit(7)
-"#,
-    );
-    h.click("│ + │");
-    h.click_in("Open content in a new tab", "Terminal");
-    h.see("SHELL READY");
-    h.open_tasks();
-    h.click("Links");
-    h.see("› recovery.txt");
-    let before = h.ctl(&["inspect"]);
-    h.send(b"\x1b[B\r");
-    h.see("p/a READY");
-    h.see("Input ▸ p/a");
-    let after = h.ctl(&["inspect"]);
-    assert_eq!(
-        after["tabs"].as_array().unwrap().len(),
-        before["tabs"].as_array().unwrap().len() + 1
-    );
-    assert_eq!(
-        after["tabs"][1], before["tabs"][1],
-        "navigation must preserve the running shell"
-    );
-    assert!(!h.contents().contains("End these running terminals"));
-    assert_eq!(
-        h.log("events")
-            .lines()
-            .filter(|line| *line == "attach p/a")
-            .count(),
-        1
-    );
-    assert!(!h.log("events").contains("stop "));
-    std::fs::write(h.dir.path().join("exit-shell"), "").unwrap();
-    h.until(|h| h.ctl(&["inspect"])["tabs"][1]["panes"][0]["state"] == "exited");
-    h.quit();
-}
-
-/// Two registered projects; each awaits the task in its `awaiting.json`, if any. The user's
-/// notification preference lives in `notify.json` beside the script, as Drover's public CLI
-/// reports and changes it.
-const NOTIFY_QUEUE: &str = r#"#!/usr/bin/env python3
-import json, sys
-from pathlib import Path
-root = Path(__file__).parent
-args = sys.argv[1:]
-with (root / 'queue-events').open('a') as f:
-    f.write(json.dumps([Path.cwd().name] + args) + '\n')
-prefs = root / 'notify.json'
-if len(args) == 3 and args[0] == 'notifications' and args[1] in ('status', 'on', 'off') and args[2] == '--json':
-    p = json.loads(prefs.read_text())
-    if args[1] != 'status' and p['system_enabled'] != (args[1] == 'on'):
-        p = dict(system_enabled=args[1] == 'on', revision=p['revision'] + 1)
-        prefs.write_text(json.dumps(p))
-    print(json.dumps(dict(schema_version=1, ok=True, scope='user', application='next_notification_check', **p)))
-    sys.exit(0)
-if args == ['list', '--json']:
-    task = Path.cwd() / 'awaiting.json'
-    awaiting = json.loads(task.read_text()) if task.exists() else None
-    print(json.dumps(dict(schema_version=2, ok=True, project=str(Path.cwd()), mode=dict(loop=False, gate=True), paused=False, current=None,
-                          awaiting=awaiting, pending=[], history=[])))
-    sys.exit(0)
-print('FORBIDDEN CLI: ' + repr(args), file=sys.stderr)
-sys.exit(99)
-"#;
-
-impl Harness {
-    /// Makes `project` await a new run of `id`, started at `t0`.
-    fn awaiting(&self, project: &str, id: &str, t0: f64) {
-        let path = self.dir.path().join(project);
-        seed_native(
-            &path,
-            &serde_json::json!({"awaiting":{"id":id,"title":format!("Ship {id}"),"body":"","run_id":format!("run-{t0}"),"t0":t0}}),
-        );
-    }
-    fn rounds(&mut self) {
-        let end = Instant::now() + Duration::from_millis(700);
-        while Instant::now() < end {
-            self.pump();
-        }
-    }
-    /// The screen position of `text` on the row showing `row_text`.
-    fn on_row(&self, row_text: &str, text: &str) -> (u16, u16) {
-        let (_, row) = self.locate(row_text, 0).unwrap();
-        let screen = self.screen.screen();
-        let col = (0..screen.size().1)
-            .find(|&c| screen.cell(row, c).unwrap().contents() == text)
-            .unwrap();
-        (col, row)
-    }
-}
-
-#[test]
-fn in_saddle_prompts_new_awaiting_tasks_without_taking_input_and_system_stays_quiet() {
-    let mut h = Harness::start_task_prepared(NOTIFY_QUEUE, true, "", 16384, |dir| {
-        std::fs::write(
-            dir.join("notify.json"),
-            r#"{"system_enabled": false, "revision": 1}"#,
-        )
-        .unwrap();
-    });
-    // project-one already awaits T3 at start: that is the baseline, never prompted.
-    h.awaiting("project-one", "T3", 100.0);
-    h.see("Synthetic title");
-    h.send(b"skk");
-    h.see("┃ ○ a ");
-    h.send(b"\r");
-    h.see("p/a READY");
-    h.see("Input ▸ p/a");
-    h.rounds();
-    h.see("Attention · 1");
-    assert!(
-        !h.contents().contains("ready for review"),
-        "{}",
-        h.contents()
-    );
-
-    // A new awaiting run prompts at the bottom right; typing still reaches the agent.
-    h.awaiting("project-two", "T5", 200.0);
-    h.see("project-two · T5 ready for review");
-    let (col, row) = h.locate("project-two · T5 ready for review", 0).unwrap();
-    assert!(row > 30 && col > 70, "at {col},{row}:\n{}", h.contents());
-    h.send(b"Q");
-    h.event("input p/a 51");
-    assert!(h.contents().contains("Input ▸ p/a"));
-    // Mouse actions on the prompt stay with it; the close mark only closes it.
-    let (x, y) = (col + 3, row + 1);
-    h.send(format!("\x1b[<64;{x};{y}M\x1b[<35;{x};{y}M").as_bytes());
-    let (cx, cy) = h.on_row(" Drover ", "×");
-    h.send(
-        format!(
-            "\x1b[<0;{};{}M\x1b[<0;{};{}m",
-            cx + 1,
-            cy + 1,
-            cx + 1,
-            cy + 1
-        )
-        .as_bytes(),
-    );
-    h.until(|h| !h.contents().contains("ready for review"));
-    h.send(b"W");
-    h.event("input p/a 57");
-    assert!(
-        !h.log("events").contains("1b5b3c"),
-        "mouse reached the agent: {}",
-        h.log("events")
-    );
-    // Refreshes do not prompt the same run again; releasing is not done by closing.
-    h.rounds();
-    assert!(!h.contents().contains("ready for review"));
-    h.see("Attention · 2");
-
-    // Clicking a prompt opens its task in its project's Tasks.
-    h.awaiting("project-one", "T6", 300.0);
-    h.see("project-one · T6 ready for review");
-    h.click("project-one · T6 ready for review");
-    h.see("Input ▸ Drover");
-    h.see("Ship T6");
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-
-    // The notification preference is now owned by the plugin.
-    h.open_tasks();
-    h.send(b"N");
-    h.see("Selected: In Saddle");
-    h.send(b"s");
-    h.see("Selected: System");
-    h.send(b"\x13");
-    h.see("Saved.");
-    assert!(
-        serde_json::from_str::<serde_json::Value>(&h.log("home/.drover/notifications.json"))
-            .unwrap()["system_enabled"]
-            == true
-    );
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    // System: Drover notifies; saddle does not prompt.
-    h.rounds();
-    h.awaiting("project-two", "T9", 600.0);
-    h.rounds();
-    h.rounds();
-    assert!(
-        !h.contents().contains("ready for review"),
-        "{}",
-        h.contents()
-    );
-    h.quit();
-    let queue = h.log("queue-events");
-    assert!(
-        queue.lines().all(|l| l.contains(r#""list", "--json"]"#)
-            || l.contains(r#""notifications", "status", "--json"]"#)
-            || l.contains(r#""notifications", "on", "--json"]"#)),
-        "{queue}"
-    );
-    assert!(!h.log("events").contains("stop "), "{}", h.log("events"));
-}
-
-#[test]
-#[ignore = "requires the separately built SDK demo in SADDLE_TEST_PLUGIN"]
-fn plugin_counter_installs_opens_notifies_and_closes_without_stopping() {
-    let binary = std::env::var("SADDLE_TEST_PLUGIN").expect("build the independent demo first");
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |dir| {
-            let plugin = dir.join("counter");
-            std::fs::create_dir_all(plugin.join("bin")).unwrap();
-            std::fs::copy(&binary, plugin.join("bin/saddle-counter")).unwrap();
-            std::fs::write(
-                plugin.join("plugin.toml"),
-                include_str!("../examples/counter-plugin/plugin.toml")
-                    .replace("placement = \"overlay\"", "placement = \"workspace\""),
-            )
-            .unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    h.send(b",");
-    h.see("Settings");
-    h.send(b"\x1b[15~");
-    h.see("No plugins registered");
-    h.send(b"\t\t\t\t\r");
-    h.see("Add local plugin");
-    let directory = h.dir.path().join("counter").display().to_string();
-    h.send(directory.as_bytes());
-    h.send(b"\t\r");
-    h.see("Runs with your user permissions");
-    h.send(b"\t\r");
-    h.see("Added disabled");
-    // Add returned to the management page with the original button focus (Add).
-    h.send(b"\x1b[Z\x1b[Z\r");
-    h.see("Running");
-    h.send(b"\x1b[Z\r");
-    h.see("Clicks: 0");
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.see("Count: 1");
-    h.click("Increment");
-    h.see("Clicks: 2");
-    h.see("Count: 2");
-    h.send(b"\x1b[13;2u"); // Shift+Enter must not activate the demo button.
-    for _ in 0..5 {
-        h.pump();
-    }
-    assert!(h.screen.screen().contents().contains("Clicks: 2"));
-    h.click("Close tab");
-    h.send(b"\x1d,");
-    h.see("Settings");
-    h.send(b"\x1b[15~");
-    h.see("Running");
-    h.click("Open panel");
-    h.see("Clicks: 2");
-    h.send(b"\x1d,");
-    h.see("Settings");
-    h.send(b"\x1b[15~");
-    h.see("Running");
-    h.click("Restart");
-    h.see("Running");
-    h.click("Open panel");
-    h.see("Clicks: 0");
-    h.send(b"\x1d,");
-    h.see("Settings");
-    h.send(b"\x1b[15~");
-    h.see("Running");
-    h.click("Disable");
-    h.see("Disabled");
-    h.send(b"\x1b");
-    h.send(b"\x1b");
-    h.see("Plugin disabled");
-}
-
-fn open_fixture_palette(h: &mut Harness) {
-    h.header_tool("Plugins");
-    h.see("Search plugins");
-    h.until(|h| h.contents().contains("Background") || h.contents().contains("View open"));
-    // Built-ins precede process plugins; select the fixture, not the first row.
-    h.click("Fixture Counter");
-    h.see("› Fixture Counter");
-}
-
-fn plugin_entry_harness(placement: &str) -> Harness {
-    plugin_palette_harness(placement, false)
-}
-
-#[test]
-fn plugin_split_picker_cancels_opens_and_moves_one_live_view() {
-    let mut h = plugin_entry_harness("overlay");
-    h.send(b"\r");
-    h.see("p/b READY");
-    let before = h.ctl(&["inspect"])["tabs"].clone();
-    h.click("Split ▾");
-    h.click("Right →");
-    h.click_in("Open content on the right", "Plugin…");
-    h.see("Search plugins");
-    h.send(b"\x1b");
-    h.until(|h| h.ctl(&["inspect"])["focus"] != "plugin_palette");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
-
-    h.click("Split ▾");
-    h.click("Right →");
-    h.click_in("Open content on the right", "Plugin…");
-    h.see("Background");
-    h.click("Fixture Counter");
-    h.see("› Fixture Counter");
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    h.see("p/b READY");
-    let split = h.ctl(&["inspect"]);
-    assert!(split["overlay"].is_null());
-    assert_eq!(split["tabs"].as_array().unwrap().len(), 1);
-    assert_eq!(split["tabs"][0]["panes"].as_array().unwrap().len(), 2);
-    let plugin_pane = split["active_pane"].clone();
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.click("│ + │");
-    h.click_in("Open content in a new tab", "Plugin…");
-    h.see("Move");
-    h.click("Move");
-    h.see("Clicks: 1");
-    let moved = h.ctl(&["inspect"]);
-    assert_eq!(moved["active_pane"], plugin_pane);
-    assert_eq!(moved["tabs"].as_array().unwrap().len(), 2);
-
-    h.click("Split ▾");
-    h.click("Left  ←");
-    h.click_in("Open content on the left", "Plugin…");
-    // Dispatch can be managed here, but the current pane's view cannot be split
-    // into itself. Query that view explicitly instead of assuming an empty list.
-    h.see("Dispatch");
-    h.send(b"test.entry");
-    h.see("No matching plugins");
-    h.send(b"\r");
-    h.settle();
-    assert!(h.contents().contains("No matching plugins"));
-    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], moved["tabs"]);
-    h.send(b"\x1b");
-    h.until(|h| h.ctl(&["inspect"])["focus"] != "plugin_palette");
-    h.see("Clicks: 1");
-
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    h.send(b"\r"); // Return to the existing agent pane.
-    h.see("p/b READY");
-    h.click("Split ▾");
-    h.click("Below ↓");
-    h.click_in("Open content below", "Plugin…");
-    h.see("Move");
-    h.click("Fixture Counter");
-    h.see("› Fixture Counter");
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    assert_eq!(h.ctl(&["inspect"])["active_pane"], plugin_pane);
-    assert_eq!(h.ctl(&["inspect"])["tabs"].as_array().unwrap().len(), 1);
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-    h.click("Close pane");
-    h.see("p/b READY");
-    h.send(b"Z");
-    h.event("input p/b 5a");
-    open_fixture_palette(&mut h);
-    h.see("Background");
-    h.send(b"\r");
-    h.see("Clicks: 1"); // Default open returns to an overlay without restarting.
-    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");
-}
-
-#[test]
-fn plugin_split_picker_does_not_start_a_disabled_plugin() {
-    let mut h = plugin_entry_harness("overlay");
-    h.send(b",\x1b[15~");
-    h.see("Running");
-    h.click("Disable");
-    h.see("Disabled");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    let before = h.ctl(&["inspect"])["tabs"].clone();
-    h.click("Split ▾");
-    h.click("Right →");
-    h.click_in("Open content on the right", "Plugin…");
-    h.see("Disabled");
-    h.send(b"\r");
-    h.see("Search plugins");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-}
-
-fn plugin_palette_harness(placement: &str, second: bool) -> Harness {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |dir| {
-            let plugin = dir.join("plugin");
-            std::fs::create_dir(&plugin).unwrap();
-            common::script(
-                &plugin,
-                "counter",
-                include_str!("fixtures/plugin_counter.py"),
-            );
-            std::fs::write(
-                plugin.join("plugin.toml"),
-                r#"
-manifest_version = 1
-id = "test.entry"
-name = "Entry fixture"
-version = "1"
-protocol_major = 1
-executable = "counter"
-required_capabilities = ["panel.v1", "ui.entry.v1", "panel.overlay.v1"]
-entry = "open"
-[view]
-id = "main"
-placement = "overlay"
-[action]
-id = "open"
-title = "Fixture Counter"
-view = "main"
-"#
-                .replace(
-                    "placement = \"overlay\"",
-                    &format!("placement = {placement:?}"),
-                ),
-            )
-            .unwrap();
-            std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"test.entry\"\ndirectory = {:?}\nenabled = true\n",plugin)).unwrap();
-            if second {
-                let other = dir.join("other");
-                std::fs::create_dir(&other).unwrap();
-                common::script(
-                    &other,
-                    "counter",
-                    &include_str!("fixtures/plugin_counter.py").replace("test.entry", "test.other"),
-                );
-                let manifest = std::fs::read_to_string(plugin.join("plugin.toml"))
-                    .unwrap()
-                    .replace("test.entry", "test.other")
-                    .replace("Fixture Counter", "Other Counter");
-                std::fs::write(other.join("plugin.toml"), manifest).unwrap();
-                let mut registry = std::fs::read_to_string(dir.join("plugins.toml")).unwrap();
-                registry.push_str(&format!(
-                    "\n[[plugins]]\nid = \"test.other\"\ndirectory = {other:?}\nenabled = true\n"
-                ));
-                std::fs::write(dir.join("plugins.toml"), registry).unwrap();
-            }
-        },
-    );
-    h.see("Synthetic title");
-    h.see("⋯");
-    h
-}
-#[test]
 fn unified_search_opens_each_settings_page_and_keeps_terminal_input_local() {
     let mut h = Harness::start();
     let config = h.log("config.toml");
@@ -4690,18 +3181,12 @@ fn unified_search_opens_each_settings_page_and_keeps_terminal_input_local() {
         ("Colors", "Interface"),
         ("Advanced", "corral command"),
         ("Diagnostics", "Copy summary c"),
-        ("Plugins", "Changes apply immediately."),
         ("Updates", "Refresh r"),
     ] {
         h.send(format!("/{page}").as_bytes());
         h.see(&format!("Settings › {page}"));
         h.send(b"\r");
         h.see(content);
-        if page == "Plugins" {
-            h.see("Changes apply immediately.");
-            h.send(b"\x1b");
-            h.until(|h| !h.contents().contains("Changes apply immediately."));
-        }
         h.send(b"\x1b");
         h.see("Input ▸ Agents");
     }
@@ -4738,510 +3223,12 @@ fn unified_search_opens_each_settings_page_and_keeps_terminal_input_local() {
 }
 
 #[test]
-fn unified_search_opens_plugins_and_routes_disabled_entries_to_management() {
-    let mut h = plugin_entry_harness("overlay");
-    h.send(b"/fixture counter");
-    h.see("Plugin · Fixture Counter");
-    h.see("Background");
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    h.settle();
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    h.send(b"/test.entry");
-    h.see("Plugin · Fixture Counter");
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-
-    h.send(b"\x1d,\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.click_in("Settings ━", "Entry fixture");
-    h.see("ID: test.entry");
-    h.click("Disable");
-    h.see("Disabled");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.send(b"/fixture counter");
-    h.see("Disabled");
-    h.see("Manage");
-    h.send(b"\r");
-    h.see("Changes apply immediately.");
-    h.see("ID: test.entry");
-    assert!(h.ctl(&["inspect"])["overlay"].is_null());
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-}
-
-#[test]
-fn plugin_palette_searches_and_never_exposes_per_plugin_sidebar_buttons() {
-    let mut h = plugin_entry_harness("overlay");
-    h.header_tool("Plugins");
-    h.see("Search plugins");
-    h.see("Background");
-    h.send(b"missing");
-    h.see("No matching plugins");
-    h.send(b"\x15Fixture");
-    h.see("Fixture Counter");
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    assert!(!h.contents().contains("Fixture Counter"));
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-}
-
-#[test]
-fn plugin_entry_opens_overlay_without_changing_layout_and_keeps_process() {
-    let mut h = plugin_entry_harness("overlay");
-    let before = h.ctl(&["inspect"])["tabs"].clone();
-    open_fixture_palette(&mut h);
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    h.settle();
-    let (rows, cols) = h.screen.screen().size();
-    let left = (cols - cols * 4 / 5) / 2;
-    let top = (rows - rows * 4 / 5) / 2;
-    let corner = h.screen.screen().cell(top, left).unwrap();
-    assert_eq!(
-        corner.contents(),
-        "┌",
-        "overlay must be centered on the entire window"
-    );
-    assert_eq!(
-        corner.fgcolor(),
-        vt100::Color::Idx(8),
-        "overlay border uses the neutral theme border"
-    );
-    assert!(
-        h.contents().contains("Close pane"),
-        "workspace remains visible around the dialog"
-    );
-    let inspect = h.ctl(&["inspect"]);
-    assert_eq!(inspect["focus"], "plugin_overlay");
-    assert_eq!(inspect["overlay"]["plugin_id"], "test.entry");
-    let init: serde_json::Value = serde_json::from_str(&h.log("plugin/initialize.json")).unwrap();
-    assert!(
-        init["view_reserved_keys"]["overlay"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|v| v == "esc")
-    );
-    assert_eq!(inspect["tabs"], before);
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    open_fixture_palette(&mut h);
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-    assert!(!h.screen.screen().contents().contains("Clicks:"));
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
-}
-
-#[test]
-fn plugin_overlay_protects_host_actions_and_restores_viewer_focus() {
-    let mut h = plugin_entry_harness("overlay");
-    h.send(b"\r");
-    h.see("READY");
-    let before = h.ctl(&["inspect"]);
-    open_fixture_palette(&mut h);
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    let reply = h.ctl(&[
-        "open",
-        "--instance",
-        before["instance"].as_str().unwrap(),
-        "--relative-to",
-        "active",
-        "--shell",
-        "--cwd",
-        h.dir.path().to_str().unwrap(),
-        "--place",
-        "tab",
-        "--request-id",
-        "overlay-busy",
-    ]);
-    assert_eq!(reply["error"]["code"], "busy", "{reply}");
-    h.header_tool("Settings"); // Unavailable while a plugin overlay owns input.
-    h.see("Input ▸ More");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Input ▸ More"));
-    h.send(b",q");
-    for _ in 0..4 {
-        h.pump();
-    }
-    assert!(h.screen.screen().contents().contains("Clicks: 0"));
-    h.send(b"\x1b");
-    h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
-    assert_eq!(h.ctl(&["inspect"])["active_pane"], before["active_pane"]);
-    assert_eq!(h.ctl(&["inspect"])["tabs"], before["tabs"]);
-}
-#[test]
-fn plugin_workspace_palette_reuses_panel_and_disable_blocks_open() {
-    let mut h = plugin_entry_harness("workspace");
-    open_fixture_palette(&mut h);
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    let before = h.ctl(&["inspect"])["tabs"].clone();
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.send(b"\x1d");
-    open_fixture_palette(&mut h);
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], before);
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-    h.send(b"\x1d,\x1b[15~");
-    h.see("Running");
-    h.click_in("Settings ━", "Entry fixture"); // Not the background workspace tab title.
-    h.see("ID: test.entry");
-    h.click("Disable");
-    h.see("Disabled");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.header_tool("Plugins");
-    h.see("Fixture Counter");
-    h.see("Disabled");
-    h.click("Fixture Counter");
-    h.see("› Fixture Counter");
-    h.send(b"\r");
-    h.see("Search plugins");
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-}
-
-#[test]
-#[ignore = "requires separately packaged SDK Counter in SADDLE_TEST_PLUGIN"]
-fn plugin_real_counter_direct_overlay_notifies_and_preserves_settings() {
-    let binary = std::env::var("SADDLE_TEST_PLUGIN").unwrap();
+fn host_ignores_legacy_queue_configuration() {
     let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
+        "[queue]\ndrover='/does/not/exist'\ncwd='/unused'\n",
         16384,
-        |dir| {
-            let plugin = dir.join("counter");
-            std::fs::create_dir_all(plugin.join("bin")).unwrap();
-            std::fs::copy(&binary, plugin.join("bin/saddle-counter")).unwrap();
-            std::fs::write(
-                plugin.join("plugin.toml"),
-                include_str!("../examples/counter-plugin/plugin.toml"),
-            )
-            .unwrap();
-            std::fs::write(dir.join("plugins.toml"),format!("version = 1\n[[plugins]]\nid = \"demo.counter\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
-        },
+        |_| {},
     );
-    h.see("⋯");
-    h.send(b",");
-    h.see("Settings");
-    h.send(b"\x1b[17~"); // entry shortcut cannot replace the current dialog
-    for _ in 0..4 {
-        h.pump();
-    }
-    assert!(h.screen.screen().contents().contains("Settings"));
-    assert!(!h.screen.screen().contents().contains("Clicks:"));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    let original = h.ctl(&["inspect"])["tabs"].clone();
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    h.see("Count: 1");
-    h.click("Increment");
-    h.see("Clicks: 2");
-    h.send(b"\x1b[13;2u");
-    for _ in 0..4 {
-        h.pump();
-    }
-    assert!(h.screen.screen().contents().contains("Clicks: 2"));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.send(b"\r");
-    h.see("Clicks: 2");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
-    h.send(b"\x1d");
-    h.see("Input ▸ Agents");
-}
-
-#[test]
-fn plugin_palette_switches_overlays_and_blocks_background_layout_writes() {
-    let mut h = plugin_palette_harness("overlay", true);
-    open_fixture_palette(&mut h);
-    h.send(b"\r");
-    h.see("Clicks: 0");
-    h.send(b"\r");
-    h.see("Clicks: 1");
-    let original = h.ctl(&["inspect"]);
-    open_fixture_palette(&mut h);
-    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
-    let reply = h.ctl(&[
-        "open",
-        "--instance",
-        original["instance"].as_str().unwrap(),
-        "--relative-to",
-        "active",
-        "--shell",
-        "--cwd",
-        h.dir.path().to_str().unwrap(),
-        "--place",
-        "tab",
-        "--request-id",
-        "palette-busy",
-    ]);
-    assert_eq!(reply["error"]["code"], "busy");
-    h.send(b"\x1b");
-    h.until(|h| h.ctl(&["inspect"])["focus"] == "plugin_overlay");
-    h.see("Clicks: 1");
-    open_fixture_palette(&mut h);
-    h.send(b"Other");
-    h.send(b"\r");
-    h.until(|h| h.ctl(&["inspect"])["overlay"]["plugin_id"] == "test.other");
-    h.see("Clicks: 0");
-    open_fixture_palette(&mut h);
-    h.send(b"Fixture");
-    h.send(b"\r");
-    h.until(|h| h.ctl(&["inspect"])["overlay"]["plugin_id"] == "test.entry");
-    h.see("Clicks: 1");
-    assert_eq!(h.log("plugin/starts").lines().count(), 1);
-    assert_eq!(h.log("other/starts").lines().count(), 1);
-    assert_eq!(h.ctl(&["inspect"])["tabs"], original["tabs"]);
-    open_fixture_palette(&mut h);
-    h.click("Manage plugins");
-    h.see("Changes apply immediately.");
-    h.see("ID: test.entry");
-}
-
-#[test]
-fn plugin_palette_empty_and_settings_are_not_replaced() {
-    let mut h = Harness::start();
-    let tabs = h.ctl(&["inspect"])["tabs"].clone();
-    h.header_tool("Plugins");
-    // No external views are registered; the disabled built-in remains visible.
-    h.see("Dispatch");
-    h.see("Dispatch · Built-in");
-    h.see("Disabled");
-    h.send(b"no-view");
-    h.see("No matching plugins");
-    h.send(b"\r");
-    h.settle();
-    assert!(h.contents().contains("No matching plugins"));
-    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_palette");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], tabs);
-    h.click("Manage plugins");
-    h.see("Changes apply immediately.");
-    h.see("ID: dispatch");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.click("⋯"); // More remains behind Settings; cannot replace the current modal
-    for _ in 0..3 {
-        h.pump();
-    }
-    assert!(h.contents().contains("Input ▸ Settings"));
-    assert!(!h.contents().contains("Search plugins"));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.send(b"\r");
-    h.see("READY");
-    let before = h.log("events");
-    h.header_tool("Plugins");
-    h.see("Dispatch");
-    h.see("Dispatch · Built-in");
-    h.see("Disabled");
-    h.send(b"not-terminal-input");
-    h.see("No matching plugins");
-    h.send(b"\r");
-    h.send(b"\x1b");
-    h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
-    assert_eq!(
-        h.log("events").matches("input ").count(),
-        before.matches("input ").count()
-    );
-}
-
-#[test]
-fn plugin_manager_details_follow_the_visible_entries() {
-    let mut h = plugin_entry_harness("overlay");
-    open_fixture_palette(&mut h);
-    h.click("Manage plugins");
-    h.see("Changes apply immediately.");
-    h.see("ID: test.entry");
-    let (_, entry_row) = h.locate("Entry fixture", 0).unwrap();
-    let (_, detail_row) = h.locate("ID: test.entry", 0).unwrap();
-    assert_eq!(detail_row, entry_row + 2, "{}", h.contents());
-}
-
-#[test]
-fn plugin_settings_tabs_switch_directly_and_preserve_the_settings_draft() {
-    let mut h = plugin_entry_harness("overlay");
-    h.send(b",");
-    h.see("Sidebar width");
-    h.send(b"\x1560");
-    h.send(b"\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.settle();
-    for label in [
-        "General F1",
-        "Colors F2",
-        "Advanced F3",
-        "Diagnostics F4",
-        "Plugins F5",
-    ] {
-        assert!(
-            h.contents().contains(label),
-            "{label} missing: {}",
-            h.contents()
-        );
-    }
-    h.click("Colors F2");
-    h.see("Interface");
-    h.see("Preview");
-    h.click("Plugins F5");
-    h.see("Changes apply immediately.");
-    h.send(b"\x1bOQ"); // F2
-    h.see("Interface");
-    h.send(b"\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.click("Advanced F3");
-    h.see("corral command");
-    h.send(b"\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.click("Diagnostics F4");
-    h.see("Copy summary c");
-    h.send(b"\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.click("General F1");
-    h.see("Sidebar width");
-    h.see("60");
-    h.send(b"\x13");
-    h.see("Settings saved");
-    assert!(h.log("config.toml").contains("left_width = 60"));
-}
-
-#[test]
-fn plugin_manager_hides_underlying_cursor_but_keeps_directory_input_and_settings_cursor() {
-    let mut h = plugin_entry_harness("overlay");
-    h.send(b",");
-    h.see("Sidebar width");
-    h.settle();
-    assert!(!h.screen.screen().hide_cursor());
-    h.send(b"\x1b[15~"); // F5 opens plugin management over the Settings draft.
-    h.see("Changes apply immediately.");
-    h.see("Input ▸ Plugin settings");
-    h.settle();
-    assert!(h.screen.screen().hide_cursor(), "{}", h.contents());
-    h.click("Add local…");
-    h.see("Add local plugin");
-    h.settle();
-    assert!(!h.screen.screen().hide_cursor());
-    h.send(b"/tmp/plugin-input-check");
-    h.see("/tmp/plugin-input-check");
-    h.send(b"\x1b");
-    h.see("Changes apply immediately.");
-    h.settle();
-    assert!(h.screen.screen().hide_cursor());
-    h.send(b"\x1b");
-    h.see("Sidebar width");
-    h.settle();
-    assert!(!h.screen.screen().hide_cursor());
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    open_fixture_palette(&mut h);
-    h.click("Manage plugins");
-    h.see("Changes apply immediately.");
-    h.settle();
-    assert!(h.screen.screen().hide_cursor());
-}
-
-/// Uses the real SDK demo; no real Corral/Drover state and no notification service.
-#[test]
-#[ignore = "build examples/attention-plugin and set SADDLE_TEST_ATTENTION_PLUGIN"]
-fn plugin_real_attention_updates_withdraws_and_opens_the_selected_target() {
-    fn settle(h: &mut Harness) {
-        let start = Instant::now();
-        while start.elapsed() < Duration::from_millis(300) {
-            h.pump();
-        }
-    }
-    let binary = std::env::var("SADDLE_TEST_ATTENTION_PLUGIN").expect("demo binary required");
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |dir| {
-            let plugin = dir.join("attention-demo");
-            std::fs::create_dir_all(plugin.join("bin")).unwrap();
-            std::fs::copy(&binary, plugin.join("bin/saddle-attention-demo")).unwrap();
-            std::fs::write(
-                plugin.join("plugin.toml"),
-                include_str!("../examples/attention-plugin/plugin.toml"),
-            )
-            .unwrap();
-            std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"demo.attention\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
-        },
-    );
-    h.see("⋯");
-    let original = h.ctl(&["inspect"])["tabs"].clone();
-    h.send(b"a");
-    h.see("Demo item 2");
-    settle(&mut h);
-    h.click("Demo item 2");
-    h.see("Opened: sample-2");
-    h.see("Snapshot: accepted");
-    settle(&mut h);
-    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
-    h.send(b"u");
-    h.see("Revision: 2");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.send(b"a");
-    h.see("Synthetic revision 2");
-    settle(&mut h);
-    h.click("Demo item 1");
-    h.see("Opened: sample-1");
-    settle(&mut h);
-    h.send(b"w");
-    h.see("Items: 0");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.send(b"a");
-    h.see("Nothing needs attention.");
-    h.send(b"\x1b");
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.send(b"\r");
-    h.see("Items: 0"); // Same running process, no duplicate source or implicit restart.
-    settle(&mut h); // A cached picture can precede the reopened view's interactive frame.
-    h.send(b"u");
-    h.see("Items: 2");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.send(b"a");
-    h.see("Synthetic revision 3");
-    h.send(b"\x1b");
-    h.quit();
-    assert!(!h.log("queue-events").contains("\"go\""));
-    assert!(!h.log("queue-events").contains("\"done\""));
-}
-
-#[test]
-fn host_without_drover_plugin_never_calls_drover_even_with_legacy_config() {
-    let mut h =
-        Harness::start_prepared(include_str!("fixtures/drover.py"), true, "", 16384, |_| {});
     h.see("Synthetic title");
     h.send(b",");
     h.see("Settings");
@@ -5263,260 +3250,16 @@ fn host_without_drover_plugin_never_calls_drover_even_with_legacy_config() {
 }
 
 #[test]
-fn drover_plugin_palette_form_and_background_lifecycle_never_use_old_cli() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.see("Native queue task");
-    h.send(b"a");
-    h.see("Save ^s");
-    h.send(b"\x1b[200~plugin draft\x1b[201~");
-    h.see("plugin draft");
-    h.send(b"\x1b");
-    h.see("Native queue task");
-    h.click("Close Esc");
-    h.see("Input ▸ Agents");
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.click("Tasks");
-    h.see("› Tasks");
-    h.send(b"\r");
-    h.see("Native queue task");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.quit();
-    let calls = h.log("queue-events");
-    assert!(
-        calls.lines().all(|line| {
-            let args: Vec<String> = serde_json::from_str(line).unwrap();
-            matches!(args[0].as_str(), "list" | "show" | "notifications")
-        }),
-        "unexpected business write: {calls}"
-    );
-}
-
-#[test]
-fn drover_plugin_opens_in_a_split_and_closes_only_its_view() {
-    let mut h = Harness::start_tasks();
-    h.see("Synthetic title");
-    h.send(b"\r");
-    h.see("READY");
-    let before = h.ctl(&["inspect"])["tabs"].clone();
-    let queue = h.native_queue();
-    h.click("Split ▾");
-    h.click("Below ↓");
-    h.click_in("Open content below", "Plugin…");
-    h.see("Background");
-    h.click("Tasks");
-    h.see("› Tasks");
-    h.send(b"\r");
-    h.see("Native queue task");
-    let opened = h.ctl(&["inspect"]);
-    assert!(opened["overlay"].is_null());
-    assert_eq!(opened["tabs"][0]["panes"].as_array().unwrap().len(), 2);
-    h.send(b"\x1b");
-    h.until(|h| h.ctl(&["inspect"])["tabs"] == before);
-    assert_eq!(h.native_queue(), queue);
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.click("Tasks");
-    h.see("› Tasks");
-    h.send(b"\r");
-    h.see("Native queue task");
-    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");
-}
-
-#[test]
-fn drover_plugin_accepts_bursts_of_typed_text_without_failing_or_losing_input() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.see("Native queue task");
-    h.send(b"a");
-    h.see("Save ^s");
-    h.settle();
-    for _ in 0..20 {
-        h.send(b"abcdefgh");
-        let until = Instant::now() + Duration::from_millis(100);
-        while Instant::now() < until {
-            h.pump();
-        }
-    }
-    h.settle();
-    h.send(b"\x13");
-    let title = "abcdefgh".repeat(20);
-    h.until(|h| h.native_queue().contains(&title));
-    assert_eq!(h.native_queue().matches(&title).count(), 1);
-    h.quit();
-}
-
-#[test]
-fn plugin_commands_reach_one_running_owner_and_replay_only_the_same_result() {
-    let mut h = Harness::start_tasks();
-    h.open_tasks();
-    h.send(b"a");
-    h.see("Save ^s");
-    h.send(b"unsaved draft");
-    let view = h.ctl(&["inspect"]);
-    let params =
-        serde_json::json!({"project":h.dir.path(),"title":"From controller","body":"test"})
-            .to_string();
-    let args = [
-        "plugin",
-        "--plugin",
-        "drover",
-        "--method",
-        "add",
-        "--params",
-        &params,
-        "--request-id",
-        "one-add",
-    ];
-    let initial = h.ctl(&args);
-    assert_eq!(initial["state"], "plugin_pending", "{initial}");
-    let done = h.operation(&initial);
-    assert_eq!(done["state"], "complete", "{done}");
-    assert_eq!(done["result"]["ok"], true);
-    assert_eq!(h.ctl(&args), done, "same request must not add twice");
-    assert_eq!(h.task_state("")["pending"].as_array().unwrap().len(), 2);
-    h.see("unsaved draft");
-    assert_eq!(h.ctl(&["inspect"])["focus"], view["focus"]);
-    assert_eq!(h.ctl(&["inspect"])["tabs"], view["tabs"]);
-    let conflict = h.ctl(&[
-        "plugin",
-        "--plugin",
-        "drover",
-        "--method",
-        "list",
-        "--params",
-        &params,
-        "--request-id",
-        "one-add",
-    ]);
-    assert_eq!(conflict["error"]["code"], "request_conflict");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Save ^s"));
-    h.click("Close Esc");
-    h.see("Input ▸ Agents");
-    let params = serde_json::json!({"project":h.dir.path()}).to_string();
-    let initial = h.ctl(&[
-        "plugin", "--plugin", "drover", "--method", "list", "--params", &params,
-    ]);
-    let read = h.operation(&initial);
-    assert_eq!(read["result"]["pending_total"], 2, "{read}");
-    assert!(read["result"]["pending"][0].get("body").is_none());
-    assert!(h.log("queue-events").is_empty(), "retired CLI must not run");
-    h.quit();
-    assert_eq!(
-        h.ctl(&[
-            "request",
-            "one-add",
-            "--instance",
-            initial["instance"].as_str().unwrap()
-        ])["error"]["code"],
-        "instance_unavailable"
-    );
-}
-
-#[test]
-#[ignore = "requires packaged Diff plugin in SADDLE_TEST_DIFF_PLUGIN"]
-fn plugin_real_diff_continuous_live_overlay_split_and_tab() {
-    let binary = std::env::var("SADDLE_TEST_DIFF_PLUGIN").unwrap();
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |dir| {
-            let project = dir.join("diff-project");
-            std::fs::create_dir(&project).unwrap();
-            assert!(
-                std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(&project)
-                    .args(["init", "-q"])
-                    .status()
-                    .unwrap()
-                    .success()
-            );
-            std::fs::write(project.join("one.rs"), "fn first_change() {}\n").unwrap();
-            std::fs::write(project.join("two.md"), "second_change\n").unwrap();
-            std::fs::write(
-                dir.join("metadata.json"),
-                serde_json::json!({"p/a":{"cwd":project},"p/b":{"cwd":project}}).to_string(),
-            )
-            .unwrap();
-            let plugin = dir.join("diff");
-            std::fs::create_dir_all(plugin.join("bin")).unwrap();
-            std::fs::copy(&binary, plugin.join("bin/saddle-diff")).unwrap();
-            std::fs::write(
-                plugin.join("plugin.toml"),
-                include_str!("../plugins/diff/plugin.toml"),
-            )
-            .unwrap();
-            std::fs::write(dir.join("plugins.toml"), format!("version = 1\n[[plugins]]\nid = \"diff\"\ndirectory = {plugin:?}\nenabled = true\n")).unwrap();
-        },
-    );
-    h.see("Synthetic title");
-    h.send(b"\r");
-    h.see("p/b READY");
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.send(b"\r");
-    h.see("first_change");
-    h.see("second_change");
-    h.see("Live");
-    h.click("two.md");
-    h.until(|h| !h.contents().contains("first_change"));
-    h.send(b"g");
-    h.see("first_change");
-    let original = h.ctl(&["inspect"])["tabs"].clone();
-    std::fs::write(h.dir.path().join("diff-project/two.md"), "live_updated\n").unwrap();
-    h.see("live_updated");
-    std::fs::write("/tmp/saddle-diff-overlay.txt", h.contents()).unwrap();
-    h.send(b"\x1b");
-    h.see("p/b READY");
-    assert_eq!(h.ctl(&["inspect"])["tabs"], original);
-    h.click("Split ▾");
-    h.click("Right →");
-    h.click_in("Open content on the right", "Plugin…");
-    h.see("Background");
-    h.send(b"\r");
-    h.see("live_updated");
-    h.see("p/b READY");
-    let split = h.ctl(&["inspect"]);
-    assert!(split["overlay"].is_null());
-    assert_eq!(split["tabs"][0]["panes"].as_array().unwrap().len(), 2);
-    let pane = split["active_pane"].clone();
-    h.click("│ + │");
-    h.click_in("Open content in a new tab", "Plugin…");
-    h.see("Move");
-    h.send(b"\r");
-    h.see("live_updated");
-    assert_eq!(h.ctl(&["inspect"])["active_pane"], pane);
-    assert_eq!(h.ctl(&["inspect"])["tabs"].as_array().unwrap().len(), 2);
-    h.send(b"3");
-    h.see("No changes in this mode.");
-    h.send(b"1");
-    h.see("first_change");
-    assert!(!h.log("events").contains("stop "));
-}
-
-#[test]
 fn clawd_patrol_keeps_layout_and_does_not_send_mouse_input() {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            let path = root.join("config.toml");
-            let text = std::fs::read_to_string(&path).unwrap();
-            std::fs::write(
-                path,
-                text.replace("mascot_enabled = false", "mascot_enabled = true"),
-            )
-            .unwrap();
-        },
-    );
+    let mut h = Harness::start_prepared("", 16384, |root| {
+        let path = root.join("config.toml");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            path,
+            text.replace("mascot_enabled = false", "mascot_enabled = true"),
+        )
+        .unwrap();
+    });
     h.see("Synthetic title");
     h.send(b"skk");
     h.see("┃ ○ a ");
@@ -5553,21 +3296,15 @@ fn clawd_patrol_keeps_layout_and_does_not_send_mouse_input() {
 
 #[test]
 fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout() {
-    let mut h = Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        |root| {
-            let path = root.join("config.toml");
-            let text = std::fs::read_to_string(&path).unwrap();
-            std::fs::write(
-                path,
-                text.replace("mascot_enabled = true", "mascot_enabled = false"),
-            )
-            .unwrap();
-        },
-    );
+    let mut h = Harness::start_prepared("", 16384, |root| {
+        let path = root.join("config.toml");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            path,
+            text.replace("mascot_enabled = true", "mascot_enabled = false"),
+        )
+        .unwrap();
+    });
     h.see("Synthetic title");
     h.send(b"skk");
     h.see("┃ ○ a ");
@@ -5615,257 +3352,6 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
 }
 
 #[test]
-fn telemetry_page_refuses_layout_requests_until_it_closes() {
-    let mut h = Harness::start();
-    let before = h.ctl(&["inspect"]);
-    h.send(b"\x1dt");
-    h.see("Input ▸ Telemetry");
-    let open = |h: &Harness, id: &str| {
-        h.ctl(&[
-            "open",
-            "--instance",
-            before["instance"].as_str().unwrap(),
-            "--relative-to",
-            "active",
-            "--shell",
-            "--cwd",
-            h.dir.path().to_str().unwrap(),
-            "--place",
-            "tab",
-            "--request-id",
-            id,
-        ])
-    };
-    let reply = open(&h, "telemetry-busy");
-    assert_eq!(reply["error"]["code"], "busy", "{reply}");
-    // Reading the layout is still answered.
-    let inspect = h.ctl(&["inspect"]);
-    assert_eq!(inspect["tabs"], before["tabs"], "{inspect}");
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    let reply = open(&h, "telemetry-closed");
-    assert_eq!(reply["ok"], true, "{reply}");
-}
-
-/// Drover with a numbered and an unnumbered Pending task, run by the real host binary.
-fn telemetry_harness(record: bool) -> Harness {
-    Harness::start_prepared(
-        include_str!("fixtures/drover.py"),
-        false,
-        "",
-        16384,
-        move |root| {
-            std::fs::write(
-                root.join("queue-state.json"),
-                serde_json::json!({
-                    "schema_version":2,"ok":true,"project":"/synthetic","mode": {}, "paused": false, "history": [],
-                    "pending": [{"id":"T38", "title":"Dispatch task", "body":"SYNTHETIC BODY"},
-                                {"title":"Loose idea", "body":""}]
-                })
-                .to_string(),
-            )
-            .unwrap();
-            Harness::install_drover(root);
-            if record {
-                let mut conf = std::fs::OpenOptions::new()
-                    .append(true)
-                    .open(root.join(".drover.conf"))
-                    .unwrap();
-                writeln!(conf, "MAIN_AGENT=p/a").unwrap();
-                let input = root.join("telemetry-on.json");
-                std::fs::write(
-                    &input,
-                    r#"{"schema_version":1,"enabled":true,"actor":"synthetic"}"#,
-                )
-                .unwrap();
-                let out = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"))
-                    .args(["telemetry", "settings", "set", "--input"])
-                    .arg(&input)
-                    .env("XDG_STATE_HOME", root.join("state"))
-                    .output()
-                    .unwrap();
-                assert!(out.status.success(), "{out:?}");
-            }
-        },
-    )
-}
-
-#[test]
-fn drover_telemetry_link_opens_the_host_page_on_that_task_and_returns_to_drover() {
-    let mut h = telemetry_harness(false);
-    h.see("Synthetic title");
-    h.open_tasks();
-    h.see("Dispatch task");
-    h.click("Telemetry ↗");
-    h.see("Input ▸ Telemetry");
-    h.see("(from Drover)");
-    h.see("key=T38");
-    h.see("not initialized");
-    assert!(!h.dir.path().join("state/saddle/telemetry").exists());
-    h.send(b"\x1b");
-    h.see("Input ▸ Drover");
-    h.see("Dispatch task");
-    // An unnumbered task has nothing to link.
-    h.send(b"j");
-    h.see("Loose idea");
-    h.until(|h| !h.contents().contains("Telemetry ↗"));
-    h.quit();
-}
-
-#[test]
-fn a_recorded_dispatch_goes_once_through_the_host_agent_entry_and_is_queryable() {
-    let mut h = telemetry_harness(true);
-    h.see("Synthetic title");
-    h.open_tasks();
-    h.see("Dispatch task");
-    h.see("[ ] Record");
-    h.click("Record default: Off");
-    h.see("Record default: On");
-    h.see("[x] Record");
-    h.click("Dispatch selected");
-    h.see("Delivered to the main agent");
-    h.see("Telemetry: recorded");
-    let sent = h.log("send-args");
-    assert_eq!(sent.lines().count(), 1, "{sent}");
-    let args: Vec<String> = serde_json::from_str(sent.lines().next().unwrap()).unwrap();
-    assert_eq!(&args[..2], ["send", "p/a"]);
-    assert!(args[2].starts_with("TASK T38: Dispatch task\n\nSYNTHETIC BODY\n\n---\n"));
-    assert!(args[2].contains("trace_id: ") && args[2].contains("task: T38"));
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_saddle"))
-        .args(["telemetry", "list", "--kind", "drover.task", "--scope"])
-        .arg(h.dir.path().canonicalize().unwrap())
-        .args(["--key", "T38"])
-        .env("XDG_STATE_HOME", h.dir.path().join("state"))
-        .output()
-        .unwrap();
-    let list: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(list["traces"].as_array().unwrap().len(), 1, "{list}");
-    assert_eq!(
-        list["traces"][0]["registration"], "登记声明未核验",
-        "{list}"
-    );
-    h.send(b"\x1b");
-    h.see("Close Esc");
-    // Run details read the task again; press against the settled frame.
-    h.see("Key events · this run");
-    let end = Instant::now() + Duration::from_millis(300);
-    while Instant::now() < end {
-        h.pump();
-    }
-    h.click("Telemetry ↗");
-    h.see("Input ▸ Telemetry");
-    h.see("1 trace");
-    h.send(b"\x1b");
-    h.see("Input ▸ Drover");
-    h.quit();
-}
-
-#[test]
-fn pinned_tasks_entry_is_set_once_opens_with_p_and_stays_while_disabled() {
-    let mut h = Harness::start_tasks();
-    h.see("⋯");
-    assert!(!h.contents().contains("Tasks   ⋯"), "no default pin");
-    h.send(b"p");
-    h.see("Pin one in Settings → Plugins");
-    h.send(b",\x1b[15~");
-    h.see("Changes apply immediately.");
-    // Built-in Dispatch has no view to open, so it cannot be pinned.
-    h.see("› Dispatch");
-    assert!(!h.contents().contains("‹Pin›"));
-    h.send(b"\x1b[B");
-    h.see("› Drover");
-    h.click("‹Pin›");
-    h.see("‹Unpin›");
-    let registry = h.dir.path().join("plugins.toml");
-    assert!(
-        std::fs::read_to_string(&registry)
-            .unwrap()
-            .contains("pinned = \"drover\"")
-    );
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.see("Tasks   ⋯");
-    h.see("p Tasks (selected)");
-    h.send(b"p");
-    h.see("Native queue task");
-    h.see("Input ▸ Drover");
-    assert_eq!(h.ctl(&["inspect"])["focus"], "plugin_overlay");
-    // Wait for the whole frame: an Esc sent with the next keys would read as Alt.
-    h.settle();
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Native queue task"));
-    h.see("Input ▸ Agents");
-    h.click("Tasks");
-    h.see("Input ▸ Drover");
-    h.see("Native queue task");
-    h.settle();
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Native queue task"));
-    h.see("Input ▸ Agents");
-
-    // Disabling keeps the pin; opening explains the state instead of starting it.
-    h.send(b",\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.send(b"\x1b[B");
-    h.see("› Drover");
-    h.click("Disable");
-    h.see("Disabled");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.see("Tasks   ⋯");
-    h.send(b"p");
-    h.see("Search plugins");
-    h.see("› Tasks");
-    h.see("Enable this plugin in Manage plugins");
-    h.settle();
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Search plugins"));
-    h.see("Input ▸ Agents");
-    assert!(
-        std::fs::read_to_string(&registry)
-            .unwrap()
-            .contains("pinned = \"drover\"")
-    );
-
-    // Removing the registration clears its pin.
-    h.send(b",\x1b[15~");
-    h.see("Changes apply immediately.");
-    h.send(b"\x1b[B");
-    h.see("› Drover");
-    h.click("‹Remove›");
-    h.until(|_| {
-        !std::fs::read_to_string(&registry)
-            .unwrap()
-            .contains("drover")
-    });
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Changes apply immediately."));
-    h.send(b"\x1b");
-    h.see("Input ▸ Agents");
-    h.until(|h| !h.contents().contains("Tasks   ⋯"));
-}
-
-#[test]
-fn a_terminal_gives_its_launch_directory_as_the_tasks_source() {
-    let mut h = Harness::start_tasks();
-    h.see("Synthetic title");
-    h.click("│ + │");
-    h.click_in("Open content in a new tab", "Terminal");
-    h.until(|h| h.ctl(&["inspect"])["focus"] == "viewer");
-    h.header_tool("Plugins");
-    h.see("Background");
-    h.click("Tasks");
-    h.see("› Tasks");
-    h.send(b"\r");
-    h.see("Native queue task");
-    h.see(" · from ");
-}
-
-#[test]
 fn header_more_menu_opens_tools_and_restores_terminal_focus() {
     let mut h = Harness::start();
     h.see("Synthetic title");
@@ -5874,8 +3360,8 @@ fn header_more_menu_opens_tools_and_restores_terminal_focus() {
     let before = h.log("events");
     h.click("⋯");
     h.see("Input ▸ More");
-    h.see("Plugins");
-    h.see("Telemetry");
+    assert!(!h.contents().contains("Plugins"));
+    assert!(!h.contents().contains("Telemetry"));
     h.see("Settings");
     assert_eq!(
         h.ctl(&[
@@ -5896,20 +3382,10 @@ fn header_more_menu_opens_tools_and_restores_terminal_focus() {
     h.send(b"\x1b[<0;70;12M\x1b[<0;70;12m");
     h.until(|h| !h.contents().contains("Input ▸ More"));
     h.click("⋯");
-    h.send(b"\x1b[B\r");
-    h.see("Input ▸ Telemetry");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Input ▸ Telemetry"));
-    h.click("⋯");
     h.click("Settings");
     h.see("General F1");
     h.send(b"\x1b");
     h.until(|h| !h.contents().contains("General F1"));
-    h.click("⋯");
-    h.click("Plugins");
-    h.see("Search plugins");
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Search plugins"));
     assert_eq!(h.ctl(&["inspect"])["focus"], "viewer");
     assert_eq!(
         h.log("events").matches("input ").count(),

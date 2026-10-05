@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub corral: String,
+    /// Accept retired configuration without loading or using its contents.
+    #[serde(rename = "queue")]
+    pub legacy_queue: Option<serde::de::IgnoredAny>,
     pub left_width: u16,
     pub left_split: f64,
     pub refresh_ms: u64,
@@ -14,8 +17,6 @@ pub struct Config {
     pub mascot: crate::mascot::Pet,
     /// Pictures where the terminal shows them, or always block glyphs.
     pub mascot_display: crate::mascot::Display,
-    /// Preserved for old config files; all task settings now belong to the Drover plugin.
-    pub queue: Option<toml::Value>,
     pub theme: crate::theme::Preset,
     /// The `[colors]` keys as written, over `theme`.
     #[serde(
@@ -32,13 +33,13 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             corral: "corral".into(),
+            legacy_queue: None,
             left_width: 52,
             left_split: 0.5,
             refresh_ms: 1000,
             mascot_enabled: true,
             mascot: Default::default(),
             mascot_display: Default::default(),
-            queue: None,
             theme: Default::default(),
             overrides: Default::default(),
             colors: crate::theme::Theme::default(),

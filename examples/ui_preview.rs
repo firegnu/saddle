@@ -1,4 +1,4 @@
-//! Render synthetic Ratatui buffers for visual review without corral, drover or agents.
+//! Render synthetic Ratatui buffers for visual review without running corral or agents.
 use ratatui::{
     Terminal,
     backend::TestBackend,
@@ -100,7 +100,7 @@ fn main() -> anyhow::Result<()> {
             if overlay.is_empty() || overlay=="reply" {
                 let area=ui::inner(panes.viewer);
                 let mut screen=Screen::new(Size{rows:area.height,cols:area.width});
-                screen.process("\x1b[1m› saddle 界面重设计\x1b[0m\r\n\r\n\x1b[32m●\x1b[0m Explored\r\n  Read src/ui.rs, plugins/drover/src/queue.rs, src/buttons.rs\r\n\r\n\x1b[32m●\x1b[0m Ran cargo test\r\n  test result: ok. Synthetic checks passed\r\n\r\n\x1b[32m●\x1b[0m Edited src/ui.rs\r\n\x1b[48;2;25;50;32m  + 中文状态列保持对齐，按钮有悬停和按下反馈。\x1b[0m\r\n\r\n继续检查窄窗口和弹层输入边界。\r\n".as_bytes());
+                screen.process("\x1b[1m› saddle 界面重设计\x1b[0m\r\n\r\n\x1b[32m●\x1b[0m Explored\r\n  Read src/ui.rs, src/terminals.rs, src/buttons.rs\r\n\r\n\x1b[32m●\x1b[0m Ran cargo test\r\n  test result: ok. Synthetic checks passed\r\n\r\n\x1b[32m●\x1b[0m Edited src/ui.rs\r\n\x1b[48;2;25;50;32m  + 中文状态列保持对齐，按钮有悬停和按下反馈。\x1b[0m\r\n\r\n继续检查窄窗口和弹层输入边界。\r\n".as_bytes());
                 screen.render(area,frame.buffer_mut(),&saddle::theme::Theme::default());
             }
         })?;

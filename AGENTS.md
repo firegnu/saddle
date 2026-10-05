@@ -1,13 +1,13 @@
 # saddle
 
-一个 Rust 写的终端界面程序，把 corral 的 agent 看板、任务队列和选中 agent 的实时终端放进同一个界面。设计和分步计划见 `docs/DESIGN.md`，所有决定以它为准；实现中要改设计，先改那份文档并在提交里说明。
+一个 Rust 写的终端界面程序，把 corral 的 Agents 面板和实时终端放进同一个界面，保留设置、布局保存、Diagnostics、Updates 和 ctl。设计和分步计划见 `docs/DESIGN.md`，所有决定以它为准；实现中要改设计，先改那份文档并在提交里说明。
 
 ## 规矩
 
-Saddle 定位为保底版：不再加新功能，只保证和 ranch 运行时对得上。遥测、dispatch 与插件协议的迁出等待另行说明。
+Saddle 定位为保底版：不再加新功能，只保证和 ranch 运行时对得上。Corral 和 Dispatch 由 ranch 维护；Saddle 已删除遥测、Drover 和整个插件系统，不再提供 saddle agent/telemetry/plugin 或 saddle ctl plugin。
 
 - Rust stable，只用成熟、活跃维护的库；不依赖 tmux、zellij 等外部程序。
-- Corral 仍只通过公开命令访问，不改它的仓库。旧 dispatch-log 已退出本项目操作链，旧程序与数据保留供离线查看。用户授权完整替换 Drover：任务核心、数据和通知由 `plugins/drover/` 单一插件拥有，可读写沿用的 Drover 数据格式；旧独立 CLI/watch 退役。Saddle 宿主只提供通用插件接口，不读取业务文件。主控任务操作走 `saddle ctl plugin`，见 `plugins/drover/README.md`。
+- Corral 只通过公开命令访问，不修改 ranch 仓库。派发路由使用 `ranch dispatch route`，不记遥测。Saddle 不读取或删除旧遥测目录、`~/.drover`、插件登记与资源记录；用户自行处理旧数据。部署只解除 corral-dispatch 的资源归属，技能文件和其他记录原样保留，交给 ranch 接管。
 - **corral 由 ranch（../ranch，paddock 主控兼管）维护，Saddle 只通过 corral 命令使用它。** Saddle 部署不切换 `~/.local/bin/corral`，不安装 corral 技能；保留 `~/.local/share/saddle/versions/` 下旧版本目录，仍有会话使用其中的 corral。
 - **不要干扰用户正在用的 agent**：`corral ls` 里现有的 agent 都是用户的。可以用 `corral ls/status/reply` 读；不要对它们 `corral stop`、`corral send`、`corral keys`，也不要 attach 上去打字（主控按分派流程开出来的 `saddle/dev-*`、`saddle/test-*` 是它自己的，照流程送话、关闭）。需要真实 agent 做测试时，自己开一个 `saddle/test-<名字>`（例如 `corral start saddle/test-a --cwd /tmp -- codex --yolo -m gpt-5.6-luna`），用完 `corral stop` 掉。
 - 不要按项目名或路径批量杀进程（`pkill -f corral` 这类），会误杀用户的 agent。停自己起的进程用记下的 PID。
@@ -17,7 +17,7 @@ Saddle 定位为保底版：不再加新功能，只保证和 ranch 运行时对
 
 ## 开发方式（主控分派）
 
-- 主控按 corral-dispatch 技能执行项目已授权的分派流程；本链路显式选择记录时，先读该技能同目录的遥测操作.md，使用 Saddle 公开遥测、agent 与插件命令。全局关闭或本链路未选不自行开启；记录准备失败不妨碍原已授权业务，已尝试业务后不得因遥测失败、125/127 或缺回执直调重发。来源按实际取得方式声明，收尾只记录实际结果。被委派的实现者和审查者无需采集；此要求不改变任务授权及队列放行流程，不回退旧 dlog。
+- 主控按 ranch 安装的 corral-dispatch 技能执行项目已授权的分派流程；路由命令是 `ranch dispatch route`。派任务不记遥测，不再读取技能中的遥测操作文档。
 - 这个项目的开发任务由主控（`saddle/main`）拆开，派给别的 agent 做。主控负责拆任务、写任务文件、审查、合并，不自己写功能代码。分派时按 corral-dispatch 技能做。
 - 被委派的 agent（任务文件里写明了身份）照任务文件做，不再往下派。
 - 需求单只写用户要的结果；验收照抄用户原话，不补验收点。主控觉得该加的，列出来问用户。
