@@ -54,3 +54,8 @@ paddock 那边定了新安排（用户 10-05）：corral、遥测、dispatch 和
 - 日志：`/tmp/saddle-ranch-all-tests.log`、`/tmp/saddle-ranch-targeted.log`、`/tmp/saddle-ranch-clippy.log`、`/tmp/saddle-ranch-package.log`；逐项复核命令及退出码在 `/tmp/saddle-ranch-recheck.json`，对应输出在同前缀的 recheck 日志。
 
 结论：本次 Corral 剥离的直接回归、静态检查和 release 打包通过，可以合并。全仓仍有上述已知 UI 断言失败，首次全量另有三项复核通过的波动，不宣称全仓全绿。没有真实部署或真实会话配合验收；由 paddock 主控后续用测试 agent 核对。
+
+
+## 合并收尾
+
+实现提交 `7072c82` 已快进合入 main；确认 worktree 干净、分支为 main 祖先后，已删除 `ranch-corral-extraction` worktree 与本地分支。没有创建需关闭的 agent。main 空收尾提交为 `e5babc1`，随后更新 HANDOFF。本轮未部署，旧版本目录与 ranch 的 Corral 链接保持原状。
