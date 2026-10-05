@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- Settings 对话框最大宽度从 108 列缩为 88 列（`f1173e7`），与顶部直接入口一起发布。设置/Diagnostics/Updates 相关检查完成，长升级回执滚动后仍完整。验证按影响面选择，局部 UI 改动发布不自动触发全量；已同步 AGENTS 与 UI 回归指引。
 - 最新小改：Agents 顶部直接显示 Settings，保留更新圆点与窄栏换行；删除单项 More 菜单。部署回执在 `~/.local/share/saddle/backups/settings-direct-*/`，用户正常重开加载。
 - 被删功能（Dispatch 插件、遥测、Drover 及插件系统）的代码可从带说明标签 `before-cut`（`c21674a`，已推送 origin）取回，数据留在磁盘上。
 - 用户最终决定：Saddle 只保留 Agents 面板、终端、设置、布局恢复、Diagnostics、Updates 和非插件 ctl。遥测、Drover、Dispatch 插件及整个插件宿主/SDK/协议已删除，包内只剩 `bin/saddle` 与 `BUILD.txt`。依据是 DESIGN 末尾“只保留终端前端”，覆盖同日早先“不动遥测/Drover/SDK”的安排。
