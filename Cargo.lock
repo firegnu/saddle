@@ -296,21 +296,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "corral-core"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "shell-words",
- "tempfile",
- "uuid",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"

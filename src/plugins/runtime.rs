@@ -136,7 +136,12 @@ impl Runtime {
         Self::with_notices(dir, manifest, Notices::default())
     }
     pub fn with_notices(dir: &Path, manifest: Manifest, notices: Notices) -> Self {
-        Self::with_agent_program(dir, manifest, notices, crate::agent_program::bundled().ok())
+        Self::with_agent_program(
+            dir,
+            manifest,
+            notices,
+            crate::agent_program::resolve("corral").ok(),
+        )
     }
     pub fn with_agent_program(
         dir: &Path,

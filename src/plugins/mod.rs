@@ -122,7 +122,7 @@ impl Manager {
             path,
             core_catalog,
             resources,
-            crate::agent_program::bundled().ok(),
+            crate::agent_program::resolve("corral").ok(),
         )
     }
     fn build(

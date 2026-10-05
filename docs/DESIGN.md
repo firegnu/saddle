@@ -1547,7 +1547,7 @@ telemetry-task-boundary按上述定稿实现宿主、Drover、查询英文ended�
 
 当前建议是随统一安装包提供独立 Corral CLI 和 Rust 运行核心，保留现有命令习惯；具体命令打包、原入口切换、新旧 pen/CLI 互操作及状态目录兼容仍是待设计建议，不是已验证或已实施结论。旧运行核心不修改，真实命令链接/配置/会话不切换。源码依据与待验证边界见[Corral核心集成调研](调研/Corral核心集成到Saddle-2026-10-02.md)。
 
-2026-10-03 用户明确选择并同意“把 Corral 核心用 Rust 迁入 Saddle”，不是只附带旧 Python Corral。继续细化设计，保持原命令习惯、原会话连续和底层独立。具体草案见[Corral核心Rust集成设计](Corral核心Rust集成设计.md)：建议独立底层包及CLI、原命名空间和协议的直接互操作、固定版本helper；这些技术细节仍待实现核验，不等于用户批准了未展示的安装切换或已证明新旧兼容。当前未进入功能实施。
+2026-10-03 用户明确选择并同意“把 Corral 核心用 Rust 迁入 Saddle”，不是只附带旧 Python Corral。继续细化设计，保持原命令习惯、原会话连续和底层独立。具体草案见[Corral核心Rust集成设计](../../ranch/docs/Corral核心Rust集成设计.md)：建议独立底层包及CLI、原命名空间和协议的直接互操作、固定版本helper；这些技术细节仍待实现核验，不等于用户批准了未展示的安装切换或已证明新旧兼容。当前未进入功能实施。
 
 用户追加硬约束：“不能有任何python的代码了”。迁入的 Corral 实现、hook、worker、随包资源及配套新测试均不带 Python，构建/运行不能调用旧 Python 程序兜底。原独立 Corral 仓库仍不改动。已询问是否连部署后既有 Python pen 也要求全部退出；这与原会话不中断存在取舍，答复前不自行停止会话，也不把保留旧 Python 进程视为用户已批准。此待确认项不削弱新源码/发布包完全无 Python 的要求。
 
@@ -1555,13 +1555,13 @@ telemetry-task-boundary按上述定稿实现宿主、Drover、查询英文ended�
 
 ## 2026-10-03 Corral Rust 核心实施
 
-主控按用户授权直接实现独立 `crates/corral-core` 与 `corral` CLI，Saddle 继续经公开命令消费底层，无反向依赖。迁入运行代码、hook/worker 和新测试均无 Python；原 Corral 仓库只读保留。默认路径改为宿主同目录 Corral，进程插件通过通用 `SADDLE_AGENT_BIN` 使用宿主解析结果，Drover 显式覆盖优先；无缺失回退或业务重发。`scripts/package.sh` 生成不可变成套目录，不进行真实部署。实现细节见[核心设计](Corral核心Rust集成设计.md)，执行证据和限制见[实施核验](调研/Corral核心Rust集成-实施核验.md)。用户现有 pen 和原安装均未切换。
+主控按用户授权直接实现独立 `crates/corral-core` 与 `corral` CLI，Saddle 继续经公开命令消费底层，无反向依赖。迁入运行代码、hook/worker 和新测试均无 Python；原 Corral 仓库只读保留。默认路径改为宿主同目录 Corral，进程插件通过通用 `SADDLE_AGENT_BIN` 使用宿主解析结果，Drover 显式覆盖优先；无缺失回退或业务重发。`scripts/package.sh` 生成不可变成套目录，不进行真实部署。实现细节见[核心设计](../../ranch/docs/Corral核心Rust集成设计.md)，执行证据和限制见[实施核验](调研/Corral核心Rust集成-实施核验.md)。用户现有 pen 和原安装均未切换。
 
 ## 2026-10-03 Corral 通用升级（已批准实施，未部署）
 
 用户在主控与独立评估者达成可实施一致后批准推进，要求升级不绑定某类 agent。主要改仓库内 Rust Corral：pen 原地 exec、状态/fd/连接接续、明确所有权与恢复、公开升级入口、稳定 hook 入口与进程内采集器分离、持久提醒交接。Saddle 只经公开接口接入，不读底层业务状态，不新增中央服务或反向依赖。
 
-正式方案见 [Corral通用升级设计](Corral通用升级设计.md)，一致记录见 [实施前一致记录](调研/Corral通用升级-实施前一致记录.md)。适用于首个具备升级协议的版本之后；今天现存旧 pen/适配器/after 的首次无缝过渡尚未解决，不能写成已满足。正常升级保持 agent 和在途状态，部分故障窗口仍可能丢会话，不承诺任意崩溃无损。旧的固定 helper 规则按专项设计对未来版本调整，已有不可变包不覆盖。
+正式方案见 [Corral通用升级设计](../../ranch/docs/Corral通用升级设计.md)，一致记录见 [实施前一致记录](调研/Corral通用升级-实施前一致记录.md)。适用于首个具备升级协议的版本之后；今天现存旧 pen/适配器/after 的首次无缝过渡尚未解决，不能写成已满足。正常升级保持 agent 和在途状态，部分故障窗口仍可能丢会话，不承诺任意崩溃无损。旧的固定 helper 规则按专项设计对未来版本调整，已有不可变包不覆盖。
 
 本轮按 corral-dispatch 在隔离分支实施、合成验证并审查；用户已确认实施与部署分开。未授权真实部署、首次迁移、停止/重启现有 agent；通过审查后的源码按项目规则合并推送，部署与首次过渡另行确认。
 
@@ -1649,3 +1649,16 @@ Diff 的收尾仅在明确浅色 RGB 背景绘制时适配语法前景：普通�
 - 原型发现的新输出通知、网格/配色与 ratatui 绑定、输入编码参数类型、可控环境变量启动、有限写入通道等，只是候选接口需求。需要时由用户另行授权，在 Saddle 自身流程中优先新增接口并保持现有 TUI 行为；本次不修改接口。子进程继承身份变量的观察也只记录，不据此自动修复。
 
 Tasks 的转出记录与产品验收分开处理：不因原型作者结束、独立仓库建立或文档交接而把 T76 记成 Done；不得为补队列历史重发此前已 rejected 的 dispatch。
+
+
+## 2026-10-05 Corral 转出 ranch，Saddle 保底运行边界
+
+用户确认 corral、遥测、dispatch 和插件协议由独立仓库 ranch（`../ranch`，`github.com/firegnu/ranch`）承接，paddock 主控兼管。Saddle 和 paddock 是前端，只调用 ranch 装好的命令；Saddle 定位为保底版，不再增加新功能，只保持与运行时兼容。本轮仅剥离 Corral，遥测、dispatch 与插件协议的迁出等待后续说明，不在本次改动中实施。
+
+本条取代此前 Corral 核心集成、同包发布、同目录默认路径以及由 paddock 仓库维护 Corral 的安排：
+
+- 删除 Saddle 的 `crates/corral-core` 与两份 Corral 设计文档（已迁至 ranch），不再作为 workspace 成员构建。Corral 自身实现、技能与升级协议由 ranch 维护。
+- Saddle 默认 `corral = "corral"` 从 PATH 解析；开停、接入、公开 agent 命令和插件默认入口使用同一外部命令解析规则。显式配置命令名或路径及插件显式覆盖仍保留。进程插件继续通过通用 `SADDLE_AGENT_BIN` 接收宿主解析的绝对路径，不改插件协议。
+- Updates 默认从 PATH 找到 corral，按它比较现有会话并在用户明确执行升级时调用公开升级命令；不再根据已安装或正在运行的 Saddle 目录寻找 Corral。不改既有升级确认、回执或未知结果语义。
+- Saddle 打包不再包含 `bin/corral` 和 `share/corral/`；部署只负责 Saddle 及本轮仍由它持有的插件，不切换 `~/.local/bin/corral`、不运行 `corral install-skills`。二者由 ranch 安装管理。
+- `~/.local/share/saddle/versions/` 下旧目录全部保留，现有会话可能仍使用其中的 Corral。此次不升级、停止、重启或重新派发任何用户会话；完成后由 paddock 主控用测试 agent 核对配合。

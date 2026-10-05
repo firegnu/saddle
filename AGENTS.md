@@ -4,9 +4,11 @@
 
 ## 规矩
 
+Saddle 定位为保底版：不再加新功能，只保证和 ranch 运行时对得上。遥测、dispatch 与插件协议的迁出等待另行说明。
+
 - Rust stable，只用成熟、活跃维护的库；不依赖 tmux、zellij 等外部程序。
 - Corral 仍只通过公开命令访问，不改它的仓库。旧 dispatch-log 已退出本项目操作链，旧程序与数据保留供离线查看。用户授权完整替换 Drover：任务核心、数据和通知由 `plugins/drover/` 单一插件拥有，可读写沿用的 Drover 数据格式；旧独立 CLI/watch 退役。Saddle 宿主只提供通用插件接口，不读取业务文件。主控任务操作走 `saddle ctl plugin`，见 `plugins/drover/README.md`。
-- **corral 由 paddock 维护**（用户 10-05 定）：从提交 `a31dea2` 起，corral 改由 paddock（`github.com/firegnu/paddock`）维护，Saddle 内部的 corral（`crates/corral-core`、`docs/Corral核心Rust集成设计.md`、`docs/Corral通用升级设计.md`）不能做任何修改；发现 corral 的问题告诉用户，转到 paddock 修。
+- **corral 由 ranch（../ranch，paddock 主控兼管）维护，Saddle 只通过 corral 命令使用它。** Saddle 部署不切换 `~/.local/bin/corral`，不安装 corral 技能；保留 `~/.local/share/saddle/versions/` 下旧版本目录，仍有会话使用其中的 corral。
 - **不要干扰用户正在用的 agent**：`corral ls` 里现有的 agent 都是用户的。可以用 `corral ls/status/reply` 读；不要对它们 `corral stop`、`corral send`、`corral keys`，也不要 attach 上去打字（主控按分派流程开出来的 `saddle/dev-*`、`saddle/test-*` 是它自己的，照流程送话、关闭）。需要真实 agent 做测试时，自己开一个 `saddle/test-<名字>`（例如 `corral start saddle/test-a --cwd /tmp -- codex --yolo -m gpt-5.6-luna`），用完 `corral stop` 掉。
 - 不要按项目名或路径批量杀进程（`pkill -f corral` 这类），会误杀用户的 agent。停自己起的进程用记下的 PID。
 - 测试不依赖真实 agent：需要时用一个假的 `corral` 脚本输出固定 JSON。

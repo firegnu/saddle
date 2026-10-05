@@ -17,7 +17,7 @@
   Plugins 打开统一插件面板；Drover 任务界面由可选插件提供。
 ```
 
-saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，承载 [corral](https://github.com/firegnu/corral) 的 agent 会话与可选进程插件（包括 [Drover](plugins/drover/README.md)），不依赖 tmux 或 Zellij。
+saddle 使用 Rust 和 [Ratatui](https://ratatui.rs/) 编写，承载 [corral](https://github.com/firegnu/ranch) 的 agent 会话与可选进程插件（包括 [Drover](plugins/drover/README.md)），不依赖 tmux 或 Zellij。
 
 ## 功能
 
@@ -55,7 +55,7 @@ Agents 和 Tasks 均为 Rust 原生控件。只有 Viewer 窗格使用子 PTY，
 ### 环境要求
 
 - Rust stable **1.96 或更高版本**。
-- 随 Saddle 构建的 Rust `corral` 核心；Claude Code、Codex 等 coding agent CLI 仍由用户安装。可选 Drover 插件自带任务引擎，无需旧 Python Corral/Drover 程序。
+- 由 [ranch](https://github.com/firegnu/ranch) 安装在 PATH 上的 `corral`；Claude Code、Codex 等 coding agent CLI 仍由用户安装。可选 Drover 插件自带任务引擎，无需旧 Python Corral/Drover 程序。
 - Agents 的 Git 摘要需要 `PATH` 中有 Git 2.45 或更高版本（依赖 `--no-lazy-fetch`）；更旧或没有 Git 时显示 `git unavailable`。
 - 支持 Unicode 和鼠标的终端，建议支持真彩色。
 
@@ -296,6 +296,8 @@ cargo run --example compare_parsers
 
 架构决定与验证记录见[设计文档](docs/DESIGN.md)和[交接记录](HANDOFF.md)，目前均使用中文。
 
-### 同包 Corral 与升级
+### 外部 Corral 与升级
 
-默认 `corral = "corral"` 定位与宿主相邻的运行核心，缺失时报错，不回退 PATH 中的旧程序；显式路径和 `saddle agent --corral` 覆盖仍保留。普通终端继续使用 `corral start/attach/status/stop`，无需先打开 Saddle。产品版本目录中的二进制不能原地覆盖：存活 pen/hook 使用启动时的绝对路径，升级只切入口，旧会话退出前保留旧版本。真实安装切换独立于源码构建，见 [Rust 核心设计](docs/Corral核心Rust集成设计.md)。
+默认 `corral = "corral"` 从 PATH 查找 ranch 安装的命令；显式配置命令名、路径和 `saddle agent --corral` 覆盖仍保留。宿主开停、接入、插件默认调用和 Updates 比较及升级均使用外部 Corral，不再依赖 Saddle 同目录的程序。普通终端继续使用 `corral start/attach/status/stop`，无需先打开 Saddle。
+
+Saddle 定位为保底版，不再加新功能，只保持与运行时兼容。打包不含 `bin/corral` 和 `share/corral/`；部署不切换 `~/.local/bin/corral`、不安装 corral 技能，二者由 ranch 管理。`~/.local/share/saddle/versions/` 下旧版本目录先保留，现有会话仍可能使用其中的 corral。遥测、dispatch 和插件协议的迁出等待后续说明。Corral 实现与设计文档现由 ranch（`../ranch`，paddock 主控兼管）维护。

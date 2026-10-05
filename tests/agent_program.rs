@@ -1,7 +1,7 @@
 use std::{fs, os::unix::fs::PermissionsExt, process::Command};
 
 #[test]
-fn headless_uses_its_bundle_then_config_or_explicit_override_without_path_fallback() {
+fn headless_uses_path_then_config_or_explicit_override_without_bundle_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let host = dir.path().join("saddle");
     fs::copy(env!("CARGO_BIN_EXE_saddle"), &host).unwrap();
@@ -37,23 +37,24 @@ fn headless_uses_its_bundle_then_config_or_explicit_override_without_path_fallba
             .output()
             .unwrap()
     };
-    let bundled = run(&[]);
+    let default = run(&[]);
     assert!(
-        bundled.status.success(),
+        default.status.success(),
         "{}",
-        String::from_utf8_lossy(&bundled.stderr)
+        String::from_utf8_lossy(&default.stderr)
     );
     assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&bundled.stdout).unwrap()["source"],
-        "bundle"
+        serde_json::from_slice::<serde_json::Value>(&default.stdout).unwrap()["source"],
+        "path"
     );
-    fs::remove_file(&bundle).unwrap();
+    fs::remove_file(path_dir.join("corral")).unwrap();
     let missing = run(&[]);
     assert!(
         !missing.status.success(),
-        "missing bundle must not silently invoke PATH"
+        "missing PATH command must not silently invoke the bundle"
     );
     assert!(missing.stdout.is_empty());
+    script(&path_dir.join("corral"), "configured");
     fs::write(
         config.join("config.toml"),
         format!("corral = {:?}\n", path_dir.join("corral")),
@@ -62,7 +63,7 @@ fn headless_uses_its_bundle_then_config_or_explicit_override_without_path_fallba
     let configured = run(&[]);
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&configured.stdout).unwrap()["source"],
-        "path"
+        "configured"
     );
     script(&bundle, "explicit");
     let explicit = run(&["--corral", bundle.to_str().unwrap()]);

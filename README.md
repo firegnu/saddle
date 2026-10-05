@@ -17,7 +17,7 @@ See your agents and work in their live terminals. Add optional process plugins f
   Plugins opens a searchable palette; each plugin owns its local view.
 ```
 
-saddle is written in Rust with [Ratatui](https://ratatui.rs/). It hosts [corral](https://github.com/firegnu/corral) agent sessions and optional process plugins, including [Drover](plugins/drover/README.md). It does not require tmux or Zellij.
+saddle is written in Rust with [Ratatui](https://ratatui.rs/). It hosts [corral](https://github.com/firegnu/ranch) agent sessions and optional process plugins, including [Drover](plugins/drover/README.md). It does not require tmux or Zellij.
 
 ## Features
 
@@ -50,7 +50,7 @@ Agents are native Rust widgets; Drover renders its own Ratatui view through the 
 ### Requirements
 
 - Rust stable **1.96 or later**.
-- The bundled Rust `corral` runtime (built with Saddle); external coding agent CLIs such as Claude Code or Codex remain separately installed. The optional Drover plugin owns its task engine. Neither runtime requires the retired Python Corral/Drover programs.
+- The `corral` runtime installed on `PATH` by [ranch](https://github.com/firegnu/ranch); external coding agent CLIs such as Claude Code or Codex remain separately installed. The optional Drover plugin owns its task engine. Neither runtime requires the retired Python Corral/Drover programs.
 - Git 2.45 or later on `PATH` for the Agents Git summary (it needs `--no-lazy-fetch`); older or missing Git shows `git unavailable`.
 - A terminal with Unicode and mouse support; true color is recommended.
 
@@ -71,6 +71,8 @@ Or build an immutable product directory (does not install or switch running prog
 ./scripts/package.sh /absolute/new/saddle-version
 /absolute/new/saddle-version/bin/saddle
 ```
+
+Saddle is the fallback frontend: it receives runtime compatibility maintenance, with no new features. Packaging includes Saddle and its current plugins, but no `bin/corral` or `share/corral/`. Deployment must not switch `~/.local/bin/corral` or install Corral skills; ranch owns both. Preserve all old directories under `~/.local/share/saddle/versions/` while existing sessions still use their Corral runtimes. Telemetry, Dispatch and plugin protocol extraction will be handled separately.
 
 Use `saddle --help` to see the command-line options.
 
@@ -177,7 +179,7 @@ refresh_ms = 1000
 
 | Setting | Meaning |
 |---|---|
-| `corral` | `corral` selects the adjacent bundled runtime; other names/paths explicitly select an external program |
+| `corral` | `corral` selects the ranch-installed command on PATH; other names/paths explicitly select an external program |
 | `left_width` | Preferred width of the left column, in terminal cells |
 | `left_split` | No longer used: Agents take the whole left column with optional plugin views. Still accepted (between 0 and 1) so existing configs keep loading |
 | `refresh_ms` | Background refresh interval in milliseconds |
@@ -190,7 +192,7 @@ refresh_ms = 1000
 | `theme` | Built-in palette: `dune` (default, the original look), `tide` (cool blue-gray), `lagoon` (deep green-teal) or `terminal` (only the terminal's default and ANSI colors) |
 | `colors` | Optional flat table of per-color overrides on top of `theme` |
 
-Command paths support `~/`. The default never falls back to PATH if the bundled runtime is missing. Host plugins receive the resolved absolute path as `SADDLE_AGENT_BIN`; explicit plugin `--corral` overrides it. Keep old product directories while running agents still use their hooks. See [Corral integration](docs/Corral核心Rust集成设计.md). Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom corral/cwd values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). Legacy `--dispatch-log <value>` is accepted but deprecated and ignored; new manifests omit it. The plugin owns schema 2 task data and explicit actions; the host does not read Drover projects or task state.
+Command paths support `~/`. The default resolves `corral` on PATH; no Corral executable is bundled with Saddle. Host plugins receive the resolved absolute path as `SADDLE_AGENT_BIN`; explicit plugin `--corral` overrides it. Keep old product directories while running agents still use their hooks. Corral implementation, skills and upgrade documentation live in [ranch](https://github.com/firegnu/ranch). Legacy `[queue]` settings remain accepted but no longer affect the host. Move custom corral/cwd values to its plugin manifest args, as described in [Drover setup](plugins/drover/README.md). Legacy `--dispatch-log <value>` is accepted but deprecated and ignored; new manifests omit it. The plugin owns schema 2 task data and explicit actions; the host does not read Drover projects or task state.
 
 [config.toml](config.toml) is the complete, commented default configuration, ready to copy to the path above; its colors are commented out so they follow the theme. For a theme with a small override, add:
 

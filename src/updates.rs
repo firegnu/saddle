@@ -27,7 +27,7 @@ pub struct Sources {
     /// The `saddle` command: a name looked up on PATH, or a path. What it points to is the
     /// installed saddle.
     pub command: String,
-    /// The configured corral; the default `corral` is the one installed beside saddle.
+    /// The configured corral; the default `corral` is resolved independently on PATH.
     pub corral: String,
 }
 
@@ -424,14 +424,7 @@ pub fn check(
         Some(named) => source(named, result.installed_build.as_ref().ok(), cancel),
         None => Err("no build record names a Saddle source (older package or none)".into()),
     };
-    result.corral = if sources.corral == "corral" {
-        installed
-            .as_ref()
-            .map_err(Clone::clone)
-            .and_then(|p| executable(&p.with_file_name("corral").to_string_lossy()))
-    } else {
-        executable(&sources.corral)
-    };
+    result.corral = executable(&sources.corral);
     result.installed = installed.ok();
     result.agents = result
         .corral

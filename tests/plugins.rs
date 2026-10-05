@@ -1399,6 +1399,35 @@ fn open_without(runtime: &Runtime, id: u64) {
 
 #[test]
 fn process_plugins_are_told_host_and_agent_executables_without_record_context() {
+    const CHILD: &str = "TEST_PLUGIN_PATH_CORRAL";
+    let Some(program) = std::env::var_os(CHILD) else {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("corral");
+        std::fs::write(&program, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = std::env::join_paths(std::iter::once(dir.path().to_path_buf()).chain(
+            std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()),
+        ))
+        .unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "process_plugins_are_told_host_and_agent_executables_without_record_context",
+                "--nocapture",
+            ])
+            .env(CHILD, &program)
+            .env("PATH", path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    };
     let (dir, runtime) = telemetry_peer(false);
     let environment: serde_json::Value =
         serde_json::from_slice(&std::fs::read(dir.path().join("environment.json")).unwrap())
@@ -1422,7 +1451,10 @@ fn process_plugins_are_told_host_and_agent_executables_without_record_context() 
         .collect();
     expected.insert(
         "SADDLE_AGENT_BIN".into(),
-        host.with_file_name("corral").display().to_string().into(),
+        std::path::PathBuf::from(program)
+            .display()
+            .to_string()
+            .into(),
     );
     expected.insert("SADDLE_HOST_BIN".into(), host.display().to_string().into());
     assert_eq!(

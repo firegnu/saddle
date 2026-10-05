@@ -35,7 +35,7 @@ fn status(exe: &str, state: &str, extra: &str) -> String {
     )
 }
 
-/// Two immutable packages, as package.sh builds them: the running saddle in `old`, the installed
+/// Two legacy immutable packages: the running saddle in `old`, the installed
 /// one in `new`, with the command entry linked to `new`. The Corral beside the running saddle
 /// logs any use, which must never happen.
 fn install() -> Install {
@@ -108,7 +108,7 @@ fn sources(install: &Install) -> Sources {
     Sources {
         running: Ok(install.running.clone()),
         command: install.command.display().to_string(),
-        corral: "corral".into(),
+        corral: install.new_corral.display().to_string(),
     }
 }
 
@@ -146,6 +146,54 @@ fn screen(settings: &mut Settings) -> String {
 
 fn press(settings: &mut Settings, code: KeyCode) -> Outcome {
     settings.key(KeyEvent::new(code, KeyModifiers::NONE))
+}
+
+#[test]
+fn default_corral_uses_path_independently_of_the_saddle_package() {
+    const CHILD: &str = "SADDLE_TEST_PATH_CORRAL_ROOT";
+    if let Some(root) = std::env::var_os(CHILD) {
+        let root = PathBuf::from(root);
+        let expected = root.join("ranch/bin/corral");
+        let mut sources = Sources {
+            running: Ok(root.join("old/bin/saddle")),
+            command: root.join("links/saddle").display().to_string(),
+            corral: "corral".into(),
+        };
+        let check = checked(&sources);
+        assert_eq!(check.corral, Ok(expected.clone()));
+        sources.command = root.join("missing/saddle").display().to_string();
+        assert_eq!(checked(&sources).corral, Ok(expected.clone()));
+        let receipt = updates::upgrade(&expected, Duration::from_secs(10));
+        assert!(receipt.outcome.is_ok(), "{receipt:?}");
+        let calls = fs::read_to_string(root.join("calls.log")).unwrap();
+        assert!(calls.contains(&format!("upgrade --all --exe {}", expected.display())));
+        assert!(!calls.contains("old "));
+        return;
+    }
+    let install = install();
+    let ranch = install.root.join("ranch/bin");
+    fs::create_dir_all(&ranch).unwrap();
+    fs::copy(&install.new_corral, ranch.join("corral")).unwrap();
+    let result = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "default_corral_uses_path_independently_of_the_saddle_package",
+            "--nocapture",
+        ])
+        .env(CHILD, &install.root)
+        .env(
+            "PATH",
+            std::env::join_paths([ranch, PathBuf::from("/usr/bin"), PathBuf::from("/bin")])
+                .unwrap(),
+        )
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 #[test]
@@ -220,7 +268,7 @@ fn an_identical_saddle_elsewhere_is_current_and_explicit_corral_config_is_kept()
     );
     assert_eq!(check.saddle, Saddle::Current);
     assert_eq!(check.corral, Ok(custom.join("corral")));
-    // Without an installed saddle nothing is called up to date.
+    // A missing Saddle installation does not hide the independent Corral installation.
     let check = updates::check(
         &Sources {
             command: install.root.join("missing/saddle").display().to_string(),
@@ -235,7 +283,7 @@ fn an_identical_saddle_elsewhere_is_current_and_explicit_corral_config_is_kept()
         "{:?}",
         check.saddle
     );
-    assert!(check.corral.is_err());
+    assert_eq!(check.corral, Ok(install.new_corral.clone()));
 }
 
 #[test]
@@ -667,9 +715,8 @@ fn record(package: &Path, revision: &str, tree: &str, extra: &str, checksum: Opt
     fs::write(
         package.join("BUILD.txt"),
         format!(
-            "revision: {revision}\ntarget: test\nworking-tree: {tree}\n{extra}{}  bin/saddle\n{}  bin/corral\n",
-            checksum.unwrap_or(&actual),
-            "0".repeat(64)
+            "revision: {revision}\ntarget: test\nworking-tree: {tree}\n{extra}{}  bin/saddle\n",
+            checksum.unwrap_or(&actual)
         ),
     )
     .unwrap();

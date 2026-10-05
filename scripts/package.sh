@@ -20,16 +20,12 @@ cargo build --workspace --bins --release --locked --target "$host" --target-dir 
 mkdir -p "$(dirname -- "$output")"
 staging=$(mktemp -d "$(dirname -- "$output")/.saddle-package.XXXXXX")
 trap 'rm -rf -- "$staging"' EXIT HUP INT TERM
-mkdir -p "$staging/bin" "$staging/plugins/drover/bin" "$staging/plugins/diff/bin" "$staging/share/corral"
+mkdir -p "$staging/bin" "$staging/plugins/drover/bin" "$staging/plugins/diff/bin"
 cp "$build_dir/$host/release/saddle" "$staging/bin/saddle"
-cp "$build_dir/$host/release/corral" "$staging/bin/corral"
 for plugin in drover diff; do
     cp "$build_dir/$host/release/saddle-$plugin" "$staging/plugins/$plugin/bin/saddle-$plugin"
     cp "plugins/$plugin/plugin.toml" "$staging/plugins/$plugin/plugin.toml"
 done
-cp crates/corral-core/resources/SKILL.md crates/corral-core/resources/AGENT_USAGE.md crates/corral-core/resources/UPGRADING.md crates/corral-core/resources/hook_pi.ts crates/corral-core/resources/hook_omp.ts "$staging/share/corral/"
-cp docs/Corral核心Rust集成设计.md "$staging/share/corral/"
-cp docs/Corral通用升级设计.md "$staging/share/corral/"
 {
     printf 'revision: '; git rev-parse HEAD
     printf 'target: %s\n' "$host"
@@ -37,7 +33,7 @@ cp docs/Corral通用升级设计.md "$staging/share/corral/"
     # The Saddle source and branch this was built from, so Updates can compare it later.
     printf 'source: %s\n' "$project_dir"
     printf 'branch: '; git symbolic-ref --quiet --short HEAD || printf '\n'
-    for file in bin/saddle bin/corral plugins/drover/bin/saddle-drover plugins/diff/bin/saddle-diff; do
+    for file in bin/saddle plugins/drover/bin/saddle-drover plugins/diff/bin/saddle-diff; do
         (cd "$staging" && shasum -a 256 "$file")
     done
 } > "$staging/BUILD.txt"
