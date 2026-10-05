@@ -1,13 +1,13 @@
 # Saddle 交接
 
-更新：2026-10-05，Corral 剥离完成。主控 `saddle/main`，分支 `main`。用户要求本次由主控直接修改、不委派；实现 `7072c82` 已快进合并，本次 worktree/分支已清理，空收尾提交 `e5babc1`。本次只完成源码与临时 release 包验证，日常安装尚未切换，没有重启或升级现有会话。
+更新：2026-10-05，Corral 剥离完成。主控 `saddle/main`，分支 `main`。用户要求本次由主控直接修改、不委派；实现 `7072c82` 已快进合并，本次 worktree/分支已清理，空收尾提交 `e5babc1`。用户随后授权「编译+部署」：干净 main `4c86983` 的正式包已安装，Saddle 入口及 Drover/Diff 注册目录已切换；没有重启或升级现有会话。
 
 ## 当前接续点：ranch 运行时边界
 
 - 用户已定：corral、遥测、dispatch、插件协议转由独立 ranch（`../ranch`，`github.com/firegnu/ranch`，paddock 主控兼管）维护；Saddle 与 paddock 是前端。Saddle 保底，不再加新功能，只保持运行时兼容。完整设计边界见 DESIGN 末尾 2026-10-05 ranch 条目。
 - 本轮仅剥离 Corral：已删除 corral-core 与两份迁走的设计文档，取消 workspace/打包归属；宿主、插件默认入口和 Updates 使用 PATH 上的 corral。部署不得切换 corral 链接或安装 corral 技能。遥测、dispatch、插件协议迁出等待后续说明。
-- 核验时 `~/.local/bin/corral` 仍指向 `~/.local/share/ranch/versions/df46247/bin/corral`；Saddle 的 16 个旧版本目录全部保留，现有会话仍可能使用其中的 Corral。本次没有更改用户配置、技能、插件登记或任何安装链接。
-- 下一步由 paddock 主控用测试 agent 核对 Saddle 与 ranch 的 Corral 配合。**不能把当前日常安装当成这次源码：本轮未部署。** 临时验证包为 `/tmp/saddle-ranch-package.tW618F/product`，来自未提交工作区，BUILD.txt 如实标记 modified；源码已合入 main，可从 main 构建正式包。
+- 核验时 `~/.local/bin/corral` 仍指向 `~/.local/share/ranch/versions/df46247/bin/corral`；Saddle 的 16 个旧版本目录全部保留，现有会话仍可能使用其中的 Corral。部署仅切换 Saddle 入口及 Drover/Diff 注册目录；主配置、插件启用/固定状态、其他登记和 corral 技能保持。
+- 下一步由 paddock 主控用测试 agent 核对 Saddle 与 ranch 的 Corral 配合。正式包为 `~/.local/share/saddle/versions/4c86983`，BUILD.txt 记录干净 main；已安装入口、三个二进制哈希、插件状态及隔离 PATH 冒烟通过。**运行中的 Saddle PID 44062 仍加载 aab70c8，正常退出并重开后才加载新版；未强制重启。** 备份见 `~/.local/share/saddle/backups/ranch-corral-4c86983-pnek0sv1`。
 - 本次直接回归 85 passed / 1 ignored；Clippy、fmt、打包及 checksum 通过。全量 661 passed / 6 failed / 5 ignored；其中 3 项旧 app 头部断言与 T77 已知记录一致，其余 2 项 agent_capture 时序测试和 1 项 workflow 鼠标测试各复核一次后通过。首次失败保留，不宣称全仓全绿或波动根因已修复。详见 `docs/任务/Ranch-Corral剥离-2026-10-05.md`。
 - 本次没有创建/关闭开发 agent，也未发消息给 paddock 主控；完成情况由本次回复交给用户。未操作 Tasks 队列、未开启遥测。其他历史 worktree、独立项目与 Pending 边界继续保留。
 

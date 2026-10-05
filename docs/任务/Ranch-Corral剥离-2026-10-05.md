@@ -59,3 +59,21 @@ paddock 那边定了新安排（用户 10-05）：corral、遥测、dispatch 和
 ## 合并收尾
 
 实现提交 `7072c82` 已快进合入 main；确认 worktree 干净、分支为 main 祖先后，已删除 `ranch-corral-extraction` worktree 与本地分支。没有创建需关闭的 agent。main 空收尾提交为 `e5babc1`，随后更新 HANDOFF。本轮未部署，旧版本目录与 ranch 的 Corral 链接保持原状。
+
+
+## 用户授权编译与部署（2026-10-05）
+
+用户随后明确要求「编译+部署」。从干净 main `4c8698354c2c7f2032fe59c3e28779f226723afa` 执行共享 target 的 `scripts/package.sh /Users/firegnu/.local/share/saddle/versions/4c86983`，原生 `aarch64-apple-darwin` release/locked 构建通过。BUILD.txt 为 clean、source 指向主仓库、branch 为 main；未重复已通过且产品代码未变的回归套件。
+
+- 原子切换 `~/.local/bin/saddle` 至新包 `bin/saddle`；持 `plugins.lock` 并核对原始字节后，仅修改注册表中 Drover、Diff 的 directory 至新包。现有两个 manifest 与包内逐字节一致，所有 enabled、pinned、其他插件和 core.dispatch 配置保持。
+- 包内没有 `bin/corral` 或 `share/corral/`。Corral 入口仍是 ranch 的 `df46247`；主 config.toml、两处 corral 技能的内容/链接指纹均未变；原 16 个 Saddle 版本目录全部保留。没有安装任何技能、调用 upgrade、开停或送话给现有 agent。
+- 备份与回退依据：`/Users/firegnu/.local/share/saddle/backups/ranch-corral-4c86983-pnek0sv1`，含原 plugins.toml、config.toml、入口及保护文件指纹、旧版本目录清单、BUILD.txt、构建/验证输出和部署回执。回退时恢复记录中的旧 Saddle 链接及持注册表锁恢复两个旧插件目录；不切换 Corral。
+- 三个程序 SHA-256 与 BUILD.txt 全部一致。新入口 `saddle --help`、`saddle plugin status`、独立 `corral --version` 退出 0；Drover/Diff 新路径均 enabled 且 manifest_readable，Dispatch 仍 enabled。隔离 HOME/XDG 与假 Corral 的已安装程序 PATH 冒烟通过。
+- 曾尝试 `saddle agent -- --version`，该入口只支持 start/send/reply，回执明确 `unsupported_command`、`executed=false`；未执行 Corral。这不记为成功检查。后续版本核对通过独立 `corral --version`，Saddle PATH 检查使用临时假程序，不调用真实 agent。
+- 部署后只读 `lsof`：Saddle PID `44062` 仍加载 `aab70c8/bin/saddle`。**安装已切换，运行进程未切换**；用户正常退出并重开 Saddle 后才加载 `4c86983`。未强制重启，现有 agent 不需退出。paddock 主控的真实测试 agent 配合核对仍未由本主控代做。
+
+| 程序 | SHA-256 |
+| --- | --- |
+| saddle | `39d74548122d441a8d50bad83c1a546eaa99b57f28e7fb1d1cd5810eda67bd65` |
+| saddle-drover | `33ecb13871a72a266d33f04ad64ab6f069e24e6f6a9fd60ec5527041a2592af0` |
+| saddle-diff | `135e732db500b3af0213c7557c90c3f8281eb0c7aaf1af6349072872eb102ed0` |
