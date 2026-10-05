@@ -4,6 +4,7 @@
 
 ## 当前状态
 
+- 被删功能（Dispatch 插件、遥测、Drover 及插件系统）的代码可从带说明标签 `before-cut`（`c21674a`，已推送 origin）取回，数据留在磁盘上。
 - 用户最终决定：Saddle 只保留 Agents 面板、终端、设置、布局恢复、Diagnostics、Updates 和非插件 ctl。遥测、Drover、Dispatch 插件及整个插件宿主/SDK/协议已删除，包内只剩 `bin/saddle` 与 `BUILD.txt`。依据是 DESIGN 末尾“只保留终端前端”，覆盖同日早先“不动遥测/Drover/SDK”的安排。
 - Corral 与 Dispatch 由 ranch（`../ranch`，paddock 主控兼管）维护。Saddle 默认从 PATH 使用 Corral；显式配置路径仍有效。派发走 `ranch dispatch route`，不记遥测。Saddle 不安装 Corral 或 corral-dispatch 技能。
 - 全量首轮 289 passed / 1 failed；缩窗测试增加完整新帧同步后，工作区 66 项复测全部通过；Attention/宿主单元回归 29 项、Clippy 和格式检查通过。保留功能的回归涵盖 Agents、终端输入、设置、布局恢复和 ctl open/inspect/close；只用临时目录与假 Corral。详细记录见 `docs/任务/Saddle终端前端精简-2026-10-05.md`。
