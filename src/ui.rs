@@ -24,7 +24,7 @@ pub struct Hits {
     pub agents: Vec<(u16, String)>,
     pub list: Rect,
     pub reply: Rect,
-    pub more: Rect,
+    pub settings: Rect,
 }
 
 pub struct View<'a> {
@@ -57,7 +57,7 @@ pub struct Workspace<'a> {
     pub modal: bool,
     pub attention: Attention<'a>,
     pub settings: Option<&'a mut crate::settings::Settings>,
-    /// Installed updates need the user, or could not be confirmed: a dot beside More and the Settings menu item.
+    /// Installed updates need the user, or could not be confirmed: a dot beside Settings.
     pub updates: bool,
 }
 /// The Attention entry's items and, while open, its popup.
@@ -123,7 +123,7 @@ pub fn draw_workspace(
     frame.buffer_mut().set_style(screen_area, t.base());
     let header = agents_header(view.panes.agents);
     let action_row = if usize::from(header.width)
-        >= format!("Agents · {}", panel.agents.len()).width() + 2 + 3
+        >= format!("Agents · {}", panel.agents.len()).width() + 2 + 10
     {
         0
     } else {
@@ -135,21 +135,24 @@ pub fn draw_workspace(
             .intersection(inner(view.panes.agents))
     };
     let mut hits = draw_agents(frame, panel, &view, (action_row + 1).max(2));
-    let more = right_aligned(3);
-    let hovered = view.pointer.hover.is_some_and(|point| more.contains(point));
+    let settings_entry = right_aligned(10);
+    let hovered = view
+        .pointer
+        .hover
+        .is_some_and(|point| settings_entry.contains(point));
     frame.render_widget(
-        Paragraph::new(" ⋯ ").style(
+        Paragraph::new(" Settings ").style(
             Style::default()
                 .fg(if hovered { t.bright } else { t.agents_text })
                 .remove_modifier(Modifier::BOLD),
         ),
-        more,
+        settings_entry,
     );
-    hits.more = more;
-    if updates && !more.is_empty() {
+    hits.settings = settings_entry;
+    if updates && !settings_entry.is_empty() {
         frame.render_widget(
             Paragraph::new("●").style(Style::default().fg(t.unread)),
-            Rect::new(more.right(), more.y, 1, 1).intersection(frame.area()),
+            Rect::new(settings_entry.right(), settings_entry.y, 1, 1).intersection(frame.area()),
         );
     }
     let attention_row = Rect {

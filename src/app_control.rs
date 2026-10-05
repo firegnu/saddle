@@ -184,8 +184,7 @@ impl App {
                 )
             };
         }
-        if self.header_menu.is_some()
-            || self.placement.is_some()
+        if self.placement.is_some()
             || self.search.is_some()
             || self.settings.is_some()
             || self.new_agent.as_ref().is_some_and(|f| f.visible)

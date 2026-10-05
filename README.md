@@ -54,7 +54,7 @@ Use **Split ▾** to choose Left/Right/Above/Below, then select Terminal, New ag
 
 ## Settings, Diagnostics and Updates
 
-Open **⋯ → Settings**, or press comma with Agents focused.
+Open **Settings**, or press comma with Agents focused.
 
 | Page | Key | Contents |
 |---|---|---|

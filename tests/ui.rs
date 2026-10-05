@@ -1324,7 +1324,7 @@ fn design_sample_fits_fifty_columns_without_wrapping() {
         .collect();
     // Row for row as in the design (spinner frames as drawn at this instant).
     let expected = [
-        " Agents · 4                                    ⋯  ",
+        " Agents · 4                             Settings  ",
         " Attention · 0                                    ",
         " ──────────────────────────────────────────────── ",
         " corral/ ──────────────────────────────────── (1) ",
@@ -1658,21 +1658,21 @@ fn attached_reads_in_text_color_but_offers_no_second_attach_click() {
 }
 
 #[test]
-fn more_entry_shares_title_row_and_wraps_below_status_when_narrow() {
+fn settings_entry_shares_title_row_and_wraps_below_status_when_narrow() {
     let (mut a, mut q) = fixture();
     let (buffer, hits) = render(160, 30, &mut a, &mut q, Focus::Agents);
     let lines = agents_lines(&buffer);
-    assert!(lines[1].contains("Agents · 1") && lines[1].contains('⋯'));
+    assert!(lines[1].contains("Agents · 1") && lines[1].contains("Settings"));
     assert!(lines[2].contains("Attention · 0"));
     assert!(lines[3].contains('─'));
-    assert_eq!((hits.more.y, hits.more.width), (1, 3));
-    assert_eq!(hits.more.right(), 52 - 2);
+    assert_eq!((hits.settings.y, hits.settings.width), (1, 10));
+    assert_eq!(hits.settings.right(), 52 - 2);
     let (buffer, hits) = render(32, 30, &mut a, &mut q, Focus::Agents);
     let lines = agents_lines(&buffer);
     assert!(lines[2].contains("Attention"));
-    assert!(lines[3].contains('⋯'));
+    assert!(lines[3].contains("Settings"));
     assert!(lines[4].contains('─'));
-    assert_eq!(hits.more.y, 3);
+    assert_eq!(hits.settings.y, 3);
     assert!(hits.agents.iter().all(|(row, _)| *row >= 5));
 }
 
@@ -1740,7 +1740,7 @@ fn render_header(
 }
 
 #[test]
-fn header_actions_leave_only_more_beside_title_and_attention() {
+fn header_actions_show_settings_beside_title_and_attention() {
     use crossterm::event::KeyCode;
     for width in [52, 36, 35, 30, 20] {
         let (buffer, hits) = render_header_actions(width, &Pointer::default(), &[]);
@@ -1750,15 +1750,15 @@ fn header_actions_leave_only_more_beside_title_and_attention() {
             .find(|h| h.key.code == KeyCode::Char('a'))
             .unwrap()
             .area;
-        assert_eq!(hits.more.y, 1);
+        assert_eq!(hits.settings.y, if width >= 26 { 1 } else { 3 });
         assert_eq!(attention.y, 2);
-        assert!(!hits.more.intersects(attention));
+        assert!(!hits.settings.intersects(attention));
         assert!(hits.list.y > attention.y);
-        assert_eq!(hits.more.right(), width - 2);
-        let text: String = (hits.more.x..hits.more.right())
-            .map(|x| buffer[(x, hits.more.y)].symbol())
+        assert_eq!(hits.settings.right(), width - 2);
+        let text: String = (hits.settings.x..hits.settings.right())
+            .map(|x| buffer[(x, hits.settings.y)].symbol())
             .collect();
-        assert_eq!(text, " ⋯ ");
+        assert_eq!(text, " Settings ");
         assert!(
             hits.buttons
                 .iter()
@@ -1768,7 +1768,7 @@ fn header_actions_leave_only_more_beside_title_and_attention() {
             .flat_map(|y| (0..width).map(move |x| (x, y)))
             .map(|p| buffer[p].symbol())
             .collect();
-        for removed in ["Plugins", "Telemetry", "Settings"] {
+        for removed in ["Plugins", "Telemetry", "⋯"] {
             assert!(!header.contains(removed));
         }
     }
@@ -1781,7 +1781,7 @@ fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
         theme,
     };
     let (_, hits) = render_header_actions(52, &Pointer::default(), &[]);
-    let rect = hits.more;
+    let rect = hits.settings;
     let mut pointer = Pointer::default();
     pointer.hover = Some((rect.x, rect.y).into());
     let (buffer, _) = render_header_actions(52, &pointer, &[]);
@@ -1801,15 +1801,15 @@ fn header_actions_highlight_on_hover_and_attention_emphasizes_pending_items() {
 }
 
 #[test]
-fn a_dot_beside_more_shows_that_installed_updates_need_the_user() {
+fn a_dot_beside_settings_shows_that_installed_updates_need_the_user() {
     for width in [52, 30, 20] {
         for (updates, dot) in [(false, " "), (true, "●")] {
             let (buffer, hits) = render_header(width, &Pointer::default(), &[], updates);
-            let settings = hits.more;
+            let settings = hits.settings;
             let text: String = (settings.x..settings.right())
                 .map(|x| buffer[(x, settings.y)].symbol())
                 .collect();
-            assert_eq!(text, " ⋯ ", "width {width}");
+            assert_eq!(text, " Settings ", "width {width}");
             assert_eq!(
                 buffer[(settings.right(), settings.y)].symbol(),
                 dot,

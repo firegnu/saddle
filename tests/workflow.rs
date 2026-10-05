@@ -228,8 +228,6 @@ while True:
         }
     }
     fn header_tool(&mut self, label: &str) {
-        self.click("⋯");
-        self.see("Input ▸ More");
         self.click(label);
     }
     fn click(&mut self, label: &str) {
@@ -586,21 +584,21 @@ fn buttons_require_release_on_the_same_target() {
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("p/a READY");
-    h.press_button("⋯");
+    h.press_button("Settings");
     let deadline = Instant::now() + Duration::from_millis(400);
     while Instant::now() < deadline {
         h.pump();
     }
     assert!(
-        !h.contents().contains("Input ▸ More"),
-        "Down must not open More"
+        !h.contents().contains("Input ▸ Settings"),
+        "Down must not open Settings"
     );
     h.send(b"\x1b[<32;130;4M\x1b[<0;130;4m"); // Drag/release over Viewer cancels, without sending a stray release.
     let deadline = Instant::now() + Duration::from_millis(250);
     while Instant::now() < deadline {
         h.pump();
     }
-    assert!(!h.contents().contains("Input ▸ More"));
+    assert!(!h.contents().contains("Input ▸ Settings"));
     assert!(
         !h.log("events").contains("input p/a "),
         "A management button gesture must not leak into Viewer"
@@ -3352,17 +3350,16 @@ fn mascot_config_and_settings_toggle_live_without_changing_agent_input_or_layout
 }
 
 #[test]
-fn header_more_menu_opens_tools_and_restores_terminal_focus() {
+fn settings_header_opens_directly_and_restores_terminal_focus() {
     let mut h = Harness::start();
     h.see("Synthetic title");
     h.send(b"\r");
     h.see("READY");
     let before = h.log("events");
-    h.click("⋯");
-    h.see("Input ▸ More");
-    assert!(!h.contents().contains("Plugins"));
-    assert!(!h.contents().contains("Telemetry"));
-    h.see("Settings");
+    h.click("Settings");
+    h.see("General F1");
+    h.see("Input ▸ Settings");
+    assert!(!h.contents().contains("Input ▸ More"));
     assert_eq!(
         h.ctl(&[
             "open",
@@ -3374,22 +3371,15 @@ fn header_more_menu_opens_tools_and_restores_terminal_focus() {
         ])["error"]["code"],
         "busy"
     );
-    h.send(b"\x1b");
-    h.until(|h| !h.contents().contains("Input ▸ More"));
-    assert_eq!(h.ctl(&["inspect"])["focus"], "viewer");
-    h.click("⋯");
-    // Close on a terminal-area press; neither half of the click reaches the agent.
-    h.send(b"\x1b[<0;70;12M\x1b[<0;70;12m");
-    h.until(|h| !h.contents().contains("Input ▸ More"));
-    h.click("⋯");
-    h.click("Settings");
-    h.see("General F1");
-    h.send(b"\x1b");
+    // Both halves of a background click stay inside the Settings modal.
+    h.send(b"\x1b[<0;130;4M\x1b[<0;130;4m");
+    h.click("Cancel Esc");
     h.until(|h| !h.contents().contains("General F1"));
     assert_eq!(h.ctl(&["inspect"])["focus"], "viewer");
     assert_eq!(
         h.log("events").matches("input ").count(),
         before.matches("input ").count(),
-        "menu input never reaches the agent"
+        "Settings input never reaches the agent"
     );
+    h.quit();
 }

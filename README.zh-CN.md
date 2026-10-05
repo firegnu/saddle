@@ -54,7 +54,7 @@ cargo build --bin saddle --release --locked
 
 ## 设置、Diagnostics 和 Updates
 
-通过 **⋯ → Settings** 打开，或在 Agents 按逗号。
+通过 **Settings** 打开，或在 Agents 按逗号。
 
 | 页面 | 按键 | 内容 |
 |---|---|---|

@@ -157,8 +157,7 @@ fn truecolor() -> bool {
     crate::theme::truecolor(std::env::var("COLORTERM").ok().as_deref())
 }
 struct App {
-    more_press: Option<Rect>,
-    header_menu: Option<crate::header_menu::Menu>,
+    settings_press: Option<Rect>,
     control: crate::control::Server,
     records: Vec<Record>,
     closing: Option<Closing>,
@@ -258,8 +257,7 @@ impl App {
                 },
                 Duration::from_secs(30),
             ),
-            header_menu: None,
-            more_press: None,
+            settings_press: None,
             layout_store,
             control: crate::control::Server::start()?,
             records: Vec::new(),
@@ -364,7 +362,7 @@ impl App {
                         search: self.search.as_mut(),
                         form: self.new_agent.as_mut().filter(|f| f.visible),
                         program: &self.actions.client.program,
-                        modal: self.closing.is_some() || self.header_menu.is_some(),
+                        modal: self.closing.is_some(),
                         attention: ui::Attention {
                             items: &items,
                             loading,
@@ -374,22 +372,6 @@ impl App {
                         updates: self.updates.attention(),
                     }),
                 );
-                if let Some(menu) = &mut self.header_menu {
-                    menu.draw(
-                        &self.config.colors,
-                        frame,
-                        panes.agents,
-                        self.hits.more,
-                        self.updates.attention(),
-                    );
-                    ui::status_bar(
-                        &self.config.colors,
-                        frame,
-                        panes.status,
-                        "More",
-                        " ↑↓ Select  Enter Open  Esc Close",
-                    );
-                }
                 self.draw_closing(frame);
                 if !self.layout_store.notice.is_empty() {
                     ui::status_notice(
@@ -910,20 +892,7 @@ impl App {
         {
             self.input_revision += 1;
         }
-        if self.closing.is_none()
-            && let Some(menu) = &mut self.header_menu
-        {
-            let outcome = menu.event(&event);
-            self.header_menu_outcome(outcome);
-            // Closing on an outside press consumes the remainder of that gesture.
-            if self.header_menu.is_none()
-                && matches!(&event, Event::Mouse(m) if matches!(m.kind, MouseEventKind::Down(_)))
-            {
-                self.native_mouse = true;
-            }
-            return Ok(false);
-        }
-        if self.more_event(&event) {
+        if self.settings_entry_event(&event) {
             return Ok(false);
         }
         match event {
@@ -1516,9 +1485,8 @@ impl App {
             }
         }
     }
-    pub(super) fn more_event(&mut self, event: &Event) -> bool {
-        if self.header_menu.is_some()
-            || self.settings.is_some()
+    pub(super) fn settings_entry_event(&mut self, event: &Event) -> bool {
+        if self.settings.is_some()
             || self.closing.is_some()
             || self.placement.is_some()
             || self.search.is_some()
@@ -1526,26 +1494,26 @@ impl App {
             || self.panel.confirm.is_some()
             || self.new_agent.as_ref().is_some_and(|f| f.visible)
         {
-            self.more_press = None;
+            self.settings_press = None;
             return false;
         }
         let Event::Mouse(m) = event else {
-            self.more_press = None;
+            self.settings_press = None;
             return false;
         };
-        // More acts only on a release over the same control.
+        // Settings opens only on a release over the same control.
         let point = (m.column, m.row).into();
-        let over = [self.hits.more].into_iter().find(|r| r.contains(point));
+        let over = [self.hits.settings].into_iter().find(|r| r.contains(point));
         match m.kind {
             MouseEventKind::Down(MouseButton::Left) if over.is_some() => {
-                self.more_press = over;
+                self.settings_press = over;
                 self.pointer.cancel();
                 return true;
             }
             MouseEventKind::Up(MouseButton::Left) => {
-                if let Some(pressed) = self.more_press.take() {
-                    if over == Some(pressed) && pressed == self.hits.more {
-                        self.header_menu = Some(crate::header_menu::Menu::default());
+                if let Some(pressed) = self.settings_press.take() {
+                    if over == Some(pressed) && pressed == self.hits.settings {
+                        self.open_settings(self.focus);
                         self.native_mouse = false;
                     }
                     return true;
@@ -1553,24 +1521,10 @@ impl App {
             }
             MouseEventKind::Moved | MouseEventKind::Drag(MouseButton::Left) => {}
             _ => {
-                self.more_press = None;
+                self.settings_press = None;
             }
         }
         false
-    }
-    pub(super) fn header_menu_outcome(&mut self, outcome: crate::header_menu::Outcome) {
-        use crate::header_menu::Outcome;
-        if outcome == Outcome::Stay {
-            return;
-        }
-        self.header_menu = None;
-        self.pointer.cancel();
-        match outcome {
-            Outcome::Settings => {
-                self.open_settings(self.focus);
-            }
-            Outcome::Stay | Outcome::Close => {}
-        }
     }
     fn panel_key(&mut self, key: KeyEvent) {
         self.panel.message.clear();

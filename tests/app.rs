@@ -81,7 +81,7 @@ fn agent_workspace_starts_and_restores_terminal_after_quit() {
     };
     output.extend(rx.try_iter().flatten());
     let text = String::from_utf8_lossy(&output);
-    assert!(snapshot.contains("⋯"), "{snapshot}");
+    assert!(snapshot.contains("Settings"), "{snapshot}");
     assert!(
         snapshot.contains("Agents") && snapshot.contains("Viewer"),
         "{text}"
@@ -229,9 +229,9 @@ fn settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once() {
     });
     let mut screen = vt100::Parser::new(40, 160, 0);
     pump(&rx, &mut screen, &mut writer, |s| {
-        column(s, 1, "⋯").is_some() && s.contents().contains("Fold")
+        column(s, 1, "Settings").is_some() && s.contents().contains("Fold")
     });
-    let before = column(screen.screen(), 1, "⋯");
+    let before = column(screen.screen(), 1, "Settings");
     writer.write_all(b",").unwrap();
     pump(&rx, &mut screen, &mut writer, |s| {
         s.contents().contains("Config: ~/config.toml") && s.contents().contains("Input ▸ Settings")
@@ -240,10 +240,10 @@ fn settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once() {
     // Ctrl-U clears the sidebar width, then Ctrl-S saves 60.
     writer.write_all(b"\x1560\x13").unwrap();
     pump(&rx, &mut screen, &mut writer, |s| {
-        s.contents().contains("Settings saved") && column(s, 1, "⋯") == Some(56)
+        s.contents().contains("Settings saved") && column(s, 1, "Settings") == Some(49)
     });
     let saved = screen.screen().contents();
-    let after = column(screen.screen(), 1, "⋯");
+    let after = column(screen.screen(), 1, "Settings");
     let file = std::fs::read_to_string(&config).unwrap();
     // Esc cancels without writing.
     writer.write_all(b",").unwrap();
@@ -265,9 +265,9 @@ fn settings_open_with_comma_save_to_the_file_and_resize_the_sidebar_at_once() {
         }
         thread::sleep(Duration::from_millis(20));
     }
-    assert_eq!(before, Some(48), "{opened}");
+    assert_eq!(before, Some(41), "{opened}");
     assert!(opened.contains("Input ▸ Settings"), "{opened}");
-    assert_eq!(after, Some(56), "{saved}");
+    assert_eq!(after, Some(49), "{saved}");
     assert!(saved.contains("Input ▸ Agents"), "{saved}");
     assert_eq!(
         file,
